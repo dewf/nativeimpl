@@ -7,7 +7,7 @@
 
     <ItemGroup>
         <Compile Include="Tokenizer.fs" />
-        <Compile Include="AbstractSyntaxTree.fs" />
+        <Compile Include="Tree.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>
 

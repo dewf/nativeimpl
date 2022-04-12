@@ -18,11 +18,17 @@ module TestLibrary;
 opaque MenuBar;
 opaque CGContext;
 
+struct OtherStruct {
+  int cool;
+  string iknorite;
+}
+
 struct SomeStruct {
   int field1;
   int field2;
   float whatever;
   IThing01 hahaLater;
+  array[OtherStruct] subStruct; // hmm we need to prevent recursive struct definitions
 }
 
 SomeStruct structValue01;

@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/testlibraryclient
+testlibraryclient.so
+testlibraryclient.dylib
+testlibraryclient.dll
+testlibraryclient.a
+testlibraryclient.lib
+testlibraryclient-test-*
+*.exe
+*.o
+*.obj
+*.lst

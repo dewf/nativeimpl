@@ -1,0 +1,21 @@
+name "apprunner"
+description "app runner"
+authors "Daniel X"
+copyright "Copyright © 2021, Daniel X"
+license "MIT"
+
+dependency "testlibraryclient" path="../testlibrary"
+
+targetType "executable"
+
+configuration "win32-config-64" {
+    platforms "windows-x86_64"
+    targetPath "$PACKAGE_DIR/bin64"
+    copyfiles "$PACKAGE_DIR/../../libraryproject_cpp/x64/Debug/*.dll"
+}
+
+configuration "win32-config-32" {
+    platforms "windows-x86_mscoff"
+    targetPath "$PACKAGE_DIR/bin"
+    copyFiles "$PACKAGE_DIR/../../libraryproject_cpp/Debug/*.dll"
+}

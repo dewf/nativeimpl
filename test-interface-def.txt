@@ -1,0 +1,58 @@
+module TestLibrary
+
+// allowed types:
+// unit/void
+// bool
+// byte/int8
+// short/int16
+// int/int32
+// long/int64
+// float/float32
+// double/float64
+// string
+// array[type]
+// map[a,b]
+
+// opaque typed ptrs to use as handles
+opaque MenuBar;
+opaque CGContext;
+
+struct SomeStruct {
+  int field1;
+  int field2;
+  float whatever;
+}
+
+exception NegativeException {
+  int value;
+}
+
+exception InterfaceMethodException {
+  int value;
+}
+
+interface IThing01 {
+  int someMethod(int);
+  void stashThing(IThing01);
+  IThing01 getStashedThing();
+  void testThrow(bool) throws InterfaceMethodException;
+  void onTimerTick();
+}
+
+int global01;
+int anotherGlobal;
+int lastIntGlobal;
+
+int sum(int, int, int);
+int execFunc01(int -> int);
+void stashFunc(int -> int);
+void releaseFunc();
+IThing01 makeThing();
+int operateOnThing(IThing01, int);
+void saveThing(IThing01);
+IThing01 getSavedThing();
+void clientStashTest(IThing01);
+void testNegative(int) throws NegativeException;
+void testClientThrow(IThing01);
+void startTimer(IThing01, int);
+void stopTimer();

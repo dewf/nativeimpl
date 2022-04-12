@@ -1,4 +1,4 @@
-module TestLibrary
+module TestLibrary;
 
 // allowed types:
 // unit/void
@@ -14,6 +14,7 @@ module TestLibrary
 // map[a,b]
 
 // opaque typed ptrs to use as handles
+
 opaque MenuBar;
 opaque CGContext;
 
@@ -21,6 +22,7 @@ struct SomeStruct {
   int field1;
   int field2;
   float whatever;
+  IThing01 hahaLater;
 }
 
 exception NegativeException {
@@ -32,10 +34,10 @@ exception InterfaceMethodException {
 }
 
 interface IThing01 {
-  int someMethod(int);
-  void stashThing(IThing01);
+  int someMethod(int x);
+  void stashThing(IThing01 thing);
   IThing01 getStashedThing();
-  void testThrow(bool) throws InterfaceMethodException;
+  void testThrow(bool doThrow) throws InterfaceMethodException;
   void onTimerTick();
 }
 
@@ -43,16 +45,19 @@ int global01;
 int anotherGlobal;
 int lastIntGlobal;
 
-int sum(int, int, int);
-int execFunc01(int -> int);
-void stashFunc(int -> int);
+array[int] intArray;
+map[string, int] stringToIntMap;
+
+int sum(int a, int b, int c);
+int execFunc01(@int->int func1);
+void stashFunc(@int->int func2);
 void releaseFunc();
 IThing01 makeThing();
-int operateOnThing(IThing01, int);
-void saveThing(IThing01);
+int operateOnThing(IThing01 thing, int x);
+void saveThing(IThing01 thing);
 IThing01 getSavedThing();
-void clientStashTest(IThing01);
-void testNegative(int) throws NegativeException;
-void testClientThrow(IThing01);
-void startTimer(IThing01, int);
+void clientStashTest(IThing01 thing);
+void testNegative(int value) throws NegativeException;
+void testClientThrow(IThing01 thing);
+void startTimer(IThing01 thing, int frequency);
 void stopTimer();

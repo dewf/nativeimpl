@@ -210,9 +210,7 @@ let parseFunctionList (line: int) (tokens: (int * Token) list) =
     | None ->
         failwithf "error parsing function list at line %d - missing closing }" line
 
-let parseModule (line: int) (tokens: (int * Token) list) =
-    if tokens.IsEmpty then
-        failwithf "empty module at line %d!" line
+let parseModule (tokens: (int * Token) list) =
     let parseNext (remaining: (int * Token) list) =
         match remaining with
         | (_, OpaqueToken) :: (_, Identifier name) :: (_, StatementEnd) :: etc ->
@@ -256,7 +254,7 @@ let parseModule (line: int) (tokens: (int * Token) list) =
 
 let parseTokens (tokens: (int * Token) list) =
     match tokens with
-    | (line, ModuleToken) :: (_, Identifier name) :: (_, StatementEnd) :: theRest ->
-        Module (name, parseModule line theRest)
+    | (_, ModuleToken) :: (_, Identifier name) :: (_, StatementEnd) :: theRest ->
+        Module (name, parseModule theRest)
     | _ ->
         failwith "createSyntaxTree: didn't find module definition"

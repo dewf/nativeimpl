@@ -25,6 +25,8 @@ struct SomeStruct {
   IThing01 hahaLater;
 }
 
+SomeStruct structValue01;
+
 exception NegativeException {
   int value;
 }

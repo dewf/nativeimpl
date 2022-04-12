@@ -11,9 +11,9 @@ let lines =
 let tokens =
     tokenize lines
 
-let tree =
+let module_ =
     parseTokens tokens
+    |> resolveAllUserTypes
 
-printfn "tree: %A" tree
-
+printfn "module: %A" module_
 

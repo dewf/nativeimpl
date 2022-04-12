@@ -63,3 +63,5 @@ void testNegative(int value) throws NegativeException;
 void testClientThrow(IThing01 thing);
 void startTimer(IThing01 thing, int frequency);
 void stopTimer();
+
+void fakeShit(CGContext context);

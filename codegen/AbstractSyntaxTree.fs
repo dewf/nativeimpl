@@ -1,6 +1,12 @@
 ﻿module AbstractSyntaxTree
-
 open Tokenizer
+
+module List =
+    let safeTake (n: int) (xs: 'a list) =
+        if xs.Length >= n then
+            List.take n xs
+        else
+            []
 
 type NIType =
     | UnitType
@@ -11,11 +17,13 @@ type NIType =
     | ArrayType of NIType
     | MapType of keyType: NIType * valueType: NIType
     | AnonymousFunction of args: NIType list * returns: NIType
-    // these have to be resolved by checking a table, otherise unresolved
+    //
+    | Unresolved of name: string * line: int
+    // these have to be resolved by checking a table, otherwise unresolved
     | OpaqueHandleType of name: string
     | StructType of name: string
     | InterfaceType of name: string
-    | Unresolved of name: string * line: int // something that hasn't been declared yet?
+    | ExceptionType of name: string          // only for 'throws'
 
 let rec parseType (tokens: (int * Token) list) =
     match tokens with
@@ -95,7 +103,7 @@ type NamedFunction = {
     Name: string
     Args: (string * NIType) list
     Returns: NIType
-    Throws: string option   // name of exception
+    Throws: NIType option // only Exceptions are allowed ...
 }
 
 type FieldType = {
@@ -103,23 +111,21 @@ type FieldType = {
     Type_: NIType
 }
 
+type UserType =
+    | OpaqueHandleDef
+    | StructDef of fields: FieldType list
+    | ExceptionDef of fields: FieldType list
+    | InterfaceDef of methods: NamedFunction list
+
 type ModuleDefinition =
-    | OpaqueHandleDef of name: string
     | Global of name: string * type_: NIType
-    | StructDef of name: string * fields: FieldType list
-    | ExceptionDef of name: string * fields: FieldType list
-    | InterfaceDef of name: string * methods: NamedFunction list
     | FunctionDef of NamedFunction
+    | UserType of name: string * type_: UserType
 
-type Module =
-    | Module of name: string * defs: ModuleDefinition list
-
-module List =
-    let safeTake (n: int) (xs: 'a list) =
-        if xs.Length >= n then
-            List.take n xs
-        else
-            []
+type Module = {
+    Name: string
+    Defs: ModuleDefinition list
+}
 
 let parseOneField (remaining: (int * Token) list) =
     if remaining.IsEmpty then
@@ -181,8 +187,8 @@ let parseNamedFunction (tokens: (int * Token) list) =
                 | (_, RightParen) :: (_, StatementEnd) :: etc4 ->
                     ({ Name = funcName; Args = args; Returns = returnType; Throws = None }, etc4)
                     |> Some
-                | (_, RightParen) :: (_, ThrowsToken) :: (_, Identifier exceptionName) :: (_, StatementEnd) :: etc4 ->
-                    ({ Name = funcName; Args = args; Returns = returnType; Throws = Some exceptionName }, etc4)
+                | (_, RightParen) :: (_, ThrowsToken) :: (idLine, Identifier exceptionName) :: (_, StatementEnd) :: etc4 ->
+                    ({ Name = funcName; Args = args; Returns = returnType; Throws = Some (Unresolved (exceptionName, idLine)) }, etc4)
                     |> Some
                 | _ ->
                     failwithf "failed to parse function at line %d" line
@@ -214,22 +220,22 @@ let parseModule (tokens: (int * Token) list) =
     let parseNext (remaining: (int * Token) list) =
         match remaining with
         | (_, OpaqueToken) :: (_, Identifier name) :: (_, StatementEnd) :: etc ->
-            (OpaqueHandleDef name, etc)
+            (UserType (name, OpaqueHandleDef), etc)
             |> Some
         | (line, StructToken) :: (_, Identifier name) :: (_, LeftBrace) :: etc ->
             let fields, etc2 =
                 parseFields line etc
-            (StructDef (name, fields), etc2)
+            (UserType (name, StructDef fields), etc2)
             |> Some
         | (line, ExceptionToken) :: (_, Identifier name) :: (_, LeftBrace) :: etc ->
             let fields, etc2 =
                 parseFields line etc
-            (ExceptionDef (name, fields), etc2)
+            (UserType (name, ExceptionDef fields), etc2)
             |> Some
         | (line, InterfaceToken) :: (_, Identifier name) :: (_, LeftBrace) :: etc ->
             let methods, etc2 =
                 parseFunctionList line etc
-            (InterfaceDef (name, methods), etc2)
+            (UserType (name, InterfaceDef methods), etc2)
             |> Some
         | [] ->
             // end of file!
@@ -255,6 +261,91 @@ let parseModule (tokens: (int * Token) list) =
 let parseTokens (tokens: (int * Token) list) =
     match tokens with
     | (_, ModuleToken) :: (_, Identifier name) :: (_, StatementEnd) :: theRest ->
-        Module (name, parseModule theRest)
+        { Name = name; Defs = parseModule theRest }
     | _ ->
         failwith "createSyntaxTree: didn't find module definition"
+
+let rec resolveUserType (symbols: Map<string, UserType>) (type_: NIType) =
+    match type_ with
+    | ArrayType niType ->
+        ArrayType (resolveUserType symbols niType)
+    | MapType (keyType, valueType) ->
+        MapType (resolveUserType symbols keyType, resolveUserType symbols valueType)
+    | AnonymousFunction (args, returns) ->
+        let nextArgs =
+            args |> List.map (resolveUserType symbols)
+        let nextReturns =
+            resolveUserType symbols returns
+        AnonymousFunction (nextArgs, nextReturns)
+    | Unresolved (name, line) ->
+        match symbols.TryFind(name) with
+        | Some value ->
+            match value with
+            | OpaqueHandleDef -> OpaqueHandleType name
+            | StructDef _ -> StructType name
+            | InterfaceDef _ -> InterfaceType name
+            | ExceptionDef _ ->
+                // how do we enforce that this is only allowed in a "throws" context?
+                ExceptionType name
+        | None ->
+            failwithf "failed to find symbol '%s' at line %d" name line
+    | _ ->
+        type_
+
+let resolveFieldType (symbols: Map<string, UserType>) (ft: FieldType) =
+    let nextType =
+        resolveUserType symbols ft.Type_
+    { ft with Type_ = nextType }
+
+let resolveFunctionTypes (symbols: Map<string, UserType>) (nf: NamedFunction) =
+    let nextArgs =
+        nf.Args
+        |> List.map (fun (name, argType) -> (name, resolveUserType symbols argType))
+    let nextReturns =
+        resolveUserType symbols nf.Returns
+    let nextThrows =
+        nf.Throws
+        |> Option.map (resolveUserType symbols)
+    { nf with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
+
+let resolveModuleDef (symbols: Map<string, UserType>) (def: ModuleDefinition) =
+    match def with
+    | UserType (name, userType) ->
+        let nextUserType =
+            match userType with
+            | StructDef fieldTypes ->
+                let nextFieldTypes =
+                    fieldTypes
+                    |> List.map (resolveFieldType symbols)
+                StructDef nextFieldTypes
+            | ExceptionDef fieldTypes ->
+                let nextFieldTypes =
+                    fieldTypes
+                    |> List.map (resolveFieldType symbols)
+                ExceptionDef nextFieldTypes
+            | InterfaceDef namedFunctions ->
+                let nextFunctions =
+                    namedFunctions
+                    |> List.map (resolveFunctionTypes symbols)
+                InterfaceDef nextFunctions
+            | _ ->
+                // untouched ('opaque' only for now ...)
+                userType
+        UserType (name, nextUserType)
+    | Global (name, niType) ->
+        Global (name, resolveUserType symbols niType)
+    | FunctionDef namedFunction ->
+        FunctionDef (resolveFunctionTypes symbols namedFunction)
+
+let resolveAllUserTypes (module_: Module) =
+    let symbols =
+        module_.Defs
+        |> List.choose (function
+            | UserType (name, definition) -> Some (name, definition)
+            | _ -> None)
+        |> Map.ofList
+    // go throughout whole tree and replace all Unresolved types with things from the table, if they even exist
+    let nextDefs =
+        module_.Defs
+        |> List.map (resolveModuleDef symbols)
+    { module_ with Defs = nextDefs }

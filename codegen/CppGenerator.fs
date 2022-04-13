@@ -67,7 +67,7 @@ let rec defaultValueForType = function
     | UnitType -> failwith "defaultValueForType called on UnitType"
     | Bool -> "false"
     | Int32 -> "0"
-    | InterfaceType _ -> "null"
+    | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
     | AnonymousFunction (niTypes, niType) ->
         sprintf "[](%s) { return %s; }" (joinedAnonymousArgs niTypes) (defaultValueForType niType)
     | _ ->
@@ -140,7 +140,7 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         pushFunctionTypedef writer (level + 1) "function_t" argTypes returnType
         fprintfn writer "%s    function_t* ptr_fun = __f.target<function_t>();" indent
         fprintfn writer "%s    if (ptr_fun != nullptr) {" indent
-        fprintfn writer "%s        uniqueKey = (size_t)ptr_fun;" indent
+        fprintfn writer "%s        __uniqueKey = (size_t)ptr_fun;" indent
         fprintfn writer "%s    }" indent
         fprintfn writer "%s}" indent
         // wrapper:
@@ -328,7 +328,7 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
         let lowerName = lowerFirst name
         fprintfn writer "    auto %s = ni_registerInterface(m, \"%s\");" lowerName name
         for method in methods do
-            fprintfn writer "    %s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name lowerName method.Name
+            fprintfn writer "    %s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
     // exceptions
     for name, _ in exceptions do
         let lowerName = lowerFirst name
@@ -414,7 +414,7 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
     // global externs
     for globalName, globalType in globals do
         fprintfn writer "extern const %s %s;" (typeToString globalType) globalName
-    printfn ""
+    fprintfn writer ""
     // function prototypes
     for namedFunc in moduleMethods do
         let throwsComment =
@@ -456,12 +456,14 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
         fprintfn writer ""
 
 let generate (m: Module) =
-    fprintfn stdout "======= Wrappers.cpp ============================="
-    generateWrappersCpp m stdout
-    fprintfn stdout ""
-    fprintfn stdout "======= Implementation.h ========================="
-    generateImplementationH m stdout
-    fprintfn stdout ""
-    fprintfn stdout "======= Implementation.cpp ======================="
-    generateImplementationCpp m stdout
-    fprintfn stdout ""
+    printfn "C++ writing Wrappers.cpp"
+    use wrappersCpp = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp\Wrappers.cpp")
+    generateWrappersCpp m wrappersCpp
+
+    printfn "C++ writing Implementation.h"
+    use implementationH = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp\Implementation.h")
+    generateImplementationH m implementationH
+
+    printfn "C++ writing Implementation.cpp"
+    use implementationCpp = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp\Implementation.cpp")
+    generateImplementationCpp m implementationCpp

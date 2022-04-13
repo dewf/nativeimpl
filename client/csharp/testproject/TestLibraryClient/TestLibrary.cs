@@ -54,26 +54,26 @@ namespace TestLibraryClient
             LastIntGlobal = NativeImplClient.PopInt();
             // end constants
             
-            _sumFunc = NativeImplClient.GetModuleMethod(_module, "sum|iii");
-            _execFunc01 = NativeImplClient.GetModuleMethod(_module, "execFunc01|(i->i)");
-            _stashFunc = NativeImplClient.GetModuleMethod(_module, "stashFunc|(i->i)");
-            _releaseFunc = NativeImplClient.GetModuleMethod(_module, "releaseFunc|");
-            _returnStashedFunc = NativeImplClient.GetModuleMethod(_module, "returnStashedFunc|");
+            _sumFunc = NativeImplClient.GetModuleMethod(_module, "sum");
+            _execFunc01 = NativeImplClient.GetModuleMethod(_module, "execFunc01");
+            _stashFunc = NativeImplClient.GetModuleMethod(_module, "stashFunc");
+            _releaseFunc = NativeImplClient.GetModuleMethod(_module, "releaseFunc");
+            _returnStashedFunc = NativeImplClient.GetModuleMethod(_module, "returnStashedFunc");
 
             _ithing01 = NativeImplClient.GetInterface(_module, "IThing01");
-            _ithing01SomeMethod = NativeImplClient.GetInterfaceMethod(_ithing01, "someMethod|i");
-            _ithing01StashThing = NativeImplClient.GetInterfaceMethod(_ithing01, "stashThing|(IThing01)");
-            _ithing01GetStashedThing = NativeImplClient.GetInterfaceMethod(_ithing01, "getStashedThing|");
-            _ithing01TestThrow = NativeImplClient.GetInterfaceMethod(_ithing01, "testThrow|b");
-            _ithing01OnTimerTick = NativeImplClient.GetInterfaceMethod(_ithing01, "onTimerTick|");
+            _ithing01SomeMethod = NativeImplClient.GetInterfaceMethod(_ithing01, "someMethod");
+            _ithing01StashThing = NativeImplClient.GetInterfaceMethod(_ithing01, "stashThing");
+            _ithing01GetStashedThing = NativeImplClient.GetInterfaceMethod(_ithing01, "getStashedThing");
+            _ithing01TestThrow = NativeImplClient.GetInterfaceMethod(_ithing01, "testThrow");
+            _ithing01OnTimerTick = NativeImplClient.GetInterfaceMethod(_ithing01, "onTimerTick");
             
-            _makeThing = NativeImplClient.GetModuleMethod(_module, "makeThing|");
-            _operateOnThing = NativeImplClient.GetModuleMethod(_module, "operateOnThing|(IThing01)i");
+            _makeThing = NativeImplClient.GetModuleMethod(_module, "makeThing");
+            _operateOnThing = NativeImplClient.GetModuleMethod(_module, "operateOnThing");
             
-            _saveThing = NativeImplClient.GetModuleMethod(_module, "saveThing|(IThing01)");
-            _getSavedThing = NativeImplClient.GetModuleMethod(_module, "getSavedThing|");
+            _saveThing = NativeImplClient.GetModuleMethod(_module, "saveThing");
+            _getSavedThing = NativeImplClient.GetModuleMethod(_module, "getSavedThing");
 
-            _clientStashTest = NativeImplClient.GetModuleMethod(_module, "clientStashTest|(IThing01)");
+            _clientStashTest = NativeImplClient.GetModuleMethod(_module, "clientStashTest");
             
             // method wrappers here
             NativeImplClient.SetClientMethodWrapper(_ithing01SomeMethod, delegate(NativeImplClient.ClientObject obj)
@@ -127,14 +127,14 @@ namespace TestLibraryClient
             _negativeException = NativeImplClient.GetException(_module, "NegativeException");
             NativeImplClient.SetExceptionBuilder(_negativeException, NegativeException.Pop);
             
-            _testNegative = NativeImplClient.GetModuleMethod(_module, "testNegative|i");
+            _testNegative = NativeImplClient.GetModuleMethod(_module, "testNegative");
 
             _interfaceMethodException = NativeImplClient.GetException(_module, "InterfaceMethodException");
             NativeImplClient.SetExceptionBuilder(_interfaceMethodException, InterfaceMethodException.Pop);
 
-            _testClientThrow = NativeImplClient.GetModuleMethod(_module, "testClientThrow|(IThing01)");
-            _startTimer = NativeImplClient.GetModuleMethod(_module, "startTimer|(IThing01)i");
-            _stopTimer = NativeImplClient.GetModuleMethod(_module, "stopTimer|");
+            _testClientThrow = NativeImplClient.GetModuleMethod(_module, "testClientThrow");
+            _startTimer = NativeImplClient.GetModuleMethod(_module, "startTimer");
+            _stopTimer = NativeImplClient.GetModuleMethod(_module, "stopTimer");
         }
         public static void Shutdown()
         {

@@ -21,12 +21,26 @@ let PushTemplate = "inline void %%IFACE%%__push(std::shared_ptr<%%IFACE%%> inst,
     auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
     pushable->push(pushable, isReturn);
 }"
+let ServerWrapperTemplate = "class Server%%IFACE%% : public %%IFACE%%, public ServerObject {
+public:
+    virtual ~Server%%IFACE%%() {
+    }
+    static std::shared_ptr<Server%%IFACE%%> getByID(int id) {
+        auto obj = ServerObject::getByID(id);
+        return std::static_pointer_cast<Server%%IFACE%%>(obj);
+    }
+};"
 
-let typeToString = function
+let rec typeToString = function
     | UnitType -> "void"
     | Bool -> "bool"
     | Int32 -> "int"
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
+    | AnonymousFunction (argTypes, returnType) ->
+        let joinedTypes =
+            [for t in argTypes -> typeToString t]
+            |> String.concat ","
+        sprintf "std::function<%s(%s)>" (typeToString returnType) joinedTypes
     | _ -> "(typeToString: not done yet)"
 
 let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: NIType list) (ret: NIType) =
@@ -35,6 +49,14 @@ let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: 
         [for arg in args -> typeToString arg]
         |> String.concat ", "
     fprintfn writer "%stypedef %s %s(%s);" indent (typeToString ret) name argsJoined
+
+let joinedFunctionArgs (nf: NamedFunction) =
+    [for argName, argType in nf.Args -> sprintf "%s %s" (typeToString argType) argName]
+    |> String.concat ", "
+
+let joinedFields (fields: NamedField list) =
+    [for field in fields -> sprintf "%s %s" (typeToString field.Type_) field.Name]
+    |> String.concat ", "
 
 type PopValueContext =
     | Variable of name: string
@@ -312,6 +334,80 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
     // nothing for C++
     fprintfn writer "}"
 
+let generateImplementationHeader (m: Module) (writer: TextWriter) =
+    let interfaces =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
+            | _ -> None)
+    let globals =
+        m.Defs
+        |> List.choose (function
+            | Global(name, niType) -> Some (name, niType)
+            | _ -> None)
+    let moduleMethods =
+        m.Defs
+        |> List.choose (function
+            | FunctionDef namedFunction -> Some namedFunction
+            | _ -> None)
+    let exceptions =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, ExceptionDef fields) -> Some (name, fields)
+            | _ -> None)
+    // begin output: ===============================================
+    fprintfn writer "#include <functional>"
+    fprintfn writer "#include <memory>"
+    fprintfn writer ""
+    // exceptions
+    for exName, exFields in exceptions do
+        fprintfn writer "class %s {" exName
+        fprintfn writer "public:"
+        for namedField in exFields do
+            fprintfn writer "    %s %s;" (typeToString namedField.Type_) namedField.Name
+        let joinedInitializers =
+            [for nf in exFields -> sprintf "%s(%s)" nf.Name nf.Name]
+            |> String.concat ", "
+        fprintfn writer "    %s(%s) : %s {}" exName (joinedFields exFields) joinedInitializers
+        fprintfn writer "    void push() const {"
+        // push field values (reverse order)
+        for namedField in exFields |> List.rev do
+            pushValue writer 2 namedField.Type_ namedField.Name false // false = not a concern because it still exists in this class instance
+        fprintfn writer "    }"
+        // build and throw
+        fprintfn writer "    static void buildAndThrow() {"
+        for i, namedField in exFields |> List.indexed do
+            popValue writer 2 namedField.Type_ (Variable (sprintf "_%d" i))
+        // joined variables (_0, _1, etc)
+        let joinedVars =
+            [for i in 0 .. exFields.Length-1 -> sprintf "_%d" i]
+            |> String.concat ", "
+        fprintfn writer "        throw %s(%s);" exName joinedVars
+        fprintfn writer "    }"
+        fprintfn writer "};"
+        fprintfn writer ""
+    // raw interfaces + server wrappers
+    for name, methods in interfaces do
+        fprintfn writer "class %s {" name
+        fprintfn writer "public:"
+        for namedFunc in methods do
+            fprintfn writer "    virtual %s %s(%s) = 0;" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc)
+        fprintfn writer "};"
+        fprintfn writer ""
+        // server wrapper
+        let nameRegex = Regex(@"%%IFACE%%")
+        writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
+        fprintfn writer ""
+    // global externs
+    for globalName, globalType in globals do
+        fprintfn writer "extern const %s %s;" (typeToString globalType) globalName
+    printfn ""
+    // function prototypes
+    for namedFunc in moduleMethods do
+        fprintfn writer "%s %s(%s);" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc)
+
 let generate (m: Module) =
     fprintfn stdout "======= Wrappers.cpp ============================="
     generateWrappersCpp m stdout
+    fprintfn stdout "======= Implementation.h ========================="
+    generateImplementationHeader m stdout

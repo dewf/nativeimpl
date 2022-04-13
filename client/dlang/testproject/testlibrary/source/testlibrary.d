@@ -46,26 +46,26 @@ void init() {
     assert(nativeimplclient.init() == 0, "nativeimplclient.init() failed");
 
     _module = getModule("TestLibrary");
-    _sumFunc = getModuleMethod(_module, "sum|iii");
-    _execFunc01 = getModuleMethod(_module, "execFunc01|(i->i)");
-    _stashFunc = getModuleMethod(_module, "stashFunc|(i->i)");
+    _sumFunc = getModuleMethod(_module, "sum");
+    _execFunc01 = getModuleMethod(_module, "execFunc01");
+    _stashFunc = getModuleMethod(_module, "stashFunc");
     _releaseFunc = getModuleMethod(_module, "releaseFunc|");
-    _returnStashedFunc = getModuleMethod(_module, "returnStashedFunc|");
+    _returnStashedFunc = getModuleMethod(_module, "returnStashedFunc");
 
     _ithing01 = getInterface(_module, "IThing01");
-    _ithing01SomeMethod = getInterfaceMethod(_ithing01, "someMethod|i");
-    _ithing01StashThing = getInterfaceMethod(_ithing01, "stashThing|(IThing01)");
-    _ithing01GetStashedThing = getInterfaceMethod(_ithing01, "getStashedThing|");
-    _ithing01TestThrow = getInterfaceMethod(_ithing01, "testThrow|b");
-    _ithing01OnTimerTick = getInterfaceMethod(_ithing01, "onTimerTick|");
+    _ithing01SomeMethod = getInterfaceMethod(_ithing01, "someMethod");
+    _ithing01StashThing = getInterfaceMethod(_ithing01, "stashThing");
+    _ithing01GetStashedThing = getInterfaceMethod(_ithing01, "getStashedThing");
+    _ithing01TestThrow = getInterfaceMethod(_ithing01, "testThrow");
+    _ithing01OnTimerTick = getInterfaceMethod(_ithing01, "onTimerTick");
 
-    _makeThing = getModuleMethod(_module, "makeThing|");
-    _operateOnThing = getModuleMethod(_module, "operateOnThing|(IThing01)i");
+    _makeThing = getModuleMethod(_module, "makeThing");
+    _operateOnThing = getModuleMethod(_module, "operateOnThing");
 
-    _saveThing = getModuleMethod(_module, "saveThing|(IThing01)");
-    _getSavedThing = getModuleMethod(_module, "getSavedThing|");
+    _saveThing = getModuleMethod(_module, "saveThing");
+    _getSavedThing = getModuleMethod(_module, "getSavedThing");
 
-    _clientStashTest = getModuleMethod(_module, "clientStashTest|(IThing01)");
+    _clientStashTest = getModuleMethod(_module, "clientStashTest");
 
     setClientMethodWrapper(_ithing01SomeMethod, (ClientObject obj) {
         auto thing = cast(ClientIThing01) obj;
@@ -106,14 +106,14 @@ void init() {
     _negativeException = getException(_module, "NegativeException");
     setExceptionBuilder(_negativeException, () => NegativeException.pop()); // not sure why we can't pass these directly with an &
 
-    _testNegative = getModuleMethod(_module, "testNegative|i");
+    _testNegative = getModuleMethod(_module, "testNegative");
 
     _interfaceMethodException = getException(_module, "InterfaceMethodException");
     setExceptionBuilder(_interfaceMethodException, () => InterfaceMethodException.pop()); // same
 
-    _testClientThrow = getModuleMethod(_module, "testClientThrow|(IThing01)");
-    _startTimer = getModuleMethod(_module, "startTimer|(IThing01)i");
-    _stopTimer = getModuleMethod(_module, "stopTimer|");
+    _testClientThrow = getModuleMethod(_module, "testClientThrow");
+    _startTimer = getModuleMethod(_module, "startTimer");
+    _stopTimer = getModuleMethod(_module, "stopTimer");
 }
 
 void shutdown() {

@@ -49,26 +49,26 @@ function init() {
     anotherGlobal = nativeImplClient.popInt();
     lastIntGlobal = nativeImplClient.popInt();
 
-    _sumFunc = nativeImplClient.getModuleMethod(_module, "sum|iii");
-    _execFunc01 = nativeImplClient.getModuleMethod(_module, "execFunc01|(i->i)");
-    _stashFunc = nativeImplClient.getModuleMethod(_module, "stashFunc|(i->i)");
-    _releaseFunc = nativeImplClient.getModuleMethod(_module, "releaseFunc|");
-    _returnStashedFunc = nativeImplClient.getModuleMethod(_module, "returnStashedFunc|");
+    _sumFunc = nativeImplClient.getModuleMethod(_module, "sum");
+    _execFunc01 = nativeImplClient.getModuleMethod(_module, "execFunc01");
+    _stashFunc = nativeImplClient.getModuleMethod(_module, "stashFunc");
+    _releaseFunc = nativeImplClient.getModuleMethod(_module, "releaseFunc");
+    _returnStashedFunc = nativeImplClient.getModuleMethod(_module, "returnStashedFunc");
 
     _ithing01 = nativeImplClient.getInterface(_module, "IThing01");
-    _ithing01SomeMethod = nativeImplClient.getInterfaceMethod(_ithing01, "someMethod|i");
-    _ithing01StashThing = nativeImplClient.getInterfaceMethod(_ithing01, "stashThing|(IThing01)");
-    _ithing01GetStashedThing = nativeImplClient.getInterfaceMethod(_ithing01, "getStashedThing|");
-    _ithing01TestThrow = nativeImplClient.getInterfaceMethod(_ithing01, "testThrow|b");
-    _ithing01OnTimerTick = nativeImplClient.getInterfaceMethod(_ithing01, "onTimerTick|");
+    _ithing01SomeMethod = nativeImplClient.getInterfaceMethod(_ithing01, "someMethod");
+    _ithing01StashThing = nativeImplClient.getInterfaceMethod(_ithing01, "stashThing");
+    _ithing01GetStashedThing = nativeImplClient.getInterfaceMethod(_ithing01, "getStashedThing");
+    _ithing01TestThrow = nativeImplClient.getInterfaceMethod(_ithing01, "testThrow");
+    _ithing01OnTimerTick = nativeImplClient.getInterfaceMethod(_ithing01, "onTimerTick");
     
-    _makeThing = nativeImplClient.getModuleMethod(_module, "makeThing|");
-    _operateOnThing = nativeImplClient.getModuleMethod(_module, "operateOnThing|(IThing01)i");
+    _makeThing = nativeImplClient.getModuleMethod(_module, "makeThing");
+    _operateOnThing = nativeImplClient.getModuleMethod(_module, "operateOnThing");
     
-    _saveThing = nativeImplClient.getModuleMethod(_module, "saveThing|(IThing01)");
-    _getSavedThing = nativeImplClient.getModuleMethod(_module, "getSavedThing|");
+    _saveThing = nativeImplClient.getModuleMethod(_module, "saveThing");
+    _getSavedThing = nativeImplClient.getModuleMethod(_module, "getSavedThing");
 
-    _clientStashTest = nativeImplClient.getModuleMethod(_module, "clientStashTest|(IThing01)");
+    _clientStashTest = nativeImplClient.getModuleMethod(_module, "clientStashTest");
 
     // method wrappers here
     nativeImplClient.setClientMethodWrapper(_ithing01SomeMethod, (thing: ClientIThing01) => { // we are casting there with the arguments, it's supposed to be a ClientObject but we're more specific
@@ -111,14 +111,14 @@ function init() {
     _negativeException = nativeImplClient.getException(_module, "NegativeException");
     nativeImplClient.setExceptionBuilder(_negativeException, NegativeException.pop);
 
-    _testNegative = nativeImplClient.getModuleMethod(_module, "testNegative|i");
+    _testNegative = nativeImplClient.getModuleMethod(_module, "testNegative");
 
     _interfaceMethodException = nativeImplClient.getException(_module, "InterfaceMethodException");
     nativeImplClient.setExceptionBuilder(_interfaceMethodException, InterfaceMethodException.pop);
 
-    _testClientThrow = nativeImplClient.getModuleMethod(_module, "testClientThrow|(IThing01)");
-    _startTimer = nativeImplClient.getModuleMethod(_module, "startTimer|(IThing01)i");
-    _stopTimer = nativeImplClient.getModuleMethod(_module, "stopTimer|");
+    _testClientThrow = nativeImplClient.getModuleMethod(_module, "testClientThrow");
+    _startTimer = nativeImplClient.getModuleMethod(_module, "startTimer");
+    _stopTimer = nativeImplClient.getModuleMethod(_module, "stopTimer");
 }
 
 function shutdown() {

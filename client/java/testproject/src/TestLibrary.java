@@ -40,23 +40,23 @@ public class TestLibrary {
         NativeImpl.init();
 
         NativeImpl.ModuleHandle mh = NativeImpl.getModule("TestLibrary");
-        _sum = NativeImpl.getModuleMethod(mh, "sum|iii");
-        _execFunc01 = NativeImpl.getModuleMethod(mh, "execFunc01|(i->i)");
-        _stashFunc = NativeImpl.getModuleMethod(mh, "stashFunc|(i->i)");
-        _releaseFunc = NativeImpl.getModuleMethod(mh, "releaseFunc|");
-        _returnStashedFunc = NativeImpl.getModuleMethod(mh, "returnStashedFunc|");
+        _sum = NativeImpl.getModuleMethod(mh, "sum");
+        _execFunc01 = NativeImpl.getModuleMethod(mh, "execFunc01");
+        _stashFunc = NativeImpl.getModuleMethod(mh, "stashFunc");
+        _releaseFunc = NativeImpl.getModuleMethod(mh, "releaseFunc");
+        _returnStashedFunc = NativeImpl.getModuleMethod(mh, "returnStashedFunc");
 
-        _makeThing = NativeImpl.getModuleMethod(mh, "makeThing|");
-        _operateOnThing = NativeImpl.getModuleMethod(mh, "operateOnThing|(IThing01)i");
+        _makeThing = NativeImpl.getModuleMethod(mh, "makeThing");
+        _operateOnThing = NativeImpl.getModuleMethod(mh, "operateOnThing");
 
-        _saveThing = NativeImpl.getModuleMethod(mh, "saveThing|(IThing01)");
-        _getSavedThing = NativeImpl.getModuleMethod(mh, "getSavedThing|");
-        _clientStashTest = NativeImpl.getModuleMethod(mh, "clientStashTest|(IThing01)");
+        _saveThing = NativeImpl.getModuleMethod(mh, "saveThing");
+        _getSavedThing = NativeImpl.getModuleMethod(mh, "getSavedThing");
+        _clientStashTest = NativeImpl.getModuleMethod(mh, "clientStashTest");
 
-        _testNegative = NativeImpl.getModuleMethod(mh, "testNegative|i");
-        _testClientThrow = NativeImpl.getModuleMethod(mh, "testClientThrow|(IThing01)");
-        _startTimer = NativeImpl.getModuleMethod(mh, "startTimer|(IThing01)i");
-        _stopTimer = NativeImpl.getModuleMethod(mh, "stopTimer|");
+        _testNegative = NativeImpl.getModuleMethod(mh, "testNegative");
+        _testClientThrow = NativeImpl.getModuleMethod(mh, "testClientThrow");
+        _startTimer = NativeImpl.getModuleMethod(mh, "startTimer");
+        _stopTimer = NativeImpl.getModuleMethod(mh, "stopTimer");
 
         // exceptions
         _negativeException = NativeImpl.getException(mh, "NegativeException");
@@ -66,11 +66,11 @@ public class TestLibrary {
 
         // ithing methods
         _ithing01 = NativeImpl.getInterface(mh, "IThing01");
-        _ithing01_someMethod = NativeImpl.getInterfaceMethod(_ithing01, "someMethod|i");
-        _ithing01_stashThing = NativeImpl.getInterfaceMethod(_ithing01, "stashThing|(IThing01)");
-        _ithing01_getStashedThing = NativeImpl.getInterfaceMethod(_ithing01, "getStashedThing|");
-        _ithing01_testThrow = NativeImpl.getInterfaceMethod(_ithing01, "testThrow|b");
-        _ithing01_onTimerTick = NativeImpl.getInterfaceMethod(_ithing01, "onTimerTick|");
+        _ithing01_someMethod = NativeImpl.getInterfaceMethod(_ithing01, "someMethod");
+        _ithing01_stashThing = NativeImpl.getInterfaceMethod(_ithing01, "stashThing");
+        _ithing01_getStashedThing = NativeImpl.getInterfaceMethod(_ithing01, "getStashedThing");
+        _ithing01_testThrow = NativeImpl.getInterfaceMethod(_ithing01, "testThrow");
+        _ithing01_onTimerTick = NativeImpl.getInterfaceMethod(_ithing01, "onTimerTick");
 
         // register interface method handlers (wrappers)
         NativeImpl.setClientMethodWrapper(_ithing01_someMethod, obj -> {

@@ -2,9 +2,9 @@
 #include <memory>
 #include <functional>
 
-const int global01 = 0;
-const int anotherGlobal = 0;
-const int lastIntGlobal = 0;
+const int global01 = 123;
+const int anotherGlobal = 1001;
+const int lastIntGlobal = 90210;
 
 int sum(int a, int b, int c) {
     return a + b + c;

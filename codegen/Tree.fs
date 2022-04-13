@@ -265,17 +265,17 @@ let parseTokens (tokens: (int * Token) list) =
     | _ ->
         failwith "createSyntaxTree: didn't find module definition"
 
-let rec resolveUserType (symbols: Map<string, UserType>) (type_: NIType) =
+let rec resolveType (symbols: Map<string, UserType>) (type_: NIType) =
     match type_ with
     | ArrayType niType ->
-        ArrayType (resolveUserType symbols niType)
+        ArrayType (resolveType symbols niType)
     | MapType (keyType, valueType) ->
-        MapType (resolveUserType symbols keyType, resolveUserType symbols valueType)
+        MapType (resolveType symbols keyType, resolveType symbols valueType)
     | AnonymousFunction (args, returns) ->
         let nextArgs =
-            args |> List.map (resolveUserType symbols)
+            args |> List.map (resolveType symbols)
         let nextReturns =
-            resolveUserType symbols returns
+            resolveType symbols returns
         AnonymousFunction (nextArgs, nextReturns)
     | Unresolved (name, line) ->
         match symbols.TryFind(name) with
@@ -294,18 +294,18 @@ let rec resolveUserType (symbols: Map<string, UserType>) (type_: NIType) =
 
 let resolveFieldType (symbols: Map<string, UserType>) (ft: FieldType) =
     let nextType =
-        resolveUserType symbols ft.Type_
+        resolveType symbols ft.Type_
     { ft with Type_ = nextType }
 
 let resolveFunctionTypes (symbols: Map<string, UserType>) (nf: NamedFunction) =
     let nextArgs =
         nf.Args
-        |> List.map (fun (name, argType) -> (name, resolveUserType symbols argType))
+        |> List.map (fun (name, argType) -> (name, resolveType symbols argType))
     let nextReturns =
-        resolveUserType symbols nf.Returns
+        resolveType symbols nf.Returns
     let nextThrows =
         nf.Throws
-        |> Option.map (resolveUserType symbols)
+        |> Option.map (resolveType symbols)
     { nf with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
 let resolveModuleDef (symbols: Map<string, UserType>) (def: ModuleDefinition) =
@@ -333,11 +333,11 @@ let resolveModuleDef (symbols: Map<string, UserType>) (def: ModuleDefinition) =
                 userType
         UserType (name, nextUserType)
     | Global (name, niType) ->
-        Global (name, resolveUserType symbols niType)
+        Global (name, resolveType symbols niType)
     | FunctionDef namedFunction ->
         FunctionDef (resolveFunctionTypes symbols namedFunction)
 
-let resolveAllUserTypes (module_: Module) =
+let resolveUserTypes (module_: Module) =
     let symbols =
         module_.Defs
         |> List.choose (function

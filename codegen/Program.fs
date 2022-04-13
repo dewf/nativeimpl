@@ -13,7 +13,7 @@ let tokens =
 
 let module_ =
     parseTokens tokens
-    |> resolveAllUserTypes
+    |> resolveUserTypes
 
 printfn "module: %A" module_
 

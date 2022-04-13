@@ -107,96 +107,137 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
 let lowerFirst (text: string) =
     Char.ToLower(text[0]).ToString() + text.Substring(1)
 
-let generate (m: Module) (writer: TextWriter) =
+let generateWrappers (m: Module) (writer: TextWriter) =
+    // things we'll need to use a few times:
+    let globals =
+        m.Defs
+        |> List.choose (function
+            | Global(name, niType) -> Some (name, niType)
+            | _ -> None)
+    let userTypes =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, userType) -> Some (name, userType)
+            | _ -> None)
+    let moduleMethods =
+        m.Defs
+        |> List.choose (function
+            | FunctionDef namedFunction -> Some namedFunction
+            | _ -> None)
+    let interfaces =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
+            | _ -> None)
+    let exceptions =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, ExceptionDef fields) -> Some (name, fields)
+            | _ -> None)
+    // begin output: ===============================================
+
     // opaques + interface method + exception handles
-    m.Defs
-    |> List.iter (fun def ->
-        match def with
-        | UserType (name, userType) ->
-            let lowerName = lowerFirst name
-            match userType with
-            | OpaqueHandleDef ->
-                fprintfn writer "NIHANDLE(%s);" lowerName
-            | InterfaceDef namedFunctions ->
-                namedFunctions
-                |> List.iter (fun nf ->
-                    fprintfn writer "ni_InterfaceMethodRef %s_%s;" lowerName nf.Name)
-            | ExceptionDef _ ->
-                fprintfn writer "ni_ExceptionRef %s;" lowerName
-            | _ ->
-                ()
+    for name, userType in userTypes do
+        let lowerName = lowerFirst name
+        match userType with
+        | OpaqueHandleDef ->
+            fprintfn writer "NIHANDLE(%s);" lowerName
+        | InterfaceDef namedFunctions ->
+            namedFunctions
+            |> List.iter (fun nf ->
+                fprintfn writer "ni_InterfaceMethodRef %s_%s;" lowerName nf.Name)
+        | ExceptionDef _ ->
+            fprintfn writer "ni_ExceptionRef %s;" lowerName
         | _ ->
             ()
-                ) // end defs iter
 
     // interface push/pops
-    m.Defs
-    |> List.iter (fun def ->
-        match def with
-        | UserType(name, InterfaceDef _) ->
-            let r = Regex(@"%%IFACE%%")
-            writer.WriteLine(r.Replace(PushTemplate, name))
-            writer.WriteLine(r.Replace(PopTemplate, name))
-        | _ ->
-            ()   ) // end iface push/pop iter
-
+    for name, _ in interfaces do
+        let r = Regex(@"%%IFACE%%")
+        writer.WriteLine(r.Replace(PushTemplate, name))
+        writer.WriteLine(r.Replace(PopTemplate, name))
     fprintfn writer ""
 
     // plain function wrappers
-    m.Defs
-    |> List.iter (function
-        | FunctionDef namedFunction ->
-            fprintfn writer "void %s__wrapper() {" namedFunction.Name
-            for argName, argType in namedFunction.Args do
+    for namedFunction in moduleMethods do
+        fprintfn writer "void %s__wrapper() {" namedFunction.Name
+        for argName, argType in namedFunction.Args do
+            popVariable writer 1 argName argType
+        let argsJoined =
+            [for name, _ in namedFunction.Args -> name]
+            |> String.concat ", "
+        let invocation =
+            sprintf "%s(%s)" namedFunction.Name argsJoined
+        match namedFunction.Throws with
+        | Some (ExceptionType exceptionName) ->
+            fprintfn writer "    try {"
+            pushValue writer 2 namedFunction.Returns invocation true
+            fprintfn writer "    }"
+            fprintfn writer "    catch (const %s& e) {" exceptionName
+            fprintfn writer "        ni_setException(%s);" (lowerFirst exceptionName)
+            fprintfn writer "        e.push();"
+            fprintfn writer "    }"
+        | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
+            pushValue writer 1 namedFunction.Returns invocation true
+        fprintfn writer "}"
+        fprintfn writer ""
+
+    // interface wrappers
+    for name, namedFunctions in interfaces do
+        namedFunctions
+        |> List.iter (fun nf ->
+            fprintfn writer "void %s_%s__wrapper(int serverID) {" name nf.Name
+            fprintfn writer "    auto inst = Server%s::getByID(serverID);" name
+            for argName, argType in nf.Args do
                 popVariable writer 1 argName argType
             let argsJoined =
-                [for name, _ in namedFunction.Args -> name]
+                [for name, _ in nf.Args -> name]
                 |> String.concat ", "
             let invocation =
-                sprintf "%s(%s)" namedFunction.Name argsJoined
-            match namedFunction.Throws with
+                sprintf "inst->%s(%s)" nf.Name argsJoined
+            match nf.Throws with
             | Some (ExceptionType exceptionName) ->
                 fprintfn writer "    try {"
-                pushValue writer 2 namedFunction.Returns invocation true
+                pushValue writer 2 nf.Returns invocation true
                 fprintfn writer "    }"
                 fprintfn writer "    catch (const %s& e) {" exceptionName
                 fprintfn writer "        ni_setException(%s);" (lowerFirst exceptionName)
                 fprintfn writer "        e.push();"
                 fprintfn writer "    }"
             | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
-                pushValue writer 1 namedFunction.Returns invocation true
+                pushValue writer 1 nf.Returns invocation true
             fprintfn writer "}"
-            fprintfn writer ""
-        | _ ->
-            ()  ) // end plain function wrappers
+            fprintfn writer "")
 
-    // interface wrappers
-    m.Defs
-    |> List.iter (function
-        | UserType (name, InterfaceDef namedFunctions) ->
-            namedFunctions
-            |> List.iter (fun nf ->
-                fprintfn writer "void %s_%s__wrapper(int serverID) {" name nf.Name
-                fprintfn writer "    auto inst = Server%s::getByID(serverID);" name
-                for argName, argType in nf.Args do
-                    popVariable writer 1 argName argType
-                let argsJoined =
-                    [for name, _ in nf.Args -> name]
-                    |> String.concat ", "
-                let invocation =
-                    sprintf "inst->%s(%s)" nf.Name argsJoined
-                match nf.Throws with
-                | Some (ExceptionType exceptionName) ->
-                    fprintfn writer "    try {"
-                    pushValue writer 2 nf.Returns invocation true
-                    fprintfn writer "    }"
-                    fprintfn writer "    catch (const %s& e) {" exceptionName
-                    fprintfn writer "        ni_setException(%s);" (lowerFirst exceptionName)
-                    fprintfn writer "        e.push();"
-                    fprintfn writer "    }"
-                | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
-                    pushValue writer 1 nf.Returns invocation true
-                fprintfn writer "}"
-                fprintfn writer "")
-        | _ ->
-            ()  ) // end interface wrappers
+    // globals/constants func
+    fprintfn writer "void __constantsFunc() {"
+    // push in reverse order
+    for globalName, globalType in globals |> List.rev do
+        pushValue writer 1 globalType globalName false // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
+    fprintfn writer "}"
+
+    // library entry point / registrations
+    fprintfn writer "extern \"C\" int nativeLibraryInit() {"
+    fprintfn writer "    auto m = ni_registerModule(\"%s\");" m.Name
+    fprintfn writer "    ni_registerModuleConstants(m, &__constantsFunc);"
+    // module methods
+    for namedFunction in moduleMethods do
+        fprintfn writer "    ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name
+    // interfaces + methods
+    for name, methods in interfaces do
+        let lowerName = lowerFirst name
+        fprintfn writer "    auto %s = ni_registerInterface(m, \"%s\");" lowerName name
+        for method in methods do
+            fprintfn writer "    %s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name lowerName method.Name
+    // exceptions
+    for name, _ in exceptions do
+        let lowerName = lowerFirst name
+        fprintfn writer "    %s = ni_registerException(m, \"%s\", &%s::buildAndThrow);" lowerName name name
+    // done
+    fprintfn writer "    return 0; // = OK"
+    fprintfn writer "}"
+    fprintfn writer ""
+    // shutdown
+    fprintfn writer "extern \"C\" void nativeLibraryShutdown() {"
+    // nothing for C++
+    fprintfn writer "}"

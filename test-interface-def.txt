@@ -15,23 +15,23 @@ module TestLibrary;
 
 // opaque typed ptrs to use as handles
 
-opaque MenuBar;
-opaque CGContext;
+// opaque MenuBar;
+// opaque CGContext;
 
-struct OtherStruct {
-  int cool;
-  string iknorite;
-}
+// struct OtherStruct {
+//   int cool;
+//   string iknorite;
+// }
 
-struct SomeStruct {
-  int field1;
-  int field2;
-  float whatever;
-  IThing01 hahaLater;
-  array[OtherStruct] subStruct; // hmm we need to prevent recursive struct definitions
-}
+// struct SomeStruct {
+//   int field1;
+//   int field2;
+//   float whatever;
+//   IThing01 hahaLater;
+//   array[OtherStruct] subStruct; // hmm we need to prevent recursive struct definitions
+// }
 
-SomeStruct structValue01;
+// SomeStruct structValue01;
 
 exception NegativeException {
   int value;
@@ -53,8 +53,8 @@ int global01;
 int anotherGlobal;
 int lastIntGlobal;
 
-array[int] intArray;
-map[string, int] stringToIntMap;
+// array[int] intArray;
+// map[string, int] stringToIntMap;
 
 int sum(int a, int b, int c);
 int execFunc01(@int->int func1);
@@ -67,9 +67,9 @@ void saveThing(IThing01 thing);
 IThing01 getSavedThing();
 void clientStashTest(IThing01 thing);
 void testNegative(int value) throws NegativeException;
-int testNegative2(int value) throws NegativeException;
+// int testNegative2(int value) throws NegativeException;
 void testClientThrow(IThing01 thing);
 void startTimer(IThing01 thing, int frequency);
 void stopTimer();
 
-void fakeShit(CGContext context);
+// void fakeShit(CGContext context);

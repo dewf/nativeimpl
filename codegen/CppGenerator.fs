@@ -36,6 +36,7 @@ let rec typeToString = function
     | Bool -> "bool"
     | Int32 -> "int"
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
+    | ExceptionType name -> name
     | AnonymousFunction (argTypes, returnType) ->
         let joinedTypes =
             [for t in argTypes -> typeToString t]
@@ -57,6 +58,20 @@ let joinedFunctionArgs (nf: NamedFunction) =
 let joinedFields (fields: NamedField list) =
     [for field in fields -> sprintf "%s %s" (typeToString field.Type_) field.Name]
     |> String.concat ", "
+
+let joinedAnonymousArgs (args: NIType list) =
+    [for i, argType in args |> List.indexed -> sprintf "%s _%d" (typeToString argType) i]
+    |> String.concat ", "
+
+let rec defaultValueForType = function
+    | UnitType -> failwith "defaultValueForType called on UnitType"
+    | Bool -> "false"
+    | Int32 -> "0"
+    | InterfaceType _ -> "null"
+    | AnonymousFunction (niTypes, niType) ->
+        sprintf "[](%s) { return %s; }" (joinedAnonymousArgs niTypes) (defaultValueForType niType)
+    | _ ->
+        "(defaultValueForType: not yet supported)"
 
 type PopValueContext =
     | Variable of name: string
@@ -95,20 +110,13 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             | Return -> "__ret"
         fprintfn writer "%sauto %s__id = ni_popClientFunc();" indent name
         fprintfn writer "%sauto %s__cf = std::shared_ptr<ClientFunc>(new ClientFunc(%s__id));" indent name name
-        let argList =
-            argTypes
-            |> List.mapi (fun i type_ ->
-                sprintf "%s _%d" (typeToString(type_)) i)
-            |> String.concat ", "
-        fprintfn writer "%sauto %s = [%s__cf](%s) {" indent name name argList
+        fprintfn writer "%sauto %s = [%s__cf](%s) {" indent name name (joinedAnonymousArgs argTypes)
         // push those inner params in reverse order
         argTypes
         |> List.rev
         |> List.iteri (fun i type_ -> pushValue writer (level + 1) type_ (sprintf "_%d" i) false)
         fprintfn writer "%s    %s__cf->remoteExec();" indent name
         popValue writer (level + 1) retType Return
-//        popVariable writer (level + 1) "__ret" retType
-        //fprintfn writer "%s    return __ret;" indent
         fprintfn writer "%s};" indent
     | _ ->
         fprintfn writer "%s(not yet implemented);" indent
@@ -334,7 +342,7 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
     // nothing for C++
     fprintfn writer "}"
 
-let generateImplementationHeader (m: Module) (writer: TextWriter) =
+let generateImplementationH (m: Module) (writer: TextWriter) =
     let interfaces =
         m.Defs
         |> List.choose (function
@@ -356,6 +364,7 @@ let generateImplementationHeader (m: Module) (writer: TextWriter) =
             | UserType(name, ExceptionDef fields) -> Some (name, fields)
             | _ -> None)
     // begin output: ===============================================
+    fprintfn writer "#include \"NativeImplServer.h\""
     fprintfn writer "#include <functional>"
     fprintfn writer "#include <memory>"
     fprintfn writer ""
@@ -391,7 +400,11 @@ let generateImplementationHeader (m: Module) (writer: TextWriter) =
         fprintfn writer "class %s {" name
         fprintfn writer "public:"
         for namedFunc in methods do
-            fprintfn writer "    virtual %s %s(%s) = 0;" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc)
+            let throwsComment =
+                match namedFunc.Throws with
+                | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
+                | None -> ""
+            fprintfn writer "    virtual %s %s(%s) = 0;%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc) throwsComment
         fprintfn writer "};"
         fprintfn writer ""
         // server wrapper
@@ -404,10 +417,51 @@ let generateImplementationHeader (m: Module) (writer: TextWriter) =
     printfn ""
     // function prototypes
     for namedFunc in moduleMethods do
-        fprintfn writer "%s %s(%s);" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc)
+        let throwsComment =
+            match namedFunc.Throws with
+            | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
+            | None -> ""
+        fprintfn writer "%s %s(%s);%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc) throwsComment
+
+let generateImplementationCpp (m: Module) (writer: TextWriter) =
+    let globals =
+        m.Defs
+        |> List.choose (function
+            | Global(name, niType) -> Some (name, niType)
+            | _ -> None)
+    let moduleMethods =
+        m.Defs
+        |> List.choose (function
+            | FunctionDef namedFunction -> Some namedFunction
+            | _ -> None)
+    // begin output: ===============================================
+    fprintfn writer "#include \"Implementation.h\""
+    fprintfn writer "#include <memory>"
+    fprintfn writer "#include <functional>"
+    fprintfn writer ""
+    // globals
+    for globalName, globalType in globals do
+        fprintfn writer "const %s %s = %s;" (typeToString globalType) globalName (defaultValueForType globalType)
+    fprintfn writer ""
+    // functions
+    for namedFunc in moduleMethods do
+        let throwsComment =
+            match namedFunc.Throws with
+            | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
+            | None -> ""
+        fprintfn writer "%s %s(%s) {%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc) throwsComment
+        if namedFunc.Returns <> UnitType then
+            fprintfn writer "    return %s;" (defaultValueForType namedFunc.Returns)
+        fprintfn writer "}"
+        fprintfn writer ""
 
 let generate (m: Module) =
     fprintfn stdout "======= Wrappers.cpp ============================="
     generateWrappersCpp m stdout
+    fprintfn stdout ""
     fprintfn stdout "======= Implementation.h ========================="
-    generateImplementationHeader m stdout
+    generateImplementationH m stdout
+    fprintfn stdout ""
+    fprintfn stdout "======= Implementation.cpp ======================="
+    generateImplementationCpp m stdout
+    fprintfn stdout ""

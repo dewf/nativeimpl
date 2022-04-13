@@ -1,5 +1,6 @@
 #pragma once
 
+#include "NativeImplServer.h" // for the exceptions
 #include <functional>
 #include <memory>
 

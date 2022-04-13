@@ -16,6 +16,4 @@ let module_ =
     |> resolveUserTypes
 
 //printfn "module: %A" module_
-
-//let file = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_output\wrappers.cpp")
 CppGenerator.generate module_

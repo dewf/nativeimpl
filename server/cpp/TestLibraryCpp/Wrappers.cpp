@@ -1,6 +1,6 @@
 #include "NativeImplServer.h"
 
-#include "Wrappers.h"
+#include "Implementation.h"
 
 ni_InterfaceMethodRef ithing_someMethod;
 ni_InterfaceMethodRef ithing_stashThing;
@@ -9,6 +9,40 @@ ni_InterfaceMethodRef ithing_testThrow;
 ni_InterfaceMethodRef ithing_onTimerTick;
 ni_ExceptionRef negativeException;
 ni_ExceptionRef interfaceMethodException;
+
+// fwd decls for client wrapper
+void IThing01__push(std::shared_ptr<IThing01> thing, bool isReturn);
+std::shared_ptr<IThing01> IThing01__pop();
+
+class ClientThing01 : public ClientObject, public IThing01 {
+public:
+    ClientThing01(int id) : ClientObject(id) {}
+    int someMethod(int x) override {
+        ni_pushInt(x);
+        invokeMethod(ithing_someMethod); // invoke remote, woot
+        return ni_popInt();
+    }
+    void stashThing(std::shared_ptr<IThing01> subThing) override {
+        IThing01__push(subThing, false);
+        invokeMethod(ithing_stashThing);
+    }
+    std::shared_ptr<IThing01> getStashedThing() override {
+        printf("C++ ClientThing01::getStashedthing()\n");
+        invokeMethod(ithing_getStashedThing);
+        auto ret = IThing01__pop();
+        printf("== C++ before clearClientSafetyArea ====\n");
+        ni_clearClientSafetyArea(); // it can do whatever with those now
+        printf("== C++ after clearClientSafetyArea ====\n");
+        return ret;
+    }
+    void testThrow(bool doThrow) override {
+        ni_pushBool(doThrow);
+        invokeMethodWithExceptions(ithing_testThrow);
+    }
+    void onTimerTick() override {
+        invokeMethod(ithing_onTimerTick);
+    }
+};
 
 std::shared_ptr<IThing01> IThing01__pop()
 {
@@ -22,7 +56,7 @@ std::shared_ptr<IThing01> IThing01__pop()
     }
 }
 
-inline void IThing01__push(std::shared_ptr<IThing01> thing, bool isReturn) {
+void IThing01__push(std::shared_ptr<IThing01> thing, bool isReturn) {
     // we know this to be a pushable because you shouldn't be creating anything but ServerIThing01's (perhaps rename/alias to BaseIThing01?)
     auto pushable = std::dynamic_pointer_cast<Pushable>(thing);
     pushable->push(pushable, isReturn);

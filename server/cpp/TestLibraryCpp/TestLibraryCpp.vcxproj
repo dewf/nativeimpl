@@ -146,7 +146,6 @@
     <ClInclude Include="CoreStuff.h" />
     <ClInclude Include="Implementation.h" />
     <ClInclude Include="NativeImplServer.h" />
-    <ClInclude Include="Wrappers.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="NativeImplServer.cpp" />

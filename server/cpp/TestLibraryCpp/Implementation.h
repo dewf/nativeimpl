@@ -12,6 +12,41 @@ public:
     virtual void onTimerTick() = 0;
 };
 
+class NegativeException {
+public:
+    int value;
+    NegativeException(int value) : value(value) {}
+    void push() const {
+        ni_pushInt(value);
+    }
+    static void buildAndThrow() {
+        throw NegativeException(ni_popInt());
+    }
+};
+
+class InterfaceMethodException {
+public:
+    int value;
+    InterfaceMethodException(int value) : value(value) {}
+    void push() const {
+        ni_pushInt(value);
+    }
+    static void buildAndThrow() {
+        throw InterfaceMethodException(ni_popInt());
+    }
+};
+
+class ServerThing01 : public IThing01, public ServerObject {
+public:
+    virtual ~ServerThing01() {
+        //printf("ServerThing01 dtor\n");
+    }
+    static std::shared_ptr<ServerThing01> getByID(int id) {
+        auto obj = ServerObject::getByID(id);
+        return std::static_pointer_cast<ServerThing01>(obj);
+    }
+};
+
 extern const int global01;
 extern const int anotherGlobal;
 extern const int lastIntGlobal;

@@ -6,8 +6,7 @@ open System.IO
 open System.Text.RegularExpressions
 open AbstractSyntaxTree
 
-let PopTemplate = "
-std::shared_ptr<%%IFACE%%> %%IFACE%%__pop()
+let PopTemplate = "std::shared_ptr<%%IFACE%%> %%IFACE%%__pop()
 {
     bool isClientID;
     auto id = ni_popInstance(&isClientID);
@@ -18,8 +17,7 @@ std::shared_ptr<%%IFACE%%> %%IFACE%%__pop()
         return Server%%IFACE%%::getByID(id);
     }
 }"
-let PushTemplate = "
-inline void %%IFACE%%__push(std::shared_ptr<%%IFACE%%> inst, bool isReturn) {
+let PushTemplate = "inline void %%IFACE%%__push(std::shared_ptr<%%IFACE%%> inst, bool isReturn) {
     auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
     pushable->push(pushable, isReturn);
 }"
@@ -28,7 +26,8 @@ let typeToString = function
     | UnitType -> "void"
     | Bool -> "bool"
     | Int32 -> "int"
-    | _ -> "(not done yet)"
+    | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
+    | _ -> "(typeToString: not done yet)"
 
 let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: NIType list) (ret: NIType) =
     let indent = String.replicate level "    "
@@ -37,16 +36,41 @@ let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: 
         |> String.concat ", "
     fprintfn writer "%stypedef %s %s(%s);" indent (typeToString ret) name argsJoined
 
-let rec popVariable (writer: TextWriter) (level: int) (name: string) (type_: NIType) =
+type PopValueContext =
+    | Variable of name: string
+    | Return
+
+let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
     let indent = String.replicate level "    "
     match type_ with
+    | UnitType ->
+        match context with
+        | Return -> ()  // empty!
+        | Variable _ ->
+            failwithf "tried to pop a Unit value into a variable, why?"
     | Bool ->
-        fprintfn writer "%sbool %s = ni_popBool();" indent name
+        match context with
+        | Variable name ->
+            fprintfn writer "%sauto %s = ni_popBool();" indent name
+        | Return ->
+            fprintfn writer "%sreturn ni_popBool();" indent
     | Int32 ->
-        fprintfn writer "%sint %s = ni_popInt();" indent name
+        match context with
+        | Variable name ->
+            fprintfn writer "%sauto %s = ni_popInt();" indent name
+        | Return ->
+            fprintfn writer "%sreturn ni_popInt();" indent
     | InterfaceType ifaceName ->
-        fprintfn writer "%s%s %s = %s__pop();" indent ifaceName name ifaceName
+        match context with
+        | Variable name ->
+            fprintfn writer "%sauto %s = %s__pop();" indent name ifaceName
+        | Return ->
+            fprintfn writer "%sreturn %s__pop();" indent ifaceName
     | AnonymousFunction (argTypes, retType) ->
+        let name =
+            match context with
+            | Variable name -> name
+            | Return -> "__ret"
         fprintfn writer "%sauto %s__id = ni_popClientFunc();" indent name
         fprintfn writer "%sauto %s__cf = std::shared_ptr<ClientFunc>(new ClientFunc(%s__id));" indent name name
         let argList =
@@ -60,8 +84,9 @@ let rec popVariable (writer: TextWriter) (level: int) (name: string) (type_: NIT
         |> List.rev
         |> List.iteri (fun i type_ -> pushValue writer (level + 1) type_ (sprintf "_%d" i) false)
         fprintfn writer "%s    %s__cf->remoteExec();" indent name
-        popVariable writer (level + 1) "__ret" retType
-        fprintfn writer "%s    return __ret;" indent
+        popValue writer (level + 1) retType Return
+//        popVariable writer (level + 1) "__ret" retType
+        //fprintfn writer "%s    return __ret;" indent
         fprintfn writer "%s};" indent
     | _ ->
         fprintfn writer "%s(not yet implemented);" indent
@@ -92,7 +117,7 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         fprintfn writer "%sauto __wrapper = [__f]() {" indent
         argTypes
         |> List.iteri (fun i argType ->
-            popVariable writer (level + 1) (sprintf "_%d" i) argType)
+            popValue writer (level + 1) argType (Variable (sprintf "_%d" i) ))
         let argList =
             argTypes
             |> List.mapi (fun i _ -> sprintf "_%d" i)
@@ -107,7 +132,10 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
 let lowerFirst (text: string) =
     Char.ToLower(text[0]).ToString() + text.Substring(1)
 
-let generateWrappers (m: Module) (writer: TextWriter) =
+let generateWrappersCpp (m: Module) (writer: TextWriter) =
+    fprintfn writer "#include \"NativeImplServer.h\""
+    fprintfn writer "#include \"Implementation.h\""
+    fprintfn writer ""
     // things we'll need to use a few times:
     let globals =
         m.Defs
@@ -151,18 +179,58 @@ let generateWrappers (m: Module) (writer: TextWriter) =
         | _ ->
             ()
 
-    // interface push/pops
-    for name, _ in interfaces do
-        let r = Regex(@"%%IFACE%%")
-        writer.WriteLine(r.Replace(PushTemplate, name))
-        writer.WriteLine(r.Replace(PopTemplate, name))
+    fprintfn writer ""
+
+    // interfaces: fwd decls, client wrapper, push/pop
+    for name, methods in interfaces do
+        // fwd decls used in client wrapper
+        fprintfn writer "void %s__push(std::shared_ptr<%s> thing, bool isReturn);" name name
+        fprintfn writer "std::shared_ptr<%s> %s__pop();" name name
+        fprintfn writer ""
+        // client wrapper
+        fprintfn writer "class Client%s : public ClientObject, public %s {" name name
+        fprintfn writer "public:"
+        fprintfn writer "    Client%s(int id) : ClientObject(id) {}" name
+        // methods
+        for namedFunc in methods do
+            let argList =
+                [for argName, argType in namedFunc.Args -> sprintf "%s %s" (typeToString argType) argName]
+                |> String.concat ", "
+            fprintfn writer "    %s %s(%s) override {" (typeToString namedFunc.Returns) namedFunc.Name argList
+            // push args (reverse order)
+            for argName, argType in namedFunc.Args |> List.rev do
+                pushValue writer 2 argType argName false
+            // invoke
+            match namedFunc.Throws with
+            | Some _ ->
+                fprintfn writer "        invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
+            | None ->
+                fprintfn writer "        invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
+            // pop result
+            match namedFunc.Returns with
+            | InterfaceType _ | AnonymousFunction _ ->
+                // any sort of reference that might get freed if it was only a return value from the other side (stored nowhere else, so protected by the safety area)
+                popValue writer 2 namedFunc.Returns (Variable "__ret")
+                fprintfn writer "        ni_clearClientSafetyArea();"
+                fprintfn writer "        return __ret;"
+            | _ ->
+                popValue writer 2 namedFunc.Returns Return
+            fprintfn writer "    }"
+        // end
+        fprintfn writer "};"
+        fprintfn writer ""
+        // push/pop
+        let nameRegex = Regex(@"%%IFACE%%")
+        writer.WriteLine(nameRegex.Replace(PushTemplate, name))
+        writer.WriteLine()
+        writer.WriteLine(nameRegex.Replace(PopTemplate, name))
     fprintfn writer ""
 
     // plain function wrappers
     for namedFunction in moduleMethods do
         fprintfn writer "void %s__wrapper() {" namedFunction.Name
         for argName, argType in namedFunction.Args do
-            popVariable writer 1 argName argType
+            popValue writer 1 argType (Variable argName)
         let argsJoined =
             [for name, _ in namedFunction.Args -> name]
             |> String.concat ", "
@@ -189,7 +257,7 @@ let generateWrappers (m: Module) (writer: TextWriter) =
             fprintfn writer "void %s_%s__wrapper(int serverID) {" name nf.Name
             fprintfn writer "    auto inst = Server%s::getByID(serverID);" name
             for argName, argType in nf.Args do
-                popVariable writer 1 argName argType
+                popValue writer 1 argType (Variable argName)
             let argsJoined =
                 [for name, _ in nf.Args -> name]
                 |> String.concat ", "
@@ -216,6 +284,8 @@ let generateWrappers (m: Module) (writer: TextWriter) =
         pushValue writer 1 globalType globalName false // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
     fprintfn writer "}"
 
+    fprintfn writer ""
+
     // library entry point / registrations
     fprintfn writer "extern \"C\" int nativeLibraryInit() {"
     fprintfn writer "    auto m = ni_registerModule(\"%s\");" m.Name
@@ -241,3 +311,7 @@ let generateWrappers (m: Module) (writer: TextWriter) =
     fprintfn writer "extern \"C\" void nativeLibraryShutdown() {"
     // nothing for C++
     fprintfn writer "}"
+
+let generate (m: Module) =
+    fprintfn stdout "======= Wrappers.cpp ============================="
+    generateWrappersCpp m stdout

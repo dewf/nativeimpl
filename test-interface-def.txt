@@ -43,7 +43,7 @@ exception InterfaceMethodException {
 
 interface IThing01 {
   int someMethod(int x);
-  void stashThing(IThing01 thing);
+  void stashThing(IThing01 subThing);
   IThing01 getStashedThing();
   void testThrow(bool doThrow) throws InterfaceMethodException;
   void onTimerTick();

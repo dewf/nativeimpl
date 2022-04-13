@@ -106,15 +106,15 @@ type NamedFunction = {
     Throws: NIType option // only Exceptions are allowed ...
 }
 
-type FieldType = {
+type NamedField = {
     Name: string
     Type_: NIType
 }
 
 type UserType =
     | OpaqueHandleDef
-    | StructDef of fields: FieldType list
-    | ExceptionDef of fields: FieldType list
+    | StructDef of fields: NamedField list
+    | ExceptionDef of fields: NamedField list
     | InterfaceDef of methods: NamedFunction list
 
 type ModuleDefinition =
@@ -292,7 +292,7 @@ let rec resolveType (symbols: Map<string, UserType>) (type_: NIType) =
     | _ ->
         type_
 
-let resolveFieldType (symbols: Map<string, UserType>) (ft: FieldType) =
+let resolveFieldType (symbols: Map<string, UserType>) (ft: NamedField) =
     let nextType =
         resolveType symbols ft.Type_
     { ft with Type_ = nextType }

@@ -1,6 +1,6 @@
 open System.IO
 open Tokenizer
-open AbstractSyntaxTree
+open Parser
 
 let lines =
     File.ReadAllLines @"F:\Workbench\nativeimpl\test-interface-def.txt"
@@ -16,4 +16,5 @@ let module_ =
     |> resolveUserTypes
 
 //printfn "module: %A" module_
-CppGenerator.generate module_
+//CppGenerator.generate module_
+CsharpGenerator.generate module_

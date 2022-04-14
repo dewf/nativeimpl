@@ -1,4 +1,4 @@
-﻿module AbstractSyntaxTree
+﻿module Parser
 open Tokenizer
 
 module List =

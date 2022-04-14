@@ -4,7 +4,9 @@ module CppGenerator
 open System
 open System.IO
 open System.Text.RegularExpressions
-open AbstractSyntaxTree
+open Parser
+
+open Util
 
 let PopTemplate = "std::shared_ptr<%%IFACE%%> %%IFACE%%__pop()
 {
@@ -158,9 +160,6 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         fprintfn writer "%spushServerFuncVal(__wrapper, __uniqueKey);" indent
     | _ ->
         fprintfn writer "%s(pushValue not supported yet)" indent
-
-let lowerFirst (text: string) =
-    Char.ToLower(text[0]).ToString() + text.Substring(1)
 
 let generateWrappersCpp (m: Module) (writer: TextWriter) =
     fprintfn writer "#include \"NativeImplServer.h\""

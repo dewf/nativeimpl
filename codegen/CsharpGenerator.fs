@@ -2,12 +2,27 @@
 module CsharpGenerator
 
 open System.IO
+open System.Text.RegularExpressions
 open Parser
 
 open Util
 
+let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
+        {
+            NativeImplClient.PopInstanceId(out var id, out var isClientId);
+            if (!isClientId)
+            {
+                return new Server_%%IFACE%%(id);
+            }
+            else
+            {
+                return (%%IFACE%%) NativeImplClient.ClientObject.GetById(id);
+            }
+        }"
+
 let rec typeToString = function
     | UnitType -> "void"
+    | Bool -> "bool"
     | Int32 -> "int"
     | InterfaceType name -> name
     | ExceptionType name -> name
@@ -250,6 +265,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     write 2 "{"
     write 3 "NativeImplClient.Shutdown();"
     write 2 "}"
+
     // top-level module method wrappers
     for namedFunc in moduleMethods do
         blank()
@@ -267,7 +283,40 @@ let writeLibrary (m: Module) (writer: TextWriter) =
         // return pop
         popValue writer 3 namedFunc.Returns Return
         write 2 "}"
-    //
+
+    // interface stuff
+    for ifaceName, methods in interfaces do
+        blank()
+        // raw interface itself
+        write 2 "public interface %s : IDisposable" ifaceName
+        write 2 "{"
+        for method in methods do
+            let throwsComment =
+                match method.Throws with
+                | Some eType -> sprintf " // throws %s" (typeToString eType)
+                | None -> ""
+            write 3 "%s %s(%s);%s" (typeToString method.Returns) (upperFirst method.Name) (argsJoined method.Args) throwsComment
+        write 2 "}"
+        // pop template
+        blank()
+        writer.WriteLine(Regex(@"%%IFACE%%").Replace(interfacePopTemplate, ifaceName))
+        // client base class
+        blank()
+        write 2 "public abstract class Client_%s : NativeImplClient.ClientObject, %s" ifaceName ifaceName
+        write 2 "{"
+        write 3 "public virtual void Dispose()"
+        write 3 "{"
+        write 4 "// override if necessary"
+        write 3 "}"
+        // abstract methods
+        for method in methods do
+            let throwsComment =
+                match method.Throws with
+                | Some eType -> sprintf " // throws %s" (typeToString eType)
+                | None -> ""
+            write 3 "public abstract %s %s(%s);%s" (typeToString method.Returns) (upperFirst method.Name) (argsJoined method.Args) throwsComment
+        write 2 "}"
+
     write 1 "}" // end of static class <module name>
     //
     write 0 "}" // end of namespace

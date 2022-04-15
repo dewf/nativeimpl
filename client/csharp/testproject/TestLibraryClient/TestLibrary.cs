@@ -7,6 +7,8 @@ namespace TestLibraryClient
     public static class TestLibrary
     {
         private static ModuleHandle _module;
+        private static ModuleMethodHandle _stringTest;
+        private static ModuleMethodHandle _returnString;
         private static ModuleMethodHandle _sumFunc;
         private static ModuleMethodHandle _execFunc01;
         private static ModuleMethodHandle _stashFunc;
@@ -53,7 +55,9 @@ namespace TestLibraryClient
             AnotherGlobal = NativeImplClient.PopInt();
             LastIntGlobal = NativeImplClient.PopInt();
             // end constants
-            
+
+            _stringTest = NativeImplClient.GetModuleMethod(_module, "stringTest");
+            _returnString = NativeImplClient.GetModuleMethod(_module, "returnString");
             _sumFunc = NativeImplClient.GetModuleMethod(_module, "sum");
             _execFunc01 = NativeImplClient.GetModuleMethod(_module, "execFunc01");
             _stashFunc = NativeImplClient.GetModuleMethod(_module, "stashFunc");
@@ -139,6 +143,16 @@ namespace TestLibraryClient
         public static void Shutdown()
         {
             NativeImplClient.Shutdown();
+        }
+        public static void StringTest(string str)
+        {
+            NativeImplClient.PushString(str);
+            NativeImplClient.InvokeModuleMethod(_stringTest);
+        }
+        public static string ReturnString()
+        {
+            NativeImplClient.InvokeModuleMethod(_returnString);
+            return NativeImplClient.PopString();
         }
         public static int Sum(int a, int b, int c)
         {

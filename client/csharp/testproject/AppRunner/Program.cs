@@ -61,6 +61,8 @@ namespace AppRunner
 
             // begin nested scope
             {
+                TestLibrary.StringTest("wahooooo string test!!!!@@");
+                Console.WriteLine("Returned string is: [{0}]", TestLibrary.ReturnString());
                 Console.WriteLine("Sum is: {0}", TestLibrary.Sum(1, 2, 3));
                 Console.WriteLine("ExecFunc01: {0}", TestLibrary.ExecFunc01(i => i * 3));
                 

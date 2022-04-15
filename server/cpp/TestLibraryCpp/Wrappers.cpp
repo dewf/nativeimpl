@@ -65,6 +65,15 @@ void IThing01__push(std::shared_ptr<IThing01> thing, bool isReturn) {
 // ==============================================================
 // library wrapper stuff
 
+void stringTestWrapper() {
+    auto str = popStringInternal();
+    stringTest(str);
+}
+
+void returnStringWrapper() {
+    pushStringInternal(returnString());
+}
+
 void sumWrapper() {
     int a = ni_popInt();
     int b = ni_popInt();
@@ -241,29 +250,31 @@ extern "C" int nativeLibraryInit() {
     ni_registerModuleConstants(m, &constantsFunc);
 
     // module methods
-    ni_registerModuleMethod(m, "sum|iii", &sumWrapper);
-    ni_registerModuleMethod(m, "execFunc01|(i->i)", &execFunc01Wrapper);
-    ni_registerModuleMethod(m, "stashFunc|(i->i)", &stashFuncWrapper);
-    ni_registerModuleMethod(m, "releaseFunc|", &releaseFuncWrapper);
-    ni_registerModuleMethod(m, "returnStashedFunc|", &returnStashedFuncWrapper);
-    ni_registerModuleMethod(m, "makeThing|", &makeThingWrapper);
-    ni_registerModuleMethod(m, "operateOnThing|(IThing01)i", &operateOnThingWrapper);
-    ni_registerModuleMethod(m, "saveThing|(IThing01)", &saveThingWrapper);
-    ni_registerModuleMethod(m, "getSavedThing|", &getSavedThingWrapper);
-    ni_registerModuleMethod(m, "clientStashTest|(IThing01)", &clientStashTestWrapper);
-    ni_registerModuleMethod(m, "testNegative|i", &testNegativeWrapper);
-    ni_registerModuleMethod(m, "testClientThrow|(IThing01)", &testClientThrowWrapper);
-    ni_registerModuleMethod(m, "startTimer|(IThing01)i", &startTimerWrapper);
-    ni_registerModuleMethod(m, "stopTimer|", &stopTimerWrapper);
+    ni_registerModuleMethod(m, "stringTest", &stringTestWrapper);
+    ni_registerModuleMethod(m, "returnString", &returnStringWrapper);
+    ni_registerModuleMethod(m, "sum", &sumWrapper);
+    ni_registerModuleMethod(m, "execFunc01", &execFunc01Wrapper);
+    ni_registerModuleMethod(m, "stashFunc", &stashFuncWrapper);
+    ni_registerModuleMethod(m, "releaseFunc", &releaseFuncWrapper);
+    ni_registerModuleMethod(m, "returnStashedFunc", &returnStashedFuncWrapper);
+    ni_registerModuleMethod(m, "makeThing", &makeThingWrapper);
+    ni_registerModuleMethod(m, "operateOnThing", &operateOnThingWrapper);
+    ni_registerModuleMethod(m, "saveThing", &saveThingWrapper);
+    ni_registerModuleMethod(m, "getSavedThing", &getSavedThingWrapper);
+    ni_registerModuleMethod(m, "clientStashTest", &clientStashTestWrapper);
+    ni_registerModuleMethod(m, "testNegative", &testNegativeWrapper);
+    ni_registerModuleMethod(m, "testClientThrow", &testClientThrowWrapper);
+    ni_registerModuleMethod(m, "startTimer", &startTimerWrapper);
+    ni_registerModuleMethod(m, "stopTimer", &stopTimerWrapper);
 
     // IThing01 stuff
     auto ithing = ni_registerInterface(m, "IThing01");
     // note the following is stored globally:
-    ithing_someMethod = ni_registerInterfaceMethod(ithing, "someMethod|i", &ithing_someMethodWrapper);
-    ithing_stashThing = ni_registerInterfaceMethod(ithing, "stashThing|(IThing01)", &ithing_stashThingWrapper);
-    ithing_getStashedThing = ni_registerInterfaceMethod(ithing, "getStashedThing|", &ithing_getStashedThingWrapper);
-    ithing_testThrow = ni_registerInterfaceMethod(ithing, "testThrow|b", &ithing_testThrowWrapper);
-    ithing_onTimerTick = ni_registerInterfaceMethod(ithing, "onTimerTick|", &ithing_onTimerTickWrapper);
+    ithing_someMethod = ni_registerInterfaceMethod(ithing, "someMethod", &ithing_someMethodWrapper);
+    ithing_stashThing = ni_registerInterfaceMethod(ithing, "stashThing", &ithing_stashThingWrapper);
+    ithing_getStashedThing = ni_registerInterfaceMethod(ithing, "getStashedThing", &ithing_getStashedThingWrapper);
+    ithing_testThrow = ni_registerInterfaceMethod(ithing, "testThrow", &ithing_testThrowWrapper);
+    ithing_onTimerTick = ni_registerInterfaceMethod(ithing, "onTimerTick", &ithing_onTimerTickWrapper);
 
     // exceptions
     negativeException = ni_registerException(m, "NegativeException", &NegativeException::buildAndThrow);

@@ -55,6 +55,7 @@ class StackItem {
 public:
 	virtual bool boolValue() { throw WrongTypeException(); }
 	virtual int intValue() { throw WrongTypeException(); }
+	virtual std::string stringValue() { throw WrongTypeException(); }
 	virtual int clientFuncId() { throw WrongTypeException(); }
 	virtual int serverFuncId() { throw WrongTypeException(); }
 	virtual int instanceId(bool* isClientId) { throw WrongTypeException(); }
@@ -75,6 +76,22 @@ public:
 	IntItem(int x) : x(x) {}
 	int intValue() override {
 		return x;
+	}
+};
+
+class StringItem : public StackItem {
+public:
+	std::string str;
+	StringItem(const char* raw, size_t length) {
+		if (length > 0) {
+			str.assign(raw, length);
+		}
+		else {
+			str = raw;
+		}
+	}
+	std::string stringValue() override {
+		return str;
 	}
 };
 
@@ -326,6 +343,21 @@ int ni_popInt() {
 	vstack.pop();
 	delete item;
 	return x;
+}
+
+void ni_pushString(const char* str, size_t length) {
+	vstack.push(new StringItem(str, length));
+}
+
+static std::string lastPoppedString; // pointers gotta point to something ...
+
+void ni_popString(const char** strPtr, size_t* length) {
+	auto item = vstack.top();
+	lastPoppedString = item->stringValue();
+	vstack.pop();
+	delete item;
+	*strPtr = lastPoppedString.c_str();
+	*length = lastPoppedString.size();
 }
 
 // visible to client ===========================================

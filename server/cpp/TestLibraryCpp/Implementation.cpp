@@ -13,6 +13,16 @@ const int global01 = 101;
 const int anotherGlobal = 202;
 const int lastIntGlobal = 3003;
 
+void stringTest(std::string str)
+{
+    printf("C++ stringTest: got [%s]\n", str.c_str());
+}
+
+std::string returnString()
+{
+    return "here's a string from C++!";
+}
+
 int sum(int a, int b, int c) {
     return a + b + c;
 }

@@ -52,6 +52,8 @@ extern const int global01;
 extern const int anotherGlobal;
 extern const int lastIntGlobal;
 
+void stringTest(std::string str);
+std::string returnString();
 int sum(int a, int b, int c);
 int execFunc01(std::function<int(int)> singleIntFunc);
 int defaultStashedFunc(int x);

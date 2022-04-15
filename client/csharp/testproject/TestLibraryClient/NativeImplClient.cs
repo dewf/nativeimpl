@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace TestLibraryClient
 {
@@ -115,6 +116,12 @@ namespace TestLibraryClient
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int popInt();
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushString(IntPtr str, IntPtr length); // size_t length
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popString(out IntPtr strPtr, out IntPtr length); // size_t* length
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushClientFunc(int id);
@@ -313,6 +320,26 @@ namespace TestLibraryClient
         public static int PopInt()
         {
             return NativeMethods.popInt();
+        }
+
+        private static IntPtr _pushStringBuffer = Marshal.AllocHGlobal(1024 * 1024);
+        private static int _pushStringBufferLength = 1024 * 1024;
+        public static void PushString(string str)
+        {
+            var bytes = Encoding.UTF8.GetBytes(str);
+            if (bytes.Length > _pushStringBufferLength)
+            {
+                _pushStringBuffer = Marshal.ReAllocHGlobal(_pushStringBuffer, (IntPtr)bytes.Length);
+                _pushStringBufferLength = bytes.Length;
+            }
+            Marshal.Copy(bytes, 0, _pushStringBuffer, bytes.Length);
+            NativeMethods.pushString(_pushStringBuffer, (IntPtr)bytes.Length); // not null terminated, since the other side doesn't require that
+        }
+
+        public static string PopString()
+        {
+            NativeMethods.popString(out var ptr, out var length);
+            return Marshal.PtrToStringUTF8(ptr, (int)length);
         }
         
         public static void PushClientFuncVal(FuncValWrapper del, IntPtr key)

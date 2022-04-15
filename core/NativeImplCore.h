@@ -72,10 +72,10 @@ extern "C" {
 
 	void ni_pushBool(bool value);
 	bool ni_popBool();
-
 	void ni_pushInt(int x);
 	int ni_popInt();
-
+	void ni_pushString(const char* str, size_t length);     // length is optional
+	void ni_popString(const char** strPtr, size_t* length); // result guaranteed until the next popString
 	void ni_pushClientFunc(int id);
 	void ni_pushServerFunc(int id);
 	int ni_popClientFunc();

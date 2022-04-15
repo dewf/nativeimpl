@@ -72,6 +72,14 @@ int popInt()
     return ni_popInt();
 }
 
+void pushString(const char* str, size_t length) {
+    ni_pushString(str, length);
+}
+
+void popString(const char** strPtr, size_t* length) {
+    ni_popString(strPtr, length);
+}
+
 void pushClientFunc(int id)
 {
     ni_pushClientFunc(id);

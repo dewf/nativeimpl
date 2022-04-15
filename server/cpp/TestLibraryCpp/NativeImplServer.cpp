@@ -74,7 +74,22 @@ int addFuncVal(std::function<void()> wrapper, size_t key)
 void pushServerFuncVal(std::function<void()> wrapper, size_t key) {
 	auto id = addFuncVal(wrapper, key);
 	ni_pushServerFunc(id);
-};
+}
+
+void pushStringInternal(std::string str)
+{
+	ni_pushString(str.c_str(), str.size());
+}
+
+std::string popStringInternal()
+{
+	const char* ptr;
+	size_t length;
+	ni_popString(&ptr, &length);
+	std::string ret;
+	ret.assign(ptr, length);
+	return ret;
+}
 
 void ServerObject::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	// isReturn not used for server stuff, that's just to help out with the safe area / protecting client objects

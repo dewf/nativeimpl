@@ -49,6 +49,10 @@ let argsJoined (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToString type_) name]
     |> String.concat ", "
 
+let fieldsJoined (fields: NamedField list) =
+    [for f in fields -> sprintf "%s %s" (typeToString f.Type_) f.Name]
+    |> String.concat ", "
+
 let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
@@ -120,6 +124,8 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     match type_ with
     | UnitType ->
         write level "%s;" content // content directly (method invocation etc)
+    | Bool ->
+        write level "NativeImplClient.PushBool(%s);" content
     | Int32 ->
         write level "NativeImplClient.PushInt(%s);" content
     | InterfaceType _ ->
@@ -308,7 +314,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
         write 3 "{"
         write 4 "// override if necessary"
         write 3 "}"
-        // abstract methods
+        // abstract methods for client base class
         for method in methods do
             let throwsComment =
                 match method.Throws with
@@ -316,11 +322,69 @@ let writeLibrary (m: Module) (writer: TextWriter) =
                 | None -> ""
             write 3 "public abstract %s %s(%s);%s" (typeToString method.Returns) (upperFirst method.Name) (argsJoined method.Args) throwsComment
         write 2 "}"
+        // server wrapper
+        blank()
+        write 2 "private class Server_%s : NativeImplClient.ServerObject, %s" ifaceName ifaceName
+        write 2 "{"
+        write 3 "public Server_%s(int id) : base(id)" ifaceName
+        write 3 "{"
+        write 3 "}"
+        // server wrapper methods
+        for method in methods do
+            blank()
+            write 3 "public %s %s(%s)" (typeToString method.Returns) (upperFirst method.Name) (argsJoined method.Args)
+            write 3 "{"
+            // push args
+            for argName, argType in method.Args do
+                pushValue writer 4 argType argName false
+            // invoke remote
+            match method.Throws with
+            | Some _ ->
+                write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" ifaceName method.Name
+            | None ->
+                write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" ifaceName method.Name
+            // return
+            popValue writer 4 method.Returns Return
+            write 3 "}"
+        blank()
+        write 3 "public void Dispose()"
+        write 3 "{"
+        write 4 "ServerDispose();"
+        write 3 "}"
+        write 2 "}"
+
+    // exception bodies
+    for name, fields in exceptions do
+        blank()
+        write 2 "public class %s : Exception" name
+        write 2 "{"
+        for f in fields do
+            write 3 "public readonly %s %s;" (typeToString f.Type_) (upperFirst f.Name)
+        write 3 "public %s(%s) : base(\"%s\")" name (fieldsJoined fields) name
+        write 3 "{"
+        for f in fields do
+            write 4 "%s = %s;" (upperFirst f.Name) f.Name
+        write 3 "}"
+        write 3 "public void Push()"
+        write 3 "{"
+        for f in fields |> List.rev do
+            pushValue writer 4 f.Type_ (upperFirst f.Name) false // isReturn = false since we're still holding a reference to whatever it is (not a return value from a function)
+        write 3 "}"
+        write 3 "public static %s Pop()" name
+        write 3 "{"
+        for f in fields do
+            popValue writer 4 f.Type_ (NewVariable f.Name)
+        let namesJoined =
+            [for f in fields -> f.Name] |> String.concat ", "
+        write 4 "return new %s(%s);" name namesJoined
+        write 3 "}"
+        write 2 "}"
 
     write 1 "}" // end of static class <module name>
     //
     write 0 "}" // end of namespace
 
 let generate (m: Module) =
-    printfn "===== TestLibrary.cs =============="
-    writeLibrary m stdout
+    printfn "C# writing TestLibrary.cs"
+    use testLibraryCs = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\testproject\TestLibraryClient_generated\TestLibrary.cs")
+    writeLibrary m testLibraryCs

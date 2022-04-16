@@ -322,18 +322,20 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
             write 0 "}")
 
     // globals/constants func
-    blank()
-    write 0 "void __constantsFunc() {"
-    // push in reverse order
-    for globalName, globalType in globals |> List.rev do
-        pushValue writer 1 globalType globalName false // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
-    write 0 "}"
+    if globals.Length > 0 then
+        blank()
+        write 0 "void __constantsFunc() {"
+        // push in reverse order
+        for globalName, globalType in globals |> List.rev do
+            pushValue writer 1 globalType globalName false // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
+        write 0 "}"
 
     // library entry point / registrations
     blank()
     write 0 "extern \"C\" int nativeLibraryInit() {"
     write 1 "auto m = ni_registerModule(\"%s\");" m.Name
-    write 1 "ni_registerModuleConstants(m, &__constantsFunc);"
+    if globals.Length > 0 then
+        write 1 "ni_registerModuleConstants(m, &__constantsFunc);"
     // module methods
     for namedFunction in moduleMethods do
         write 1 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name
@@ -424,6 +426,7 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
         write 2 "throw %s(%s);" exName joinedVars
         write 1 "}"
         write 0 "};"
+
     // raw interfaces + server wrappers
     for name, methods in interfaces do
         blank()
@@ -440,10 +443,13 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
         // server wrapper
         let nameRegex = Regex(@"%%IFACE%%")
         writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
+
     // global externs
-    blank()
-    for globalName, globalType in globals do
-        write 0 "extern const %s %s;" (typeToString globalType) globalName
+    if globals.Length > 0 then
+        blank()
+        for globalName, globalType in globals do
+            write 0 "extern const %s %s;" (typeToString globalType) globalName
+
     // function prototypes
     blank()
     for namedFunc in moduleMethods do
@@ -473,9 +479,10 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
     write 0 "#include <memory>"
     write 0 "#include <functional>"
     // globals
-    blank()
-    for globalName, globalType in globals do
-        write 0 "const %s %s = %s;" (typeToString globalType) globalName (defaultValueForType globalType)
+    if globals.Length > 0 then
+        blank()
+        for globalName, globalType in globals do
+            write 0 "const %s %s = %s;" (typeToString globalType) globalName (defaultValueForType globalType)
     // functions
     for namedFunc in moduleMethods do
         blank()

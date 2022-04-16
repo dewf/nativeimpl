@@ -194,10 +194,11 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     blank()
 
     // fetch globals
-    write 3 "NativeImplClient.PushModuleConstants(_module);"
-    for name, type_ in globals do
-        popValue writer 3 type_ (ExistingVar (upperFirst name))
-    blank()
+    if globals.Length > 0 then
+        write 3 "NativeImplClient.PushModuleConstants(_module);"
+        for name, type_ in globals do
+            popValue writer 3 type_ (ExistingVar (upperFirst name))
+        blank()
 
     // module method handles
     for namedFunc in moduleMethods do

@@ -6,7 +6,7 @@ namespace AppRunner
 {
     public static class Program
     {
-        private class MyIThingClass : TestLibrary.Client_IThing01
+        private class MyIThingClass : TestLibrary.ClientIThing01
         {
             private TestLibrary.IThing01 _stashed;
             

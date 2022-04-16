@@ -26,14 +26,7 @@ let rec typeToString = function
     | Int32 -> "int"
     | InterfaceType name -> name
     | ExceptionType name -> name
-    | AnonymousFunction (argTypes, returnType) ->
-        let argTypesJoined =
-            [for t in argTypes -> typeToString t]
-            |> String.concat ","
-        if returnType = UnitType then
-            sprintf "Action<%s>" argTypesJoined
-        else
-            sprintf "Func<%s,%s>" argTypesJoined (typeToString returnType)
+    | DelegateType name -> name
     | _ -> "(typeToString: not yet supported)"
 
 type PopValueContext =
@@ -88,33 +81,14 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             write level "var __ret = %s__Pop();" ifaceName
             write level "NativeImplClient.ServerClearSafetyArea();"
             write level "return __ret;"
-    | AnonymousFunction (argTypes, returnType) ->
-        let common name =
-            write level "var %s__id = NativeImplClient.PopServerFuncValId();" name
-            write level "var %s__remoteFunc = new NativeImplClient.ServerFunc(%s__id);" name name
-            let joinedArgs =
-                [for i, type_ in argTypes |> List.indexed -> sprintf "%s _%d" (typeToString type_) i]
-                |> String.concat ", "
-            write level "%s %sWrapper(%s)" (typeToString returnType) (upperFirst name) joinedArgs
-            write level "{"
-            // push args in reverse order
-            for i, arg in argTypes |> List.indexed |> List.rev do
-                pushValue writer (level + 1) arg (sprintf "_%d" i) false
-            // exec
-            write (level + 1) "%s__remoteFunc.Exec();" name
-            // pop and return
-            popValue writer (level + 1) returnType Return
-            write level "}"
+    | DelegateType name ->
         match context with
         | NewVariable name ->
-            common name
-            write level "var %s = %sWrapper;" name (upperFirst name)
+            write level "var %s = %s__Pop();" name name
         | ExistingVar name ->
-            common name
-            write level "%s = %sWrapper;" name (upperFirst name)
+            write level "%s = %s__Pop();" name name
         | Return ->
-            common "__ret"
-            write level "return %sWrapper;" "__ret"
+            write level "return %s__Pop();" name
     | _ ->
         write level "(popValue %A not yet supported)" type_
 and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: bool) =
@@ -130,21 +104,8 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "NativeImplClient.PushInt(%s);" content
     | InterfaceType _ ->
         write level "((NativeImplClient.IPushable)%s).Push(%s);" content (if isReturn then "true" else "false")
-    | AnonymousFunction (argTypes, returnType) ->
-        let wrapperName =
-            sprintf "%sWrapper" (upperFirst content) // content = outer function argument name, hopefully!
-        write level "void %s()" wrapperName
-        write level "{"
-        // pop args
-        for i, argType in argTypes |> List.indexed do
-            popValue writer (level + 1) argType (NewVariable (sprintf "_%d" i))
-        // push invocation result
-        let invocation =
-            let joinedArgs = [for i, _ in argTypes |> List.indexed -> sprintf "_%d" i] |> String.concat ", "
-            sprintf "%s(%s)" content joinedArgs
-        pushValue writer (level + 1) returnType invocation true
-        write level "}"
-        write level "NativeImplClient.PushClientFuncVal(%s, Marshal.GetFunctionPointerForDelegate(%s));" wrapperName content
+    | DelegateType name ->
+        write level "%s__Push(%s);" name content
     | _ ->
         write level "(pushValue %A not yet supported)" type_
 
@@ -158,6 +119,11 @@ let writeLibrary (m: Module) (writer: TextWriter) =
         m.Defs
         |> List.choose (function
             | FunctionDef namedFunction -> Some namedFunction
+            | _ -> None)
+    let delegates =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, DelegateDef delegateInfo) -> Some (name, delegateInfo)
             | _ -> None)
     let interfaces =
         m.Defs
@@ -271,6 +237,40 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     write 2 "{"
     write 3 "NativeImplClient.Shutdown();"
     write 2 "}"
+
+    // delegate declarations + push/pop
+    for name, info in delegates do
+        blank()
+        write 2 "public delegate %s %s(%s);" (typeToString info.Returns) name (argsJoined info.Args)
+        // push
+        blank()
+        write 2 "private static void %s__Push(%s callback)" name name
+        write 2 "{"
+        write 3 "void CallbackWrapper()"
+        write 3 "{"
+        for argName, argType in info.Args do
+            popValue writer 4 argType (NewVariable argName)
+        let invocation =
+            sprintf "callback(%s)" (argNamesJoined info.Args)
+        pushValue writer 4 info.Returns invocation true
+        write 3 "}"
+        write 3 "NativeImplClient.PushClientFuncVal(CallbackWrapper, Marshal.GetFunctionPointerForDelegate(callback));"
+        write 2 "}"
+        // pop
+        blank()
+        write 2 "private static %s %s__Pop()" name name
+        write 2 "{"
+        write 3 "var id = NativeImplClient.PopServerFuncValId();"
+        write 3 "var remoteFunc = new NativeImplClient.ServerFunc(id);"
+        write 3 "%s Wrapper(%s)" (typeToString info.Returns) (argsJoined info.Args)
+        write 3 "{"
+        for argName, argType in info.Args |> List.rev do
+            pushValue writer 4 argType argName false
+        write 4 "remoteFunc.Exec();"
+        popValue writer 4 info.Returns Return
+        write 3 "}"
+        write 3 "return Wrapper;"
+        write 2 "}"
 
     // top-level module method wrappers
     for namedFunc in moduleMethods do
@@ -386,5 +386,5 @@ let writeLibrary (m: Module) (writer: TextWriter) =
 
 let generate (m: Module) =
     printfn "C# writing TestLibrary.cs"
-    use testLibraryCs = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\testproject\TestLibraryClient_generated\TestLibrary.cs")
-    writeLibrary m testLibraryCs
+    //use testLibraryCs = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\testproject\TestLibraryClient\TestLibrary.cs")
+    writeLibrary m stdout

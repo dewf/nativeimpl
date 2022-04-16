@@ -39,11 +39,11 @@ let rec typeToString = function
     | Int32 -> "int"
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
     | ExceptionType name -> name
-    | AnonymousFunction (argTypes, returnType) ->
-        let joinedTypes =
-            [for t in argTypes -> typeToString t]
-            |> String.concat ","
-        sprintf "std::function<%s(%s)>" (typeToString returnType) joinedTypes
+//    | AnonymousFunction (argTypes, returnType) ->
+//        let joinedTypes =
+//            [for t in argTypes -> typeToString t]
+//            |> String.concat ","
+//        sprintf "std::function<%s(%s)>" (typeToString returnType) joinedTypes
     | _ -> "(typeToString: not done yet)"
 
 let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: NIType list) (ret: NIType) =
@@ -70,8 +70,8 @@ let rec defaultValueForType = function
     | Bool -> "false"
     | Int32 -> "0"
     | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
-    | AnonymousFunction (niTypes, niType) ->
-        sprintf "[](%s) { return %s; }" (joinedAnonymousArgs niTypes) (defaultValueForType niType)
+//    | AnonymousFunction (niTypes, niType) ->
+//        sprintf "[](%s) { return %s; }" (joinedAnonymousArgs niTypes) (defaultValueForType niType)
     | _ ->
         "(defaultValueForType: not yet supported)"
 
@@ -105,21 +105,21 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             fprintfn writer "%sauto %s = %s__pop();" indent name ifaceName
         | Return ->
             fprintfn writer "%sreturn %s__pop();" indent ifaceName
-    | AnonymousFunction (argTypes, retType) ->
-        let name =
-            match context with
-            | Variable name -> name
-            | Return -> "__ret"
-        fprintfn writer "%sauto %s__id = ni_popClientFunc();" indent name
-        fprintfn writer "%sauto %s__cf = std::shared_ptr<ClientFunc>(new ClientFunc(%s__id));" indent name name
-        fprintfn writer "%sauto %s = [%s__cf](%s) {" indent name name (joinedAnonymousArgs argTypes)
-        // push those inner params in reverse order
-        argTypes
-        |> List.rev
-        |> List.iteri (fun i type_ -> pushValue writer (level + 1) type_ (sprintf "_%d" i) false)
-        fprintfn writer "%s    %s__cf->remoteExec();" indent name
-        popValue writer (level + 1) retType Return
-        fprintfn writer "%s};" indent
+//    | AnonymousFunction (argTypes, retType) ->
+//        let name =
+//            match context with
+//            | Variable name -> name
+//            | Return -> "__ret"
+//        fprintfn writer "%sauto %s__id = ni_popClientFunc();" indent name
+//        fprintfn writer "%sauto %s__cf = std::shared_ptr<ClientFunc>(new ClientFunc(%s__id));" indent name name
+//        fprintfn writer "%sauto %s = [%s__cf](%s) {" indent name name (joinedAnonymousArgs argTypes)
+//        // push those inner params in reverse order
+//        argTypes
+//        |> List.rev
+//        |> List.iteri (fun i type_ -> pushValue writer (level + 1) type_ (sprintf "_%d" i) false)
+//        fprintfn writer "%s    %s__cf->remoteExec();" indent name
+//        popValue writer (level + 1) retType Return
+//        fprintfn writer "%s};" indent
     | _ ->
         fprintfn writer "%s(not yet implemented);" indent
 
@@ -134,30 +134,30 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         fprintfn writer "%sni_pushInt(%s);" indent content
     | InterfaceType name ->
         fprintfn writer "%s%s__push(%s, %s);" indent name content (if isReturn then "true" else "false")
-    | AnonymousFunction (argTypes, returnType) ->
-        fprintfn writer "%sauto __f = %s;" indent content
-        // unique key bullshit
-        fprintfn writer "%ssize_t __uniqueKey = 0;" indent
-        fprintfn writer "%sif (__f) {" indent
-        pushFunctionTypedef writer (level + 1) "function_t" argTypes returnType
-        fprintfn writer "%s    function_t* ptr_fun = __f.target<function_t>();" indent
-        fprintfn writer "%s    if (ptr_fun != nullptr) {" indent
-        fprintfn writer "%s        __uniqueKey = (size_t)ptr_fun;" indent
-        fprintfn writer "%s    }" indent
-        fprintfn writer "%s}" indent
-        // wrapper:
-        fprintfn writer "%sauto __wrapper = [__f]() {" indent
-        argTypes
-        |> List.iteri (fun i argType ->
-            popValue writer (level + 1) argType (Variable (sprintf "_%d" i) ))
-        let argList =
-            argTypes
-            |> List.mapi (fun i _ -> sprintf "_%d" i)
-            |> String.concat ", "
-        pushValue writer (level + 1) returnType (sprintf "__f(%s)" argList) true
-        fprintfn writer "%s};" indent
-        // end wrapper
-        fprintfn writer "%spushServerFuncVal(__wrapper, __uniqueKey);" indent
+//    | AnonymousFunction (argTypes, returnType) ->
+//        fprintfn writer "%sauto __f = %s;" indent content
+//        // unique key bullshit
+//        fprintfn writer "%ssize_t __uniqueKey = 0;" indent
+//        fprintfn writer "%sif (__f) {" indent
+//        pushFunctionTypedef writer (level + 1) "function_t" argTypes returnType
+//        fprintfn writer "%s    function_t* ptr_fun = __f.target<function_t>();" indent
+//        fprintfn writer "%s    if (ptr_fun != nullptr) {" indent
+//        fprintfn writer "%s        __uniqueKey = (size_t)ptr_fun;" indent
+//        fprintfn writer "%s    }" indent
+//        fprintfn writer "%s}" indent
+//        // wrapper:
+//        fprintfn writer "%sauto __wrapper = [__f]() {" indent
+//        argTypes
+//        |> List.iteri (fun i argType ->
+//            popValue writer (level + 1) argType (Variable (sprintf "_%d" i) ))
+//        let argList =
+//            argTypes
+//            |> List.mapi (fun i _ -> sprintf "_%d" i)
+//            |> String.concat ", "
+//        pushValue writer (level + 1) returnType (sprintf "__f(%s)" argList) true
+//        fprintfn writer "%s};" indent
+//        // end wrapper
+//        fprintfn writer "%spushServerFuncVal(__wrapper, __uniqueKey);" indent
     | _ ->
         fprintfn writer "%s(pushValue not supported yet)" indent
 
@@ -237,7 +237,7 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
                 fprintfn writer "        invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
             // pop result
             match namedFunc.Returns with
-            | InterfaceType _ | AnonymousFunction _ ->
+            | InterfaceType _ -> // | AnonymousFunction _
                 // any sort of reference that might get freed if it was only a return value from the other side (stored nowhere else, so protected by the safety area)
                 popValue writer 2 namedFunc.Returns (Variable "__ret")
                 fprintfn writer "        ni_clearClientSafetyArea();"

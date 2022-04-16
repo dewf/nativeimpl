@@ -16,7 +16,6 @@ type NIType =
     | StringType
     | ArrayType of NIType
     | MapType of keyType: NIType * valueType: NIType
-    | AnonymousFunction of args: NIType list * returns: NIType
     //
     | Unresolved of name: string * line: int
     // these have to be resolved by checking a table, otherwise unresolved
@@ -24,6 +23,7 @@ type NIType =
     | StructType of name: string
     | InterfaceType of name: string
     | ExceptionType of name: string          // only for 'throws'
+    | DelegateType of name: string
 
 let rec parseType (tokens: (int * Token) list) =
     match tokens with
@@ -61,37 +61,6 @@ let rec parseType (tokens: (int * Token) list) =
                 failwithf "missing ] for array type at line %d" line
         | _ ->
             failwithf "missing comma for array type at line %d" line
-    | (line, FunctionBegin) :: etc1 ->
-        // keep parsing types (separated by commas) until we see a function arrow ->, then grab a return type
-        // find the function arrow first, if any
-        let maybeArrowIndex =
-            etc1
-            |> List.tryFindIndex (fun (_, t) -> t = FunctionArrow)
-        match maybeArrowIndex with
-        | Some index ->
-            let argTokens, etc2 =
-                etc1 |> List.splitAt index
-            let parseArg (remaining: (int * Token) list) =
-                if remaining.IsEmpty then
-                    None
-                else
-                    let type_, etc3 =
-                        parseType remaining
-                    match etc3 with
-                    | (_, Comma) :: etc4 -> Some (type_, etc4)
-                    | [] -> Some (type_, [])
-                    | _ -> failwithf "error parsing function type at line %d" line
-            let args =
-                List.unfold parseArg argTokens
-            match etc2 with
-            | (_, FunctionArrow) :: etc4 ->
-                let returnType, etc5 =
-                    parseType etc4
-                AnonymousFunction (args, returnType), etc5
-            | _ ->
-                failwithf "failed to parse function return type at line %d" line
-        | None ->
-            failwithf "missing function arrow -> at line %d" line
     | [] ->
         failwithf "parseType called on an empty list!"
     | _ ->
@@ -111,11 +80,18 @@ type NamedField = {
     Type_: NIType
 }
 
+type DelegateInfo = {
+    Args: (string * NIType) list
+    Returns: NIType
+    // no exceptions for now
+}
+
 type UserType =
     | OpaqueHandleDef
     | StructDef of fields: NamedField list
     | ExceptionDef of fields: NamedField list
     | InterfaceDef of methods: NamedFunction list
+    | DelegateDef of info: DelegateInfo
 
 type ModuleDefinition =
     | Global of name: string * type_: NIType
@@ -237,6 +213,10 @@ let parseModule (tokens: (int * Token) list) =
                 parseFunctionList line etc
             (UserType (name, InterfaceDef methods), etc2)
             |> Some
+        | (line, DelegateToken) :: etc ->
+            parseNamedFunction etc
+            |> Option.map (fun (nf, etc2) ->
+                (UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns }), etc2))
         | [] ->
             // end of file!
             None
@@ -271,12 +251,6 @@ let rec resolveType (symbols: Map<string, UserType>) (type_: NIType) =
         ArrayType (resolveType symbols niType)
     | MapType (keyType, valueType) ->
         MapType (resolveType symbols keyType, resolveType symbols valueType)
-    | AnonymousFunction (args, returns) ->
-        let nextArgs =
-            args |> List.map (resolveType symbols)
-        let nextReturns =
-            resolveType symbols returns
-        AnonymousFunction (nextArgs, nextReturns)
     | Unresolved (name, line) ->
         match symbols.TryFind(name) with
         | Some value ->
@@ -284,6 +258,7 @@ let rec resolveType (symbols: Map<string, UserType>) (type_: NIType) =
             | OpaqueHandleDef -> OpaqueHandleType name
             | StructDef _ -> StructType name
             | InterfaceDef _ -> InterfaceType name
+            | DelegateDef _ -> DelegateType name
             | ExceptionDef _ ->
                 // how do we enforce that this is only allowed in a "throws" context?
                 ExceptionType name
@@ -308,6 +283,14 @@ let resolveFunctionTypes (symbols: Map<string, UserType>) (nf: NamedFunction) =
         |> Option.map (resolveType symbols)
     { nf with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
+let resolveDelegateTypes (symbols: Map<string, UserType>) (info: DelegateInfo) =
+    let nextArgs =
+        info.Args
+        |> List.map (fun (name, argType) -> (name, resolveType symbols argType))
+    let nextReturns =
+        resolveType symbols info.Returns
+    { info with Args = nextArgs; Returns = nextReturns }
+
 let resolveModuleDef (symbols: Map<string, UserType>) (def: ModuleDefinition) =
     match def with
     | UserType (name, userType) ->
@@ -328,6 +311,10 @@ let resolveModuleDef (symbols: Map<string, UserType>) (def: ModuleDefinition) =
                     namedFunctions
                     |> List.map (resolveFunctionTypes symbols)
                 InterfaceDef nextFunctions
+            | DelegateDef delegateInfo ->
+                let nextInfo =
+                    resolveDelegateTypes symbols delegateInfo
+                DelegateDef nextInfo
             | _ ->
                 // untouched ('opaque' only for now ...)
                 userType

@@ -16,6 +16,7 @@ type Token =
     | FloatToken
     | StringToken
     | UnitToken
+    | DelegateToken
     | LeftBrace
     | RightBrace
     | LeftParen
@@ -23,8 +24,6 @@ type Token =
     | LeftBracket
     | RightBracket
     | StatementEnd
-    | FunctionBegin
-    | FunctionArrow
     | Comma
     | ThrowsToken
     | Error of line: int * text: string
@@ -43,7 +42,7 @@ let stringToToken (lineNumber: int) = function
     | "string" -> StringToken
     | "void" -> UnitToken
     | "unit" -> UnitToken
-    | "@" -> FunctionBegin
+    | "delegate" -> DelegateToken
     | "{" -> LeftBrace
     | "}" -> RightBrace
     | "(" -> LeftParen
@@ -51,7 +50,6 @@ let stringToToken (lineNumber: int) = function
     | "[" -> LeftBracket
     | "]" -> RightBracket
     | ";" -> StatementEnd
-    | "->" -> FunctionArrow
     | "," -> Comma
     | "throws" -> ThrowsToken
     | text when Regex(@"[_a-zA-Z][_a-zA-Z0-9]*").IsMatch(text) -> Identifier text
@@ -63,7 +61,7 @@ let tokenize (lines: (int * string) list) =
     |> List.map (fun (i, line) ->
         let noComments = Regex(@"//.*").Replace(line, "")
         let spacesCollapsed = Regex(@"\s+").Replace(noComments, " ")
-        let spaceAdded = Regex(@"[!,\(\)\[\];@]|->").Replace(spacesCollapsed, MatchEvaluator(fun m -> sprintf " %s " m.Value))
+        let spaceAdded = Regex(@"[,\(\)\[\];{}]").Replace(spacesCollapsed, MatchEvaluator(fun m -> sprintf " %s " m.Value))
         let items = spaceAdded.Split(' ')
         let nonEmpty =
             items

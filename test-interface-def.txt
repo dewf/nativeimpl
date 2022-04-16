@@ -56,11 +56,13 @@ int lastIntGlobal;
 // array[int] intArray;
 // map[string, int] stringToIntMap;
 
+delegate int IntFunc(int x);
+
 int sum(int a, int b, int c);
-int execFunc01(@int->int func1);
-void stashFunc(@int->int func2);
+int execFunc01(IntFunc func1);
+void stashFunc(IntFunc func2);
 void releaseFunc();
-@int->int returnStashedFunc();
+IntFunc returnStashedFunc();
 IThing01 makeThing();
 int operateOnThing(IThing01 thing, int arg);
 void saveThing(IThing01 thing);

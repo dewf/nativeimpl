@@ -72,6 +72,16 @@ int popInt()
     return ni_popInt();
 }
 
+void pushIntArray(int* values, size_t count)
+{
+    ni_pushIntArray(values, count);
+}
+
+void popIntArray(int** values, size_t* count)
+{
+    ni_popIntArray(values, count);
+}
+
 void pushString(const char* str, size_t length) {
     ni_pushString(str, length);
 }

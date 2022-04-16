@@ -40,6 +40,7 @@ let rec typeToString = function
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
     | ExceptionType name -> name
     | DelegateType name -> sprintf "std::function<%s>" name
+    | ArrayType niType -> sprintf "std::vector<%s>" (typeToString niType)
     | _ -> "(typeToString: not done yet)"
 
 let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: NIType list) (ret: NIType) =
@@ -69,6 +70,7 @@ let rec defaultValueForType = function
     | StringType -> "\"default\""
     | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
     | DelegateType name -> sprintf "std::function<%s>()" name
+    | ArrayType niType -> sprintf "std::vector<%s>()" (typeToString niType)
     | _ ->
         "(defaultValueForType: not yet supported)"
 
@@ -116,6 +118,17 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             write level "auto %s = %s__pop();" name delegateName
         | Return ->
             write level "return %s__pop();" delegateName
+    | ArrayType niType ->
+        let popFunc =
+            match niType with
+            | Bool -> "popBoolArrayInternal"
+            | Int32 -> "popIntArrayInternal"
+            | _ -> "(not yet supported)"
+        match context with
+        | Variable name ->
+            write level "auto %s = %s();" name popFunc
+        | Return ->
+            write level "return %s();" popFunc
     | _ ->
         write level "(not yet implemented)"
 
@@ -136,6 +149,13 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "%s__push(%s, %s);" name content (if isReturn then "true" else "false")
     | DelegateType name ->
         write level "%s__push(%s);" name content // still hmm about safety area for functions ...
+    | ArrayType niType ->
+        let pushFunc =
+            match niType with
+            | Bool -> "pushBoolArrayInternal"
+            | Int32 -> "pushIntArrayInternal"
+            | _ -> "(not yet supported)"
+        write level "%s(%s);" pushFunc content
     | _ ->
         write level "(pushValue not supported yet)"
 

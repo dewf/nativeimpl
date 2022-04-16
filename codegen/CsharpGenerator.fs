@@ -28,6 +28,7 @@ let rec typeToString = function
     | InterfaceType name -> name
     | ExceptionType name -> name
     | DelegateType name -> name
+    | ArrayType niType -> sprintf "%s[]" (typeToString niType)
     | _ -> "(typeToString: not yet supported)"
 
 type PopValueContext =
@@ -98,6 +99,19 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             write level "%s = %s__Pop();" name name
         | Return ->
             write level "return %s__Pop();" name
+    | ArrayType niType ->
+        let popFunc =
+            match niType with
+            | Bool -> "PopBoolArray"
+            | Int32 -> "PopIntArray"
+            | _ -> "(unsupported)"
+        match context with
+        | NewVariable name ->
+            write level "var %s = NativeImplClient.%s();" name popFunc
+        | ExistingVar name ->
+            write level "%s = NativeImplClient.%s();" name popFunc
+        | Return ->
+            write level "return NativeImplClient.%s();" popFunc
     | _ ->
         write level "(popValue %A not yet supported)" type_
 and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: bool) =
@@ -117,6 +131,13 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "((NativeImplClient.IPushable)%s).Push(%s);" content (if isReturn then "true" else "false")
     | DelegateType name ->
         write level "%s__Push(%s);" name content
+    | ArrayType niType ->
+        let pushFunc =
+            match niType with
+            | Bool -> "PushBoolArray"
+            | Int32 -> "PushIntArray"
+            | _ -> "(not yet supported)"
+        write level "NativeImplClient.%s(%s);" pushFunc content
     | _ ->
         write level "(pushValue %A not yet supported)" type_
 

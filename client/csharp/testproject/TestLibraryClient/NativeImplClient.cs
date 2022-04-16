@@ -69,7 +69,7 @@ namespace TestLibraryClient
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void nativeImplShutdown();
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr getModule(
             [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))]
@@ -86,7 +86,7 @@ namespace TestLibraryClient
             IntPtr module,
             [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))]
             string name);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr getInterfaceMethod(
             IntPtr iface,
@@ -98,13 +98,13 @@ namespace TestLibraryClient
             IntPtr module,
             [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))]
             string name);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void invokeModuleMethod(IntPtr method);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr invokeModuleMethodWithExceptions(IntPtr method);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushBool(bool value);
 
@@ -116,6 +116,12 @@ namespace TestLibraryClient
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int popInt();
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushIntArray(int[] values, IntPtr count); // size_t count
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popIntArray(out IntPtr values, out IntPtr count); // both args are pointers
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushString(IntPtr str, IntPtr length); // size_t length
@@ -131,37 +137,37 @@ namespace TestLibraryClient
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void execServerFunc(int id);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void releaseServerFunc(int id);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void invokeInterfaceMethod(IntPtr method, int serverId);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr invokeInterfaceMethodWithExceptions(IntPtr method, int serverId);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int popInstance(out bool isClientId);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int releaseServerInst(int id);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushClientInst(int id);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushServerInst(int id);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void clearServerSafetyArea();
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void dumpTables();
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushModuleConstants(IntPtr module);
-        
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void setException(IntPtr exceptionHandle);
     }
@@ -176,7 +182,7 @@ namespace TestLibraryClient
         private static NativeMethods.ClientClearSafetyAreaDelegate _savedClientClearSafetyAreaDelegate;
 
         private static bool _remoteIsShutdown = false; // TODO: probably needs to be thread-safe
-        
+
         // callback-related stuff
         public delegate void FuncValWrapper();
         private struct FuncValInfo
@@ -240,9 +246,9 @@ namespace TestLibraryClient
             _savedClientMethodDelegate = InvokeClientMethod;
             _savedClientObjReleaseDelegate = ReleaseClientObjectId;
             _savedClientClearSafetyAreaDelegate = ClientClearSafetyArea;
-            
+
             return NativeMethods.nativeImplInit(
-                _savedExecFunctionDelegate, 
+                _savedExecFunctionDelegate,
                 _savedReleaseFunctionDelegate,
                 _savedClientMethodDelegate,
                 _savedClientObjReleaseDelegate,
@@ -282,7 +288,7 @@ namespace TestLibraryClient
         {
             return new ExceptionHandle(NativeMethods.getException(module.Handle, name));
         }
-        
+
         public static void PushModuleConstants(ModuleHandle module)
         {
             NativeMethods.pushModuleConstants(module.Handle);
@@ -320,6 +326,19 @@ namespace TestLibraryClient
         public static int PopInt()
         {
             return NativeMethods.popInt();
+        }
+
+        public static void PushIntArray(int[] values)
+        {
+            NativeMethods.pushIntArray(values, (IntPtr)values.Length);
+        }
+
+        public static int[] PopIntArray()
+        {
+            NativeMethods.popIntArray(out var valuesPtr, out var count);
+            var ret = new int[(int)count];
+            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            return ret;
         }
 
         private static IntPtr _pushStringBuffer = Marshal.AllocHGlobal(1024 * 1024);

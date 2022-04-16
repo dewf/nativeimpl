@@ -54,8 +54,11 @@ class WrongTypeException : public std::exception {
 class StackItem {
 public:
 	virtual bool boolValue() { throw WrongTypeException(); }
+	virtual std::vector<uint8_t> boolArray() { throw WrongTypeException(); } // using 'bool' doesn't allow .data access
 	virtual int intValue() { throw WrongTypeException(); }
+	virtual std::vector<int> intArray() { throw WrongTypeException(); }
 	virtual std::string stringValue() { throw WrongTypeException(); }
+	virtual std::vector<std::string> stringArray() { throw WrongTypeException(); }
 	virtual int clientFuncId() { throw WrongTypeException(); }
 	virtual int serverFuncId() { throw WrongTypeException(); }
 	virtual int instanceId(bool* isClientId) { throw WrongTypeException(); }
@@ -70,12 +73,34 @@ public:
 	}
 };
 
+class BoolArray : public StackItem {
+public:
+	std::vector<uint8_t> values;		// using 'bool' doesn't allow .data access, lame
+	BoolArray(bool* ptr, size_t count) {
+		values.assign(ptr, ptr + count);
+	}
+	std::vector<uint8_t> boolArray() override {
+		return values;
+	}
+};
+
 class IntItem : public StackItem {
 public:
 	int x;
 	IntItem(int x) : x(x) {}
 	int intValue() override {
 		return x;
+	}
+};
+
+class IntArray : public StackItem {
+public:
+	std::vector<int> values;
+	IntArray(int* ptr, size_t count) {
+		values.assign(ptr, ptr + count);
+	}
+	std::vector<int> intArray() override {
+		return values;
 	}
 };
 
@@ -92,6 +117,15 @@ public:
 	}
 	std::string stringValue() override {
 		return str;
+	}
+};
+
+class StringArray : public StackItem {
+public:
+	std::vector<std::string> values;
+	StringArray(std::vector<std::string> values) : values(values) {};
+	std::vector<std::string> stringArray() override {
+		return values;
 	}
 };
 
@@ -333,6 +367,23 @@ bool ni_popBool() {
 	return b;
 }
 
+void ni_pushBoolArray(bool* values, size_t count)
+{
+	vstack.push(new BoolArray(values, count));
+}
+
+static std::vector<uint8_t> lastBoolArray;
+
+void ni_popBoolArray(bool** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastBoolArray = item->boolArray();
+	vstack.pop();
+	delete item;
+	*((uint8_t**)values) = lastBoolArray.data();
+	*count = lastBoolArray.size();
+}
+
 void ni_pushInt(int x) {
 	vstack.push(new IntItem(x));
 }
@@ -343,6 +394,22 @@ int ni_popInt() {
 	vstack.pop();
 	delete item;
 	return x;
+}
+
+void ni_pushIntArray(int* values, size_t count)
+{
+	vstack.push(new IntArray(values, count));
+}
+
+static std::vector<int> lastIntArray;
+
+void ni_popIntArray(int** values, size_t* count) {
+	auto item = vstack.top();
+	lastIntArray = item->intArray();
+	vstack.pop();
+	delete item;
+	*values = lastIntArray.data();
+	*count = lastIntArray.size();
 }
 
 void ni_pushString(const char* str, size_t length) {

@@ -91,6 +91,21 @@ std::string popStringInternal()
 	return ret;
 }
 
+void pushIntArrayInternal(std::vector<int> values)
+{
+	ni_pushIntArray(values.data(), values.size());
+}
+
+std::vector<int> popIntArrayInternal()
+{
+	std::vector<int> ret;
+	int* values;
+	size_t count;
+	ni_popIntArray(&values, &count);
+	ret.assign(values, values + count);
+	return ret;
+}
+
 void ServerObject::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	// isReturn not used for server stuff, that's just to help out with the safe area / protecting client objects
 	if (id == -1) { // unset as of yet

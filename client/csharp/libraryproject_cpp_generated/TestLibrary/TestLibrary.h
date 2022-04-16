@@ -31,6 +31,8 @@ extern "C" {
 
 	TESTLIBRARY_API void pushInt(int x);
 	TESTLIBRARY_API int popInt();
+	TESTLIBRARY_API void pushIntArray(int* values, size_t count);
+	TESTLIBRARY_API void popIntArray(int** values, size_t* count);
 
 	TESTLIBRARY_API void pushString(const char* str, size_t length);
 	TESTLIBRARY_API void popString(const char** strPtr, size_t* length);

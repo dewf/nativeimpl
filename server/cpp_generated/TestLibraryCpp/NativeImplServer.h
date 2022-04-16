@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <functional>
+#include <vector>
 
 class ClientFunc {
 protected:
@@ -40,7 +41,8 @@ public:
 
 // our "exports" back to core (well, the DLL being built around core)
 extern "C" {
-	int initLibrary();
+	int nativeLibraryInit();
+	void nativeLibraryShutdown();
 	void ni_dumpTables();
 	void ni_execServerFunc(int id);
 	void ni_releaseServerFunc(int id);
@@ -51,3 +53,5 @@ extern "C" {
 void pushServerFuncVal(std::function<void()> wrapper, size_t key);
 void pushStringInternal(std::string str);
 std::string popStringInternal();
+void pushIntArrayInternal(std::vector<int> values);
+std::vector<int> popIntArrayInternal();

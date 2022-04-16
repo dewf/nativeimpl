@@ -41,8 +41,12 @@ extern "C" {
 
 	extern void ni_pushBool(bool b);
 	extern bool ni_popBool();
+
 	extern void ni_pushInt(int x);
 	extern int ni_popInt();
+	extern void ni_pushIntArray(int* values, size_t count);
+	extern void ni_popIntArray(int** values, size_t* count);
+
 	extern void ni_pushString(const char* str, size_t length);
 	extern void ni_popString(const char** strPtr, size_t* length);
 

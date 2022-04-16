@@ -1,38 +1,5 @@
 module TestLibrary;
 
-// allowed types:
-// unit/void
-// bool
-// byte/int8
-// short/int16
-// int/int32
-// long/int64
-// float/float32
-// double/float64
-// string
-// array[type]
-// map[a,b]
-
-// opaque typed ptrs to use as handles
-
-// opaque MenuBar;
-// opaque CGContext;
-
-// struct OtherStruct {
-//   int cool;
-//   string iknorite;
-// }
-
-// struct SomeStruct {
-//   int field1;
-//   int field2;
-//   float whatever;
-//   IThing01 hahaLater;
-//   array[OtherStruct] subStruct; // hmm we need to prevent recursive struct definitions
-// }
-
-// SomeStruct structValue01;
-
 exception NegativeException {
   int value;
 }
@@ -53,9 +20,6 @@ int global01;
 int anotherGlobal;
 int lastIntGlobal;
 
-// array[int] intArray;
-// map[string, int] stringToIntMap;
-
 delegate int IntFunc(int x);
 
 void stringTest(string str);
@@ -71,7 +35,6 @@ void saveThing(IThing01 thing);
 IThing01 getSavedThing();
 void clientStashTest(IThing01 thing);
 void testNegative(int value) throws NegativeException;
-// int testNegative2(int value) throws NegativeException;
 void testClientThrow(IThing01 thing);
 void startTimer(IThing01 thing, int frequency);
 void stopTimer();

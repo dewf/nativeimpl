@@ -24,6 +24,7 @@ let rec typeToString = function
     | UnitType -> "void"
     | Bool -> "bool"
     | Int32 -> "int"
+    | StringType -> "string"
     | InterfaceType name -> name
     | ExceptionType name -> name
     | DelegateType name -> name
@@ -69,6 +70,14 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             write level "%s = NativeImplClient.PopInt();" name
         | Return ->
             write level "return NativeImplClient.PopInt();"
+    | StringType ->
+        match context with
+        | NewVariable name ->
+            write level "var %s = NativeImplClient.PopString();" name
+        | ExistingVar name ->
+            write level "%s = NativeImplClient.PopString();" name
+        | Return ->
+            write level "return NativeImplClient.PopString();"
     | InterfaceType ifaceName ->
         match context with
         | NewVariable name ->
@@ -102,6 +111,8 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "NativeImplClient.PushBool(%s);" content
     | Int32 ->
         write level "NativeImplClient.PushInt(%s);" content
+    | StringType ->
+        write level "NativeImplClient.PushString(%s);" content
     | InterfaceType _ ->
         write level "((NativeImplClient.IPushable)%s).Push(%s);" content (if isReturn then "true" else "false")
     | DelegateType name ->
@@ -386,5 +397,5 @@ let writeLibrary (m: Module) (writer: TextWriter) =
 
 let generate (m: Module) =
     printfn "C# writing TestLibrary.cs"
-    //use testLibraryCs = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\testproject\TestLibraryClient\TestLibrary.cs")
-    writeLibrary m stdout
+    use testLibraryCs = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\testproject\TestLibraryClient\TestLibrary.cs")
+    writeLibrary m testLibraryCs

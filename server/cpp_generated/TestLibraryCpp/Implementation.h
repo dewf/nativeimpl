@@ -1,6 +1,9 @@
 #include "NativeImplServer.h"
 #include <functional>
 #include <memory>
+#include <string>
+
+typedef int IntFunc(int x);
 
 class NegativeException {
 public:
@@ -51,11 +54,13 @@ extern const int global01;
 extern const int anotherGlobal;
 extern const int lastIntGlobal;
 
+void stringTest(std::string str);
+std::string returnString();
 int sum(int a, int b, int c);
-int execFunc01(std::function<int(int)> func1);
-void stashFunc(std::function<int(int)> func2);
+int execFunc01(std::function<IntFunc> func1);
+void stashFunc(std::function<IntFunc> func2);
 void releaseFunc();
-std::function<int(int)> returnStashedFunc();
+std::function<IntFunc> returnStashedFunc();
 std::shared_ptr<IThing01> makeThing();
 int operateOnThing(std::shared_ptr<IThing01> thing, int arg);
 void saveThing(std::shared_ptr<IThing01> thing);

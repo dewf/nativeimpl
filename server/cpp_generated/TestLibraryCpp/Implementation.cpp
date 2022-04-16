@@ -2,107 +2,89 @@
 #include <memory>
 #include <functional>
 
-const int global01 = 123;
-const int anotherGlobal = 1001;
-const int lastIntGlobal = 90210;
+const int global01 = 0;
+const int anotherGlobal = 0;
+const int lastIntGlobal = 0;
+
+void stringTest(std::string str) {
+    printf("generated C++ stringTest: [%s]\n", str.c_str());
+}
+
+std::string returnString() {
+    return "C++ string being returned!!";
+}
 
 int sum(int a, int b, int c) {
     return a + b + c;
 }
 
-int execFunc01(std::function<int(int)> func1) {
-    return func1(101);
+int execFunc01(std::function<IntFunc> func1) {
+    return func1(1001);
 }
 
 int defaultStashedFunc(int x) {
-    printf("defaultStashedFunc! x * 1001\n");
-    fflush(stdout);
-    return x * 1001;
+    return x * 100;
 }
-static std::function<int(int)> stashedFunc = defaultStashedFunc;
 
-void stashFunc(std::function<int(int)> func2) {
-    printf("library: stashFunc(sif)\n");
-    stashedFunc = func2;
+std::function<IntFunc> stashed = defaultStashedFunc;
+
+void stashFunc(std::function<IntFunc> func2) {
+    stashed = func2;
 }
 
 void releaseFunc() {
-    printf("releasing stashed func...\n");
-    stashedFunc = defaultStashedFunc;
+    stashed = defaultStashedFunc;
 }
 
-std::function<int(int)> returnStashedFunc() {
-    printf("returning stashed func...\n");
-    return stashedFunc;
+std::function<IntFunc> returnStashedFunc() {
+    return stashed;
 }
 
-class RealThing01 : public ServerIThing01 {
+
+class MyThing : public ServerIThing01 {
 private:
-    std::shared_ptr<IThing01> stashedThing;
+    std::shared_ptr<IThing01> myThing;
 public:
     int someMethod(int x) override {
-        return x * 321;
+        return x + 456;
     }
-
     void stashThing(std::shared_ptr<IThing01> subThing) override {
-        stashedThing = subThing;
+        myThing = subThing;
     }
-
     std::shared_ptr<IThing01> getStashedThing() override {
-        auto ret = stashedThing;
-        stashedThing.reset();
-        return ret;
+        return myThing;
     }
-
     void testThrow(bool doThrow) override {
         if (doThrow) {
-            throw InterfaceMethodException(1234);
+            throw InterfaceMethodException(111);
         }
     }
-
     void onTimerTick() override {
-        printf("RealThing01.onTimerTick() !!\n");
-    }
-
-    ~RealThing01() override {
-        //printf("real thing 01 dtor!!!\n");
+        printf("hello from C++ MyThing.onTimerTick()\n");
     }
 };
 
 std::shared_ptr<IThing01> makeThing() {
-    return std::shared_ptr<IThing01>(new RealThing01());
+    return std::shared_ptr<IThing01>(new MyThing());
 }
 
 int operateOnThing(std::shared_ptr<IThing01> thing, int arg) {
-    printf("C++ operateOnThing:\n");
-    auto res = thing->someMethod(arg);
-    printf(" - thing->someMethod(%d) = %d\n", arg, res);
-    return res;
+    return thing->someMethod(arg + 1);
 }
 
 static std::shared_ptr<IThing01> savedThing;
 
 void saveThing(std::shared_ptr<IThing01> thing) {
-    printf("C++ saving thing:\n");
     savedThing = thing;
 }
 
 std::shared_ptr<IThing01> getSavedThing() {
-    printf("C++ returning thing:\n");
-    auto toReturn = savedThing;
-    savedThing.reset(); // won't this destroy the remote client object as soon as this function exits? (when toReturn leaves scope)
-    return toReturn;
+    return savedThing;
 }
 
 void clientStashTest(std::shared_ptr<IThing01> thing) {
-    // make a server-side thing
-    auto arg = std::shared_ptr<IThing01>(new RealThing01());
-
-    printf("C++ clientStashTest: stashing thing...\n");
-    thing->stashThing(arg);
-
-    printf("C++ clientStashTest: getStashedThing...\n");
-    auto ret = thing->getStashedThing();
+    auto toStore = std::shared_ptr<IThing01>(new MyThing());
+    thing->stashThing(toStore);
 }
 
 void testNegative(int value) {  // throws NegativeException
@@ -112,64 +94,19 @@ void testNegative(int value) {  // throws NegativeException
 }
 
 void testClientThrow(std::shared_ptr<IThing01> thing) {
-    printf("C++ testClientThrow:\n");
-    printf("  - testThrow(false)\n");
-    thing->testThrow(false);
-    printf("  - testThrow(true)\n");
     try {
         thing->testThrow(true);
-        printf(" ... uhh C++ did not catch expected client exception ...\n");
+        printf("C++ failed to catch C# exception in thing->testThrow??\n");
     }
-    catch (const InterfaceMethodException& e) {
-        printf("*** C++ caught InterfaceMethodException(%d)!! ***\n", e.value);
-    }
-}
-
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-
-static HANDLE timerHandle;
-static std::shared_ptr<IThing01> timerThing;
-static bool timerAlive = false;
-
-static VOID CALLBACK timerCallback(PVOID lpParameter, BOOLEAN timerOrWaitFired) {
-    printf("C++ timer callback!\n");
-    if (timerAlive) {
-        timerThing->onTimerTick();
-    }
-    else {
-        printf("C++ timer: (ignoring tick with timerAlive=false)\n");
+    catch (InterfaceMethodException e) {
+        printf("C++ side caught exception in C# thing: value %d\n", e.value);
     }
 }
 
 void startTimer(std::shared_ptr<IThing01> thing, int frequency) {
-    timerThing = thing;
-
-    timerAlive = true;
-    if (!CreateTimerQueueTimer(
-        &timerHandle,
-        NULL, // default timer queue,
-        &timerCallback,
-        NULL, // no param
-        0, // start delay
-        1000 / frequency,
-        0 // no flags
-    )) {
-        printf("C++ startTimer: timer creation failed\n");
-    }
+    printf("generated C++ fake startTimer()\n");
 }
 
 void stopTimer() {
-    timerAlive = false;
-
-    DeleteTimerQueueTimer(
-        NULL, // default queue
-        timerHandle,
-        INVALID_HANDLE_VALUE // wait for completion before returning. is this 100%?
-    );
-
-    timerThing.reset(); // don't need this anymore ...
-
-    printf("C++ stopTimer() done\n");
+    printf("generated C++ fake stopTimer()\n");
 }
-

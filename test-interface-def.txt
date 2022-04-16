@@ -58,6 +58,8 @@ int lastIntGlobal;
 
 delegate int IntFunc(int x);
 
+void stringTest(string str);
+string returnString();
 int sum(int a, int b, int c);
 int execFunc01(IntFunc func1);
 void stashFunc(IntFunc func2);
@@ -73,5 +75,3 @@ void testNegative(int value) throws NegativeException;
 void testClientThrow(IThing01 thing);
 void startTimer(IThing01 thing, int frequency);
 void stopTimer();
-
-// void fakeShit(CGContext context);

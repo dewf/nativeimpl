@@ -9,6 +9,32 @@ ni_InterfaceMethodRef iThing01_getStashedThing;
 ni_InterfaceMethodRef iThing01_testThrow;
 ni_InterfaceMethodRef iThing01_onTimerTick;
 
+void IntFunc__push(std::function<IntFunc> f) {
+    size_t uniqueKey = 0;
+    if (f) {
+        IntFunc* ptr_fun = f.target<IntFunc>();
+        if (ptr_fun != nullptr) {
+            uniqueKey = (size_t)ptr_fun;
+        }
+    }
+    auto wrapper = [f]() {
+        auto x = ni_popInt();
+        ni_pushInt(f(x));
+    };
+    pushServerFuncVal(wrapper, uniqueKey);
+}
+
+std::function<IntFunc> IntFunc__pop() {
+    auto id = ni_popClientFunc();
+    auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id));
+    auto wrapper = [cf](int x) {
+        ni_pushInt(x);
+        cf->remoteExec();
+        return ni_popInt();
+    };
+    return wrapper;
+}
+
 void IThing01__push(std::shared_ptr<IThing01> thing, bool isReturn);
 std::shared_ptr<IThing01> IThing01__pop();
 
@@ -56,6 +82,15 @@ std::shared_ptr<IThing01> IThing01__pop()
     }
 }
 
+void stringTest__wrapper() {
+    auto str = popStringInternal();
+    stringTest(str);
+}
+
+void returnString__wrapper() {
+    pushStringInternal(returnString());
+}
+
 void sum__wrapper() {
     auto a = ni_popInt();
     auto b = ni_popInt();
@@ -64,24 +99,12 @@ void sum__wrapper() {
 }
 
 void execFunc01__wrapper() {
-    auto func1__id = ni_popClientFunc();
-    auto func1__cf = std::shared_ptr<ClientFunc>(new ClientFunc(func1__id));
-    auto func1 = [func1__cf](int _0) {
-        ni_pushInt(_0);
-        func1__cf->remoteExec();
-        return ni_popInt();
-    };
+    auto func1 = IntFunc__pop();
     ni_pushInt(execFunc01(func1));
 }
 
 void stashFunc__wrapper() {
-    auto func2__id = ni_popClientFunc();
-    auto func2__cf = std::shared_ptr<ClientFunc>(new ClientFunc(func2__id));
-    auto func2 = [func2__cf](int _0) {
-        ni_pushInt(_0);
-        func2__cf->remoteExec();
-        return ni_popInt();
-    };
+    auto func2 = IntFunc__pop();
     stashFunc(func2);
 }
 
@@ -90,20 +113,7 @@ void releaseFunc__wrapper() {
 }
 
 void returnStashedFunc__wrapper() {
-    auto __f = returnStashedFunc();
-    size_t __uniqueKey = 0;
-    if (__f) {
-        typedef int function_t(int);
-        function_t* ptr_fun = __f.target<function_t>();
-        if (ptr_fun != nullptr) {
-            __uniqueKey = (size_t)ptr_fun;
-        }
-    }
-    auto __wrapper = [__f]() {
-        auto _0 = ni_popInt();
-        ni_pushInt(__f(_0));
-    };
-    pushServerFuncVal(__wrapper, __uniqueKey);
+    IntFunc__push(returnStashedFunc());
 }
 
 void makeThing__wrapper() {
@@ -197,9 +207,10 @@ void __constantsFunc() {
 }
 
 extern "C" int nativeLibraryInit() {
-    printf("*** GENERATED ****\n");
     auto m = ni_registerModule("TestLibrary");
     ni_registerModuleConstants(m, &__constantsFunc);
+    ni_registerModuleMethod(m, "stringTest", &stringTest__wrapper);
+    ni_registerModuleMethod(m, "returnString", &returnString__wrapper);
     ni_registerModuleMethod(m, "sum", &sum__wrapper);
     ni_registerModuleMethod(m, "execFunc01", &execFunc01__wrapper);
     ni_registerModuleMethod(m, "stashFunc", &stashFunc__wrapper);

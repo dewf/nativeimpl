@@ -1,7 +1,6 @@
 ﻿[<RequireQualifiedAccess>]
 module CppGenerator
 
-open System
 open System.IO
 open System.Text.RegularExpressions
 open Parser
@@ -37,6 +36,7 @@ let rec typeToString = function
     | UnitType -> "void"
     | Bool -> "bool"
     | Int32 -> "int"
+    | StringType -> "std::string"
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
     | ExceptionType name -> name
     | DelegateType name -> sprintf "std::function<%s>" name
@@ -49,17 +49,9 @@ let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: 
         |> String.concat ", "
     fprintfn writer "%stypedef %s %s(%s);" indent (typeToString ret) name argsJoined
 
-//let joinedFunctionArgs (nf: NamedFunction) =
-//    [for argName, argType in nf.Args -> sprintf "%s %s" (typeToString argType) argName]
-//    |> String.concat ", "
-
 let joinedFields (fields: NamedField list) =
     [for field in fields -> sprintf "%s %s" (typeToString field.Type_) field.Name]
     |> String.concat ", "
-
-//let joinedAnonymousArgs (args: NIType list) =
-//    [for i, argType in args |> List.indexed -> sprintf "%s _%d" (typeToString argType) i]
-//    |> String.concat ", "
 
 let joinedArgs (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToString type_) name]
@@ -74,6 +66,7 @@ let rec defaultValueForType = function
     | UnitType -> failwith "defaultValueForType called on UnitType"
     | Bool -> "false"
     | Int32 -> "0"
+    | StringType -> "\"default\""
     | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
     | DelegateType name -> sprintf "std::function<%s>()" name
     | _ ->
@@ -103,6 +96,12 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             fprintfn writer "%sauto %s = ni_popInt();" indent name
         | Return ->
             fprintfn writer "%sreturn ni_popInt();" indent
+    | StringType ->
+        match context with
+        | Variable name ->
+            fprintfn writer "%sauto %s = popStringInternal();" indent name
+        | Return ->
+            fprintfn writer "%sreturn popStringInternal();" indent
     | InterfaceType ifaceName ->
         match context with
         | Variable name ->
@@ -127,6 +126,8 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         fprintfn writer "%sni_pushBool(%s);" indent content
     | Int32 ->
         fprintfn writer "%sni_pushInt(%s);" indent content
+    | StringType ->
+        fprintfn writer "%spushStringInternal(%s);" indent content
     | InterfaceType name ->
         fprintfn writer "%s%s__push(%s, %s);" indent name content (if isReturn then "true" else "false")
     | DelegateType name ->
@@ -394,6 +395,7 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
     fprintfn writer "#include \"NativeImplServer.h\""
     fprintfn writer "#include <functional>"
     fprintfn writer "#include <memory>"
+    fprintfn writer "#include <string>"
 
     // delegate typedefs
     for name, info in delegates do

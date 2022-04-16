@@ -49,3 +49,5 @@ extern "C" {
 }
 
 void pushServerFuncVal(std::function<void()> wrapper, size_t key);
+void pushStringInternal(std::string str);
+std::string popStringInternal();

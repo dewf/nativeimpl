@@ -77,7 +77,9 @@ type PopValueContext =
     | Return
 
 let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
-    let indent = String.replicate level "    "
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
     match type_ with
     | UnitType ->
         match context with
@@ -87,63 +89,61 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
     | Bool ->
         match context with
         | Variable name ->
-            fprintfn writer "%sauto %s = ni_popBool();" indent name
+            write level "auto %s = ni_popBool();" name
         | Return ->
-            fprintfn writer "%sreturn ni_popBool();" indent
+            write level "return ni_popBool();"
     | Int32 ->
         match context with
         | Variable name ->
-            fprintfn writer "%sauto %s = ni_popInt();" indent name
+            write level "auto %s = ni_popInt();" name
         | Return ->
-            fprintfn writer "%sreturn ni_popInt();" indent
+            write level "return ni_popInt();"
     | StringType ->
         match context with
         | Variable name ->
-            fprintfn writer "%sauto %s = popStringInternal();" indent name
+            write level "auto %s = popStringInternal();" name
         | Return ->
-            fprintfn writer "%sreturn popStringInternal();" indent
+            write level "return popStringInternal();"
     | InterfaceType ifaceName ->
         match context with
         | Variable name ->
-            fprintfn writer "%sauto %s = %s__pop();" indent name ifaceName
+            write level "auto %s = %s__pop();" name ifaceName
         | Return ->
-            fprintfn writer "%sreturn %s__pop();" indent ifaceName
+            write level "return %s__pop();" ifaceName
     | DelegateType delegateName ->
         match context with
         | Variable name ->
-            fprintfn writer "%sauto %s = %s__pop();" indent name delegateName
+            write level "auto %s = %s__pop();" name delegateName
         | Return ->
-            fprintfn writer "%sreturn %s__pop();" indent delegateName
+            write level "return %s__pop();" delegateName
     | _ ->
-        fprintfn writer "%s(not yet implemented);" indent
+        write level "(not yet implemented)"
 
 and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: bool) =
-    let indent = String.replicate level "    "
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
     match type_ with
     | UnitType ->
-        fprintfn writer "%s%s;" indent content // no push!
+        write level "%s;" content // no push!
     | Bool ->
-        fprintfn writer "%sni_pushBool(%s);" indent content
+        write level "ni_pushBool(%s);" content
     | Int32 ->
-        fprintfn writer "%sni_pushInt(%s);" indent content
+        write level "ni_pushInt(%s);" content
     | StringType ->
-        fprintfn writer "%spushStringInternal(%s);" indent content
+        write level "pushStringInternal(%s);" content
     | InterfaceType name ->
-        fprintfn writer "%s%s__push(%s, %s);" indent name content (if isReturn then "true" else "false")
+        write level "%s__push(%s, %s);" name content (if isReturn then "true" else "false")
     | DelegateType name ->
-        fprintfn writer "%s%s__push(%s);" indent name content // still hmm about safety area for functions ...
+        write level "%s__push(%s);" name content // still hmm about safety area for functions ...
     | _ ->
-        fprintfn writer "%s(pushValue not supported yet)" indent
+        write level "(pushValue not supported yet)"
 
 let generateWrappersCpp (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
     let blank () = write 0 ""
-    // prologue
-    fprintfn writer "#include \"NativeImplServer.h\""
-    fprintfn writer "#include \"Implementation.h\""
-    fprintfn writer ""
     // things we'll need to use a few times:
     let globals =
         m.Defs
@@ -176,19 +176,23 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
             | UserType(name, ExceptionDef fields) -> Some (name, fields)
             | _ -> None)
     // begin output: ===============================================
+    // prologue
+    write 0 "#include \"NativeImplServer.h\""
+    write 0 "#include \"Implementation.h\""
 
     // opaques + interface method + exception handles
+    blank()
     for name, userType in userTypes do
         let lowerName = lowerFirst name
         match userType with
         | OpaqueHandleDef ->
-            fprintfn writer "NIHANDLE(%s);" lowerName
+            write 0 "NIHANDLE(%s);" lowerName
         | InterfaceDef namedFunctions ->
             namedFunctions
             |> List.iter (fun nf ->
-                fprintfn writer "ni_InterfaceMethodRef %s_%s;" lowerName nf.Name)
+                write 0 "ni_InterfaceMethodRef %s_%s;" lowerName nf.Name)
         | ExceptionDef _ ->
-            fprintfn writer "ni_ExceptionRef %s;" lowerName
+            write 0 "ni_ExceptionRef %s;" lowerName
         | _ ->
             ()
 
@@ -227,145 +231,136 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
         write 1 "return wrapper;"
         write 0 "}"
 
-    blank()
-
     // interfaces: fwd decls, client wrapper, push/pop
     for name, methods in interfaces do
+        blank()
         // fwd decls used in client wrapper
-        fprintfn writer "void %s__push(std::shared_ptr<%s> thing, bool isReturn);" name name
-        fprintfn writer "std::shared_ptr<%s> %s__pop();" name name
-        fprintfn writer ""
+        write 0 "void %s__push(std::shared_ptr<%s> thing, bool isReturn);" name name
+        write 0 "std::shared_ptr<%s> %s__pop();" name name
+        blank()
         // client wrapper
-        fprintfn writer "class Client%s : public ClientObject, public %s {" name name
-        fprintfn writer "public:"
-        fprintfn writer "    Client%s(int id) : ClientObject(id) {}" name
+        write 0 "class Client%s : public ClientObject, public %s {" name name
+        write 0 "public:"
+        write 1 "Client%s(int id) : ClientObject(id) {}" name
         // methods
         for namedFunc in methods do
             let argList =
                 [for argName, argType in namedFunc.Args -> sprintf "%s %s" (typeToString argType) argName]
                 |> String.concat ", "
-            fprintfn writer "    %s %s(%s) override {" (typeToString namedFunc.Returns) namedFunc.Name argList
+            write 1 "%s %s(%s) override {" (typeToString namedFunc.Returns) namedFunc.Name argList
             // push args (reverse order)
             for argName, argType in namedFunc.Args |> List.rev do
                 pushValue writer 2 argType argName false
             // invoke
             match namedFunc.Throws with
             | Some _ ->
-                fprintfn writer "        invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
+                write 2 "invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
             | None ->
-                fprintfn writer "        invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
+                write 2 "invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
             // pop result
             match namedFunc.Returns with
             | InterfaceType _ -> // | AnonymousFunction _
                 // any sort of reference that might get freed if it was only a return value from the other side (stored nowhere else, so protected by the safety area)
                 popValue writer 2 namedFunc.Returns (Variable "__ret")
-                fprintfn writer "        ni_clearClientSafetyArea();"
-                fprintfn writer "        return __ret;"
+                write 2 "ni_clearClientSafetyArea();"
+                write 2 "return __ret;"
             | _ ->
                 popValue writer 2 namedFunc.Returns Return
-            fprintfn writer "    }"
+            write 1 "}"
         // end
-        fprintfn writer "};"
-        fprintfn writer ""
+        write 0 "};"
+        blank()
         // push/pop
         let nameRegex = Regex(@"%%IFACE%%")
         writer.WriteLine(nameRegex.Replace(PushTemplate, name))
         writer.WriteLine()
         writer.WriteLine(nameRegex.Replace(PopTemplate, name))
-    fprintfn writer ""
 
     // plain function wrappers
     for namedFunction in moduleMethods do
-        fprintfn writer "void %s__wrapper() {" namedFunction.Name
+        blank()
+        write 0 "void %s__wrapper() {" namedFunction.Name
         for argName, argType in namedFunction.Args do
             popValue writer 1 argType (Variable argName)
-        let argsJoined =
-            [for name, _ in namedFunction.Args -> name]
-            |> String.concat ", "
         let invocation =
-            sprintf "%s(%s)" namedFunction.Name argsJoined
+            sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
         match namedFunction.Throws with
         | Some (ExceptionType exceptionName) ->
-            fprintfn writer "    try {"
+            write 1 "try {"
             pushValue writer 2 namedFunction.Returns invocation true
-            fprintfn writer "    }"
-            fprintfn writer "    catch (const %s& e) {" exceptionName
-            fprintfn writer "        ni_setException(%s);" (lowerFirst exceptionName)
-            fprintfn writer "        e.push();"
-            fprintfn writer "    }"
+            write 1 "}"
+            write 1 "catch (const %s& e) {" exceptionName
+            write 2 "ni_setException(%s);" (lowerFirst exceptionName)
+            write 2 "e.push();"
+            write 1 "}"
         | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
             pushValue writer 1 namedFunction.Returns invocation true
-        fprintfn writer "}"
-        fprintfn writer ""
+        write 0 "}"
 
     // interface wrappers
     for name, namedFunctions in interfaces do
         namedFunctions
         |> List.iter (fun nf ->
-            fprintfn writer "void %s_%s__wrapper(int serverID) {" name nf.Name
-            fprintfn writer "    auto inst = Server%s::getByID(serverID);" name
+            blank()
+            write 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
+            write 1 "auto inst = Server%s::getByID(serverID);" name
             for argName, argType in nf.Args do
                 popValue writer 1 argType (Variable argName)
-            let argsJoined =
-                [for name, _ in nf.Args -> name]
-                |> String.concat ", "
             let invocation =
-                sprintf "inst->%s(%s)" nf.Name argsJoined
+                sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
             match nf.Throws with
             | Some (ExceptionType exceptionName) ->
-                fprintfn writer "    try {"
+                write 1 "try {"
                 pushValue writer 2 nf.Returns invocation true
-                fprintfn writer "    }"
-                fprintfn writer "    catch (const %s& e) {" exceptionName
-                fprintfn writer "        ni_setException(%s);" (lowerFirst exceptionName)
-                fprintfn writer "        e.push();"
-                fprintfn writer "    }"
+                write 1 "}"
+                write 1 "catch (const %s& e) {" exceptionName
+                write 2 "ni_setException(%s);" (lowerFirst exceptionName)
+                write 2 "e.push();"
+                write 1 "}"
             | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
                 pushValue writer 1 nf.Returns invocation true
-            fprintfn writer "}"
-            fprintfn writer "")
+            write 0 "}")
 
     // globals/constants func
-    fprintfn writer "void __constantsFunc() {"
+    blank()
+    write 0 "void __constantsFunc() {"
     // push in reverse order
     for globalName, globalType in globals |> List.rev do
         pushValue writer 1 globalType globalName false // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
-    fprintfn writer "}"
-
-    fprintfn writer ""
+    write 0 "}"
 
     // library entry point / registrations
-    fprintfn writer "extern \"C\" int nativeLibraryInit() {"
-    fprintfn writer "    auto m = ni_registerModule(\"%s\");" m.Name
-    fprintfn writer "    ni_registerModuleConstants(m, &__constantsFunc);"
+    blank()
+    write 0 "extern \"C\" int nativeLibraryInit() {"
+    write 1 "auto m = ni_registerModule(\"%s\");" m.Name
+    write 1 "ni_registerModuleConstants(m, &__constantsFunc);"
     // module methods
     for namedFunction in moduleMethods do
-        fprintfn writer "    ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name
+        write 1 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name
     // interfaces + methods
     for name, methods in interfaces do
         let lowerName = lowerFirst name
-        fprintfn writer "    auto %s = ni_registerInterface(m, \"%s\");" lowerName name
+        write 1 "auto %s = ni_registerInterface(m, \"%s\");" lowerName name
         for method in methods do
-            fprintfn writer "    %s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
+            write 1 "%s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
     // exceptions
     for name, _ in exceptions do
         let lowerName = lowerFirst name
-        fprintfn writer "    %s = ni_registerException(m, \"%s\", &%s::buildAndThrow);" lowerName name name
+        write 1 "%s = ni_registerException(m, \"%s\", &%s::buildAndThrow);" lowerName name name
     // done
-    fprintfn writer "    return 0; // = OK"
-    fprintfn writer "}"
-    fprintfn writer ""
+    write 1 "return 0; // = OK"
+    write 0 "}"
+    write 0 ""
     // shutdown
-    fprintfn writer "extern \"C\" void nativeLibraryShutdown() {"
+    write 0 "extern \"C\" void nativeLibraryShutdown() {"
     // nothing for C++
-    fprintfn writer "}"
+    write 0 "}"
 
 let generateImplementationH (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
     let blank () = write 0 ""
-
     let interfaces =
         m.Defs
         |> List.choose (function
@@ -392,74 +387,77 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
             | UserType(name, DelegateDef delegateInfo) -> Some (name, delegateInfo)
             | _ -> None)
     // begin output: ===============================================
-    fprintfn writer "#include \"NativeImplServer.h\""
-    fprintfn writer "#include <functional>"
-    fprintfn writer "#include <memory>"
-    fprintfn writer "#include <string>"
+    write 0 "#include \"NativeImplServer.h\""
+    write 0 "#include <functional>"
+    write 0 "#include <memory>"
+    write 0 "#include <string>"
 
     // delegate typedefs
     for name, info in delegates do
         blank()
         write 0 "typedef %s %s(%s);" (typeToString info.Returns) name (joinedArgs info.Args)
 
-    blank()
-
     // exceptions
     for exName, exFields in exceptions do
-        fprintfn writer "class %s {" exName
-        fprintfn writer "public:"
+        blank()
+        write 0 "class %s {" exName
+        write 0 "public:"
         for namedField in exFields do
-            fprintfn writer "    %s %s;" (typeToString namedField.Type_) namedField.Name
+            write 1 "%s %s;" (typeToString namedField.Type_) namedField.Name
         let joinedInitializers =
             [for nf in exFields -> sprintf "%s(%s)" nf.Name nf.Name]
             |> String.concat ", "
-        fprintfn writer "    %s(%s) : %s {}" exName (joinedFields exFields) joinedInitializers
-        fprintfn writer "    void push() const {"
+        write 1 "%s(%s) : %s {}" exName (joinedFields exFields) joinedInitializers
+        write 1 "void push() const {"
         // push field values (reverse order)
         for namedField in exFields |> List.rev do
             pushValue writer 2 namedField.Type_ namedField.Name false // false = not a concern because it still exists in this class instance
-        fprintfn writer "    }"
+        write 1 "}"
         // build and throw
-        fprintfn writer "    static void buildAndThrow() {"
-        for i, namedField in exFields |> List.indexed do
-            popValue writer 2 namedField.Type_ (Variable (sprintf "_%d" i))
+        write 1 "static void buildAndThrow() {"
+        for field in exFields do
+            popValue writer 2 field.Type_ (Variable field.Name)
         // joined variables (_0, _1, etc)
         let joinedVars =
-            [for i in 0 .. exFields.Length-1 -> sprintf "_%d" i]
+            [for field in exFields -> field.Name]
             |> String.concat ", "
-        fprintfn writer "        throw %s(%s);" exName joinedVars
-        fprintfn writer "    }"
-        fprintfn writer "};"
-        fprintfn writer ""
+        write 2 "throw %s(%s);" exName joinedVars
+        write 1 "}"
+        write 0 "};"
     // raw interfaces + server wrappers
     for name, methods in interfaces do
-        fprintfn writer "class %s {" name
-        fprintfn writer "public:"
+        blank()
+        write 0 "class %s {" name
+        write 0 "public:"
         for namedFunc in methods do
             let throwsComment =
                 match namedFunc.Throws with
                 | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
                 | None -> ""
-            fprintfn writer "    virtual %s %s(%s) = 0;%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
-        fprintfn writer "};"
-        fprintfn writer ""
+            write 1 "virtual %s %s(%s) = 0;%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
+        write 0 "};"
+        write 0 ""
         // server wrapper
         let nameRegex = Regex(@"%%IFACE%%")
         writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
-        fprintfn writer ""
     // global externs
+    blank()
     for globalName, globalType in globals do
-        fprintfn writer "extern const %s %s;" (typeToString globalType) globalName
-    fprintfn writer ""
+        write 0 "extern const %s %s;" (typeToString globalType) globalName
     // function prototypes
+    blank()
     for namedFunc in moduleMethods do
         let throwsComment =
             match namedFunc.Throws with
             | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
             | None -> ""
-        fprintfn writer "%s %s(%s);%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
+        write 0 "%s %s(%s);%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
 
 let generateImplementationCpp (m: Module) (writer: TextWriter) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    let blank () = write 0 ""
     let globals =
         m.Defs
         |> List.choose (function
@@ -471,25 +469,24 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
     // begin output: ===============================================
-    fprintfn writer "#include \"Implementation.h\""
-    fprintfn writer "#include <memory>"
-    fprintfn writer "#include <functional>"
-    fprintfn writer ""
+    write 0 "#include \"Implementation.h\""
+    write 0 "#include <memory>"
+    write 0 "#include <functional>"
     // globals
+    blank()
     for globalName, globalType in globals do
-        fprintfn writer "const %s %s = %s;" (typeToString globalType) globalName (defaultValueForType globalType)
-    fprintfn writer ""
+        write 0 "const %s %s = %s;" (typeToString globalType) globalName (defaultValueForType globalType)
     // functions
     for namedFunc in moduleMethods do
+        blank()
         let throwsComment =
             match namedFunc.Throws with
             | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
             | None -> ""
-        fprintfn writer "%s %s(%s) {%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
+        write 0 "%s %s(%s) {%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
         if namedFunc.Returns <> UnitType then
-            fprintfn writer "    return %s;" (defaultValueForType namedFunc.Returns)
-        fprintfn writer "}"
-        fprintfn writer ""
+            write 1 "return %s;" (defaultValueForType namedFunc.Returns)
+        write 0 "}"
 
 let generate (m: Module) =
     printfn "C++ writing Wrappers.cpp"

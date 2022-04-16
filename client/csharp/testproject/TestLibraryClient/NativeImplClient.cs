@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -128,6 +129,12 @@ namespace TestLibraryClient
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void popString(out IntPtr strPtr, out IntPtr length); // size_t* length
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushStringArray(IntPtr[] strs, IntPtr[] lengths, IntPtr count); // const char **, size_t*, size_t
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popStringArray(out IntPtr strsPtr, out IntPtr lengthsPtr, out IntPtr count); // const char ***, size_t**, size_t*
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushClientFunc(int id);
@@ -341,24 +348,54 @@ namespace TestLibraryClient
             return ret;
         }
 
-        private static IntPtr _pushStringBuffer = Marshal.AllocHGlobal(1024 * 1024);
-        private static int _pushStringBufferLength = 1024 * 1024;
         public static void PushString(string str)
         {
             var bytes = Encoding.UTF8.GetBytes(str);
-            if (bytes.Length > _pushStringBufferLength)
-            {
-                _pushStringBuffer = Marshal.ReAllocHGlobal(_pushStringBuffer, (IntPtr)bytes.Length);
-                _pushStringBufferLength = bytes.Length;
-            }
-            Marshal.Copy(bytes, 0, _pushStringBuffer, bytes.Length);
-            NativeMethods.pushString(_pushStringBuffer, (IntPtr)bytes.Length); // not null terminated, since the other side doesn't require that
+            var ptr = Marshal.AllocHGlobal(str.Length);
+            Marshal.Copy(bytes, 0, ptr, bytes.Length);
+            NativeMethods.pushString(ptr, (IntPtr)bytes.Length);
+            Marshal.FreeHGlobal(ptr);
         }
 
         public static string PopString()
         {
             NativeMethods.popString(out var ptr, out var length);
             return Marshal.PtrToStringUTF8(ptr, (int)length);
+        }
+
+        public static void PushStringArray(string[] strs)
+        {
+            IntPtr[] pointers = new IntPtr[strs.Length];
+            IntPtr[] lengths = new IntPtr[strs.Length];
+            for (var i = 0; i < strs.Length; i++)
+            {
+                var bytes = Encoding.UTF8.GetBytes(strs[i]);
+                var ptr = Marshal.AllocHGlobal(bytes.Length);
+                Marshal.Copy(bytes, 0, ptr, bytes.Length);
+                pointers[i] = ptr;
+                lengths[i] = (IntPtr)bytes.Length;
+            }
+            NativeMethods.pushStringArray(pointers, lengths, (IntPtr)strs.Length);
+            foreach (var p in pointers)
+            {
+                Marshal.FreeHGlobal(p);
+            }
+        }
+
+        public static string[] PopStringArray()
+        {
+            NativeMethods.popStringArray(out var ptrsPtr, out var lengthsPtr, out var count);
+            var intCount = (int)count;
+            var ptrs = new IntPtr[intCount];
+            var lengths = new IntPtr[intCount];
+            Marshal.Copy(ptrsPtr, ptrs, 0, intCount);
+            Marshal.Copy(lengthsPtr, lengths, 0, intCount);
+            var result = new string[intCount];
+            for (var i = 0; i < intCount; i++)
+            {
+                result[i] = Marshal.PtrToStringUTF8(ptrs[i], (int)lengths[i]);
+            }
+            return result;
         }
         
         public static void PushClientFuncVal(FuncValWrapper del, IntPtr key)

@@ -106,6 +106,35 @@ std::vector<int> popIntArrayInternal()
 	return ret;
 }
 
+void pushStringArrayInternal(std::vector<std::string> values)
+{
+	auto count = values.size();
+	auto ptrs = new const char*[count];
+	auto lengths = new size_t[count];
+	for (auto i = 0; i < count; i++) {
+		ptrs[i] = values[i].data();
+		lengths[i] = values[i].size();
+	}
+	ni_pushStringArray(ptrs, lengths, count);
+	delete[] ptrs;
+	delete[] lengths;
+}
+
+std::vector<std::string> popStringArrayInternal()
+{
+	const char** strs;
+	size_t* lengths;
+	size_t count;
+	ni_popStringArray(&strs, &lengths, &count);
+	std::vector<std::string> ret;
+	for (auto i = 0; i < count; i++) {
+		std::string str;
+		str.assign(strs[i], strs[i] + lengths[i]);
+		ret.push_back(str);
+	}
+	return ret;
+}
+
 void ServerObject::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	// isReturn not used for server stuff, that's just to help out with the safe area / protecting client objects
 	if (id == -1) { // unset as of yet

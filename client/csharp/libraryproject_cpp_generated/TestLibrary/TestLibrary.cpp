@@ -90,6 +90,16 @@ void popString(const char** strPtr, size_t* length) {
     ni_popString(strPtr, length);
 }
 
+void pushStringArray(const char** strs, size_t* lengths, size_t count)
+{
+    ni_pushStringArray(strs, lengths, count);
+}
+
+void popStringArray(const char*** strs, size_t** lengths, size_t* count)
+{
+    ni_popStringArray(strs, lengths, count);
+}
+
 void pushClientFunc(int id)
 {
     ni_pushClientFunc(id);

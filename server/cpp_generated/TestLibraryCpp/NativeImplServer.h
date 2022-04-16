@@ -55,3 +55,5 @@ void pushStringInternal(std::string str);
 std::string popStringInternal();
 void pushIntArrayInternal(std::vector<int> values);
 std::vector<int> popIntArrayInternal();
+void pushStringArrayInternal(std::vector<std::string> values);
+std::vector<std::string> popStringArrayInternal();

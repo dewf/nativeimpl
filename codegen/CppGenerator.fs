@@ -123,6 +123,7 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             match niType with
             | Bool -> "popBoolArrayInternal"
             | Int32 -> "popIntArrayInternal"
+            | StringType -> "popStringArrayInternal"
             | _ -> "(not yet supported)"
         match context with
         | Variable name ->
@@ -154,6 +155,7 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             match niType with
             | Bool -> "pushBoolArrayInternal"
             | Int32 -> "pushIntArrayInternal"
+            | StringType -> "pushStringArrayInternal"
             | _ -> "(not yet supported)"
         write level "%s(%s);" pushFunc content
     | _ ->
@@ -413,6 +415,7 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
     write 0 "#include <functional>"
     write 0 "#include <memory>"
     write 0 "#include <string>"
+    write 0 "#include <vector>"
 
     // delegate typedefs
     for name, info in delegates do

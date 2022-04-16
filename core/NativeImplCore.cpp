@@ -73,10 +73,10 @@ public:
 	}
 };
 
-class BoolArray : public StackItem {
+class BoolArrayItem : public StackItem {
 public:
 	std::vector<uint8_t> values;		// using 'bool' doesn't allow .data access, lame
-	BoolArray(bool* ptr, size_t count) {
+	BoolArrayItem(bool* ptr, size_t count) {
 		values.assign(ptr, ptr + count);
 	}
 	std::vector<uint8_t> boolArray() override {
@@ -93,10 +93,10 @@ public:
 	}
 };
 
-class IntArray : public StackItem {
+class IntArrayItem : public StackItem {
 public:
 	std::vector<int> values;
-	IntArray(int* ptr, size_t count) {
+	IntArrayItem(int* ptr, size_t count) {
 		values.assign(ptr, ptr + count);
 	}
 	std::vector<int> intArray() override {
@@ -120,10 +120,21 @@ public:
 	}
 };
 
-class StringArray : public StackItem {
+class StringArrayItem : public StackItem {
 public:
 	std::vector<std::string> values;
-	StringArray(std::vector<std::string> values) : values(values) {};
+	StringArrayItem(const char** ptrs, size_t* lengths, size_t count) {
+		for (auto i = 0; i < count; i++) {
+			std::string str;
+			if (lengths[i] > 0) {
+				str.assign(ptrs[i], lengths[i]);
+			}
+			else {
+				str = ptrs[i]; // null-terminated
+			}
+			values.push_back(str);
+		}
+	}
 	std::vector<std::string> stringArray() override {
 		return values;
 	}
@@ -369,7 +380,7 @@ bool ni_popBool() {
 
 void ni_pushBoolArray(bool* values, size_t count)
 {
-	vstack.push(new BoolArray(values, count));
+	vstack.push(new BoolArrayItem(values, count));
 }
 
 static std::vector<uint8_t> lastBoolArray;
@@ -398,7 +409,7 @@ int ni_popInt() {
 
 void ni_pushIntArray(int* values, size_t count)
 {
-	vstack.push(new IntArray(values, count));
+	vstack.push(new IntArrayItem(values, count));
 }
 
 static std::vector<int> lastIntArray;
@@ -425,6 +436,36 @@ void ni_popString(const char** strPtr, size_t* length) {
 	delete item;
 	*strPtr = lastPoppedString.c_str();
 	*length = lastPoppedString.size();
+}
+
+void ni_pushStringArray(const char** strs, size_t* lengths, size_t count)
+{
+	vstack.push(new StringArrayItem(strs, lengths, count));
+}
+
+static std::vector<std::string> lastPoppedStringArray;
+static const char** lastPoppedStrs = nullptr;
+static size_t* lastPoppedStrLengths = nullptr;
+
+void ni_popStringArray(const char*** strs, size_t** lengths, size_t* count)
+{
+	auto item = vstack.top();
+	lastPoppedStringArray = item->stringArray();
+	vstack.pop();
+	delete item;
+	//
+	delete[] lastPoppedStrs;
+	delete[] lastPoppedStrLengths;
+	auto _count = lastPoppedStringArray.size();
+	lastPoppedStrs = new const char*[_count];
+	lastPoppedStrLengths = new size_t[_count];
+	for (auto i = 0; i < _count; i++) {
+		lastPoppedStrs[i] = lastPoppedStringArray[i].data();
+		lastPoppedStrLengths[i] = lastPoppedStringArray[i].size();
+	}
+	*strs = lastPoppedStrs;
+	*lengths = lastPoppedStrLengths;
+	*count = _count;
 }
 
 // visible to client ===========================================

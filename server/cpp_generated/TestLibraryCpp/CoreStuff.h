@@ -49,6 +49,8 @@ extern "C" {
 
 	extern void ni_pushString(const char* str, size_t length);
 	extern void ni_popString(const char** strPtr, size_t* length);
+	extern void ni_pushStringArray(const char** strs, size_t* lengths, size_t count);
+	extern void ni_popStringArray(const char*** strs, size_t** lengths, size_t* count);
 
 	extern int ni_popClientFunc();
 	extern void ni_pushServerFunc(int id);

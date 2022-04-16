@@ -104,6 +104,7 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             match niType with
             | Bool -> "PopBoolArray"
             | Int32 -> "PopIntArray"
+            | StringType -> "PopStringArray"
             | _ -> "(unsupported)"
         match context with
         | NewVariable name ->
@@ -136,6 +137,7 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             match niType with
             | Bool -> "PushBoolArray"
             | Int32 -> "PushIntArray"
+            | StringType -> "PushStringArray"
             | _ -> "(not yet supported)"
         write level "NativeImplClient.%s(%s);" pushFunc content
     | _ ->

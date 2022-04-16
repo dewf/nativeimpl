@@ -48,6 +48,8 @@ public:
     }
 };
 
+typedef int IntFunc(int x);
+
 extern const int global01;
 extern const int anotherGlobal;
 extern const int lastIntGlobal;
@@ -55,11 +57,11 @@ extern const int lastIntGlobal;
 void stringTest(std::string str);
 std::string returnString();
 int sum(int a, int b, int c);
-int execFunc01(std::function<int(int)> singleIntFunc);
+int execFunc01(std::function<IntFunc> singleIntFunc);
 int defaultStashedFunc(int x);
-void stashFunc(std::function<int(int)> singleIntFunc);
+void stashFunc(std::function<IntFunc> singleIntFunc);
 void releaseFunc();
-std::function<int(int)> returnStashedFunc();
+std::function<IntFunc> returnStashedFunc();
 std::shared_ptr<IThing01> makeThing();
 int operateOnThing(std::shared_ptr<IThing01> thing, int arg);
 void saveThing(std::shared_ptr<IThing01> thing);

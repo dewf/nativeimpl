@@ -62,8 +62,50 @@ void IThing01__push(std::shared_ptr<IThing01> thing, bool isReturn) {
     pushable->push(pushable, isReturn);
 }
 
-// ==============================================================
-// library wrapper stuff
+// delegate wrapper stuff =======================================
+
+typedef int IntFunc(int x);
+
+void IntFunc__push(std::function<IntFunc> f) {
+    // note this always wraps with an indirect/wrapped server func - no short-circuiting possible with function values going across client/server boundary
+    // (because no way to pull apart a std::function to see what's inside, distinguishing client/server funcs)
+    // ie, if for some reason you're sending and returning functions across the boundary,
+    // it will keep being wrapped over and over again! needless to say, very bad for performance :)
+    // if you need that kind of behavior, use a single-method interface instead - will properly be short-circuited across the boundary
+
+    // an attempt to not needlessly duplicate simple functions in our function table (won't work for closures, right?)
+    size_t uniqueKey = 0;
+    if (f) {
+        typedef int function_t(int);
+        function_t* ptr_fun = f.target<function_t>();
+        if (ptr_fun != nullptr) {
+            uniqueKey = (size_t)ptr_fun;
+        }
+    }
+    // push the id for the wrapper of that function on the stack
+    // client side will be able to invoke this wrapper whenever
+    // ideally this would de-duplicate (for unique values of f) but no idea how to do that in C++ :(
+    auto wrapper = [f]() {
+        auto x = ni_popInt();
+        auto res = f(x);
+        ni_pushInt(res);
+    };
+    pushServerFuncVal(wrapper, uniqueKey);
+}
+
+std::function<IntFunc> IntFunc__pop() {
+    auto id = ni_popClientFunc();
+    auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id)); // wrap it in something that knows how to invoke / clean up that remote function
+    auto wrapper = [cf](int x) {
+        ni_pushInt(x);
+        cf->remoteExec();
+        return ni_popInt();
+        // when this lambda is destroyed, so will cf which will trigger the cleanup/release of remote function
+    };
+    return wrapper;
+}
+
+// library wrapper stuff ========================================
 
 void stringTestWrapper() {
     auto str = popStringInternal();
@@ -82,25 +124,12 @@ void sumWrapper() {
 }
 
 void execFunc01Wrapper() {
-    auto id = ni_popClientFunc();
-    auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id)); // wrap it in something that knows how to invoke / clean up that remote function
-    auto func = [cf](int x) {
-        ni_pushInt(x);
-        cf->remoteExec();
-        return ni_popInt();
-        // when this lambda is destroyed, so will cf which will trigger the cleanup/release of remote function
-    };
+    auto func = IntFunc__pop();
     ni_pushInt(execFunc01(func));
 }
 
 void stashFuncWrapper() {
-    auto id = ni_popClientFunc();
-    auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id));
-    auto func = [cf](int x) {
-        ni_pushInt(x);
-        cf->remoteExec();
-        return ni_popInt();
-    };
+    auto func = IntFunc__pop();
     stashFunc(func);
 }
 
@@ -109,34 +138,8 @@ void releaseFuncWrapper() {
 }
 
 void returnStashedFuncWrapper() {
-    // note this always wraps with an indirect/wrapped server func - no short-circuiting possible with function values going across client/server boundary
-    // (because no way to pull apart a std::function to see what's inside, distinguishing client/server funcs)
-    // ie, if for some reason you're sending and returning functions across the boundary,
-    // it will keep being wrapped over and over again! needless to say, very bad for performance :)
-    // if you need that kind of behavior, use a single-method interface instead - will properly be short-circuited across the boundary
-
-    // get the native function value
-    auto f = returnStashedFunc();
-
-    // an attempt to not needlessly duplicate simple functions in our function table (won't work for closures, right?)
-    size_t uniqueKey = 0;
-    if (f) {
-        typedef int function_t(int);
-        function_t* ptr_fun = f.target<function_t>();
-        if (ptr_fun != nullptr) {
-            uniqueKey = (size_t)ptr_fun;
-        }
-    }
-
-    // push the id for the wrapper of that function on the stack
-    // client side will be able to invoke this wrapper whenever
-    // ideally this would de-duplicate (for unique values of f) but no idea how to do that in C++ :(
-    auto wrapper = [f]() {
-        auto x = ni_popInt();
-        auto res = f(x);
-        ni_pushInt(res);
-    };
-    pushServerFuncVal(wrapper, uniqueKey);
+    auto __ret = returnStashedFunc();
+    IntFunc__push(__ret);
 }
 
 void makeThingWrapper() {

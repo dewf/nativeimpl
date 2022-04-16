@@ -27,7 +27,7 @@ int sum(int a, int b, int c) {
     return a + b + c;
 }
 
-int execFunc01(std::function<int(int)> singleIntFunc) {
+int execFunc01(std::function<IntFunc> singleIntFunc) {
     return singleIntFunc(101);
 }
 
@@ -37,9 +37,9 @@ int defaultStashedFunc(int x) {
     return x * 1001;
 }
 
-static std::function<int(int)> stashedFunc = defaultStashedFunc;
+static std::function<IntFunc> stashedFunc = defaultStashedFunc;
 
-void stashFunc(std::function<int(int)> singleIntFunc) {
+void stashFunc(std::function<IntFunc> singleIntFunc) {
     printf("library: stashFunc(sif)\n");
     stashedFunc = singleIntFunc;
 }
@@ -49,7 +49,7 @@ void releaseFunc() {
     stashedFunc = defaultStashedFunc;
 }
 
-std::function<int(int)> returnStashedFunc() {
+std::function<IntFunc> returnStashedFunc() {
     printf("returning stashed func...\n");
     return stashedFunc;
 }

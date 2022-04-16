@@ -39,11 +39,7 @@ let rec typeToString = function
     | Int32 -> "int"
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
     | ExceptionType name -> name
-//    | AnonymousFunction (argTypes, returnType) ->
-//        let joinedTypes =
-//            [for t in argTypes -> typeToString t]
-//            |> String.concat ","
-//        sprintf "std::function<%s(%s)>" (typeToString returnType) joinedTypes
+    | DelegateType name -> sprintf "std::function<%s>" name
     | _ -> "(typeToString: not done yet)"
 
 let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: NIType list) (ret: NIType) =
@@ -53,16 +49,25 @@ let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: 
         |> String.concat ", "
     fprintfn writer "%stypedef %s %s(%s);" indent (typeToString ret) name argsJoined
 
-let joinedFunctionArgs (nf: NamedFunction) =
-    [for argName, argType in nf.Args -> sprintf "%s %s" (typeToString argType) argName]
-    |> String.concat ", "
+//let joinedFunctionArgs (nf: NamedFunction) =
+//    [for argName, argType in nf.Args -> sprintf "%s %s" (typeToString argType) argName]
+//    |> String.concat ", "
 
 let joinedFields (fields: NamedField list) =
     [for field in fields -> sprintf "%s %s" (typeToString field.Type_) field.Name]
     |> String.concat ", "
 
-let joinedAnonymousArgs (args: NIType list) =
-    [for i, argType in args |> List.indexed -> sprintf "%s _%d" (typeToString argType) i]
+//let joinedAnonymousArgs (args: NIType list) =
+//    [for i, argType in args |> List.indexed -> sprintf "%s _%d" (typeToString argType) i]
+//    |> String.concat ", "
+
+let joinedArgs (args: (string * NIType) list) =
+    [for name, type_ in args -> sprintf "%s %s" (typeToString type_) name]
+    |> String.concat ", "
+
+let joinedArgNames (args: (string * NIType) list) =
+    args
+    |> List.map fst
     |> String.concat ", "
 
 let rec defaultValueForType = function
@@ -70,8 +75,7 @@ let rec defaultValueForType = function
     | Bool -> "false"
     | Int32 -> "0"
     | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
-//    | AnonymousFunction (niTypes, niType) ->
-//        sprintf "[](%s) { return %s; }" (joinedAnonymousArgs niTypes) (defaultValueForType niType)
+    | DelegateType name -> sprintf "std::function<%s>()" name
     | _ ->
         "(defaultValueForType: not yet supported)"
 
@@ -105,21 +109,12 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             fprintfn writer "%sauto %s = %s__pop();" indent name ifaceName
         | Return ->
             fprintfn writer "%sreturn %s__pop();" indent ifaceName
-//    | AnonymousFunction (argTypes, retType) ->
-//        let name =
-//            match context with
-//            | Variable name -> name
-//            | Return -> "__ret"
-//        fprintfn writer "%sauto %s__id = ni_popClientFunc();" indent name
-//        fprintfn writer "%sauto %s__cf = std::shared_ptr<ClientFunc>(new ClientFunc(%s__id));" indent name name
-//        fprintfn writer "%sauto %s = [%s__cf](%s) {" indent name name (joinedAnonymousArgs argTypes)
-//        // push those inner params in reverse order
-//        argTypes
-//        |> List.rev
-//        |> List.iteri (fun i type_ -> pushValue writer (level + 1) type_ (sprintf "_%d" i) false)
-//        fprintfn writer "%s    %s__cf->remoteExec();" indent name
-//        popValue writer (level + 1) retType Return
-//        fprintfn writer "%s};" indent
+    | DelegateType delegateName ->
+        match context with
+        | Variable name ->
+            fprintfn writer "%sauto %s = %s__pop();" indent name delegateName
+        | Return ->
+            fprintfn writer "%sreturn %s__pop();" indent delegateName
     | _ ->
         fprintfn writer "%s(not yet implemented);" indent
 
@@ -134,34 +129,17 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         fprintfn writer "%sni_pushInt(%s);" indent content
     | InterfaceType name ->
         fprintfn writer "%s%s__push(%s, %s);" indent name content (if isReturn then "true" else "false")
-//    | AnonymousFunction (argTypes, returnType) ->
-//        fprintfn writer "%sauto __f = %s;" indent content
-//        // unique key bullshit
-//        fprintfn writer "%ssize_t __uniqueKey = 0;" indent
-//        fprintfn writer "%sif (__f) {" indent
-//        pushFunctionTypedef writer (level + 1) "function_t" argTypes returnType
-//        fprintfn writer "%s    function_t* ptr_fun = __f.target<function_t>();" indent
-//        fprintfn writer "%s    if (ptr_fun != nullptr) {" indent
-//        fprintfn writer "%s        __uniqueKey = (size_t)ptr_fun;" indent
-//        fprintfn writer "%s    }" indent
-//        fprintfn writer "%s}" indent
-//        // wrapper:
-//        fprintfn writer "%sauto __wrapper = [__f]() {" indent
-//        argTypes
-//        |> List.iteri (fun i argType ->
-//            popValue writer (level + 1) argType (Variable (sprintf "_%d" i) ))
-//        let argList =
-//            argTypes
-//            |> List.mapi (fun i _ -> sprintf "_%d" i)
-//            |> String.concat ", "
-//        pushValue writer (level + 1) returnType (sprintf "__f(%s)" argList) true
-//        fprintfn writer "%s};" indent
-//        // end wrapper
-//        fprintfn writer "%spushServerFuncVal(__wrapper, __uniqueKey);" indent
+    | DelegateType name ->
+        fprintfn writer "%s%s__push(%s);" indent name content // still hmm about safety area for functions ...
     | _ ->
         fprintfn writer "%s(pushValue not supported yet)" indent
 
 let generateWrappersCpp (m: Module) (writer: TextWriter) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    let blank () = write 0 ""
+    // prologue
     fprintfn writer "#include \"NativeImplServer.h\""
     fprintfn writer "#include \"Implementation.h\""
     fprintfn writer ""
@@ -175,6 +153,11 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
         m.Defs
         |> List.choose (function
             | UserType(name, userType) -> Some (name, userType)
+            | _ -> None)
+    let delegates =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, DelegateDef delegateInfo) -> Some (name, delegateInfo)
             | _ -> None)
     let moduleMethods =
         m.Defs
@@ -208,7 +191,42 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
         | _ ->
             ()
 
-    fprintfn writer ""
+    // delegates: declaration, push/pop
+    for name, info in delegates do
+        // push
+        blank()
+        write 0 "void %s__push(std::function<%s> f) {" name name
+        write 1 "size_t uniqueKey = 0;"
+        write 1 "if (f) {"
+        write 2 "%s* ptr_fun = f.target<%s>();" name name
+        write 2 "if (ptr_fun != nullptr) {"
+        write 3 "uniqueKey = (size_t)ptr_fun;"
+        write 2 "}"
+        write 1 "}"
+        write 1 "auto wrapper = [f]() {"
+        for argName, argType in info.Args do
+            popValue writer 2 argType (Variable argName)
+        let invocation =
+            sprintf "f(%s)" (joinedArgNames info.Args)
+        pushValue writer 2 info.Returns invocation true
+        write 1 "};"
+        write 1 "pushServerFuncVal(wrapper, uniqueKey);"
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "std::function<%s> %s__pop() {" name name
+        write 1 "auto id = ni_popClientFunc();"
+        write 1 "auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id));"
+        write 1 "auto wrapper = [cf](%s) {" (joinedArgs info.Args)
+        for argName, argType in info.Args |> List.rev do
+            pushValue writer 2 argType argName false
+        write 2 "cf->remoteExec();"
+        popValue writer 2 info.Returns Return
+        write 1 "};"
+        write 1 "return wrapper;"
+        write 0 "}"
+
+    blank()
 
     // interfaces: fwd decls, client wrapper, push/pop
     for name, methods in interfaces do
@@ -342,6 +360,11 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
     fprintfn writer "}"
 
 let generateImplementationH (m: Module) (writer: TextWriter) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    let blank () = write 0 ""
+
     let interfaces =
         m.Defs
         |> List.choose (function
@@ -362,11 +385,23 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
         |> List.choose (function
             | UserType(name, ExceptionDef fields) -> Some (name, fields)
             | _ -> None)
+    let delegates =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, DelegateDef delegateInfo) -> Some (name, delegateInfo)
+            | _ -> None)
     // begin output: ===============================================
     fprintfn writer "#include \"NativeImplServer.h\""
     fprintfn writer "#include <functional>"
     fprintfn writer "#include <memory>"
-    fprintfn writer ""
+
+    // delegate typedefs
+    for name, info in delegates do
+        blank()
+        write 0 "typedef %s %s(%s);" (typeToString info.Returns) name (joinedArgs info.Args)
+
+    blank()
+
     // exceptions
     for exName, exFields in exceptions do
         fprintfn writer "class %s {" exName
@@ -403,7 +438,7 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
                 match namedFunc.Throws with
                 | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
                 | None -> ""
-            fprintfn writer "    virtual %s %s(%s) = 0;%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc) throwsComment
+            fprintfn writer "    virtual %s %s(%s) = 0;%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
         fprintfn writer "};"
         fprintfn writer ""
         // server wrapper
@@ -420,7 +455,7 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
             match namedFunc.Throws with
             | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
             | None -> ""
-        fprintfn writer "%s %s(%s);%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc) throwsComment
+        fprintfn writer "%s %s(%s);%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
 
 let generateImplementationCpp (m: Module) (writer: TextWriter) =
     let globals =
@@ -448,7 +483,7 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
             match namedFunc.Throws with
             | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
             | None -> ""
-        fprintfn writer "%s %s(%s) {%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedFunctionArgs namedFunc) throwsComment
+        fprintfn writer "%s %s(%s) {%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
         if namedFunc.Returns <> UnitType then
             fprintfn writer "    return %s;" (defaultValueForType namedFunc.Returns)
         fprintfn writer "}"

@@ -76,8 +76,8 @@ void IntFunc__push(std::function<IntFunc> f) {
     // an attempt to not needlessly duplicate simple functions in our function table (won't work for closures, right?)
     size_t uniqueKey = 0;
     if (f) {
-        typedef int function_t(int);
-        function_t* ptr_fun = f.target<function_t>();
+        //typedef int function_t(int);
+        IntFunc* ptr_fun = f.target<IntFunc>();
         if (ptr_fun != nullptr) {
             uniqueKey = (size_t)ptr_fun;
         }

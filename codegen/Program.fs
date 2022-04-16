@@ -16,5 +16,5 @@ let module_ =
     |> resolveUserTypes
 
 //printfn "module: %A" module_
-//CppGenerator.generate module_
-CsharpGenerator.generate module_
+CppGenerator.generate module_
+//CsharpGenerator.generate module_

@@ -55,6 +55,11 @@ let stringToToken (lineNumber: int) = function
     | text when Regex(@"[_a-zA-Z][_a-zA-Z0-9]*").IsMatch(text) -> Identifier text
     | text -> Error (lineNumber, text)
 
+type TokenAndLocation = {
+    Token: Token
+    Location: int  // just line number for now
+}
+
 let tokenize (lines: (int * string) list) =
     lines
     |> List.filter (fun (_, line) -> line <> "")
@@ -67,5 +72,4 @@ let tokenize (lines: (int * string) list) =
             items
             |> Array.filter (fun s -> s.Length > 0)
         i, nonEmpty |> List.ofArray)
-    |> List.map (fun (i, items) -> [for item in items -> i, stringToToken i item])
-    |> List.collect id
+    |> List.collect (fun (i, items) -> [for item in items -> { Token = stringToToken i item; Location = i } ])

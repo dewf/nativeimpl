@@ -2,11 +2,29 @@
 open Tokenizer
 
 module List =
-    let safeTake (n: int) (xs: 'a list) =
-        if xs.Length >= n then
-            List.take n xs
-        else
-            []
+//    let safeTake (n: int) (xs: 'a list) =
+//        if xs.Length >= n then
+//            List.take n xs
+//        else
+//            []
+    let safeTake (count: int) (xs: 'a list) =
+        // this isn't tail recursive so don't use too high a count :)
+        let rec takeMore (n: int) (current: 'a list) =
+            match current with
+            | x :: etc when n > 0 ->
+                x :: takeMore (n - 1) etc
+            | _ ->
+                // either n = 0, or no head element available
+                []
+        takeMore count xs
+    let safeSplit (count: int) (xs: 'a list) =
+        let rec takeMore (n: int) (current: 'a list) (revFront: 'a list) =
+            match current with
+            | h :: tail when n > 0 ->
+                takeMore (n - 1) tail (h :: revFront)
+            | _ ->
+                (List.rev revFront), current
+        takeMore count xs []
 
 type NIType =
     | UnitType
@@ -25,37 +43,57 @@ type NIType =
     | ExceptionType of name: string          // only for 'throws'
     | DelegateType of name: string
 
-let rec parseType (tokens: (int * Token) list) =
-    match tokens with
-    | (line, Identifier name) :: etc -> // opaque handle, struct, interface
+let matchAndSplit (against: 'a list) (input: 'b list) (inputMap: 'b -> 'a) =
+    let rec inner (against': 'a list) (input': 'b list) =
+        match against', input' with
+        | a :: aetc, b :: betc when inputMap b = a ->
+            inner aetc betc
+        | _ :: _, [] -> None  // input ran out too early
+        | [], betc -> Some betc  // test ran out, return the rest of input
+        | _ -> None              // initial elements didn't match
+    inner against input
+
+let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], line, etc)
+    let front, etc =
+        List.safeSplit n input
+    if front.Length = n then
+        let tokens =
+            front |> List.map (fun tl -> tl.Token)
+        Some (tokens, front.Head.Location, etc)
+    else
+        None
+
+let rec parseType (input: TokenAndLocation list) =
+    match input with
+    | Lookahead 1 ([Identifier name], line, etc) -> // opaque handle, struct, interface
         Unresolved (name, line), etc
-    | (_, UnitToken) :: etc ->
+    | Lookahead 1 ([UnitToken], _, etc) ->
         UnitType, etc
-    | (_, BoolToken) :: etc ->
+    | Lookahead 1 ([BoolToken], _, etc) ->
         Bool, etc
-    | (_, IntToken) :: etc ->
+    | Lookahead 1 ([IntToken], _, etc) ->
         Int32, etc
-    | (_, FloatToken) :: etc ->
+    | Lookahead 1 ([FloatToken], _, etc) ->
         Float32, etc
-    | (_, StringToken) :: etc ->
+    | Lookahead 1 ([StringToken], _, etc) ->
         StringType, etc
-    | (line, ArrayToken) :: (_, LeftBracket) :: etc1 ->
+    | Lookahead 2 ([ArrayToken; LeftBracket], line, etc1) ->
         let arrayType, etc2 =
             parseType etc1
         match etc2 with
-        | (_, RightBracket) :: etc3 ->
+        | Lookahead 1 ([RightBracket], _, etc3) ->
             ArrayType arrayType, etc3
         | _ ->
             failwithf "failed to parse array type at line %d" line
-    | (line, MapToken) :: (_, LeftBracket) :: etc1 ->
+    | Lookahead 2 ([MapToken; LeftBracket], line, etc1) ->
         let keyType, etc2 =
             parseType etc1
         match etc2 with
-        | (_, Comma) :: etc3 ->
+        | Lookahead 1 ([Comma], line, etc3) ->
             let valueType, etc4 =
                 parseType etc3
             match etc4 with
-            | (_, RightBracket) :: etc5 ->
+            | Lookahead 1 ([RightBracket], _, etc5) ->
                 MapType (keyType, valueType), etc5
             | _ ->
                 failwithf "missing ] for array type at line %d" line
@@ -65,7 +103,7 @@ let rec parseType (tokens: (int * Token) list) =
         failwithf "parseType called on an empty list!"
     | _ ->
         let lineStr =
-            tokens |> List.tryHead |> Option.map (fun (li, _) -> sprintf "%d" li) |> Option.defaultValue "???"
+            input |> List.tryHead |> Option.map (fun tl -> sprintf "%d" tl.Location) |> Option.defaultValue "???"
         failwithf "error parsing type at line %s" lineStr
 
 type NamedFunction = {
@@ -103,29 +141,29 @@ type Module = {
     Defs: ModuleDefinition list
 }
 
-let parseOneField (remaining: (int * Token) list) =
-    if remaining.IsEmpty then
+let parseOneField (input: TokenAndLocation list) =
+    if input.IsEmpty then
         None
     else
         let niType, etc =
-            parseType remaining
+            parseType input
         match etc with
-        | (_, Identifier name) :: (_, StatementEnd) :: etc2 ->
+        | Lookahead 2 ([Identifier name; StatementEnd], _, etc2) ->
             ({ Name = name; Type_ = niType }, etc2)
             |> Some
         | _ ->
             let lineStr =
-                etc |> List.tryHead |> Option.map (fun (li, _) -> sprintf "%d" li) |> Option.defaultValue "???"
+                etc |> List.tryHead |> Option.map (fun tl -> sprintf "%d" tl.Location) |> Option.defaultValue "???"
             failwithf "failed to parse field at line %s" lineStr
 
-let parseFields (line: int) (tokens: (int * Token) list) =
+let parseFields (line: int) (input: TokenAndLocation list) =
     let closeIndex =
-        tokens
-        |> List.tryFindIndex (fun (_, t) -> t = RightBrace)
+        input
+        |> List.tryFindIndex (fun tl -> tl.Token = RightBrace)
     match closeIndex with
     | Some index ->
         let content, theRest =
-            tokens
+            input
             |> List.splitAt index
         let items =
             List.unfold parseOneField content
@@ -133,38 +171,40 @@ let parseFields (line: int) (tokens: (int * Token) list) =
     | None ->
         failwithf "parseFields @ line %d: no closing } found" line
 
-let parseNamedFunction (tokens: (int * Token) list) =
-    if tokens.IsEmpty then
+let parseNamedFunction (input: TokenAndLocation list) =
+    if input.IsEmpty then
         None
     else
         let returnType, etc =
-            parseType tokens
+            parseType input
         match etc with
-        | (line, Identifier funcName) :: (_, LeftParen) :: etc2 ->
+        | Lookahead 2 ([Identifier funcName; LeftParen], line, etc2) ->
             let rightParenIndex =
-                etc2 |> List.tryFindIndex (fun (_, t) -> t = RightParen)
+                etc2 |> List.tryFindIndex (fun tl -> tl.Token = RightParen)
             match rightParenIndex with
             | Some index ->
                 let argTokens, etc3 =
                     etc2 |> List.splitAt index
-                let parseArg (remaining: (int * Token) list) =
+                let parseArg (remaining: TokenAndLocation list) =
                     if remaining.IsEmpty then
                         None
                     else
                         let type_, etc4 =
                             parseType remaining
                         match etc4 with
-                        | (_, Identifier name) :: (_, Comma) :: etc5 -> Some ((name, type_), etc5)
-                        | [ (_, Identifier name) ] -> Some ((name, type_), [])
+                        | Lookahead 2 ([Identifier name; Comma], _, etc5) ->
+                            Some ((name, type_), etc5)
+                        | [{ Location = _; Token = Identifier name }] -> // TODO: fix lookahead to use N as 'max', so it returns UP TO that many?
+                            Some ((name, type_), [])
                         | _ -> failwithf "error parsing function arg at line %d: %A" line etc4
                 let args =
                     List.unfold parseArg argTokens
                 match etc3 with
-                | (_, RightParen) :: (_, StatementEnd) :: etc4 ->
+                | Lookahead 2 ([RightParen; StatementEnd], _, etc4) ->
                     ({ Name = funcName; Args = args; Returns = returnType; Throws = None }, etc4)
                     |> Some
-                | (_, RightParen) :: (_, ThrowsToken) :: (idLine, Identifier exceptionName) :: (_, StatementEnd) :: etc4 ->
-                    ({ Name = funcName; Args = args; Returns = returnType; Throws = Some (Unresolved (exceptionName, idLine)) }, etc4)
+                | Lookahead 4 ([RightParen; ThrowsToken; Identifier exceptionName; StatementEnd], line, etc4) ->
+                    ({ Name = funcName; Args = args; Returns = returnType; Throws = Some (Unresolved (exceptionName, line)) }, etc4)
                     |> Some
                 | _ ->
                     failwithf "failed to parse function at line %d" line
@@ -172,48 +212,48 @@ let parseNamedFunction (tokens: (int * Token) list) =
                 failwithf "function at line %d missing closing )" line
         | _ ->
             let lineStr =
-                tokens |> List.tryHead |> Option.map (fun (li, _) -> sprintf "%d" li ) |> Option.defaultValue "???"
+                input |> List.tryHead |> Option.map (fun tl -> sprintf "%d" tl.Location ) |> Option.defaultValue "???"
             failwithf "was expecting identifier at line %s" lineStr
 
-let parseFunctionList (line: int) (tokens: (int * Token) list) =
+let parseFunctionList (line: int) (input: TokenAndLocation list) =
     let rightBraceIndex =
-        tokens |> List.tryFindIndex (fun (_, t) -> t = RightBrace)
+        input |> List.tryFindIndex (fun tl -> tl.Token = RightBrace)
     match rightBraceIndex with
     | Some index ->
         let content, etc =
-            tokens |> List.splitAt index
+            input |> List.splitAt index
         let funcList =
             List.unfold parseNamedFunction content
         match etc with
-        | (_, RightBrace) :: etc2 ->
+        | Lookahead 1 ([RightBrace], _, etc2) ->
             funcList, etc2
         | _ ->
             failwithf "parseFunctionList - shouldn't ever see this"
     | None ->
         failwithf "error parsing function list at line %d - missing closing }" line
 
-let parseModule (tokens: (int * Token) list) =
-    let parseNext (remaining: (int * Token) list) =
+let parseModule (input: TokenAndLocation list) =
+    let parseNext (remaining: TokenAndLocation list) =
         match remaining with
-        | (_, OpaqueToken) :: (_, Identifier name) :: (_, StatementEnd) :: etc ->
+        | Lookahead 3 ([OpaqueToken; Identifier name; StatementEnd], _, etc) ->
             (UserType (name, OpaqueHandleDef), etc)
             |> Some
-        | (line, StructToken) :: (_, Identifier name) :: (_, LeftBrace) :: etc ->
+        | Lookahead 3 ([StructToken; Identifier name; LeftBrace], line, etc) ->
             let fields, etc2 =
                 parseFields line etc
             (UserType (name, StructDef fields), etc2)
             |> Some
-        | (line, ExceptionToken) :: (_, Identifier name) :: (_, LeftBrace) :: etc ->
+        | Lookahead 3 ([ExceptionToken; Identifier name; LeftBrace], line, etc) ->
             let fields, etc2 =
                 parseFields line etc
             (UserType (name, ExceptionDef fields), etc2)
             |> Some
-        | (line, InterfaceToken) :: (_, Identifier name) :: (_, LeftBrace) :: etc ->
+        | Lookahead 3 ([InterfaceToken; Identifier name; LeftBrace], line, etc) ->
             let methods, etc2 =
                 parseFunctionList line etc
             (UserType (name, InterfaceDef methods), etc2)
             |> Some
-        | (line, DelegateToken) :: etc ->
+        | Lookahead 1 ([DelegateToken], _, etc) ->
             parseNamedFunction etc
             |> Option.map (fun (nf, etc2) ->
                 (UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns }), etc2))
@@ -225,23 +265,23 @@ let parseModule (tokens: (int * Token) list) =
             let t1, etc2 =
                 parseType etc
             match etc2 with
-            | (_, Identifier name) :: (_, StatementEnd) :: etc3 ->
+            | Lookahead 2 ([Identifier name; StatementEnd], _, etc3) ->
                 (Global (name, t1), etc3)
                 |> Some
-            | (_, Identifier _) :: (_, LeftParen) :: _ ->
+            | Lookahead 2 ([Identifier _; LeftParen], _, _) ->
                 parseNamedFunction etc // note using 'etc' here (rewinding a bit because parseNamedFunction handles identifier etc too)
                 |> Option.map (fun (namedFunc, etc3) -> FunctionDef namedFunc, etc3)
                 // only way it returns 'None' is if its token list is empty, which we already know isn't the case
-            | (line, token) :: _ ->
+            | {Location = line; Token = token} :: _ ->
                 failwithf "unexpected token %A at line %d" token line
             | [] ->
                 failwith "unexpected end of file"
-    List.unfold parseNext tokens
+    List.unfold parseNext input
 
-let parseTokens (tokens: (int * Token) list) =
-    match tokens with
-    | (_, ModuleToken) :: (_, Identifier name) :: (_, StatementEnd) :: theRest ->
-        { Name = name; Defs = parseModule theRest }
+let parseTokens (input: TokenAndLocation list) =
+    match input with
+    | Lookahead 3 ([ModuleToken; Identifier name; StatementEnd], _, etc) ->
+        { Name = name; Defs = parseModule etc }
     | _ ->
         failwith "createSyntaxTree: didn't find module definition"
 

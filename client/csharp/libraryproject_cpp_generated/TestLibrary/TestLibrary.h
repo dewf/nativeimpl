@@ -28,6 +28,8 @@ extern "C" {
 
 	TESTLIBRARY_API void pushBool(bool value);
 	TESTLIBRARY_API bool popBool();
+	TESTLIBRARY_API void pushBoolArray(bool* values, size_t count);
+	TESTLIBRARY_API void popBoolArray(bool** values, size_t* count);
 
 	TESTLIBRARY_API void pushInt(int x);
 	TESTLIBRARY_API int popInt();

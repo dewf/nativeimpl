@@ -62,6 +62,16 @@ bool popBool()
     return ni_popBool();
 }
 
+void pushBoolArray(bool* values, size_t count)
+{
+    ni_pushBoolArray(values, count);
+}
+
+void popBoolArray(bool** values, size_t* count)
+{
+    ni_popBoolArray(values, count);
+}
+
 void pushInt(int x)
 {
     ni_pushInt(x);

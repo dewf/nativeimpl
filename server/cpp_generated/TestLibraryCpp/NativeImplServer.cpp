@@ -91,6 +91,24 @@ std::string popStringInternal()
 	return ret;
 }
 
+void pushBoolArrayInternal(std::vector<bool> values)
+{
+	auto unpacked = new bool[values.size()];
+	std::copy(values.begin(), values.end(), unpacked);
+	ni_pushBoolArray(unpacked, values.size());
+	delete[] unpacked;
+}
+
+std::vector<bool> popBoolArrayInternal()
+{
+	bool* values;
+	size_t count;
+	ni_popBoolArray(&values, &count);
+	std::vector<bool> result;
+	result.assign(values, values + count);
+	return result;
+}
+
 void pushIntArrayInternal(std::vector<int> values)
 {
 	ni_pushIntArray(values.data(), values.size());

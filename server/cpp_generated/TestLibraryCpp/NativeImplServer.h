@@ -51,9 +51,15 @@ extern "C" {
 }
 
 void pushServerFuncVal(std::function<void()> wrapper, size_t key);
+
 void pushStringInternal(std::string str);
 std::string popStringInternal();
+
+void pushBoolArrayInternal(std::vector<bool> values);
+std::vector<bool> popBoolArrayInternal();
+
 void pushIntArrayInternal(std::vector<int> values);
 std::vector<int> popIntArrayInternal();
+
 void pushStringArrayInternal(std::vector<std::string> values);
 std::vector<std::string> popStringArrayInternal();

@@ -41,6 +41,8 @@ extern "C" {
 
 	extern void ni_pushBool(bool b);
 	extern bool ni_popBool();
+	extern void ni_pushBoolArray(bool* values, size_t count);
+	extern void ni_popBoolArray(bool** values, size_t* count);
 
 	extern void ni_pushInt(int x);
 	extern int ni_popInt();

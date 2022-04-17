@@ -75,7 +75,7 @@ public:
 
 class BoolArrayItem : public StackItem {
 public:
-	std::vector<uint8_t> values;		// using 'bool' doesn't allow .data access, lame
+	std::vector<uint8_t> values;		     // using std::vector<bool> doesn't allow .data access, lame
 	BoolArrayItem(bool* ptr, size_t count) {
 		values.assign(ptr, ptr + count);
 	}

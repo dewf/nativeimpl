@@ -113,6 +113,12 @@ namespace TestLibraryClient
         internal static extern bool popBool();
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushBoolArray(byte[] values, IntPtr count); // bool*, size_t
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popBoolArray(out IntPtr valuesPtr, out IntPtr count); // bool**, size_t*
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushInt(int x);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -323,6 +329,20 @@ namespace TestLibraryClient
         public static bool PopBool()
         {
             return NativeMethods.popBool();
+        }
+
+        public static void PushBoolArray(bool[] values)
+        {
+            var bytes = values.Select(b => (byte)(b ? 1 : 0)).ToArray();
+            NativeMethods.pushBoolArray(bytes, (IntPtr)values.Length);
+        }
+
+        public static bool[] PopBoolArray()
+        {
+            NativeMethods.popBoolArray(out var valuesPtr, out var count);
+            var ret = new byte[(int)count]; // bool[] won't work for the Copy below
+            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            return ret.Select(v => v != 0).ToArray();
         }
 
         public static void PushInt(int x)

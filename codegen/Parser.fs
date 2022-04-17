@@ -43,16 +43,6 @@ type NIType =
     | ExceptionType of name: string          // only for 'throws'
     | DelegateType of name: string
 
-let matchAndSplit (against: 'a list) (input: 'b list) (inputMap: 'b -> 'a) =
-    let rec inner (against': 'a list) (input': 'b list) =
-        match against', input' with
-        | a :: aetc, b :: betc when inputMap b = a ->
-            inner aetc betc
-        | _ :: _, [] -> None  // input ran out too early
-        | [], betc -> Some betc  // test ran out, return the rest of input
-        | _ -> None              // initial elements didn't match
-    inner against input
-
 let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], line, etc)
     let front, etc =
         List.safeSplit n input
@@ -101,10 +91,8 @@ let rec parseType (input: TokenAndLocation list) =
             failwithf "missing comma for array type at line %d" line
     | [] ->
         failwithf "parseType called on an empty list!"
-    | _ ->
-        let lineStr =
-            input |> List.tryHead |> Option.map (fun tl -> sprintf "%d" tl.Location) |> Option.defaultValue "???"
-        failwithf "error parsing type at line %s" lineStr
+    | {Location = line} :: _ ->
+        failwithf "error parsing type at line %d" line
 
 type NamedFunction = {
     Name: string
@@ -151,10 +139,15 @@ let parseOneField (input: TokenAndLocation list) =
         | Lookahead 2 ([Identifier name; StatementEnd], _, etc2) ->
             ({ Name = name; Type_ = niType }, etc2)
             |> Some
-        | _ ->
-            let lineStr =
-                etc |> List.tryHead |> Option.map (fun tl -> sprintf "%d" tl.Location) |> Option.defaultValue "???"
-            failwithf "failed to parse field at line %s" lineStr
+        | {Location = line} :: _ ->
+            failwithf "missing expected identifier at line %d" line
+        | [] ->
+            // grab line from the start of input, which had at least 1 token
+            match input with
+            | {Location = line} :: _ ->
+                failwithf "missing expected identifier at line %d" line
+            | _ ->
+                failwithf "parseOneField: shouldn't happen"
 
 let parseFields (line: int) (input: TokenAndLocation list) =
     let closeIndex =
@@ -210,10 +203,15 @@ let parseNamedFunction (input: TokenAndLocation list) =
                     failwithf "failed to parse function at line %d" line
             | None ->
                 failwithf "function at line %d missing closing )" line
+        | { Location = line } :: _ ->
+            failwithf "was expecting identifier at line %d" line
         | _ ->
-            let lineStr =
-                input |> List.tryHead |> Option.map (fun tl -> sprintf "%d" tl.Location ) |> Option.defaultValue "???"
-            failwithf "was expecting identifier at line %s" lineStr
+            // grab line from the start of input, which had at least 1 token (or it would have failed already)
+            match input with
+            | {Location = line} :: _ ->
+                failwithf "missing expected identifier at line %d" line
+            | _ ->
+                failwithf "parseNamedFunction: shouldn't happen"
 
 let parseFunctionList (line: int) (input: TokenAndLocation list) =
     let rightBraceIndex =

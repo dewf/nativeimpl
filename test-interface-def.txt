@@ -1,40 +1,32 @@
 module TestLibrary;
 
-exception NegativeException {
-  int value;
+typedef map[string,int] StringIntMap;
+
+delegate int CoolDelegate(string x);
+
+interface Heyas {
+   void someMethod(int x) throws CoolException;
 }
 
-exception InterfaceMethodException {
-  int value;
+struct DeepStruct {
+   int findMe;
 }
 
-interface IThing01 {
-  int someMethod(int x);
-  void stashThing(IThing01 subThing);
-  IThing01 getStashedThing();
-  void testThrow(bool doThrow) throws InterfaceMethodException;
-  void onTimerTick();
+exception CoolException {
+   int x;
+   string woot;
 }
 
-int global01;
-int anotherGlobal;
-int lastIntGlobal;
+struct Whatever {
+   int x;
+   StringIntMap myMap;
+   CoolDelegate someFunc;
+   DeepStruct sigh;
+}
 
-delegate int IntFunc(int x);
+typedef map[string, Whatever] DeepMap;
 
-void stringTest(string str);
-string returnString();
-int sum(int a, int b, int c);
-int execFunc01(IntFunc func1);
-void stashFunc(IntFunc func2);
-void releaseFunc();
-IntFunc returnStashedFunc();
-IThing01 makeThing();
-int operateOnThing(IThing01 thing, int arg);
-void saveThing(IThing01 thing);
-IThing01 getSavedThing();
-void clientStashTest(IThing01 thing);
-void testNegative(int value) throws NegativeException;
-void testClientThrow(IThing01 thing);
-void startTimer(IThing01 thing, int frequency);
-void stopTimer();
+delegate void FinalDelegate(DeepMap v);
+
+void mapTest(FinalDelegate whoa);
+

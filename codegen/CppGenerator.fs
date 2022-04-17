@@ -165,6 +165,25 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | _ ->
         write level "(pushValue not supported yet)"
 
+[<RequireQualifiedAccess>]
+type UTOG = // UserType or Generic
+    | UserType of UserType
+    | Generic of NIType
+
+let rec userTypesAndGenerics (m: Module) (writer: TextWriter) =
+    // combined map
+    let m1 =
+        (Map.empty, getUserTypes m)
+        ||> Map.fold (fun newMap name userType -> newMap.Add(name, UTOG.UserType userType))
+    let m2 =
+        (m1, allGenericTypes m)
+        ||> List.fold (fun newMap type_ ->
+            let name =
+                (typeToString type_)
+            newMap.Add(name, UTOG.Generic type_))
+    m2 |> ignore
+//    printfn "generics: %A" generics
+
 let generateWrappersCpp (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
@@ -205,6 +224,9 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
     // prologue
     write 0 "#include \"NativeImplServer.h\""
     write 0 "#include \"Implementation.h\""
+
+    // user types and generics in dependency order
+    userTypesAndGenerics m writer
 
     // opaques + interface method + exception handles
     blank()

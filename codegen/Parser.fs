@@ -382,6 +382,65 @@ let getUserTypes (module_: Module) =
         | _ -> None)
     |> Map.ofList
 
+let allGenericTypes (module_: Module) =
+    let rec typeAndSubTypes (t: NIType) =
+        match t with
+        | MapType(keyType, valueType) ->
+            t :: typeAndSubTypes keyType @ typeAndSubTypes valueType
+        | ArrayType niType ->
+            t :: typeAndSubTypes niType
+        | _ -> []
+    module_.Defs
+    |> List.collect (function
+        | UserType(name, userType) ->
+            match userType with
+            | OpaqueHandleDef -> []
+            | StructDef namedFields ->
+                namedFields
+                |> List.collect (fun field -> typeAndSubTypes field.Type_)
+            | ExceptionDef namedFields ->
+                namedFields
+                |> List.collect (fun field -> typeAndSubTypes field.Type_)
+            | InterfaceDef namedFunctions ->
+                namedFunctions
+                |> List.collect (fun nf ->
+                    let retTypes =
+                        typeAndSubTypes nf.Returns
+                    let argTypes =
+                        nf.Args
+                        |> List.map snd
+                        |> List.collect typeAndSubTypes
+                    let throwTypes =
+                        nf.Throws
+                        |> Option.map typeAndSubTypes
+                        |> Option.defaultValue []
+                    retTypes @ argTypes @ throwTypes)
+            | DelegateDef info ->
+                let retTypes =
+                    typeAndSubTypes info.Returns
+                let argTypes =
+                    info.Args
+                    |> List.map snd
+                    |> List.collect typeAndSubTypes
+                retTypes @ argTypes
+            | TypeDef actual ->
+                typeAndSubTypes actual
+        | Global (name, niType) ->
+            typeAndSubTypes niType
+        | FunctionDef nf ->
+            let retTypes =
+                typeAndSubTypes nf.Returns
+            let argTypes =
+                nf.Args
+                |> List.map snd
+                |> List.collect typeAndSubTypes
+            let throwTypes =
+                nf.Throws
+                |> Option.map typeAndSubTypes
+                |> Option.defaultValue []
+            retTypes @ argTypes @ throwTypes)
+    |> List.distinct
+
 let resolveUserTypes (module_: Module) =
     let userTypes =
         getUserTypes module_

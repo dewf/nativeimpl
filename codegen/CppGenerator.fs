@@ -41,6 +41,8 @@ let rec typeToString = function
     | ExceptionType name -> name
     | DelegateType name -> sprintf "std::function<%s>" name
     | ArrayType niType -> sprintf "std::vector<%s>" (typeToString niType)
+    | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (typeToString keyType) (typeToString valueType)
+    | TypedefType name -> name
     | _ -> "(typeToString: not done yet)"
 
 let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: NIType list) (ret: NIType) =
@@ -71,6 +73,7 @@ let rec defaultValueForType = function
     | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
     | DelegateType name -> sprintf "std::function<%s>()" name
     | ArrayType niType -> sprintf "std::vector<%s>()" (typeToString niType)
+    | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToString keyType) (typeToString valueType)
     | _ ->
         "(defaultValueForType: not yet supported)"
 
@@ -410,12 +413,23 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
         |> List.choose (function
             | UserType(name, DelegateDef delegateInfo) -> Some (name, delegateInfo)
             | _ -> None)
+    let typedefs =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, TypeDef actual) -> Some (name, actual)
+            | _ -> None)
     // begin output: ===============================================
     write 0 "#include \"NativeImplServer.h\""
     write 0 "#include <functional>"
     write 0 "#include <memory>"
     write 0 "#include <string>"
     write 0 "#include <vector>"
+    write 0 "#include <map>"
+
+    // raw typedefs
+    for name, actual in typedefs do
+        blank()
+        write 0 "typedef %s %s;" (typeToString actual) name
 
     // delegate typedefs
     for name, info in delegates do
@@ -499,8 +513,6 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
             | _ -> None)
     // begin output: ===============================================
     write 0 "#include \"Implementation.h\""
-    write 0 "#include <memory>"
-    write 0 "#include <functional>"
     // globals
     if globals.Length > 0 then
         blank()

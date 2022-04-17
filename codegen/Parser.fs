@@ -42,6 +42,7 @@ type NIType =
     | InterfaceType of name: string
     | ExceptionType of name: string          // only for 'throws'
     | DelegateType of name: string
+    | TypedefType of name: string
 
 let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], line, etc)
     let front, etc =
@@ -118,6 +119,7 @@ type UserType =
     | ExceptionDef of fields: NamedField list
     | InterfaceDef of methods: NamedFunction list
     | DelegateDef of info: DelegateInfo
+    | TypeDef of actual: NIType
 
 type ModuleDefinition =
     | Global of name: string * type_: NIType
@@ -255,6 +257,15 @@ let parseModule (input: TokenAndLocation list) =
             parseNamedFunction etc
             |> Option.map (fun (nf, etc2) ->
                 (UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns }), etc2))
+        | Lookahead 1 ([TypedefToken], line, etc) ->
+            let actual, etc2 =
+                parseType etc
+            match etc2 with
+            | Lookahead 2 ([Identifier name; StatementEnd], _, etc3) ->
+                (UserType (name, TypeDef actual), etc3)
+                |> Some
+            | _ ->
+                failwithf "expected typedef name at line %d" line
         | [] ->
             // end of file!
             None
@@ -283,20 +294,21 @@ let parseTokens (input: TokenAndLocation list) =
     | _ ->
         failwith "createSyntaxTree: didn't find module definition"
 
-let rec resolveType (symbols: Map<string, UserType>) (type_: NIType) =
+let rec resolveType (userTypes: Map<string, UserType>) (type_: NIType) =
     match type_ with
     | ArrayType niType ->
-        ArrayType (resolveType symbols niType)
+        ArrayType (resolveType userTypes niType)
     | MapType (keyType, valueType) ->
-        MapType (resolveType symbols keyType, resolveType symbols valueType)
+        MapType (resolveType userTypes keyType, resolveType userTypes valueType)
     | Unresolved (name, line) ->
-        match symbols.TryFind(name) with
+        match userTypes.TryFind(name) with
         | Some value ->
             match value with
             | OpaqueHandleDef -> OpaqueHandleType name
             | StructDef _ -> StructType name
             | InterfaceDef _ -> InterfaceType name
             | DelegateDef _ -> DelegateType name
+            | TypeDef _ -> TypedefType name
             | ExceptionDef _ ->
                 // how do we enforce that this is only allowed in a "throws" context?
                 ExceptionType name
@@ -305,31 +317,31 @@ let rec resolveType (symbols: Map<string, UserType>) (type_: NIType) =
     | _ ->
         type_
 
-let resolveFieldType (symbols: Map<string, UserType>) (ft: NamedField) =
+let resolveFieldType (userTypes: Map<string, UserType>) (ft: NamedField) =
     let nextType =
-        resolveType symbols ft.Type_
+        resolveType userTypes ft.Type_
     { ft with Type_ = nextType }
 
-let resolveFunctionTypes (symbols: Map<string, UserType>) (nf: NamedFunction) =
+let resolveFunctionTypes (userTypes: Map<string, UserType>) (nf: NamedFunction) =
     let nextArgs =
         nf.Args
-        |> List.map (fun (name, argType) -> (name, resolveType symbols argType))
+        |> List.map (fun (name, argType) -> (name, resolveType userTypes argType))
     let nextReturns =
-        resolveType symbols nf.Returns
+        resolveType userTypes nf.Returns
     let nextThrows =
         nf.Throws
-        |> Option.map (resolveType symbols)
+        |> Option.map (resolveType userTypes)
     { nf with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
-let resolveDelegateTypes (symbols: Map<string, UserType>) (info: DelegateInfo) =
+let resolveDelegateTypes (userTypes: Map<string, UserType>) (info: DelegateInfo) =
     let nextArgs =
         info.Args
-        |> List.map (fun (name, argType) -> (name, resolveType symbols argType))
+        |> List.map (fun (name, argType) -> (name, resolveType userTypes argType))
     let nextReturns =
-        resolveType symbols info.Returns
+        resolveType userTypes info.Returns
     { info with Args = nextArgs; Returns = nextReturns }
 
-let resolveModuleDef (symbols: Map<string, UserType>) (def: ModuleDefinition) =
+let resolveModuleDef (userTypes: Map<string, UserType>) (def: ModuleDefinition) =
     match def with
     | UserType (name, userType) ->
         let nextUserType =
@@ -337,40 +349,43 @@ let resolveModuleDef (symbols: Map<string, UserType>) (def: ModuleDefinition) =
             | StructDef fieldTypes ->
                 let nextFieldTypes =
                     fieldTypes
-                    |> List.map (resolveFieldType symbols)
+                    |> List.map (resolveFieldType userTypes)
                 StructDef nextFieldTypes
             | ExceptionDef fieldTypes ->
                 let nextFieldTypes =
                     fieldTypes
-                    |> List.map (resolveFieldType symbols)
+                    |> List.map (resolveFieldType userTypes)
                 ExceptionDef nextFieldTypes
             | InterfaceDef namedFunctions ->
                 let nextFunctions =
                     namedFunctions
-                    |> List.map (resolveFunctionTypes symbols)
+                    |> List.map (resolveFunctionTypes userTypes)
                 InterfaceDef nextFunctions
             | DelegateDef delegateInfo ->
                 let nextInfo =
-                    resolveDelegateTypes symbols delegateInfo
+                    resolveDelegateTypes userTypes delegateInfo
                 DelegateDef nextInfo
             | _ ->
                 // untouched ('opaque' only for now ...)
                 userType
         UserType (name, nextUserType)
     | Global (name, niType) ->
-        Global (name, resolveType symbols niType)
+        Global (name, resolveType userTypes niType)
     | FunctionDef namedFunction ->
-        FunctionDef (resolveFunctionTypes symbols namedFunction)
+        FunctionDef (resolveFunctionTypes userTypes namedFunction)
+
+let getUserTypes (module_: Module) =
+    module_.Defs
+    |> List.choose (function
+        | UserType (name, definition) -> Some (name, definition)
+        | _ -> None)
+    |> Map.ofList
 
 let resolveUserTypes (module_: Module) =
-    let symbols =
-        module_.Defs
-        |> List.choose (function
-            | UserType (name, definition) -> Some (name, definition)
-            | _ -> None)
-        |> Map.ofList
+    let userTypes =
+        getUserTypes module_
     // go throughout whole tree and replace all Unresolved types with things from the table, if they even exist
     let nextDefs =
         module_.Defs
-        |> List.map (resolveModuleDef symbols)
+        |> List.map (resolveModuleDef userTypes)
     { module_ with Defs = nextDefs }

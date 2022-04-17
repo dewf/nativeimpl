@@ -166,23 +166,20 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "(pushValue not supported yet)"
 
 [<RequireQualifiedAccess>]
-type UTOG = // UserType or Generic
-    | UserType of UserType
+type UserOrGeneric =
+    | User of UserType
     | Generic of NIType
 
-let rec userTypesAndGenerics (m: Module) (writer: TextWriter) =
+let userTypesAndGenerics (m: Module) =
     // combined map
     let m1 =
         (Map.empty, getUserTypes m)
-        ||> Map.fold (fun newMap name userType -> newMap.Add(name, UTOG.UserType userType))
-    let m2 =
-        (m1, allGenericTypes m)
-        ||> List.fold (fun newMap type_ ->
-            let name =
-                (typeToString type_)
-            newMap.Add(name, UTOG.Generic type_))
-    m2 |> ignore
-//    printfn "generics: %A" generics
+        ||> Map.fold (fun newMap name userType -> newMap.Add(name, UserOrGeneric.User userType))
+    (m1, allGenericTypes m)
+    ||> List.fold (fun newMap type_ ->
+        let name =
+            (typeToString type_)
+        newMap.Add(name, UserOrGeneric.Generic type_))
 
 let generateWrappersCpp (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -226,7 +223,7 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
     write 0 "#include \"Implementation.h\""
 
     // user types and generics in dependency order
-    userTypesAndGenerics m writer
+    // ...
 
     // opaques + interface method + exception handles
     blank()
@@ -453,7 +450,7 @@ let renderInterfaceHeader (writer: TextWriter) (name: string) (methods: NamedFun
     let nameRegex = Regex(@"%%IFACE%%")
     writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
 
-let renderUserTypes (writer: TextWriter) (userTypes: Map<string, UserType>) =
+let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -467,70 +464,95 @@ let renderUserTypes (writer: TextWriter) (userTypes: Map<string, UserType>) =
         | ExceptionType name -> renderDeps name alreadyRendered
         | DelegateType name -> renderDeps name alreadyRendered
         | TypedefType name -> renderDeps name alreadyRendered
-        | ArrayType niType -> renderType niType alreadyRendered
-        | MapType (keyType, valueType) ->
-            renderType keyType alreadyRendered
-            |> renderType valueType
-        | _ -> alreadyRendered
+        | ArrayType _ ->
+            let name = (typeToString type_)
+            renderDeps name alreadyRendered
+        | MapType _ ->
+            let name = (typeToString type_)
+            renderDeps name alreadyRendered
+        | _ ->
+            alreadyRendered
     and renderDeps (name: string) (alreadyRendered: Set<string>) =
         if alreadyRendered.Contains(name) then
             alreadyRendered
         else
-            let content = userTypes.[name]
+            let content = typeMap.[name]
             let subRendered =
                 match content with
-                | OpaqueHandleDef -> // no sub fields
-                    alreadyRendered
-                | StructDef namedFields ->
-                    (alreadyRendered, namedFields)
-                    ||> List.fold (fun already2 field -> renderType field.Type_ already2)
-                | ExceptionDef namedFields ->
-                    (alreadyRendered, namedFields)
-                    ||> List.fold (fun already2 field -> renderType field.Type_ already2)
-                | InterfaceDef namedFunctions ->
-                    (alreadyRendered, namedFunctions)
-                    ||> List.fold (fun already2 namedFunc ->
+                | UserOrGeneric.Generic gType ->
+                    match gType with
+                    | ArrayType niType ->
+                        renderType niType alreadyRendered
+                    | MapType (keyType, valueType) ->
+                        renderType keyType alreadyRendered
+                        |> renderType valueType
+                    | _ ->
+                        failwithf "renderUserTypes.renderDeps: unsupported generic type %A!" gType
+                | UserOrGeneric.User userType ->
+                    match userType with
+                    | OpaqueHandleDef -> // no sub fields
+                        alreadyRendered
+                    | StructDef namedFields ->
+                        (alreadyRendered, namedFields)
+                        ||> List.fold (fun already2 field -> renderType field.Type_ already2)
+                    | ExceptionDef namedFields ->
+                        (alreadyRendered, namedFields)
+                        ||> List.fold (fun already2 field -> renderType field.Type_ already2)
+                    | InterfaceDef namedFunctions ->
+                        (alreadyRendered, namedFunctions)
+                        ||> List.fold (fun already2 namedFunc ->
+                            let withReturn =
+                                renderType namedFunc.Returns already2
+                            let withThrow =
+                                match namedFunc.Throws with
+                                | Some etype ->
+                                    renderType etype withReturn
+                                | None ->
+                                    withReturn
+                            (withThrow, namedFunc.Args)
+                            ||> List.fold (fun already3 (argName, argType) ->
+                                renderType argType already3))
+                    | DelegateDef info ->
                         let withReturn =
-                            renderType namedFunc.Returns already2
-                        let withThrow =
-                            match namedFunc.Throws with
-                            | Some etype ->
-                                renderType etype withReturn
-                            | None ->
-                                withReturn
-                        (withThrow, namedFunc.Args)
-                        ||> List.fold (fun already3 (argName, argType) ->
-                            renderType argType already3))
-                | DelegateDef info ->
-                    let withReturn =
-                        renderType info.Returns alreadyRendered
-                    (withReturn, info.Args)
-                    ||> List.fold (fun already2 (argName, argType) ->
-                        renderType argType already2)
-                | TypeDef actual ->
-                    renderType actual alreadyRendered
+                            renderType info.Returns alreadyRendered
+                        (withReturn, info.Args)
+                        ||> List.fold (fun already2 (argName, argType) ->
+                            renderType argType already2)
+                    | TypeDef actual ->
+                        renderType actual alreadyRendered
             // render this one
             blank()
             match content with
-            | OpaqueHandleDef ->
-                write 0 "struct __%s; typedef struct __%s* %s;" name name name
-            | StructDef namedFields ->
-                write 0 "typedef struct {"
-                for field in namedFields do
-                    write 1 "%s %s;" (typeToString field.Type_) field.Name
-                write 0 "} %s;" name
-            | ExceptionDef namedFields ->
-                renderExceptionHeader writer name namedFields
-            | InterfaceDef namedFunctions ->
-                renderInterfaceHeader writer name namedFunctions
-            | DelegateDef info ->
-                write 0 "typedef %s %s(%s);" (typeToString info.Returns) name (joinedArgs info.Args)
-            | TypeDef actual ->
-                write 0 "typedef %s %s;" (typeToString actual) name
+            | UserOrGeneric.Generic gType ->
+                match gType with
+                | ArrayType niType ->
+                    write 0 "// %s" (typeToString gType)
+                | MapType (keyType, valueType) ->
+                    write 0 "// %s" (typeToString gType)
+                | _ ->
+                    failwithf "renderUserTypes: unsupported generic type %A" gType
+            | UserOrGeneric.User userType ->
+                match userType with
+                | OpaqueHandleDef ->
+                    write 0 "struct __%s; typedef struct __%s* %s;" name name name
+                | StructDef namedFields ->
+                    write 0 "typedef struct {"
+                    for field in namedFields do
+                        write 1 "%s %s;" (typeToString field.Type_) field.Name
+                    write 0 "} %s;" name
+                | ExceptionDef namedFields ->
+                    renderExceptionHeader writer name namedFields
+                | InterfaceDef namedFunctions ->
+                    renderInterfaceHeader writer name namedFunctions
+                | DelegateDef info ->
+                    write 0 "typedef %s %s(%s);" (typeToString info.Returns) name (joinedArgs info.Args)
+                | TypeDef actual ->
+                    write 0 "typedef %s %s;" (typeToString actual) name
+            // done
             subRendered.Add(name)
     // start from the bottom
     let keys =
-        userTypes
+        typeMap
         |> Map.toList
         |> List.map fst
     (Set.empty, keys)
@@ -561,7 +583,7 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
     write 0 "#include <map>"
 
     // all user types in dependency order
-    renderUserTypes writer (getUserTypes m)
+    renderUserTypes writer (userTypesAndGenerics m)
 
     // global externs
     if globals.Length > 0 then

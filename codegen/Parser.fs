@@ -365,9 +365,10 @@ let resolveModuleDef (userTypes: Map<string, UserType>) (def: ModuleDefinition) 
                 let nextInfo =
                     resolveDelegateTypes userTypes delegateInfo
                 DelegateDef nextInfo
-            | _ ->
-                // untouched ('opaque' only for now ...)
-                userType
+            | OpaqueHandleDef ->
+                OpaqueHandleDef
+            | TypeDef niType ->
+                TypeDef (resolveType userTypes niType)
         UserType (name, nextUserType)
     | Global (name, niType) ->
         Global (name, resolveType userTypes niType)

@@ -42,8 +42,9 @@ let rec typeToString = function
     | DelegateType name -> sprintf "std::function<%s>" name
     | ArrayType niType -> sprintf "std::vector<%s>" (typeToString niType)
     | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (typeToString keyType) (typeToString valueType)
+    | StructType name -> name
     | TypedefType name -> name
-    | _ -> "(typeToString: not done yet)"
+    | x -> sprintf "(typeToString: not done yet [%A])" x
 
 let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: NIType list) (ret: NIType) =
     let indent = String.replicate level "    "
@@ -383,16 +384,142 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
     // nothing for C++
     write 0 "}"
 
+let renderExceptionHeader (writer: TextWriter) (exName: string) (exFields: NamedField list) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    write 0 "class %s {" exName
+    write 0 "public:"
+    for namedField in exFields do
+        write 1 "%s %s;" (typeToString namedField.Type_) namedField.Name
+    let joinedInitializers =
+        [for nf in exFields -> sprintf "%s(%s)" nf.Name nf.Name]
+        |> String.concat ", "
+    write 1 "%s(%s) : %s {}" exName (joinedFields exFields) joinedInitializers
+//    write 1 "void push() const {"
+//    // push field values (reverse order)
+//    for namedField in exFields |> List.rev do
+//        pushValue writer 2 namedField.Type_ namedField.Name false // false = not a concern because it still exists in this class instance
+//    write 1 "}"
+//    // build and throw
+//    write 1 "static void buildAndThrow() {"
+//    for field in exFields do
+//        popValue writer 2 field.Type_ (Variable field.Name)
+//    // joined variables (_0, _1, etc)
+//    let joinedVars =
+//        [for field in exFields -> field.Name]
+//        |> String.concat ", "
+//    write 2 "throw %s(%s);" exName joinedVars
+//    write 1 "}"
+    write 0 "};"
+
+let renderInterfaceHeader (writer: TextWriter) (name: string) (methods: NamedFunction list) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    write 0 "class %s {" name
+    write 0 "public:"
+    for namedFunc in methods do
+        let throwsComment =
+            match namedFunc.Throws with
+            | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
+            | None -> ""
+        write 1 "virtual %s %s(%s) = 0;%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
+    write 0 "};"
+    write 0 ""
+    // server wrapper
+    let nameRegex = Regex(@"%%IFACE%%")
+    writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
+
+let renderUserTypes (writer: TextWriter) (userTypes: Map<string, UserType>) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    let blank () = write 0 ""
+    // rec funcs
+    let rec renderType (type_: NIType) (alreadyRendered: Set<string>) =
+        match type_ with
+        | OpaqueHandleType name -> renderDeps name alreadyRendered
+        | StructType name -> renderDeps name alreadyRendered
+        | InterfaceType name -> renderDeps name alreadyRendered
+        | ExceptionType name -> renderDeps name alreadyRendered
+        | DelegateType name -> renderDeps name alreadyRendered
+        | TypedefType name -> renderDeps name alreadyRendered
+        | ArrayType niType -> renderType niType alreadyRendered
+        | MapType (keyType, valueType) ->
+            renderType keyType alreadyRendered
+            |> renderType valueType
+        | _ -> alreadyRendered
+    and renderDeps (name: string) (alreadyRendered: Set<string>) =
+        if alreadyRendered.Contains(name) then
+            alreadyRendered
+        else
+            let content = userTypes.[name]
+            let subRendered =
+                match content with
+                | OpaqueHandleDef -> // no sub fields
+                    alreadyRendered
+                | StructDef namedFields ->
+                    (alreadyRendered, namedFields)
+                    ||> List.fold (fun already2 field -> renderType field.Type_ already2)
+                | ExceptionDef namedFields ->
+                    (alreadyRendered, namedFields)
+                    ||> List.fold (fun already2 field -> renderType field.Type_ already2)
+                | InterfaceDef namedFunctions ->
+                    (alreadyRendered, namedFunctions)
+                    ||> List.fold (fun already2 namedFunc ->
+                        let withReturn =
+                            renderType namedFunc.Returns already2
+                        let withThrow =
+                            match namedFunc.Throws with
+                            | Some etype ->
+                                renderType etype withReturn
+                            | None ->
+                                withReturn
+                        (withThrow, namedFunc.Args)
+                        ||> List.fold (fun already3 (argName, argType) ->
+                            renderType argType already3))
+                | DelegateDef info ->
+                    let withReturn =
+                        renderType info.Returns alreadyRendered
+                    (withReturn, info.Args)
+                    ||> List.fold (fun already2 (argName, argType) ->
+                        renderType argType already2)
+                | TypeDef actual ->
+                    renderType actual alreadyRendered
+            // render this one
+            blank()
+            match content with
+            | OpaqueHandleDef ->
+                write 0 "struct __%s; typedef struct __%s* %s;" name name name
+            | StructDef namedFields ->
+                write 0 "typedef struct {"
+                for field in namedFields do
+                    write 1 "%s %s;" (typeToString field.Type_) field.Name
+                write 0 "} %s;" name
+            | ExceptionDef namedFields ->
+                renderExceptionHeader writer name namedFields
+            | InterfaceDef namedFunctions ->
+                renderInterfaceHeader writer name namedFunctions
+            | DelegateDef info ->
+                write 0 "typedef %s %s(%s);" (typeToString info.Returns) name (joinedArgs info.Args)
+            | TypeDef actual ->
+                write 0 "typedef %s %s;" (typeToString actual) name
+            subRendered.Add(name)
+    // start from the bottom
+    let keys =
+        userTypes
+        |> Map.toList
+        |> List.map fst
+    (Set.empty, keys)
+    ||> List.fold (fun alreadyRendered k -> renderDeps k alreadyRendered)
+    |> ignore
+
 let generateImplementationH (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
     let blank () = write 0 ""
-    let interfaces =
-        m.Defs
-        |> List.choose (function
-            | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
-            | _ -> None)
     let globals =
         m.Defs
         |> List.choose (function
@@ -403,21 +530,6 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
         |> List.choose (function
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
-    let exceptions =
-        m.Defs
-        |> List.choose (function
-            | UserType(name, ExceptionDef fields) -> Some (name, fields)
-            | _ -> None)
-    let delegates =
-        m.Defs
-        |> List.choose (function
-            | UserType(name, DelegateDef delegateInfo) -> Some (name, delegateInfo)
-            | _ -> None)
-    let typedefs =
-        m.Defs
-        |> List.choose (function
-            | UserType(name, TypeDef actual) -> Some (name, actual)
-            | _ -> None)
     // begin output: ===============================================
     write 0 "#include \"NativeImplServer.h\""
     write 0 "#include <functional>"
@@ -426,60 +538,8 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
     write 0 "#include <vector>"
     write 0 "#include <map>"
 
-    // raw typedefs
-    for name, actual in typedefs do
-        blank()
-        write 0 "typedef %s %s;" (typeToString actual) name
-
-    // delegate typedefs
-    for name, info in delegates do
-        blank()
-        write 0 "typedef %s %s(%s);" (typeToString info.Returns) name (joinedArgs info.Args)
-
-    // exceptions
-    for exName, exFields in exceptions do
-        blank()
-        write 0 "class %s {" exName
-        write 0 "public:"
-        for namedField in exFields do
-            write 1 "%s %s;" (typeToString namedField.Type_) namedField.Name
-        let joinedInitializers =
-            [for nf in exFields -> sprintf "%s(%s)" nf.Name nf.Name]
-            |> String.concat ", "
-        write 1 "%s(%s) : %s {}" exName (joinedFields exFields) joinedInitializers
-        write 1 "void push() const {"
-        // push field values (reverse order)
-        for namedField in exFields |> List.rev do
-            pushValue writer 2 namedField.Type_ namedField.Name false // false = not a concern because it still exists in this class instance
-        write 1 "}"
-        // build and throw
-        write 1 "static void buildAndThrow() {"
-        for field in exFields do
-            popValue writer 2 field.Type_ (Variable field.Name)
-        // joined variables (_0, _1, etc)
-        let joinedVars =
-            [for field in exFields -> field.Name]
-            |> String.concat ", "
-        write 2 "throw %s(%s);" exName joinedVars
-        write 1 "}"
-        write 0 "};"
-
-    // raw interfaces + server wrappers
-    for name, methods in interfaces do
-        blank()
-        write 0 "class %s {" name
-        write 0 "public:"
-        for namedFunc in methods do
-            let throwsComment =
-                match namedFunc.Throws with
-                | Some exceptionType -> sprintf "  // throws %s" (typeToString exceptionType)
-                | None -> ""
-            write 1 "virtual %s %s(%s) = 0;%s" (typeToString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
-        write 0 "};"
-        write 0 ""
-        // server wrapper
-        let nameRegex = Regex(@"%%IFACE%%")
-        writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
+    // all user types in dependency order
+    renderUserTypes writer (getUserTypes m)
 
     // global externs
     if globals.Length > 0 then

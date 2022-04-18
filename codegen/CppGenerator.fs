@@ -154,6 +154,7 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             | StructType name -> sprintf "%sArray__pop" name
             | TypedefType name -> sprintf "%sArray__pop" name
             | DelegateType name -> sprintf "%sArray__pop" name
+            | ArrayType _ -> sprintf "%sArray__pop" (typeToName niType)
             | _ -> sprintf "// (pop not yet supported: %A)" niType
         match context with
         | Variable name ->
@@ -211,13 +212,13 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | StringType ->
             write level "pushStringArrayInternal(%s);" content
         | ArrayType niType ->
-            write level "%sArray__push(%s, %s);" (typeToName niType) content isReturn'
+            write level "%sArrayArray__push(%s, %s);" (typeToName niType) content isReturn'
         | MapType (keyType, valueType) ->
-            write level "%s%sMap__push(%s, %s);" (typeToName keyType) (typeToName valueType) content isReturn'
+            write level "%s%sMapArray__push(%s, %s);" (typeToName keyType) (typeToName valueType) content isReturn'
         | StructType name ->
             write level "%sArray__push(%s, %s);" name content isReturn'
         | DelegateType name ->
-            write level "%sArray__push(%s);" name content
+            write level "%sArray__push(%s, %s);" name content isReturn' // currently doesn't use the isReturn' value, but lets us write the array stuff more easily
         | TypedefType name ->
             write level "%sArray__push(%s, %s);" name content isReturn'
         | _ ->
@@ -482,6 +483,29 @@ let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: Use
             write 1 "return __ret;"
             write 0 "}"
         | ArrayType arrayType ->
+            let arrayCommon (name: string) (typeString: string) (needsReturnCheck: bool) =
+                // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs, basically)
+                // PUSH ========
+                write 0 "void %sArray__push(std::vector<%s> values, bool isReturn) {" name typeString
+                write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
+                if needsReturnCheck then
+                    write 2 "%s__push(*v, isReturn);" name
+                else
+                    write 2 "%s__push(*v);" name
+                write 1 "}"
+                write 1 "ni_pushInt(values.size()); // todo: size_t"
+                write 0 "}"
+                // POP =========
+                blank()
+                write 0 "std::vector<%s> %sArray__pop() {" typeString name
+                write 1 "std::vector<%s> __ret;" typeString
+                write 1 "auto count = ni_popInt(); // todo: size_t"
+                write 1 "for (auto i = 0; i < count; i++) {"
+                write 2 "auto value = %s__pop();" name
+                write 2 "__ret.push_back(value);"
+                write 1 "}"
+                write 1 "return __ret;"
+                write 0 "}"
             match arrayType with
             | StructType structName ->
                 // fetch the fields so we can make a struct-of-arrays
@@ -516,44 +540,11 @@ let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: Use
                 | _ ->
                     failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
             | TypedefType name ->
-                // since we can only typedef either map or array types, no real special processing is required
-                // (not going to bother with anything like ni_pushIntArrayArray as an optimization, sorry)
-                // PUSH ========
-                write 0 "void %sArray__push(std::vector<%s> values, bool isReturn) {" name name
-                write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
-                write 2 "%s__push(*v, isReturn);" name
-                write 1 "}"
-                write 1 "ni_pushInt(values.size()); // todo: size_t"
-                write 0 "}"
-                // POP =========
-                blank()
-                write 0 "std::vector<%s> %sArray__pop() {" name name
-                write 1 "std::vector<%s> __ret;" name
-                write 1 "auto count = ni_popInt(); // todo: size_t"
-                write 1 "for (auto i = 0; i < count; i++) {"
-                write 2 "auto value = %s__pop();" name
-                write 2 "__ret.push_back(value);"
-                write 1 "}"
-                write 1 "return __ret;"
-                write 0 "}"
+                arrayCommon name (typeToString arrayType) true
             | DelegateType name ->
-                // similar to typedef above, no special processing will be applied since we currently can only push a single server func ID at a time (ni_pushServerFunc)
-                write 0 "void %sArray__push(std::vector<std::function<%s>> values) {" name name
-                write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
-                write 2 "%s__push(*v);" name
-                write 1 "}"
-                write 1 "ni_pushInt(values.size()); // todo: size_t"
-                write 0 "}"
-                blank()
-                write 0 "std::vector<std::function<%s>> %sArray__pop() {" name name
-                write 1 "std::vector<std::function<%s>> __ret;" name
-                write 1 "auto count = ni_popInt(); // todo: size_t"
-                write 1 "for (auto i = 0; i < count; i++) {"
-                write 2 "auto value = %s__pop();" name
-                write 2 "__ret.push_back(value);"
-                write 1 "}"
-                write 1 "return __ret;"
-                write 0 "}"
+                arrayCommon name (typeToString arrayType) false
+            | ArrayType _ ->
+                arrayCommon (typeToName arrayType) (typeToString arrayType) true
             | _ ->
                 // we don't handle any of the primitives, those are all built-in
                 write 0 "// push/pop for generic %s" (typeToString gType)

@@ -483,25 +483,22 @@ let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: Use
             write 1 "return __ret;"
             write 0 "}"
         | ArrayType arrayType ->
-            let arrayCommon (name: string) (typeString: string) (needsReturnCheck: bool) =
+            let arrayCommon (name: string) (elementType: NIType) =
                 // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs, basically)
                 // PUSH ========
-                write 0 "void %sArray__push(std::vector<%s> values, bool isReturn) {" name typeString
-                write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
-                if needsReturnCheck then
-                    write 2 "%s__push(*v, isReturn);" name
-                else
-                    write 2 "%s__push(*v);" name
+                write 0 "void %sArray__push(std::vector<%s> values, bool isReturn) {" name (typeToString elementType)
+                write 1 "for (auto v = values.rbegin(); v != values.rend(); v++) {" // in reverse!
+                pushValue writer 2 elementType "*v" (Indirect "isReturn")
                 write 1 "}"
                 write 1 "ni_pushInt(values.size()); // todo: size_t"
                 write 0 "}"
                 // POP =========
                 blank()
-                write 0 "std::vector<%s> %sArray__pop() {" typeString name
-                write 1 "std::vector<%s> __ret;" typeString
+                write 0 "std::vector<%s> %sArray__pop() {" (typeToString elementType) name
+                write 1 "std::vector<%s> __ret;" (typeToString elementType)
                 write 1 "auto count = ni_popInt(); // todo: size_t"
                 write 1 "for (auto i = 0; i < count; i++) {"
-                write 2 "auto value = %s__pop();" name
+                popValue writer 2 elementType (Variable "value")
                 write 2 "__ret.push_back(value);"
                 write 1 "}"
                 write 1 "return __ret;"
@@ -540,11 +537,11 @@ let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: Use
                 | _ ->
                     failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
             | TypedefType name ->
-                arrayCommon name (typeToString arrayType) true
+                arrayCommon name arrayType
             | DelegateType name ->
-                arrayCommon name (typeToString arrayType) false
+                arrayCommon name arrayType
             | ArrayType _ ->
-                arrayCommon (typeToName arrayType) (typeToString arrayType) true
+                arrayCommon (typeToName arrayType) arrayType
             | _ ->
                 // we don't handle any of the primitives, those are all built-in
                 write 0 "// push/pop for generic %s" (typeToString gType)

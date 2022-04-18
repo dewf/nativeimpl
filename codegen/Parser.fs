@@ -386,7 +386,12 @@ let allGenericTypes (module_: Module) =
     let rec typeAndSubTypes (t: NIType) =
         match t with
         | MapType(keyType, valueType) ->
-            t :: typeAndSubTypes keyType @ typeAndSubTypes valueType
+            // implies arrays of key/value, necessary for push/pop of maps
+            let k = typeAndSubTypes keyType
+            let v = typeAndSubTypes valueType
+            let ks = typeAndSubTypes (ArrayType keyType)
+            let vs = typeAndSubTypes (ArrayType valueType)
+            t :: k @ v @ ks @ vs
         | ArrayType niType ->
             t :: typeAndSubTypes niType
         | _ -> []
@@ -397,7 +402,7 @@ let allGenericTypes (module_: Module) =
             | OpaqueHandleDef -> []
             | StructDef namedFields ->
                 namedFields
-                |> List.collect (fun field -> typeAndSubTypes field.Type_)
+                |> List.collect (fun field -> typeAndSubTypes field.Type_ @ typeAndSubTypes (ArrayType field.Type_)) // also potentially need arrays of each field, if array-of-struct is used
             | ExceptionDef namedFields ->
                 namedFields
                 |> List.collect (fun field -> typeAndSubTypes field.Type_)

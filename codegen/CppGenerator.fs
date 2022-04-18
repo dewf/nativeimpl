@@ -33,6 +33,20 @@ public:
     }
 };"
 
+let rec typeToName = function
+    | UnitType -> "Unit"
+    | Bool -> "Bool"
+    | Int32 -> "Int"
+    | StringType -> "String"
+    | InterfaceType name -> upperFirst name
+    | ExceptionType name -> upperFirst name
+    | DelegateType name -> upperFirst name
+    | ArrayType niType -> sprintf "%sArray" (typeToName niType)
+    | MapType (keyType, valueType) -> sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
+    | StructType name -> upperFirst name
+    | TypedefType name -> upperFirst name
+    | x -> sprintf "(typeToName: not done yet [%A]" x
+
 let rec typeToString = function
     | UnitType -> "void"
     | Bool -> "bool"
@@ -87,6 +101,10 @@ type PopValueContext =
     | Variable of name: string
     | Return
 
+type PushIsReturn =
+    | Direct of value: bool
+    | Indirect of name: string
+
 let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
@@ -133,19 +151,29 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             | Bool -> "popBoolArrayInternal"
             | Int32 -> "popIntArrayInternal"
             | StringType -> "popStringArrayInternal"
-            | _ -> "(not yet supported)"
+            | _ -> "// (not yet supported)"
         match context with
         | Variable name ->
             write level "auto %s = %s();" name popFunc
         | Return ->
             write level "return %s();" popFunc
+    | StructType structName ->
+        match context with
+        | Variable name ->
+            write level "auto %s = %s__pop();" name structName
+        | Return ->
+            write level "return %s__pop();" structName
     | _ ->
-        write level "(not yet implemented)"
+        write level "// (not yet implemented: %A)" type_
 
-and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: bool) =
+and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
+    let isReturn' =
+        match isReturn with
+        | Direct value -> if value then "true" else "false"
+        | Indirect name -> name
     match type_ with
     | UnitType ->
         write level "%s;" content // no push!
@@ -156,7 +184,7 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | StringType ->
         write level "pushStringInternal(%s);" content
     | InterfaceType name ->
-        write level "%s__push(%s, %s);" name content (if isReturn then "true" else "false")
+        write level "%s__push(%s, %s);" name content isReturn'
     | DelegateType name ->
         write level "%s__push(%s);" name content // still hmm about safety area for functions ...
     | ArrayType niType ->
@@ -167,8 +195,10 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             | StringType -> "pushStringArrayInternal"
             | _ -> "(not yet supported)"
         write level "%s(%s);" pushFunc content
+    | StructType name ->
+        write level "%s__push(%s, %s);" name content isReturn'
     | _ ->
-        write level "(pushValue not supported yet)"
+        write level "// (pushValue not supported yet: %A)" type_
 
 [<RequireQualifiedAccess>]
 type UserOrGeneric =
@@ -186,7 +216,7 @@ let userTypesAndGenerics (m: Module) =
             (typeToString type_)
         newMap.Add(name, UserOrGeneric.Generic type_))
 
-let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (renderFunc: TextWriter -> string -> UserOrGeneric -> unit) =
+let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (renderFunc: TextWriter -> string -> UserOrGeneric -> Map<string, UserOrGeneric> -> unit) =
     let rec renderType (type_: NIType) (alreadyRendered: Set<string>) =
         match type_ with
         | OpaqueHandleType name -> renderDeps name alreadyRendered
@@ -213,10 +243,24 @@ let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (
                 | UserOrGeneric.Generic gType ->
                     match gType with
                     | ArrayType niType ->
-                        renderType niType alreadyRendered
+                        // process each struct field as an array as well, since that's how we push/pop them
+                        match niType with
+                        | StructType structName ->
+                            // array of struct implies array of each struct field
+                            match typeMap.[structName] with
+                            | UserOrGeneric.User (StructDef namedFields) ->
+                                (alreadyRendered, namedFields)
+                                ||> List.fold (fun already2 field -> renderType (ArrayType field.Type_) already2)
+                            | _ ->
+                                failwithf "renderDeps: struct (from array) didn't exist in typemap??"
+                        | _ ->
+                            alreadyRendered
+                        // and the type itself, of course ...
+                        |> renderType niType
                     | MapType (keyType, valueType) ->
-                        renderType keyType alreadyRendered
-                        |> renderType valueType
+                        alreadyRendered
+                        |> renderType (ArrayType keyType) // these imply the keyType/valueType alone
+                        |> renderType (ArrayType valueType)
                     | _ ->
                         failwithf "renderUserTypes.renderDeps: unsupported generic type %A!" gType
                 | UserOrGeneric.User userType ->
@@ -253,11 +297,11 @@ let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (
                         renderType actual alreadyRendered
 
             // use plugin render func, since it depends on our context
-            renderFunc writer name content
+            renderFunc writer name content typeMap
 
             // done
             subRendered.Add(name)
-    // start from the bottom
+    // process all keys (names) - renderDeps just skips anything it's seen before
     let keys =
         typeMap
         |> Map.toList
@@ -286,7 +330,7 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
         popValue writer 2 argType (Variable argName)
     let invocation =
         sprintf "f(%s)" (joinedArgNames info.Args)
-    pushValue writer 2 info.Returns invocation true
+    pushValue writer 2 info.Returns invocation (Direct true)
     write 1 "};"
     write 1 "pushServerFuncVal(wrapper, uniqueKey);"
     write 0 "}"
@@ -297,7 +341,7 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
     write 1 "auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id));"
     write 1 "auto wrapper = [cf](%s) {" (joinedArgs info.Args)
     for argName, argType in info.Args |> List.rev do
-        pushValue writer 2 argType argName false
+        pushValue writer 2 argType argName (Direct false)
     write 2 "cf->remoteExec();"
     popValue writer 2 info.Returns Return
     write 1 "};"
@@ -326,7 +370,7 @@ let renderWrapperInterface (writer: TextWriter) (name: string) (methods: NamedFu
         write 1 "%s %s(%s) override {" (typeToString namedFunc.Returns) namedFunc.Name argList
         // push args (reverse order)
         for argName, argType in namedFunc.Args |> List.rev do
-            pushValue writer 2 argType argName false
+            pushValue writer 2 argType argName (Direct false)
         // invoke
         match namedFunc.Throws with
         | Some _ ->
@@ -363,7 +407,7 @@ let renderWrapperException (writer: TextWriter) (name: string) (exFields: NamedF
     for namedField in exFields |> List.rev do
         let memberVar =
             sprintf "e.%s" namedField.Name
-        pushValue writer 1 namedField.Type_ memberVar false // false = not a concern because it still exists in this class instance
+        pushValue writer 1 namedField.Type_ memberVar (Direct false) // false = not a concern because it still exists in this class instance
     write 0 "}"
     // build and throw
     blank()
@@ -374,19 +418,101 @@ let renderWrapperException (writer: TextWriter) (name: string) (exFields: NamedF
     write 1 "throw %s(%s);" name (joinedFieldNames exFields)
     write 0 "}"
 
-let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: UserOrGeneric) =
+let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
+    let blank () = write 0 ""
+    blank()
     match content with
     | UserOrGeneric.Generic gType ->
-        write 0 "// push/pop for generic %s" (typeToString gType)
+        match gType with
+        | MapType (keyType, valueType) ->
+            // PUSH =====
+            write 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName gType) (typeToString gType)
+            write 1 "std::vector<%s> keys;" (typeToString keyType)
+            write 1 "std::vector<%s> values;" (typeToString valueType)
+            write 1 "for (auto i = _map.begin(); i != _map.end(); i++) {"
+            write 2 "keys.push_back(i->first);"
+            write 2 "values.push_back(i->second);"
+            write 1 "}"
+            pushValue writer 1 (ArrayType valueType) "values" (Indirect "isReturn")
+            pushValue writer 1 (ArrayType keyType) "keys" (Indirect "isReturn")
+            write 0 "}"
+            // POP =====
+            blank()
+            write 0 "%s __%s__pop() {" (typeToString gType) (typeToName gType)
+            write 1 "%s __ret;" (typeToString gType)
+            popValue writer 1 (ArrayType keyType) (Variable "keys")
+            popValue writer 1 (ArrayType valueType) (Variable "values")
+            write 1 "for (auto i = 0; i < keys.size(); i++) {"
+            write 2 "__ret[keys[i]] = values[i];"
+            write 1 "}"
+            write 1 "return __ret;"
+            write 0 "}"
+        | ArrayType arrayType ->
+            match arrayType with
+            | StructType structName ->
+                match typeMap.[structName] with
+                | UserOrGeneric.User (StructDef namedFields) ->
+                    // PUSH ===========
+                    write 0 "void %sArray__push(%s values, bool isReturn) {" structName (typeToString gType)
+                    for field in namedFields |> List.rev do
+                        write 1 "std::vector<%s> %s_values;" (typeToString field.Type_) field.Name
+                    write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
+                    for field in namedFields |> List.rev do
+                        write 2 "%s_values.push_back(v->%s);" field.Name field.Name
+                    write 1 "}"
+                    for field in namedFields |> List.rev do
+                        pushValue writer 1 (ArrayType field.Type_) (sprintf "%s_values" field.Name) (Indirect "isReturn")
+                    write 0 "}"
+                    // POP ============
+                    blank()
+                    write 0 "%s %sArray__pop() {" (typeToString gType) structName
+                    for field in namedFields do
+                        popValue writer 1 (ArrayType field.Type_) (Variable (sprintf "%s_values" field.Name))
+                    write 1 "std::vector<%s> __ret;" structName
+                    // use first field to iterate
+                    write 1 "for (auto i = 0; i < %s_values.size(); i++) {" namedFields.Head.Name
+                    write 2 "%s __value;" structName
+                    for field in namedFields do
+                        write 2 "__value.%s = %s_values[i];" field.Name field.Name
+                    write 2 "__ret.push_back(__value);"
+                    write 1 "}"
+                    write 1 "return __ret;"
+                    write 0 "}"
+                | _ ->
+                    failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+            | _ ->
+                write 0 "// push/pop for generic %s" (typeToString gType)
+        | _ ->
+            write 0 "// push/pop for generic %s" (typeToString gType)
+//    | ArrayType of NIType
+//    | MapType of keyType: NIType * valueType: NIType
+//    //
+//    | Unresolved of name: string * line: int
+//    // these have to be resolved by checking a table, otherwise unresolved
+//    | OpaqueHandleType of name: string
+//    | StructType of name: string
+//    | InterfaceType of name: string
+//    | ExceptionType of name: string          // only for 'throws'
+//    | DelegateType of name: string
+//    | TypedefType of name: string
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueHandleDef ->
             write 0 "// anything for opaque here? push/pop perhaps? %s" name
         | StructDef namedFields ->
-            write 0 "// push/pop for struct %s" name
+            write 0 "void %s__push(%s value, bool isReturn) {" name name
+            for field in namedFields |> List.rev do
+                pushValue writer 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
+            write 0 "}"
+            blank()
+            write 0 "%s %s__pop() {" name name
+            for field in namedFields do
+                popValue writer 1 field.Type_ (Variable field.Name)
+            write 1 "return %s { %s };" name (joinedFieldNames namedFields)
+            write 0 "}"
         | ExceptionDef namedFields ->
             renderWrapperException writer name namedFields
         | InterfaceDef methods ->
@@ -462,14 +588,14 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
         match namedFunction.Throws with
         | Some (ExceptionType exceptionName) ->
             write 1 "try {"
-            pushValue writer 2 namedFunction.Returns invocation true
+            pushValue writer 2 namedFunction.Returns invocation (Direct true)
             write 1 "}"
             write 1 "catch (const %s& e) {" exceptionName
             write 2 "ni_setException(%s);" (lowerFirst exceptionName)
             write 2 "%s__push();" exceptionName
             write 1 "}"
         | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
-            pushValue writer 1 namedFunction.Returns invocation true
+            pushValue writer 1 namedFunction.Returns invocation (Direct true)
         write 0 "}"
 
     // interface wrappers
@@ -486,14 +612,14 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
             match nf.Throws with
             | Some (ExceptionType exceptionName) ->
                 write 1 "try {"
-                pushValue writer 2 nf.Returns invocation true
+                pushValue writer 2 nf.Returns invocation (Direct true)
                 write 1 "}"
                 write 1 "catch (const %s& e) {" exceptionName
                 write 2 "ni_setException(%s);" (lowerFirst exceptionName)
                 write 2 "%s__push();" exceptionName
                 write 1 "}"
             | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
-                pushValue writer 1 nf.Returns invocation true
+                pushValue writer 1 nf.Returns invocation (Direct true)
             write 0 "}")
 
     // globals/constants func
@@ -502,7 +628,7 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
         write 0 "void __constantsFunc() {"
         // push in reverse order
         for globalName, globalType in globals |> List.rev do
-            pushValue writer 1 globalType globalName false // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
+            pushValue writer 1 globalType globalName (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
         write 0 "}"
 
     // library entry point / registrations
@@ -565,7 +691,7 @@ let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFun
     let nameRegex = Regex(@"%%IFACE%%")
     writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
 
-let renderHeaderUserOrGeneric (writer: TextWriter) (name: string) (content: UserOrGeneric) =
+let renderHeaderUserOrGeneric (writer: TextWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt

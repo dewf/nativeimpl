@@ -151,18 +151,33 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             | Bool -> "popBoolArrayInternal"
             | Int32 -> "popIntArrayInternal"
             | StringType -> "popStringArrayInternal"
-            | _ -> "// (not yet supported)"
+            | StructType name -> sprintf "%sArray__pop" name
+            | TypedefType name -> sprintf "%sArray__pop" name
+            | DelegateType name -> sprintf "%sArray__pop" name
+            | _ -> sprintf "// (pop not yet supported: %A)" niType
         match context with
         | Variable name ->
             write level "auto %s = %s();" name popFunc
         | Return ->
             write level "return %s();" popFunc
+    | MapType (keyType, valueType) ->
+        match context with
+        | Variable name ->
+            write level "auto %s = __%s%sMap__pop();" name (typeToName keyType) (typeToName valueType)
+        | Return ->
+            write level "return __%s%sMap__pop();"  (typeToName keyType) (typeToName valueType)
     | StructType structName ->
         match context with
         | Variable name ->
             write level "auto %s = %s__pop();" name structName
         | Return ->
             write level "return %s__pop();" structName
+    | TypedefType typedefName ->
+        match context with
+        | Variable name ->
+            write level "auto %s = %s__pop();" name typedefName
+        | Return ->
+            write level "return %s__pop();" typedefName
     | _ ->
         write level "// (not yet implemented: %A)" type_
 
@@ -188,14 +203,30 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | DelegateType name ->
         write level "%s__push(%s);" name content // still hmm about safety area for functions ...
     | ArrayType niType ->
-        let pushFunc =
-            match niType with
-            | Bool -> "pushBoolArrayInternal"
-            | Int32 -> "pushIntArrayInternal"
-            | StringType -> "pushStringArrayInternal"
-            | _ -> "(not yet supported)"
-        write level "%s(%s);" pushFunc content
+        match niType with
+        | Bool ->
+            write level "pushBoolArrayInternal(%s);" content
+        | Int32 ->
+            write level "pushIntArrayInternal(%s);" content
+        | StringType ->
+            write level "pushStringArrayInternal(%s);" content
+        | ArrayType niType ->
+            write level "%sArray__push(%s, %s);" (typeToName niType) content isReturn'
+        | MapType (keyType, valueType) ->
+            write level "%s%sMap__push(%s, %s);" (typeToName keyType) (typeToName valueType) content isReturn'
+        | StructType name ->
+            write level "%sArray__push(%s, %s);" name content isReturn'
+        | DelegateType name ->
+            write level "%sArray__push(%s);" name content
+        | TypedefType name ->
+            write level "%sArray__push(%s, %s);" name content isReturn'
+        | _ ->
+            write level "// (push not yet supported: ArrayType %A)" niType
+    | MapType (keyType, valueType) ->
+        write level "__%s%sMap__push(%s, %s);" (typeToName keyType) (typeToName valueType) content isReturn'
     | StructType name ->
+        write level "%s__push(%s, %s);" name content isReturn'
+    | TypedefType name ->
         write level "%s__push(%s, %s);" name content isReturn'
     | _ ->
         write level "// (pushValue not supported yet: %A)" type_
@@ -453,6 +484,7 @@ let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: Use
         | ArrayType arrayType ->
             match arrayType with
             | StructType structName ->
+                // fetch the fields so we can make a struct-of-arrays
                 match typeMap.[structName] with
                 | UserOrGeneric.User (StructDef namedFields) ->
                     // PUSH ===========
@@ -483,21 +515,50 @@ let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: Use
                     write 0 "}"
                 | _ ->
                     failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+            | TypedefType name ->
+                // since we can only typedef either map or array types, no real special processing is required
+                // (not going to bother with anything like ni_pushIntArrayArray as an optimization, sorry)
+                // PUSH ========
+                write 0 "void %sArray__push(std::vector<%s> values, bool isReturn) {" name name
+                write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
+                write 2 "%s__push(*v, isReturn);" name
+                write 1 "}"
+                write 1 "ni_pushInt(values.size()); // todo: size_t"
+                write 0 "}"
+                // POP =========
+                blank()
+                write 0 "std::vector<%s> %sArray__pop() {" name name
+                write 1 "std::vector<%s> __ret;" name
+                write 1 "auto count = ni_popInt(); // todo: size_t"
+                write 1 "for (auto i = 0; i < count; i++) {"
+                write 2 "auto value = %s__pop();" name
+                write 2 "__ret.push_back(value);"
+                write 1 "}"
+                write 1 "return __ret;"
+                write 0 "}"
+            | DelegateType name ->
+                // similar to typedef above, no special processing will be applied since we currently can only push a single server func ID at a time (ni_pushServerFunc)
+                write 0 "void %sArray__push(std::vector<std::function<%s>> values) {" name name
+                write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
+                write 2 "%s__push(*v);" name
+                write 1 "}"
+                write 1 "ni_pushInt(values.size()); // todo: size_t"
+                write 0 "}"
+                blank()
+                write 0 "std::vector<std::function<%s>> %sArray__pop() {" name name
+                write 1 "std::vector<std::function<%s>> __ret;" name
+                write 1 "auto count = ni_popInt(); // todo: size_t"
+                write 1 "for (auto i = 0; i < count; i++) {"
+                write 2 "auto value = %s__pop();" name
+                write 2 "__ret.push_back(value);"
+                write 1 "}"
+                write 1 "return __ret;"
+                write 0 "}"
             | _ ->
+                // we don't handle any of the primitives, those are all built-in
                 write 0 "// push/pop for generic %s" (typeToString gType)
         | _ ->
             write 0 "// push/pop for generic %s" (typeToString gType)
-//    | ArrayType of NIType
-//    | MapType of keyType: NIType * valueType: NIType
-//    //
-//    | Unresolved of name: string * line: int
-//    // these have to be resolved by checking a table, otherwise unresolved
-//    | OpaqueHandleType of name: string
-//    | StructType of name: string
-//    | InterfaceType of name: string
-//    | ExceptionType of name: string          // only for 'throws'
-//    | DelegateType of name: string
-//    | TypedefType of name: string
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueHandleDef ->
@@ -520,7 +581,14 @@ let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: Use
         | DelegateDef info ->
             renderWrapperDelegate writer name info
         | TypeDef niType ->
-            write 0 "// push/pop for typedef %s [%s] ??" name (typeToString niType)
+            // ghetto, but for now instead of flattening, just write an inline wrapper
+            write 0 "inline %s %s__pop() {" name name
+            popValue writer 1 niType Return
+            write 0 "}"
+            blank()
+            write 0 "inline void %s__push(%s value, bool isReturn) {" name name
+            pushValue writer 1 niType "value" (Indirect "isReturn")
+            write 0 "}"
 
 let generateWrappersCpp (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -616,7 +684,7 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
                 write 1 "}"
                 write 1 "catch (const %s& e) {" exceptionName
                 write 2 "ni_setException(%s);" (lowerFirst exceptionName)
-                write 2 "%s__push();" exceptionName
+                write 2 "%s__push(e);" exceptionName
                 write 1 "}"
             | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
                 pushValue writer 1 nf.Returns invocation (Direct true)

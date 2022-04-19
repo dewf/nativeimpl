@@ -44,6 +44,7 @@ let rec typeToName = function
     | MapType (keyType, valueType) -> sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
     | StructType name -> upperFirst name
     | TypedefType name -> upperFirst name
+    | EnumType name -> upperFirst name
     | SumType name -> upperFirst name
     | x -> sprintf "(typeToName: not done yet [%A]" x
 
@@ -59,6 +60,7 @@ let rec typeToString = function
     | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (typeToString keyType) (typeToString valueType)
     | StructType name -> name
     | TypedefType name -> name
+    | EnumType name -> name
     | SumType name -> name
     | x -> sprintf "(typeToString: not done yet [%A])" x
 
@@ -105,6 +107,7 @@ type PopValueContext =
 type PushIsReturn =
     | Direct of value: bool
     | Indirect of name: string
+    | NotApplicable
 
 let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -180,6 +183,12 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             write level "auto %s = %s__pop();" name typedefName
         | Return ->
             write level "return %s__pop();" typedefName
+    | EnumType enumTypeName ->
+        match context with
+        | Variable name ->
+            write level "auto %s = %s__pop();" name enumTypeName
+        | Return ->
+            write level "return %s__pop();" enumTypeName
     | SumType sumTypeName ->
         match context with
         | Variable name ->
@@ -193,10 +202,11 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
-    let isReturn' =
+    let isReturnString() =
         match isReturn with
         | Direct value -> if value then "true" else "false"
         | Indirect name -> name
+        | NotApplicable -> failwith "pushValue: 'NotApplicable' isReturn was consumed"
     match type_ with
     | UnitType ->
         write level "%s;" content // no push!
@@ -207,7 +217,7 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | StringType ->
         write level "pushStringInternal(%s);" content
     | InterfaceType name ->
-        write level "%s__push(%s, %s);" name content isReturn'
+        write level "%s__push(%s, %s);" name content (isReturnString())
     | DelegateType name ->
         write level "%s__push(%s);" name content // still hmm about safety area for functions ...
     | ArrayType niType ->
@@ -219,25 +229,27 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | StringType ->
             write level "pushStringArrayInternal(%s);" content
         | ArrayType niType ->
-            write level "%sArrayArray__push(%s, %s);" (typeToName niType) content isReturn'
+            write level "%sArrayArray__push(%s, %s);" (typeToName niType) content (isReturnString())
         | MapType (keyType, valueType) ->
-            write level "%s%sMapArray__push(%s, %s);" (typeToName keyType) (typeToName valueType) content isReturn'
+            write level "%s%sMapArray__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
         | StructType name ->
-            write level "%sArray__push(%s, %s);" name content isReturn'
+            write level "%sArray__push(%s, %s);" name content (isReturnString())
         | DelegateType name ->
-            write level "%sArray__push(%s, %s);" name content isReturn' // currently doesn't use the isReturn' value, but lets us write the array stuff more easily
+            write level "%sArray__push(%s, %s);" name content (isReturnString()) // currently doesn't use the isReturn' value, but lets us emit array stuff more easily
         | TypedefType name ->
-            write level "%sArray__push(%s, %s);" name content isReturn'
+            write level "%sArray__push(%s, %s);" name content (isReturnString())
         | _ ->
             write level "// (push not yet supported: ArrayType %A)" niType
     | MapType (keyType, valueType) ->
-        write level "__%s%sMap__push(%s, %s);" (typeToName keyType) (typeToName valueType) content isReturn'
+        write level "__%s%sMap__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
     | StructType name ->
-        write level "%s__push(%s, %s);" name content isReturn'
+        write level "%s__push(%s, %s);" name content (isReturnString())
     | TypedefType name ->
-        write level "%s__push(%s, %s);" name content isReturn'
+        write level "%s__push(%s, %s);" name content (isReturnString())
+    | EnumType name ->
+        write level "%s__push(%s);" name content
     | SumType name ->
-        write level "%s__push(%s, %s);" name content isReturn'
+        write level "%s__push(%s, %s);" name content (isReturnString())
     | _ ->
         write level "// (pushValue not supported yet: %A)" type_
 
@@ -337,6 +349,8 @@ let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (
                             renderType argType already2)
                     | TypeDef actual ->
                         renderType actual alreadyRendered
+                    | EnumDef _ ->
+                        alreadyRendered
                     | SumTypeDef enumValues ->
                         (alreadyRendered, enumValues)
                         ||> List.fold (fun already2 value ->
@@ -626,6 +640,15 @@ let renderWrapperUserTypes (writer: TextWriter) (name: string) (content: UserOrG
             write 0 "inline void %s__push(%s value, bool isReturn) {" name name
             pushValue writer 1 niType "value" (Indirect "isReturn")
             write 0 "}"
+        | EnumDef _ ->
+            write 0 "inline void %s__push(%s value) {" name name
+            pushValue writer 1 Int32 "(int)value" NotApplicable
+            write 0 "}"
+            blank()
+            write 0 "inline %s %s__pop() {" name name
+            popValue writer 1 Int32 (Variable "tag")
+            write 1 "return (%s)tag;" name
+            write 0 "}"
         | SumTypeDef values ->
             renderWrapperSumType writer name values
 
@@ -798,14 +821,6 @@ let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFun
     let nameRegex = Regex(@"%%IFACE%%")
     writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
 
-let withTrailingCommas (things: 'a list) =
-    match things |> List.rev with
-    | h :: tail ->
-        (h, "") :: (tail |> List.map (fun x -> x, ","))
-    | _ ->
-        failwithf "withCommas: things had no elements"
-    |> List.rev
-
 let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumTypeValue list) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
@@ -863,6 +878,11 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
             write 0 "typedef %s %s(%s);" (typeToString info.Returns) name (joinedArgs info.Args)
         | TypeDef actual ->
             write 0 "typedef %s %s;" (typeToString actual) name
+        | EnumDef values ->
+            write 0 "enum class %s {" name
+            for value, maybeComma in values |> withTrailingCommas do
+                write 1 "%s%s" value maybeComma
+            write 0 "};"
         | SumTypeDef enumValues ->
             renderHeaderSumType writer name enumValues
 

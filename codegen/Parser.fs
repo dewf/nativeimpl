@@ -43,6 +43,7 @@ type NIType =
     | ExceptionType of name: string          // only for 'throws'
     | DelegateType of name: string
     | TypedefType of name: string
+    | EnumType of name: string
     | SumType of name: string
 
 let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], line, etc)
@@ -126,6 +127,7 @@ type UserType =
     | InterfaceDef of methods: NamedFunction list
     | DelegateDef of info: DelegateInfo
     | TypeDef of actual: NIType
+    | EnumDef of values: string list
     | SumTypeDef of values: SumTypeValue list
 
 type ModuleDefinition =
@@ -254,33 +256,58 @@ let parseFunctionList (line: int) (input: TokenAndLocation list) =
     | None ->
         failwithf "error parsing function list at line %d - missing closing }" line
 
-let parseOneSumTypeValue (input: TokenAndLocation list) =
-    if input.IsEmpty then
+let parseOneEnumValue (input: TokenAndLocation list) =
+    match input with
+    | Lookahead 2 ([Identifier name; Comma], line, etc) ->
+        Some (name, etc)
+    | [{ Token = Identifier name }] -> // last one
+        Some (name, [])
+    | { Location = line } :: _ ->
+        failwithf "problem parsing enum value: unexpected content on line %d" line
+    | [] ->
         None
-    else
-        match input with
-        | Lookahead 1 ([Identifier name], line, etc) ->
-            // does it have args?
-            let args, etc2 =
-                match etc with
-                | Lookahead 1 ([LeftParen], line, etc2) ->
-                    parseArgsList line etc2
-                | _ ->
-                    [], etc
-            // will there be more?
-            match etc2 with
-            | Lookahead 1 ([Comma], _, etc3) ->
-                Some ({ Name = name; Args = args }, etc3)
-            | [] ->
-                // we're done, no more tokens
-                Some ({ Name = name; Args = args }, []) // no etc, unfold will stop
-            | { Location = line } :: _ ->
-                // anything else
-                failwithf "parsing sum type value: missing comma before content on line %d" line
-        | { Location = line } :: _ ->
-            failwithf "expecting enum identifier at line %d" line
+
+let parseEnumValues (line: int) (input: TokenAndLocation list) =
+    let rightBraceIndex =
+        input |> List.tryFindIndex (fun tl -> tl.Token = RightBrace)
+    match rightBraceIndex with
+    | Some index ->
+        let content, etc =
+            input |> List.splitAt index
+        let values =
+            List.unfold parseOneEnumValue content
+        match etc with
+        | Lookahead 1 ([RightBrace], _, etc2) ->
+            values, etc2
         | _ ->
-            failwithf "parseOneEnumValue: shouldn't arrive here"
+            failwithf "parseEnumValues ???"
+    | None ->
+        failwithf "enum: failed to find closing brace at line %d" line
+
+let parseOneSumTypeValue (input: TokenAndLocation list) =
+    match input with
+    | Lookahead 1 ([Identifier name], line, etc) ->
+        // does it have args?
+        let args, etc2 =
+            match etc with
+            | Lookahead 1 ([LeftParen], line, etc2) ->
+                parseArgsList line etc2
+            | _ ->
+                [], etc
+        // will there be more?
+        match etc2 with
+        | Lookahead 1 ([Comma], _, etc3) ->
+            Some ({ Name = name; Args = args }, etc3)
+        | [] ->
+            // we're done, no more tokens
+            Some ({ Name = name; Args = args }, []) // no etc, unfold will stop
+        | { Location = line } :: _ ->
+            // anything else
+            failwithf "parsing sum type value: missing comma before content on line %d" line
+    | { Location = line } :: _ ->
+        failwithf "expecting enum identifier at line %d" line
+    | [] ->
+        None
 
 let parseSumTypeValues (line: int) (input: TokenAndLocation list) =
     let rightBraceIndex =
@@ -295,9 +322,9 @@ let parseSumTypeValues (line: int) (input: TokenAndLocation list) =
         | Lookahead 1 ([RightBrace], _, etc2) ->
             values, etc2
         | _ ->
-            failwithf "parseEnumValues ???"
+            failwithf "parseSumTypeValues ???"
     | None ->
-        failwithf "enum: failed to find closing brace at line %d" line
+        failwithf "sumtype: failed to find closing brace at line %d" line
 
 let parseModule (input: TokenAndLocation list) =
     let parseNext (remaining: TokenAndLocation list) =
@@ -333,6 +360,11 @@ let parseModule (input: TokenAndLocation list) =
                 |> Some
             | _ ->
                 failwithf "expected typedef name at line %d" line
+        | Lookahead 3 ([EnumToken; Identifier name; LeftBrace], line, etc) ->
+            let values, etc2 =
+                parseEnumValues line etc
+            (UserType (name, EnumDef values), etc2)
+            |> Some
         | Lookahead 3 ([SumTypeToken; Identifier name; LeftBrace], line, etc) ->
             let values, etc2 =
                 parseSumTypeValues line etc
@@ -381,6 +413,7 @@ let rec resolveType (userTypes: Map<string, UserType>) (type_: NIType) =
             | InterfaceDef _ -> InterfaceType name
             | DelegateDef _ -> DelegateType name
             | TypeDef _ -> TypedefType name
+            | EnumDef _ -> EnumType name
             | SumTypeDef _ -> SumType name
             | ExceptionDef _ ->
                 // how do we enforce that this is only allowed in a "throws" context?
@@ -415,7 +448,7 @@ let resolveDelegateTypes (userTypes: Map<string, UserType>) (info: DelegateInfo)
     { info with Args = nextArgs; Returns = nextReturns }
 
 
-let resolveEnumTypes (userTypes: Map<string, UserType>) (values: SumTypeValue list) =
+let resolveSumTypeTypes (userTypes: Map<string, UserType>) (values: SumTypeValue list) =
     values
     |> List.map (fun value ->
         let nextArgs =
@@ -452,9 +485,11 @@ let resolveModuleDef (userTypes: Map<string, UserType>) (def: ModuleDefinition) 
                 OpaqueHandleDef
             | TypeDef niType ->
                 TypeDef (resolveType userTypes niType)
+            | EnumDef values ->
+                EnumDef values
             | SumTypeDef enumValues ->
                 let nextValues =
-                    resolveEnumTypes userTypes enumValues
+                    resolveSumTypeTypes userTypes enumValues
                 SumTypeDef nextValues
         UserType (name, nextUserType)
     | Global (name, niType) ->
@@ -517,6 +552,8 @@ let allGenericTypes (module_: Module) =
                 retTypes @ argTypes
             | TypeDef actual ->
                 typeAndSubTypes actual
+            | EnumDef _ ->
+                []
             | SumTypeDef enumValues ->
                 enumValues
                 |> List.collect (fun value ->

@@ -5,45 +5,41 @@
 #include <vector>
 #include <map>
 
-typedef int CoolDelegate(std::string x);
-
-class CoolException {
+struct CoolEnum {
 public:
-    int x;
-    std::string woot;
-    CoolException(int x, std::string woot) : x(x), woot(woot) {}
+	enum class Tag {
+		Value1,
+		Value2,
+		Value3
+	};
+	const Tag tag;
+	struct Value1 {
+		static CoolEnum make() {
+			CoolEnum ret{ Tag::Value1 };
+			ret.value1 = std::shared_ptr<Value1>(new Value1());
+			return ret;
+		}
+	};
+	struct Value2 {
+		const int x;
+		static CoolEnum make(int x) {
+			CoolEnum ret{ Tag::Value2 };
+			ret.value2 = std::shared_ptr<Value2>(new Value2{ x });
+			return ret;
+		}
+	};
+	struct Value3 {
+		const std::string m;
+		const std::vector<int> things;
+		static CoolEnum make(std::string m, std::vector<int> things) {
+			CoolEnum ret{ Tag::Value3 };
+			ret.value3 = std::shared_ptr<Value3>(new Value3{ m, things });
+			return ret;
+		}
+	};
+	std::shared_ptr<Value1> value1;
+	std::shared_ptr<Value2> value2;
+	std::shared_ptr<Value3> value3;
 };
 
-typedef std::map<std::string,int> StringIntMap;
-
-typedef struct {
-    int findMe;
-} DeepStruct;
-
-typedef struct {
-    int x;
-    StringIntMap myMap;
-    std::function<CoolDelegate> someFunc;
-    DeepStruct sigh;
-} Whatever;
-
-typedef std::map<std::string,Whatever> DeepMap;
-
-typedef void FinalDelegate(DeepMap v);
-
-class Heyas {
-public:
-    virtual void someMethod(int x) = 0;  // throws CoolException
-};
-
-class ServerHeyas : public Heyas, public ServerObject {
-public:
-    virtual ~ServerHeyas() {
-    }
-    static std::shared_ptr<ServerHeyas> getByID(int id) {
-        auto obj = ServerObject::getByID(id);
-        return std::static_pointer_cast<ServerHeyas>(obj);
-    }
-};
-
-void mapTest(std::function<FinalDelegate> whoa);
+int someFunction(CoolEnum woot);

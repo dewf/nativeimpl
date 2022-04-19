@@ -1,32 +1,10 @@
 module TestLibrary;
 
-typedef map[string,int] StringIntMap;
-
-delegate int CoolDelegate(string x);
-
-interface Heyas {
-   void someMethod(int x) throws CoolException;
+sumtype CoolEnum {
+  Value1,
+  Value2(int x),
+  Value3(string m, array[int] things)
 }
 
-struct DeepStruct {
-   int findMe;
-}
-
-exception CoolException {
-   int x;
-   string woot;
-}
-
-struct Whatever {
-   int x;
-   StringIntMap myMap;
-   CoolDelegate someFunc;
-   DeepStruct sigh;
-}
-
-typedef map[string, Whatever] DeepMap;
-
-delegate void FinalDelegate(DeepMap v);
-
-void mapTest(FinalDelegate whoa);
+int someFunction(CoolEnum value);
 

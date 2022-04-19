@@ -43,6 +43,7 @@ type NIType =
     | ExceptionType of name: string          // only for 'throws'
     | DelegateType of name: string
     | TypedefType of name: string
+    | SumType of name: string
 
 let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], line, etc)
     let front, etc =
@@ -107,6 +108,11 @@ type NamedField = {
     Type_: NIType
 }
 
+type SumTypeValue = {
+    Name: string
+    Args: (string * NIType) list
+}
+
 type DelegateInfo = {
     Args: (string * NIType) list
     Returns: NIType
@@ -120,6 +126,7 @@ type UserType =
     | InterfaceDef of methods: NamedFunction list
     | DelegateDef of info: DelegateInfo
     | TypeDef of actual: NIType
+    | SumTypeDef of values: SumTypeValue list
 
 type ModuleDefinition =
     | Global of name: string * type_: NIType
@@ -166,6 +173,43 @@ let parseFields (line: int) (input: TokenAndLocation list) =
     | None ->
         failwithf "parseFields @ line %d: no closing } found" line
 
+let parseArg (input: TokenAndLocation list) =
+    if input.IsEmpty then
+        None
+    else
+        let type_, etc =
+            parseType input
+        match etc with
+        | Lookahead 2 ([Identifier name; Comma], _, etc2) ->
+            Some ((name, type_), etc2)
+        | [{ Location = _; Token = Identifier name }] -> // TODO: fix lookahead to use N as 'max', so it returns UP TO that many?
+            Some ((name, type_), [])
+        | _ ->
+            // 'rewind' to first element of input, since we know it parsed a type successfully
+            match input with
+            | { Location = line } :: _ ->
+                failwithf "error parsing function arg at line %d: %A" line etc
+            | _ ->
+                failwithf "parseArg ???"
+
+let parseArgsList (line: int) (input: TokenAndLocation list) =
+    // use this just after a left paren
+    let rightParenIndex =
+        input |> List.tryFindIndex (fun tl -> tl.Token = RightParen)
+    match rightParenIndex with
+    | Some index ->
+        let argTokens, etc =
+            input |> List.splitAt index
+        let args =
+            List.unfold parseArg argTokens
+        match etc with
+        | Lookahead 1 ([RightParen], _, etc2) ->
+            args, etc2
+        | _ ->
+            failwithf "parseArgsList: didn't find right paren at line %d ??" line
+    | None ->
+        failwithf "function at line %d missing closing )" line
+
 let parseNamedFunction (input: TokenAndLocation list) =
     if input.IsEmpty then
         None
@@ -174,37 +218,15 @@ let parseNamedFunction (input: TokenAndLocation list) =
             parseType input
         match etc with
         | Lookahead 2 ([Identifier funcName; LeftParen], line, etc2) ->
-            let rightParenIndex =
-                etc2 |> List.tryFindIndex (fun tl -> tl.Token = RightParen)
-            match rightParenIndex with
-            | Some index ->
-                let argTokens, etc3 =
-                    etc2 |> List.splitAt index
-                let parseArg (remaining: TokenAndLocation list) =
-                    if remaining.IsEmpty then
-                        None
-                    else
-                        let type_, etc4 =
-                            parseType remaining
-                        match etc4 with
-                        | Lookahead 2 ([Identifier name; Comma], _, etc5) ->
-                            Some ((name, type_), etc5)
-                        | [{ Location = _; Token = Identifier name }] -> // TODO: fix lookahead to use N as 'max', so it returns UP TO that many?
-                            Some ((name, type_), [])
-                        | _ -> failwithf "error parsing function arg at line %d: %A" line etc4
-                let args =
-                    List.unfold parseArg argTokens
-                match etc3 with
-                | Lookahead 2 ([RightParen; StatementEnd], _, etc4) ->
-                    ({ Name = funcName; Args = args; Returns = returnType; Throws = None }, etc4)
-                    |> Some
-                | Lookahead 4 ([RightParen; ThrowsToken; Identifier exceptionName; StatementEnd], line, etc4) ->
-                    ({ Name = funcName; Args = args; Returns = returnType; Throws = Some (Unresolved (exceptionName, line)) }, etc4)
-                    |> Some
-                | _ ->
-                    failwithf "failed to parse function at line %d" line
-            | None ->
-                failwithf "function at line %d missing closing )" line
+            let args, etc3 =
+                parseArgsList line etc2
+            match etc3 with
+            | Lookahead 1 ([StatementEnd], _, etc4) ->
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = None }, etc4)
+            | Lookahead 3 ([ThrowsToken; Identifier exceptionName; StatementEnd], line, etc4) ->
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = Some (Unresolved (exceptionName, line)) }, etc4)
+            | _ ->
+                failwithf "failed to parse function at line %d" line
         | { Location = line } :: _ ->
             failwithf "was expecting identifier at line %d" line
         | _ ->
@@ -231,6 +253,47 @@ let parseFunctionList (line: int) (input: TokenAndLocation list) =
             failwithf "parseFunctionList - shouldn't ever see this"
     | None ->
         failwithf "error parsing function list at line %d - missing closing }" line
+
+let parseOneSumTypeValue (input: TokenAndLocation list) =
+    if input.IsEmpty then
+        None
+    else
+        match input with
+        | Lookahead 1 ([Identifier name], _, etc) ->
+            // does it have args?
+            let args, etc2 =
+                match etc with
+                | Lookahead 1 ([LeftParen], line, etc2) ->
+                    parseArgsList line etc2
+                | _ ->
+                    [], etc
+            // will there be more?
+            match etc2 with
+            | Lookahead 1 ([Comma], _, etc3) ->
+                Some ({ Name = name; Args = args }, etc3)
+            | _ ->
+                Some ({ Name = name; Args = args }, []) // no etc, unfold will stop
+        | { Location = line } :: _ ->
+            failwithf "expecting enum identifier at line %d" line
+        | _ ->
+            failwithf "parseOneEnumValue: shouldn't arrive here"
+
+let parseSumTypeValues (line: int) (input: TokenAndLocation list) =
+    let rightBraceIndex =
+        input |> List.tryFindIndex (fun tl -> tl.Token = RightBrace)
+    match rightBraceIndex with
+    | Some index ->
+        let content, etc =
+            input |> List.splitAt index
+        let values =
+            List.unfold parseOneSumTypeValue content
+        match etc with
+        | Lookahead 1 ([RightBrace], _, etc2) ->
+            values, etc2
+        | _ ->
+            failwithf "parseEnumValues ???"
+    | None ->
+        failwithf "enum: failed to find closing brace at line %d" line
 
 let parseModule (input: TokenAndLocation list) =
     let parseNext (remaining: TokenAndLocation list) =
@@ -266,6 +329,11 @@ let parseModule (input: TokenAndLocation list) =
                 |> Some
             | _ ->
                 failwithf "expected typedef name at line %d" line
+        | Lookahead 3 ([SumTypeToken; Identifier name; LeftBrace], line, etc) ->
+            let values, etc2 =
+                parseSumTypeValues line etc
+            (UserType (name, SumTypeDef values), etc2)
+            |> Some
         | [] ->
             // end of file!
             None
@@ -309,6 +377,7 @@ let rec resolveType (userTypes: Map<string, UserType>) (type_: NIType) =
             | InterfaceDef _ -> InterfaceType name
             | DelegateDef _ -> DelegateType name
             | TypeDef _ -> TypedefType name
+            | SumTypeDef _ -> SumType name
             | ExceptionDef _ ->
                 // how do we enforce that this is only allowed in a "throws" context?
                 ExceptionType name
@@ -341,6 +410,16 @@ let resolveDelegateTypes (userTypes: Map<string, UserType>) (info: DelegateInfo)
         resolveType userTypes info.Returns
     { info with Args = nextArgs; Returns = nextReturns }
 
+
+let resolveEnumTypes (userTypes: Map<string, UserType>) (values: SumTypeValue list) =
+    values
+    |> List.map (fun value ->
+        let nextArgs =
+            value.Args
+            |> List.map (fun (name, type_) ->
+                name, resolveType userTypes type_)
+        { value with Args = nextArgs })
+
 let resolveModuleDef (userTypes: Map<string, UserType>) (def: ModuleDefinition) =
     match def with
     | UserType (name, userType) ->
@@ -369,6 +448,10 @@ let resolveModuleDef (userTypes: Map<string, UserType>) (def: ModuleDefinition) 
                 OpaqueHandleDef
             | TypeDef niType ->
                 TypeDef (resolveType userTypes niType)
+            | SumTypeDef enumValues ->
+                let nextValues =
+                    resolveEnumTypes userTypes enumValues
+                SumTypeDef nextValues
         UserType (name, nextUserType)
     | Global (name, niType) ->
         Global (name, resolveType userTypes niType)
@@ -397,7 +480,7 @@ let allGenericTypes (module_: Module) =
         | _ -> []
     module_.Defs
     |> List.collect (function
-        | UserType(name, userType) ->
+        | UserType(_, userType) ->
             match userType with
             | OpaqueHandleDef -> []
             | StructDef namedFields ->
@@ -430,7 +513,13 @@ let allGenericTypes (module_: Module) =
                 retTypes @ argTypes
             | TypeDef actual ->
                 typeAndSubTypes actual
-        | Global (name, niType) ->
+            | SumTypeDef enumValues ->
+                enumValues
+                |> List.collect (fun value ->
+                    value.Args
+                    |> List.map snd
+                    |> List.collect typeAndSubTypes)
+        | Global (_, niType) ->
             typeAndSubTypes niType
         | FunctionDef nf ->
             let retTypes =

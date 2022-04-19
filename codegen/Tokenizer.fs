@@ -11,6 +11,7 @@ type Token =
     | MapToken
     | ExceptionToken
     | InterfaceToken
+    | SumTypeToken
     | BoolToken
     | IntToken
     | FloatToken
@@ -37,6 +38,7 @@ let stringToToken (lineNumber: int) = function
     | "map" -> MapToken
     | "exception" -> ExceptionToken
     | "interface" -> InterfaceToken
+    | "sumtype" -> SumTypeToken
     | "bool" -> BoolToken
     | "int" | "int32" -> IntToken
     | "float" | "float32" -> FloatToken

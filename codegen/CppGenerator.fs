@@ -2,7 +2,6 @@
 module CppGenerator
 
 open System.IO
-open System.Net.Mime
 open System.Text.RegularExpressions
 open Parser
 
@@ -257,6 +256,7 @@ let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (
         | ExceptionType name -> renderDeps name alreadyRendered
         | DelegateType name -> renderDeps name alreadyRendered
         | TypedefType name -> renderDeps name alreadyRendered
+        | SumType name -> renderDeps name alreadyRendered
         | ArrayType _ ->
             let name = (typeToString type_)
             renderDeps name alreadyRendered
@@ -327,6 +327,12 @@ let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (
                             renderType argType already2)
                     | TypeDef actual ->
                         renderType actual alreadyRendered
+                    | SumTypeDef enumValues ->
+                        (alreadyRendered, enumValues)
+                        ||> List.fold (fun already2 value ->
+                            (already2, value.Args)
+                            ||> List.fold (fun already3 (_, argType) ->
+                                renderType argType already3))
 
             // use plugin render func, since it depends on our context
             renderFunc writer name content typeMap
@@ -577,6 +583,8 @@ let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: Use
             write 0 "inline void %s__push(%s value, bool isReturn) {" name name
             pushValue writer 1 niType "value" (Indirect "isReturn")
             write 0 "}"
+        | SumTypeDef enumValues ->
+            write 0 "// TODO: push/pop for enum %s" name
 
 let generateWrappersCpp (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -779,6 +787,8 @@ let renderHeaderUserOrGeneric (writer: TextWriter) (name: string) (content: User
             write 0 "typedef %s %s(%s);" (typeToString info.Returns) name (joinedArgs info.Args)
         | TypeDef actual ->
             write 0 "typedef %s %s;" (typeToString actual) name
+        | SumTypeDef enumValues ->
+            write 0 "// todo: enum %s declaration" name
 
 let generateImplementationH (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =

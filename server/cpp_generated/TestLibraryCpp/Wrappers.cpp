@@ -1,112 +1,52 @@
 #include "NativeImplServer.h"
 #include "Implementation.h"
 
-ni_InterfaceMethodRef heyas_someMethod;
-ni_ExceptionRef coolException;
+// enum pushes =========================
 
-void CoolDelegate__push(std::function<CoolDelegate> f) {
-    size_t uniqueKey = 0;
-    if (f) {
-        CoolDelegate* ptr_fun = f.target<CoolDelegate>();
-        if (ptr_fun != nullptr) {
-            uniqueKey = (size_t)ptr_fun;
-        }
-    }
-    auto wrapper = [f]() {
-        auto x = popStringInternal();
-        ni_pushInt(f(x));
-    };
-    pushServerFuncVal(wrapper, uniqueKey);
+void CoolEnum__push(CoolEnum value) {
+	switch (value.tag) {
+	case CoolEnum::Tag::Value1:
+		// no args
+		break;
+	case CoolEnum::Tag::Value2:
+		ni_pushInt(value.value2->x);
+		break;
+	case CoolEnum::Tag::Value3:
+		pushIntArrayInternal(value.value3->things);
+		pushStringInternal(value.value3->m);
+		break;
+	}
+	ni_pushInt((int)value.tag);
 }
 
-std::function<CoolDelegate> CoolDelegate__pop() {
-    auto id = ni_popClientFunc();
-    auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id));
-    auto wrapper = [cf](std::string x) {
-        pushStringInternal(x);
-        cf->remoteExec();
-        return ni_popInt();
-    };
-    return wrapper;
+CoolEnum CoolEnum__pop() {
+	auto which = (CoolEnum::Tag)ni_popInt();
+	switch (which) {
+	case CoolEnum::Tag::Value1: {
+		// no args
+		return CoolEnum::Value1::make(); }
+	case CoolEnum::Tag::Value2: {
+		auto x = ni_popInt();
+		return CoolEnum::Value2::make(x); }
+	case CoolEnum::Tag::Value3: {
+		auto m = popStringInternal();
+		auto things = popIntArrayInternal();
+		return CoolEnum::Value3::make(m, things); }
+	default:
+		throw "CoolEnum__pop(): unknown tag!";
+	}
 }
 
-void FinalDelegate__push(std::function<FinalDelegate> f) {
-    size_t uniqueKey = 0;
-    if (f) {
-        FinalDelegate* ptr_fun = f.target<FinalDelegate>();
-        if (ptr_fun != nullptr) {
-            uniqueKey = (size_t)ptr_fun;
-        }
-    }
-    auto wrapper = [f]() {
-        (not yet implemented)
-        f(v);
-    };
-    pushServerFuncVal(wrapper, uniqueKey);
-}
+// ===========================
 
-std::function<FinalDelegate> FinalDelegate__pop() {
-    auto id = ni_popClientFunc();
-    auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id));
-    auto wrapper = [cf](DeepMap v) {
-        (pushValue not supported yet)
-        cf->remoteExec();
-    };
-    return wrapper;
-}
-
-void Heyas__push(std::shared_ptr<Heyas> thing, bool isReturn);
-std::shared_ptr<Heyas> Heyas__pop();
-
-class ClientHeyas : public ClientObject, public Heyas {
-public:
-    ClientHeyas(int id) : ClientObject(id) {}
-    void someMethod(int x) override {
-        ni_pushInt(x);
-        invokeMethodWithExceptions(heyas_someMethod);
-    }
-};
-
-inline void Heyas__push(std::shared_ptr<Heyas> inst, bool isReturn) {
-    auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-    pushable->push(pushable, isReturn);
-}
-
-std::shared_ptr<Heyas> Heyas__pop()
-{
-    bool isClientID;
-    auto id = ni_popInstance(&isClientID);
-    if (isClientID) {
-        return std::shared_ptr<Heyas>(new ClientHeyas(id));
-    }
-    else {
-        return ServerHeyas::getByID(id);
-    }
-}
-
-void mapTest__wrapper() {
-    auto whoa = FinalDelegate__pop();
-    mapTest(whoa);
-}
-
-void Heyas_someMethod__wrapper(int serverID) {
-    auto inst = ServerHeyas::getByID(serverID);
-    auto x = ni_popInt();
-    try {
-        inst->someMethod(x);
-    }
-    catch (const CoolException& e) {
-        ni_setException(coolException);
-        e.push();
-    }
+void someFunction__wrapper() {
+    auto value = CoolEnum__pop();
+    ni_pushInt(someFunction(value));
 }
 
 extern "C" int nativeLibraryInit() {
     auto m = ni_registerModule("TestLibrary");
-    ni_registerModuleMethod(m, "mapTest", &mapTest__wrapper);
-    auto heyas = ni_registerInterface(m, "Heyas");
-    heyas_someMethod = ni_registerInterfaceMethod(heyas, "someMethod", &Heyas_someMethod__wrapper);
-    coolException = ni_registerException(m, "CoolException", &CoolException::buildAndThrow);
+    ni_registerModuleMethod(m, "someFunction", &someFunction__wrapper);
     return 0; // = OK
 }
 

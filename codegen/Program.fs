@@ -18,5 +18,3 @@ let module_ =
 //printfn "module: %A" module_
 CppGenerator.generate module_
 CsharpGenerator.generate module_
-
-XXXXXXXXXXXX DO NOT FUCKING RUN THIS XXXXXXXXXXXXXXXXXXXX

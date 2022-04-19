@@ -259,7 +259,7 @@ let parseOneSumTypeValue (input: TokenAndLocation list) =
         None
     else
         match input with
-        | Lookahead 1 ([Identifier name], _, etc) ->
+        | Lookahead 1 ([Identifier name], line, etc) ->
             // does it have args?
             let args, etc2 =
                 match etc with
@@ -271,8 +271,12 @@ let parseOneSumTypeValue (input: TokenAndLocation list) =
             match etc2 with
             | Lookahead 1 ([Comma], _, etc3) ->
                 Some ({ Name = name; Args = args }, etc3)
-            | _ ->
+            | [] ->
+                // we're done, no more tokens
                 Some ({ Name = name; Args = args }, []) // no etc, unfold will stop
+            | { Location = line } :: _ ->
+                // anything else
+                failwithf "parsing sum type value: missing comma before content on line %d" line
         | { Location = line } :: _ ->
             failwithf "expecting enum identifier at line %d" line
         | _ ->

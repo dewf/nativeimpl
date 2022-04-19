@@ -44,6 +44,7 @@ let rec typeToName = function
     | MapType (keyType, valueType) -> sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
     | StructType name -> upperFirst name
     | TypedefType name -> upperFirst name
+    | SumType name -> upperFirst name
     | x -> sprintf "(typeToName: not done yet [%A]" x
 
 let rec typeToString = function
@@ -58,6 +59,7 @@ let rec typeToString = function
     | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (typeToString keyType) (typeToString valueType)
     | StructType name -> name
     | TypedefType name -> name
+    | SumType name -> name
     | x -> sprintf "(typeToString: not done yet [%A])" x
 
 let pushFunctionTypedef (writer: TextWriter) (level: int) (name: string) (args: NIType list) (ret: NIType) =
@@ -178,8 +180,14 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             write level "auto %s = %s__pop();" name typedefName
         | Return ->
             write level "return %s__pop();" typedefName
+    | SumType sumTypeName ->
+        match context with
+        | Variable name ->
+            write level "auto %s = %s__pop();" name sumTypeName
+        | Return ->
+            write level "return %s__pop();" sumTypeName
     | _ ->
-        write level "// (not yet implemented: %A)" type_
+        write level "// (pop not yet implemented: %A)" type_
 
 and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -227,6 +235,8 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | StructType name ->
         write level "%s__push(%s, %s);" name content isReturn'
     | TypedefType name ->
+        write level "%s__push(%s, %s);" name content isReturn'
+    | SumType name ->
         write level "%s__push(%s, %s);" name content isReturn'
     | _ ->
         write level "// (pushValue not supported yet: %A)" type_
@@ -456,7 +466,40 @@ let renderWrapperException (writer: TextWriter) (name: string) (exFields: NamedF
     write 1 "throw %s(%s);" name (joinedFieldNames exFields)
     write 0 "}"
 
-let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
+let renderWrapperSumType (writer: TextWriter) (sumTypeName: string) (values: SumTypeValue list) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    let blank () = write 0 ""
+    // push
+    write 0 "void %s__push(%s value, bool isReturn) {" sumTypeName sumTypeName
+    write 1 "switch (value.tag) {"
+    for value in values do
+        write 1 "case %s::Tag::%s:" sumTypeName value.Name
+        for argName, argType in value.Args |> List.rev do
+            let content =
+                sprintf "value.%s->%s" (lowerFirst value.Name) argName
+            pushValue writer 2 argType content (Indirect "isReturn")
+        write 2 "break;"
+    write 1 "}"
+    pushValue writer 1 Int32 "(int)value.tag" (Indirect "isReturn")
+    write 0 "}"
+    // pop
+    blank()
+    write 0 "%s %s__pop() {" sumTypeName sumTypeName
+    popValue writer 1 Int32 (Variable "which")
+    write 1 "switch ((%s::Tag)which) {" sumTypeName
+    for value in values do
+        write 1 "case %s::Tag::%s: {" sumTypeName (upperFirst value.Name)
+        for argName, argType in value.Args do
+            popValue writer 2 argType (Variable argName)
+        write 2 "return %s::%s::make(%s); }" sumTypeName (upperFirst value.Name) (joinedArgNames value.Args)
+    write 1 "default:"
+    write 2 "throw \"%s__pop(): unknown tag!\";" sumTypeName
+    write 1 "}"
+    write 0 "}"
+
+let renderWrapperUserTypes (writer: TextWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -583,8 +626,8 @@ let renderWrapperUserOrGeneric (writer: TextWriter) (name: string) (content: Use
             write 0 "inline void %s__push(%s value, bool isReturn) {" name name
             pushValue writer 1 niType "value" (Indirect "isReturn")
             write 0 "}"
-        | SumTypeDef enumValues ->
-            write 0 "// TODO: push/pop for enum %s" name
+        | SumTypeDef values ->
+            renderWrapperSumType writer name values
 
 let generateWrappersCpp (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -639,7 +682,7 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
             ()
 
     // user types and generics in dependency order
-    renderUserTypes writer (userTypesAndGenerics m) renderWrapperUserOrGeneric
+    renderUserTypes writer (userTypesAndGenerics m) renderWrapperUserTypes
 
     // plain function wrappers
     for namedFunction in moduleMethods do
@@ -755,7 +798,40 @@ let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFun
     let nameRegex = Regex(@"%%IFACE%%")
     writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
 
-let renderHeaderUserOrGeneric (writer: TextWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
+let withTrailingCommas (things: 'a list) =
+    match things |> List.rev with
+    | h :: tail ->
+        (h, "") :: (tail |> List.map (fun x -> x, ","))
+    | _ ->
+        failwithf "withCommas: things had no elements"
+    |> List.rev
+
+let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumTypeValue list) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    write 0 "struct %s {" sumTypeName
+    write 0 "public:"
+    write 1 "enum class Tag {"
+    for value, maybeComma in values |> withTrailingCommas do
+        write 2 "%s%s" value.Name maybeComma
+    write 1 "};"
+    write 1 "const Tag tag;"
+    for value in values do
+        write 1 "struct %s {" value.Name
+        for argName, argType in value.Args do
+            write 2 "const %s %s;" (typeToString argType) argName;
+        write 2 "static %s make(%s) {" sumTypeName (joinedArgs value.Args)
+        write 3 "%s ret{ Tag::%s };" sumTypeName value.Name
+        write 3 "ret.%s = std::shared_ptr<%s>(new %s{ %s });" (lowerFirst value.Name) value.Name value.Name (joinedArgNames value.Args)
+        write 3 "return ret;"
+        write 2 "}"
+        write 1 "};"
+    for value in values do
+        write 1 "std::shared_ptr<%s> %s;" value.Name (lowerFirst value.Name)
+    write 0 "};"
+
+let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -788,7 +864,7 @@ let renderHeaderUserOrGeneric (writer: TextWriter) (name: string) (content: User
         | TypeDef actual ->
             write 0 "typedef %s %s;" (typeToString actual) name
         | SumTypeDef enumValues ->
-            write 0 "// todo: enum %s declaration" name
+            renderHeaderSumType writer name enumValues
 
 let generateImplementationH (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -814,7 +890,7 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
     write 0 "#include <map>"
 
     // all user types in dependency order
-    renderUserTypes writer (userTypesAndGenerics m) renderHeaderUserOrGeneric
+    renderUserTypes writer (userTypesAndGenerics m) renderHeaderUserTypes
 
     // global externs
     if globals.Length > 0 then

@@ -159,7 +159,9 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
             | TypedefType name -> sprintf "%sArray__pop" name
             | DelegateType name -> sprintf "%sArray__pop" name
             | ArrayType _ -> sprintf "%sArray__pop" (typeToName niType)
-            | _ -> sprintf "// (pop not yet supported: %A)" niType
+            | EnumType name -> sprintf "%sArray__pop" name
+            | SumType name -> sprintf "%sArray__pop" name
+            | _ -> sprintf "// (pop not yet supported: %A)" type_
         match context with
         | Variable name ->
             write level "auto %s = %s();" name popFunc
@@ -238,6 +240,10 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             write level "%sArray__push(%s, %s);" name content (isReturnString()) // currently doesn't use the isReturn' value, but lets us emit array stuff more easily
         | TypedefType name ->
             write level "%sArray__push(%s, %s);" name content (isReturnString())
+        | EnumType name ->
+            write level "%sArray__push(%s, %s);" name content (isReturnString())
+        | SumType name ->
+            write level "%sArray__push(%s, %s);" name content (isReturnString())
         | _ ->
             write level "// (push not yet supported: ArrayType %A)" niType
     | MapType (keyType, valueType) ->
@@ -278,6 +284,7 @@ let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (
         | ExceptionType name -> renderDeps name alreadyRendered
         | DelegateType name -> renderDeps name alreadyRendered
         | TypedefType name -> renderDeps name alreadyRendered
+        | EnumType name -> renderDeps name alreadyRendered
         | SumType name -> renderDeps name alreadyRendered
         | ArrayType _ ->
             let name = (typeToString type_)
@@ -605,6 +612,10 @@ let renderWrapperUserTypes (writer: TextWriter) (name: string) (content: UserOrG
                 arrayCommon name arrayType
             | ArrayType _ ->
                 arrayCommon (typeToName arrayType) arrayType
+            | EnumType name ->
+                arrayCommon name arrayType
+            | SumType name ->
+                arrayCommon name arrayType
             | _ ->
                 // we don't handle any of the primitives, those are all built-in
                 write 0 "// push/pop for generic %s" (typeToString gType)
@@ -722,7 +733,7 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
             write 1 "}"
             write 1 "catch (const %s& e) {" exceptionName
             write 2 "ni_setException(%s);" (lowerFirst exceptionName)
-            write 2 "%s__push();" exceptionName
+            write 2 "%s__push(e);" exceptionName
             write 1 "}"
         | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
             pushValue writer 1 namedFunction.Returns invocation (Direct true)
@@ -800,7 +811,8 @@ let renderHeaderException (writer: TextWriter) (exName: string) (exFields: Named
     let joinedInitializers =
         [for nf in exFields -> sprintf "%s(%s)" nf.Name nf.Name]
         |> String.concat ", "
-    write 1 "%s(%s) : %s {}" exName (joinedFields exFields) joinedInitializers
+    write 1 "%s(%s)" exName (joinedFields exFields)
+    write 2 ": %s {}" joinedInitializers
     write 0 "};"
 
 let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFunction list) =

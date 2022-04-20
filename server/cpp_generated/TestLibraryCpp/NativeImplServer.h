@@ -63,3 +63,6 @@ std::vector<int> popIntArrayInternal();
 
 void pushStringArrayInternal(std::vector<std::string> values);
 std::vector<std::string> popStringArrayInternal();
+
+void pushSizeTArrayInternal(std::vector<size_t> values);
+std::vector<size_t> popSizeTArrayInternal();

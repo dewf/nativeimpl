@@ -560,13 +560,13 @@ let renderWrapperUserTypes (writer: TextWriter) (name: string) (content: UserOrG
                 write 1 "for (auto v = values.rbegin(); v != values.rend(); v++) {" // in reverse!
                 pushValue writer 2 elementType "*v" (Indirect "isReturn")
                 write 1 "}"
-                write 1 "ni_pushInt(values.size()); // todo: size_t"
+                write 1 "ni_pushSizeT(values.size());"
                 write 0 "}"
                 // POP =========
                 blank()
                 write 0 "std::vector<%s> %sArray__pop() {" (typeToString elementType) name
                 write 1 "std::vector<%s> __ret;" (typeToString elementType)
-                write 1 "auto count = ni_popInt(); // todo: size_t"
+                write 1 "auto count = ni_popSizeT();"
                 write 1 "for (auto i = 0; i < count; i++) {"
                 popValue writer 2 elementType (Variable "value")
                 write 2 "__ret.push_back(value);"

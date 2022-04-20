@@ -70,6 +70,11 @@ extern "C" {
 	void ni_invokeModuleMethod(ni_ModuleMethodRef method);
 	ni_ExceptionRef ni_invokeModuleMethodWithExceptions(ni_ModuleMethodRef method);
 
+	void ni_pushSizeT(size_t value);
+	size_t ni_popSizeT();
+	void ni_pushSizeTArray(size_t* values, size_t count);
+	void ni_popSizeTArray(size_t** values, size_t* count);
+
 	void ni_pushBool(bool value);
 	bool ni_popBool();
 	void ni_pushBoolArray(bool* values, size_t count);
@@ -96,7 +101,7 @@ extern "C" {
 	void ni_pushClientInst(int id);
 	void ni_pushServerInst(int id);
 
-	int ni_popInstance(bool* isClientID);
+	int ni_popInstance(bool* isClientID); // TODO: additional param (maybe enum) indicating if it was placed into: client/server/neither safety area (so we know when it's necessary to clear safety areas)
 	void ni_releaseServerInst(int id);
 
 	void ni_clearClientSafetyArea();

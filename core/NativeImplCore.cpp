@@ -53,6 +53,8 @@ class WrongTypeException : public std::exception {
 // stack types =======================
 class StackItem {
 public:
+	virtual size_t sizeTValue() { throw WrongTypeException(); }
+	virtual std::vector<size_t> sizeTArray() { throw WrongTypeException(); }
 	virtual bool boolValue() { throw WrongTypeException(); }
 	virtual std::vector<uint8_t> boolArray() { throw WrongTypeException(); } // using 'bool' doesn't allow .data access
 	virtual int intValue() { throw WrongTypeException(); }
@@ -62,6 +64,26 @@ public:
 	virtual int clientFuncId() { throw WrongTypeException(); }
 	virtual int serverFuncId() { throw WrongTypeException(); }
 	virtual int instanceId(bool* isClientId) { throw WrongTypeException(); }
+};
+
+class SizeTItem : public StackItem {
+public:
+	size_t value;
+	SizeTItem(size_t value) : value(value) {}
+	size_t sizeTValue() override {
+		return value;
+	}
+};
+
+class SizeTArray : public StackItem {
+public:
+	std::vector<size_t> values;
+	SizeTArray(size_t* ptr, size_t count) {
+		values.assign(ptr, ptr + count);
+	}
+	std::vector<size_t> sizeTArray() override {
+		return values;
+	}
 };
 
 class BoolItem : public StackItem {
@@ -364,6 +386,33 @@ ni_ExceptionRef ni_invokeModuleMethodWithExceptions(ni_ModuleMethodRef method) {
 	auto ret = ni_currentException;
 	ni_currentException = nullptr;
 	return ret;
+}
+
+void ni_pushSizeT(size_t value) {
+	vstack.push(new SizeTItem(value));
+}
+
+size_t ni_popSizeT() {
+	auto item = vstack.top();
+	auto v = item->sizeTValue();
+	vstack.pop();
+	delete item;
+	return v;
+}
+
+void ni_pushSizeTArray(size_t* values, size_t count) {
+	vstack.push(new SizeTArray(values, count));
+}
+
+static std::vector<size_t> lastSizeTArray;
+
+void ni_popSizeTArray(size_t** values, size_t* count) {
+	auto item = vstack.top();
+	lastSizeTArray = item->sizeTArray();
+	vstack.pop();
+	delete item;
+	*values = lastSizeTArray.data();
+	*count = lastSizeTArray.size();
 }
 
 void ni_pushBool(bool value) {

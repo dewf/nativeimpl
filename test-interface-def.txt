@@ -1,10 +1,4 @@
 module TestLibrary;
 
-sumtype CoolEnum {
-  Value1,
-  Value2(int x),
-  Value3(string m, array[int] things)
-}
-
-int someFunction(CoolEnum value);
+int simpleFunction(int x);
 

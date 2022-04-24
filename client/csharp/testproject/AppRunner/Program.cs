@@ -9,12 +9,7 @@ namespace AppRunner
         {
             TestLibrary.Init();
 
-            TestLibrary.ArrayTest3(new[] { true, false, true, false, false, false, true });
-            var returned = TestLibrary.ReturnArrayTest3();
-            foreach (var b in returned)
-            {
-                Console.WriteLine(" == {0}", b);
-            }
+            var x = TestLibrary.SimpleFunction(100);
 
             GC.Collect();
             NativeImplClient.DumpTables();

@@ -1,5 +1,4 @@
-﻿[<RequireQualifiedAccess>]
-module CppGenerator
+﻿module CppGenerator
 
 open System.IO
 open System.Text.RegularExpressions
@@ -9,8 +8,8 @@ open Util
 
 let PopTemplate = "std::shared_ptr<%%IFACE%%> %%IFACE%%__pop()
 {
-    bool isClientID;
-    auto id = ni_popInstance(&isClientID);
+    bool isClientID, inSafetyArea;
+    auto id = ni_popInstance(&isClientID, &inSafetyArea);
     if (isClientID) {
         return std::shared_ptr<%%IFACE%%>(new Client%%IFACE%%(id));
     }
@@ -22,10 +21,10 @@ let PushTemplate = "inline void %%IFACE%%__push(std::shared_ptr<%%IFACE%%> inst,
     auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
     pushable->push(pushable, isReturn);
 }"
-let ServerWrapperTemplate = "class Server%%IFACE%% : public %%IFACE%%, public ServerObject {
+let ServerWrapperTemplate = "// inherit from this to create server instances of %%IFACE%%
+class Server%%IFACE%% : public %%IFACE%%, public ServerObject {
 public:
-    virtual ~Server%%IFACE%%() {
-    }
+    virtual ~Server%%IFACE%%() {}
     static std::shared_ptr<Server%%IFACE%%> getByID(int id) {
         auto obj = ServerObject::getByID(id);
         return std::static_pointer_cast<Server%%IFACE%%>(obj);
@@ -109,7 +108,7 @@ type PushIsReturn =
     | Indirect of name: string
     | NotApplicable
 
-let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
+let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -200,7 +199,7 @@ let rec popValue (writer: TextWriter) (level: int) (type_: NIType) (context: Pop
     | _ ->
         write level "// (pop not yet implemented: %A)" type_
 
-and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
+let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -263,6 +262,7 @@ and pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
 type UserOrGeneric =
     | User of UserType
     | Generic of NIType
+    | FwdInterface      // just a special case for rendering, really - won't be in the type map or anything
 
 let userTypesAndGenerics (m: Module) =
     // combined map
@@ -275,12 +275,167 @@ let userTypesAndGenerics (m: Module) =
             (typeToString type_)
         newMap.Add(name, UserOrGeneric.Generic type_))
 
+let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
+    // more specifically: when pushing this type to stack, is an interface reference ever pushed in the process?
+    // such that we'd need to clear the remote safety area?
+    let rec processType (type_: NIType) (acc: Map<string, bool>) =
+        match type_ with
+        | OpaqueHandleType name -> processDeps name acc
+        | StructType name -> processDeps name acc
+        | InterfaceType name -> processDeps name acc
+        | ExceptionType name -> processDeps name acc
+        | DelegateType name -> processDeps name acc
+        | TypedefType name -> processDeps name acc
+        | EnumType name -> processDeps name acc
+        | SumType name -> processDeps name acc
+        | ArrayType _ ->
+            let name = (typeToString type_)
+            processDeps name acc
+        | MapType _ ->
+            let name = (typeToString type_)
+            processDeps name acc
+        | _ ->
+            // primitive types
+            false, acc
+    and processDeps (name: string) (acc: Map<string, bool>) =
+        if acc.ContainsKey(name) then
+            acc[name], acc
+        else
+            let content = typeMap[name]
+            let thisValue, subAcc =
+                match content with
+                | UserOrGeneric.FwdInterface _ ->
+                    failwith "createContainsRefMap:processDeps: shouldn't ever encounter this"
+                | UserOrGeneric.Generic niType ->
+                    match niType with
+                    | ArrayType niType ->
+                        processType niType acc
+                    | MapType (keyType, valueType) ->
+                        let v1, acc2 =
+                            processType keyType acc
+                        let v2, acc3 =
+                            processType valueType acc2
+                        (v1 || v2), acc3
+                    | _ ->
+                        failwith "typesWithContainsRefs: unsupported generic type"
+                | UserOrGeneric.User userType ->
+                    match userType with
+                    | OpaqueHandleDef ->
+                        // never
+                        false, acc
+                    | StructDef namedFields ->
+                        // possibly
+                        let subValues, nextAcc =
+                            (([], acc), namedFields)
+                            ||> List.fold (fun (values, acc) field ->
+                                let value, acc =
+                                    processType field.Type_ acc
+                                value :: values, acc)
+                        let result =
+                            subValues
+                            |> List.exists id
+                        result, nextAcc
+                    | ExceptionDef namedFields ->
+                        // possibly (though exceptions are never 'returned' per se, so that's another thing to keep track of when popping exception values!)
+                        let subValues, nextAcc =
+                            (([], acc), namedFields)
+                            ||> List.fold (fun (values, acc) field ->
+                                let value, acc =
+                                    processType field.Type_ acc
+                                value :: values, acc)
+                        let result =
+                            subValues
+                            |> List.exists id
+                        result, nextAcc
+                    | InterfaceDef namedFunctions ->
+                        // guaranteed 'yes' result by definition, but still run through deps to fill out acc map
+                        let nextAcc =
+                            (acc, namedFunctions)
+                            ||> List.fold (fun acc namedFunc ->
+                                let _, acc =
+                                    processType namedFunc.Returns acc
+                                let acc =
+                                    (acc, namedFunc.Args)
+                                    ||> List.fold (fun acc (_, argType) ->
+                                        let _, acc =
+                                            processType argType acc
+                                        acc)
+                                let acc =
+                                    match namedFunc.Throws with
+                                    | Some etype ->
+                                        let _, acc =
+                                            processType etype acc
+                                        acc
+                                    | None ->
+                                        acc
+                                acc)
+                        true, nextAcc
+                    | DelegateDef info ->
+                        // never, but run through deps as above
+                        let nextAcc =
+                            let _, acc =
+                                processType info.Returns acc
+                            let acc =
+                                (acc, info.Args)
+                                ||> List.fold (fun acc (_, argType) ->
+                                    let _, acc =
+                                        processType argType acc
+                                    acc)
+                            // no 'throws' yet
+                            acc
+                        false, nextAcc
+                    | TypeDef niType ->
+                        // pass through
+                        processType niType acc
+                    | EnumDef _ ->
+                        // never
+                        false, acc
+                    | SumTypeDef sumValues ->
+                        // potentially
+                        let subValues, nextAcc =
+                            (([], acc), sumValues)
+                            ||> List.fold (fun (values, acc) stv ->
+                                let argValues, acc =
+                                    (([], acc), stv.Args)
+                                    ||> List.fold (fun (values, acc) (_, argType) ->
+                                        let v, acc =
+                                            processType argType acc
+                                        v :: values, acc)
+                                let sumValueContains =
+                                    argValues
+                                    |> List.exists id
+                                sumValueContains :: values, acc)
+                        let value =
+                            subValues
+                            |> List.exists id
+                        value, nextAcc
+            thisValue, subAcc.Add(name, thisValue)
+    let allKeys =
+        typeMap
+        |> Map.toList
+        |> List.map fst
+    (Map.empty, allKeys)
+    ||> List.fold (fun acc key ->
+        let _, nextAcc =
+            processDeps key acc
+        nextAcc)
+
 let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (renderFunc: TextWriter -> string -> UserOrGeneric -> Map<string, UserOrGeneric> -> unit) =
     let rec renderType (type_: NIType) (alreadyRendered: Set<string>) =
         match type_ with
         | OpaqueHandleType name -> renderDeps name alreadyRendered
         | StructType name -> renderDeps name alreadyRendered
-        | InterfaceType name -> renderDeps name alreadyRendered
+        | InterfaceType name ->
+            // special handling for interface dependencies! they need to emit forward references,
+            // depending on context (either "class <whatever>" in the header, or push/pop prototypes in the wrapper)
+            let checkName =
+                // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
+                sprintf "fwd:class %s" name
+            if not (alreadyRendered.Contains(checkName)) then
+                renderFunc writer name UserOrGeneric.FwdInterface typeMap
+                alreadyRendered.Add(checkName)
+            else
+                alreadyRendered
         | ExceptionType name -> renderDeps name alreadyRendered
         | DelegateType name -> renderDeps name alreadyRendered
         | TypedefType name -> renderDeps name alreadyRendered
@@ -301,6 +456,8 @@ let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (
             let content = typeMap.[name]
             let subRendered =
                 match content with
+                | UserOrGeneric.FwdInterface ->
+                    failwith "renderUserTypes: shouldn't see this"
                 | UserOrGeneric.Generic gType ->
                     match gType with
                     | ArrayType niType ->
@@ -422,11 +579,6 @@ let renderWrapperInterface (writer: TextWriter) (name: string) (methods: NamedFu
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
     let blank () = write 0 ""
-    blank()
-    // fwd decls used in client wrapper
-    write 0 "void %s__push(std::shared_ptr<%s> thing, bool isReturn);" name name
-    write 0 "std::shared_ptr<%s> %s__pop();" name name
-    blank()
     // client wrapper
     write 0 "class Client%s : public ClientObject, public %s {" name name
     write 0 "public:"
@@ -527,6 +679,9 @@ let renderWrapperUserTypes (writer: TextWriter) (name: string) (content: UserOrG
     let blank () = write 0 ""
     blank()
     match content with
+    | UserOrGeneric.FwdInterface ->
+        write 0 "void %s__push(std::shared_ptr<%s> thing, bool isReturn);" name name
+        write 0 "std::shared_ptr<%s> %s__pop();" name name
     | UserOrGeneric.Generic gType ->
         match gType with
         | MapType (keyType, valueType) ->
@@ -865,6 +1020,8 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
     let blank () = write 0 ""
     blank()
     match content with
+    | UserOrGeneric.FwdInterface ->
+        write 0 "class %s; // fwd decl" name
     | UserOrGeneric.Generic gType ->
         match gType with
         | ArrayType _ ->

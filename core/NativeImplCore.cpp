@@ -63,7 +63,7 @@ public:
 	virtual std::vector<std::string> stringArray() { throw WrongTypeException(); }
 	virtual int clientFuncId() { throw WrongTypeException(); }
 	virtual int serverFuncId() { throw WrongTypeException(); }
-	virtual int instanceId(bool* isClientId) { throw WrongTypeException(); }
+	virtual int instanceId(bool* isClientId, bool* inSafetyArea) { throw WrongTypeException(); }
 };
 
 class SizeTItem : public StackItem {
@@ -183,22 +183,18 @@ public:
 };
 
 // client inst ID
-class ClientInstItem : public StackItem {
+class InstanceItem : public StackItem {
 public:
 	int id;
-	ClientInstItem(int id) : id(id) {}
-	int instanceId(bool* isClientId) override {
-		*isClientId = true;
-		return id;
-	}
-};
-
-class ServerInstItem : public StackItem {
-public:
-	int id;
-	ServerInstItem(int id) : id(id) {}
-	int instanceId(bool* isClientId) override {
-		*isClientId = false;
+	bool isClientId;
+	bool inSafetyArea;
+	InstanceItem(int id, bool isClientId, bool inSafetyArea) :
+		id(id),
+		isClientId(isClientId),
+		inSafetyArea(inSafetyArea) {}
+	int instanceId(bool* isClientId, bool* inSafetyArea) {
+		*isClientId = this->isClientId;
+		*inSafetyArea = this->inSafetyArea;
 		return id;
 	}
 };
@@ -545,18 +541,14 @@ ni_ExceptionRef ni_invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef met
 	return ret;
 }
 
-// used both internally and externally
-void ni_pushClientInst(int id) {
-	vstack.push(new ClientInstItem(id));
+void ni_pushInstance(int id, bool isClientId, bool inSafetyArea)
+{
+	vstack.push(new InstanceItem(id, isClientId, inSafetyArea));
 }
 
-void ni_pushServerInst(int id) {
-	vstack.push(new ServerInstItem(id));
-}
-
-int ni_popInstance(bool* isClientID) {
+int ni_popInstance(bool* isClientID, bool* inSafetyArea) {
 	auto item = vstack.top();
-	auto id = item->instanceId(isClientID);
+	auto id = item->instanceId(isClientID, inSafetyArea);
 	vstack.pop();
 	delete item;
 	return id;

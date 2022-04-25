@@ -161,16 +161,13 @@ namespace TestLibraryClient
         internal static extern IntPtr invokeInterfaceMethodWithExceptions(IntPtr method, int serverId);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int popInstance(out bool isClientId);
+        internal static extern void pushInstance(int id, bool isClientId, bool inSafetyArea);
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int popInstance(out bool isClientId, out bool inSafetyArea);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int releaseServerInst(int id);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushClientInst(int id);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushServerInst(int id);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void clearServerSafetyArea();
@@ -430,9 +427,9 @@ namespace TestLibraryClient
             return NativeMethods.popServerFunc();
         }
 
-        public static void PopInstanceId(out int id, out bool isClientId)
+        public static void PopInstanceId(out int id, out bool isClientId, out bool inSafetyArea)
         {
-            id = NativeMethods.popInstance(out isClientId);
+            id = NativeMethods.popInstance(out isClientId, out inSafetyArea);
         }
         
         public class ServerFunc
@@ -478,10 +475,10 @@ namespace TestLibraryClient
             }
         }
 
-        public static void PushServerInstanceId(int id)
-        {
-            NativeMethods.pushServerInst(id);
-        }
+        // public static void PushInstanceId(int id, bool isClientId, bool inSafetyArea)
+        // {
+        //     NativeMethods.pushInstance(id, isClientId, inSafetyArea);
+        // }
 
         public interface IPushable
         {
@@ -513,7 +510,7 @@ namespace TestLibraryClient
                     Console.WriteLine($"C# ClientObject: increased refcount to {_refCount}");
                 }
                 // actually push, durr
-                NativeMethods.pushClientInst(_id);
+                NativeMethods.pushInstance(_id, true, false);
             }
 
             public void Release()
@@ -589,7 +586,6 @@ namespace TestLibraryClient
 
             void IPushable.Push(bool isReturn)
             {
-                PushServerInstanceId(Id);
                 if (isReturn)
                 {
                     // save this object to the stack safety area, until the other side has pulled it off
@@ -598,6 +594,7 @@ namespace TestLibraryClient
                     // (dependent on probably-unlikely GC collection, but better safe than sorry)
                     MakeSafe();
                 }
+                NativeMethods.pushInstance(Id, false, isReturn);
             }
         }
         // todo: needs to be thread-safe
@@ -606,6 +603,8 @@ namespace TestLibraryClient
         // call this after receiving an interface (maybe even a function, eventually?) as a return value
         public static void ServerClearSafetyArea()
         {
+            // TODO: in the future, perhaps check to see if the remote safety area is 'dirty' -- we'll know from the flags returned on popInstace()
+            // could avoid this call entirely, not that it's terribly oppressive
             NativeMethods.clearServerSafetyArea();
         }
 

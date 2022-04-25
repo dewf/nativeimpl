@@ -181,7 +181,7 @@ void ServerObject::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 		serverObjects[id].refCount++; // this assumes that it's going across a boundary which will be balanced by an eventual deref. is that always true?
 		printf("bumped server ID %d refcount to %d\n", id, serverObjects[id].refCount);
 	}
-	ni_pushServerInst(id);
+	ni_pushInstance(id, false, false);
 }
 
 std::shared_ptr<ServerObject> ServerObject::getByID(int id) {
@@ -250,14 +250,11 @@ void ClientObject::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	if (isReturn) {
 		// for return values, to keep them alive until other side has taken them
 		printf("C++ ClientObject %d safepush\n", id);
-		ni_pushClientInst(id);
 		// preserve for return values etc
 		auto clientOuter = std::dynamic_pointer_cast<ClientObject>(outer);
 		safeArea.push_back(clientOuter);
 	}
-	else {
-		ni_pushClientInst(id);
-	}
+	ni_pushInstance(id, true, isReturn);
 }
 
 ClientObject::~ClientObject() {

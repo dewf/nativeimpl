@@ -140,19 +140,14 @@ ni_ExceptionRef invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method
     return ni_invokeInterfaceMethodWithExceptions(method, serverID);
 }
 
-void pushClientInst(int id)
+void pushInstance(int id, bool isClientId, bool inSafetyArea)
 {
-    ni_pushClientInst(id);
+    ni_pushInstance(id, isClientId, inSafetyArea);
 }
 
-void pushServerInst(int id)
+int popInstance(bool* isClientID, bool* inSafetyArea)
 {
-    ni_pushServerInst(id);
-}
-
-int popInstance(bool* isClientID)
-{
-    return ni_popInstance(isClientID);
+    return ni_popInstance(isClientID, inSafetyArea);
 }
 
 void releaseServerInst(int id)

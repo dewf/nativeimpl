@@ -50,10 +50,8 @@ extern "C" {
 	TESTLIBRARY_API void invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID);
 	TESTLIBRARY_API ni_ExceptionRef invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID);
 
-	TESTLIBRARY_API void pushClientInst(int id);
-	TESTLIBRARY_API void pushServerInst(int id);
-
-	TESTLIBRARY_API int popInstance(bool* isClientID);
+	TESTLIBRARY_API void pushInstance(int id, bool isClientId, bool inSafetyArea);
+	TESTLIBRARY_API int popInstance(bool* isClientId, bool* inSafetyArea);
 	TESTLIBRARY_API void releaseServerInst(int id);
 
 	TESTLIBRARY_API void clearServerSafetyArea(); // clear server resources from safety area (protects values being returned with no other shared_ptrs existing)

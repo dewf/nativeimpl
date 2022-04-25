@@ -62,9 +62,8 @@ extern "C" {
 	extern int ni_popClientFunc();
 	extern void ni_pushServerFunc(int id);
 
-	extern void ni_pushClientInst(int id);
-	extern void ni_pushServerInst(int id);
-	extern int ni_popInstance(bool* isClient);
+	extern void ni_pushInstance(int id, bool isClientId, bool inSafetyArea);
+	extern int ni_popInstance(bool* isClientId, bool* inSafetyArea);
 
 	extern void ni_setException(ni_ExceptionRef e);
 	extern void ni_buildAndthrow(ni_ExceptionRef e);

@@ -98,10 +98,9 @@ extern "C" {
 	void ni_invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID);
 	ni_ExceptionRef ni_invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID);
 
-	void ni_pushClientInst(int id);
-	void ni_pushServerInst(int id);
+	void ni_pushInstance(int id, bool isClientId, bool inSafetyArea);
+	int ni_popInstance(bool* isClientID, bool* inSafetyArea);
 
-	int ni_popInstance(bool* isClientID); // TODO: additional param (maybe enum) indicating if it was placed into: client/server/neither safety area (so we know when it's necessary to clear safety areas)
 	void ni_releaseServerInst(int id);
 
 	void ni_clearClientSafetyArea();

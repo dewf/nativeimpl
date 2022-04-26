@@ -12,6 +12,7 @@ let rec typeToInternalKey = function
     | DelegateType name -> name
     | ArrayType niType -> sprintf "array[%s]" (typeToInternalKey niType)
     | MapType (keyType, valueType) -> sprintf "map[%s,%s]" (typeToInternalKey keyType) (typeToInternalKey valueType)
+    | TupleType niTypes -> sprintf "tuple[%s]" (niTypes |> List.map typeToInternalKey |> String.concat ",")
     | StructType name -> name
     | TypedefType name -> name
     | EnumType name -> name
@@ -35,7 +36,12 @@ let allGenericTypes (module_: Module) =
             let vs = typeAndSubTypes (ArrayType valueType)
             t :: k @ v @ ks @ vs
         | ArrayType niType ->
+            // TODO: maybe we should handle the array-of-struct and array-of-tuple business here? otherwise why generate arrays for them always?
             t :: typeAndSubTypes niType
+        | TupleType niTypes ->
+            let subResults =
+                niTypes |> List.collect (fun type_ -> typeAndSubTypes type_ @ typeAndSubTypes (ArrayType type_)) // also potentially need arrays of each field, if array-of-tuple is used
+            t :: subResults
         | _ -> []
     module_.Defs
     |> List.collect (function
@@ -128,6 +134,9 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
         | MapType _ ->
             let name = (typeToInternalKey type_)
             processDeps name acc
+        | TupleType _ ->
+            let name = (typeToInternalKey type_)
+            processDeps name acc
         | _ ->
             // primitive types
             false, acc
@@ -150,8 +159,19 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                         let v2, acc3 =
                             processType valueType acc2
                         (v1 || v2), acc3
+                    | TupleType niTypes ->
+                        let subValues, nextAcc =
+                            (([], acc), niTypes)
+                            ||> List.fold (fun (values, acc) type_ ->
+                                let value, acc =
+                                    processType type_ acc
+                                value :: values, acc)
+                        let result =
+                            subValues
+                            |> List.exists id
+                        result, nextAcc
                     | _ ->
-                        failwith "typesWithContainsRefs: unsupported generic type"
+                        failwith "createContainsRefsMap: unsupported generic type"
                 | UserOrGeneric.User userType ->
                     match userType with
                     | OpaqueHandleDef ->
@@ -281,6 +301,9 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
         | MapType _ ->
             let name = (typeToInternalKey type_)
             renderDeps name alreadyRendered
+        | TupleType _ ->
+            let name = (typeToInternalKey type_)
+            renderDeps name alreadyRendered
         | _ ->
             alreadyRendered
     and renderDeps (name: string) (alreadyRendered: Set<string>) =
@@ -299,20 +322,28 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                         match niType with
                         | StructType structName ->
                             // array of struct implies array of each struct field
-                            match typeMap.[structName] with
+                            match typeMap[structName] with
                             | UserOrGeneric.User (StructDef namedFields) ->
                                 (alreadyRendered, namedFields)
                                 ||> List.fold (fun already2 field -> renderType (ArrayType field.Type_) already2)
                             | _ ->
                                 failwithf "renderDeps: struct (from array) didn't exist in typemap??"
+                        | TupleType tupleTypes ->
+                            // array of tuple implies array of each tuple subtype
+                            (alreadyRendered, tupleTypes)
+                            ||> List.fold (fun already2 type_ -> renderType (ArrayType type_) already2)
                         | _ ->
                             alreadyRendered
                         // and the type itself, of course ...
                         |> renderType niType
                     | MapType (keyType, valueType) ->
+                        // maps are pushed/popped as keys+values arrays
                         alreadyRendered
                         |> renderType (ArrayType keyType) // these imply the keyType/valueType alone
                         |> renderType (ArrayType valueType)
+                    | TupleType tupleTypes ->
+                        (alreadyRendered, tupleTypes)
+                        ||> List.fold (fun already2 type_ -> renderType type_ already2)
                     | _ ->
                         failwithf "renderUserTypes.renderDeps: unsupported generic type %A!" gType
                 | UserOrGeneric.User userType ->

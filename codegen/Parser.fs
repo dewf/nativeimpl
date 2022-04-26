@@ -34,6 +34,7 @@ type NIType =
     | StringType
     | ArrayType of NIType
     | MapType of keyType: NIType * valueType: NIType
+    | TupleType of tupleTypes: NIType list
     //
     | Unresolved of name: string * line: int
     // these have to be resolved by checking a table, otherwise unresolved
@@ -92,6 +93,36 @@ let rec parseType (input: TokenAndLocation list) =
                 failwithf "missing ] for array type at line %d" line
         | _ ->
             failwithf "missing comma for array type at line %d" line
+    | Lookahead 2 ([TupleToken; LeftBracket], line, etc) ->
+        let closeIndex =
+            etc |> List.tryFindIndex (fun tl -> tl.Token = RightBracket)
+        match closeIndex with
+        | Some index ->
+            let content, etc =
+                etc |> List.splitAt index
+            let typeList =
+                content
+                |> List.unfold (fun input ->
+                    if input.IsEmpty then
+                        None
+                    else
+                        let t1, etc =
+                            parseType input
+                        match etc with
+                        | [] -> // done
+                            Some (t1, [])
+                        | Lookahead 1 ([Comma], _, etc) -> // keep going
+                            Some (t1, etc)
+                        | _ ->
+                            failwithf "parsing tuple: unexpected input at line %d" line)
+            match etc with
+            | Lookahead 1 ([RightBracket], _, etc) ->
+                TupleType typeList, etc
+            | _ ->
+                // really shouldn't happen because we know the right bracket exists
+                failwithf "was expecting closing bracket ] of tuple at line %d" line
+        | None ->
+            failwithf "failed to find closing bracket of tuple at line %d" line
     | [] ->
         failwithf "parseType called on an empty list!"
     | {Location = line} :: _ ->

@@ -42,6 +42,7 @@ let rec typeToName = function
     | DelegateType name -> upperFirst name
     | ArrayType niType -> sprintf "%sArray" (typeToName niType)
     | MapType (keyType, valueType) -> sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
+    | TupleType tupleTypes -> sprintf "%sTuple" (tupleTypes |> List.map typeToName |> String.concat "")
     | StructType name -> upperFirst name
     | TypedefType name -> upperFirst name
     | EnumType name -> upperFirst name
@@ -58,6 +59,7 @@ let rec typeToCppString = function
     | DelegateType name -> sprintf "std::function<%s>" name
     | ArrayType niType -> sprintf "std::vector<%s>" (typeToCppString niType)
     | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (typeToCppString keyType) (typeToCppString valueType)
+    | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map typeToCppString |> String.concat ",")
     | StructType name -> name
     | TypedefType name -> name
     | EnumType name -> name
@@ -90,6 +92,12 @@ let rec defaultValueForType = function
     | DelegateType name -> sprintf "std::function<%s>()" name
     | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString niType)
     | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToCppString keyType) (typeToCppString valueType)
+    | TupleType tupleTypes ->
+        let typesJoined =
+            tupleTypes |> List.map typeToCppString |> String.concat ","
+        let defaultsJoined =
+            tupleTypes |> List.map defaultValueForType |> String.concat ", "
+        sprintf "std::tuple<%s>{ %s }" typesJoined defaultsJoined
     | _ ->
         "(defaultValueForType: not yet supported)"
 
@@ -154,6 +162,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             | ArrayType _ -> sprintf "%sArray__pop" (typeToName niType)
             | EnumType name -> sprintf "%sArray__pop" name
             | SumType name -> sprintf "%sArray__pop" name
+            | TupleType _ -> sprintf "__%sArray__pop" (typeToName niType)
             | _ -> sprintf "// (pop not yet supported: %A)" type_
         match context with
         | Variable name ->
@@ -166,6 +175,12 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             write level "auto %s = __%s%sMap__pop();" name (typeToName keyType) (typeToName valueType)
         | Return ->
             write level "return __%s%sMap__pop();"  (typeToName keyType) (typeToName valueType)
+    | TupleType _ ->
+        match context with
+        | Variable name ->
+            write level "auto %s = __%s__pop();" name (typeToName type_)
+        | Return ->
+            write level "return __%s__pop();" (typeToName type_)
     | StructType structName ->
         match context with
         | Variable name ->
@@ -227,6 +242,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             write level "%sArrayArray__push(%s, %s);" (typeToName niType) content (isReturnString())
         | MapType (keyType, valueType) ->
             write level "%s%sMapArray__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
+        | TupleType _ ->
+            write level "__%sArray__push(%s, %s);" (typeToName niType) content (isReturnString())
         | StructType name ->
             write level "%sArray__push(%s, %s);" name content (isReturnString())
         | DelegateType name ->
@@ -241,6 +258,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             write level "// (push not yet supported: ArrayType %A)" niType
     | MapType (keyType, valueType) ->
         write level "__%s%sMap__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
+    | TupleType _ ->
+        write level "__%s__push(%s, %s);" (typeToName type_) content (isReturnString())
     | StructType name ->
         write level "%s__push(%s, %s);" name content (isReturnString())
     | TypedefType name ->
@@ -404,9 +423,27 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
         write 0 "std::shared_ptr<%s> %s__pop();" name name
     | UserOrGeneric.Generic gType ->
         match gType with
+        | TupleType tupleTypes ->
+            // PUSH =====
+            write 0 "void __%s__push(%s value, bool isReturn) {" (typeToName gType) (typeToCppString gType)
+            for i, type_ in tupleTypes |> List.indexed |> List.rev do
+                pushValue writer 1 type_ (sprintf "std::get<%d>(value)" i) (Indirect "isReturn")
+            write 0 "}"
+            // POP ======
+            blank()
+            write 0 "%s __%s__pop() {" (typeToCppString gType) (typeToName gType)
+            for i, type_ in tupleTypes |> List.indexed do
+                popValue writer 1 type_ (Variable (sprintf "_%d" i))
+            let itemsJoined =
+                tupleTypes
+                |> List.indexed
+                |> List.map (fun (i, _) -> sprintf "_%d" i)
+                |> String.concat ", "
+            write 1 "return %s{ %s };" (typeToCppString gType) itemsJoined
+            write 0 "}"
         | MapType (keyType, valueType) ->
             // PUSH =====
-            write 0 "void __%s__push(%s _map, bool isReturn) {" (typeToCppString gType) (typeToCppString gType)
+            write 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName gType) (typeToCppString gType)
             write 1 "std::vector<%s> keys;" (typeToCppString keyType)
             write 1 "std::vector<%s> values;" (typeToCppString valueType)
             write 1 "for (auto i = _map.begin(); i != _map.end(); i++) {"
@@ -418,7 +455,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             write 0 "}"
             // POP =====
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString gType) (typeToCppString gType)
+            write 0 "%s __%s__pop() {" (typeToCppString gType) (typeToName gType)
             write 1 "%s __ret;" (typeToCppString gType)
             popValue writer 1 (ArrayType keyType) (Variable "keys")
             popValue writer 1 (ArrayType valueType) (Variable "values")
@@ -449,9 +486,35 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 1 "return __ret;"
                 write 0 "}"
             match arrayType with
+            | TupleType tupleTypes ->
+                // PUSH ========
+                write 0 "void __%sArray__push(%s values, bool isReturn) {" (typeToName arrayType) (typeToCppString gType)
+                for i, type_ in tupleTypes |> List.indexed do
+                    write 1 "std::vector<%s> _%dvalues;" (typeToCppString type_) i
+                write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
+                for i, _ in tupleTypes |> List.indexed do
+                    write 2 "_%dvalues.push_back(std::get<%d>(*i));" i i
+                write 1 "}"
+                // push in reverse field order
+                for i, type_ in tupleTypes |> List.indexed |> List.rev do
+                    pushValue writer 1 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
+                write 0 "}"
+                // POP =========
+                blank()
+                write 0 "%s __%sArray__pop() {" (typeToCppString gType) (typeToName arrayType)
+                for i, type_ in tupleTypes |> List.indexed do
+                    popValue writer 1 (ArrayType type_) (Variable (sprintf "_%dvalues" i))
+                write 1 "%s __ret;" (typeToCppString gType)
+                write 1 "for (auto i = 0; i < _0values.size(); i++) {"
+                let joined =
+                    tupleTypes |> List.indexed |> List.map fst |> List.map (sprintf "_%dvalues[i]") |> String.concat ", "
+                write 2 "__ret.push_back({ %s });" joined
+                write 1 "}"
+                write 1 "return __ret;"
+                write 0 "}"
             | StructType structName ->
                 // fetch the fields so we can make a struct-of-arrays
-                match typeMap.[structName] with
+                match typeMap[structName] with
                 | UserOrGeneric.User (StructDef namedFields) ->
                     // PUSH ===========
                     write 0 "void %sArray__push(%s values, bool isReturn) {" structName (typeToCppString gType)
@@ -754,6 +817,8 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
             write 0 "// %s" (typeToCppString gType) // remove this eventually
         | MapType _ ->
             write 0 "// %s" (typeToCppString gType) // likewise
+        | TupleType _ ->
+            write 0 "// %s" (typeToCppString gType) // !
         | _ ->
             failwithf "renderUserTypes: unsupported generic type %A" gType
     | UserOrGeneric.User userType ->
@@ -803,6 +868,7 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
     write 0 "#include <string>"
     write 0 "#include <vector>"
     write 0 "#include <map>"
+    write 0 "#include <tuple>"
 
     // all user types in dependency order
     renderUserTypes (userTypesAndGenerics m) (renderHeaderUserTypes writer)

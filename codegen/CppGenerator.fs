@@ -553,7 +553,6 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
         fprintfn writer fmt
     let blank () = write 0 ""
     // push
-    blank()
     write 0 "void %s__push(std::function<%s> f) {" name name
     write 1 "size_t uniqueKey = 0;"
     write 1 "if (f) {"

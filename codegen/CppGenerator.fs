@@ -547,7 +547,7 @@ let renderUserTypes (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (
     ||> List.fold (fun alreadyRendered k -> renderDeps k alreadyRendered)
     |> ignore
 
-let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInfo) =
+let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInfo) (typeContainsRefs: NIType -> bool) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -580,12 +580,17 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
     for argName, argType in info.Args |> List.rev do
         pushValue writer 2 argType argName (Direct false)
     write 2 "cf->remoteExec();"
-    popValue writer 2 info.Returns Return
+    if typeContainsRefs info.Returns then
+        popValue writer 2 info.Returns (Variable "__ret")
+        write 2 "ni_clearClientSafetyArea();"
+        write 2 "return __ret;"
+    else
+        popValue writer 2 info.Returns Return
     write 1 "};"
     write 1 "return wrapper;"
     write 0 "}"
 
-let renderWrapperInterface (writer: TextWriter) (name: string) (methods: NamedFunction list) (containsRefsMap: Map<string,bool>) =
+let renderWrapperInterface (writer: TextWriter) (name: string) (methods: NamedFunction list) (typeContainsRefs: NIType -> bool) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -607,9 +612,7 @@ let renderWrapperInterface (writer: TextWriter) (name: string) (methods: NamedFu
         | None ->
             write 2 "invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
         // pop result
-        let containsRefs =
-            containsRefsMap.ContainsKey(typeToInternalKey namedFunc.Returns)
-        if containsRefs then
+        if typeContainsRefs namedFunc.Returns then
             // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
             // this is to prevent premature deref which could free the instance before we've gotten ahold of it
             popValue writer 2 namedFunc.Returns (Variable "__ret")
@@ -687,6 +690,8 @@ let renderWrapperUserTypes (containsRefsMap: Map<string,bool>) (writer: TextWrit
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
     let blank () = write 0 ""
+    let typeContainsRefs (type_: NIType) =
+        containsRefsMap.ContainsKey(typeToInternalKey type_)
     blank()
     match content with
     | UserOrGeneric.FwdInterface ->
@@ -804,9 +809,9 @@ let renderWrapperUserTypes (containsRefsMap: Map<string,bool>) (writer: TextWrit
         | ExceptionDef namedFields ->
             renderWrapperException writer name namedFields
         | InterfaceDef methods ->
-            renderWrapperInterface writer name methods containsRefsMap
+            renderWrapperInterface writer name methods typeContainsRefs
         | DelegateDef info ->
-            renderWrapperDelegate writer name info
+            renderWrapperDelegate writer name info typeContainsRefs
         | TypeDef niType ->
             // ghetto, but for now instead of flattening, just write an inline wrapper
             write 0 "inline %s %s__pop() {" name name

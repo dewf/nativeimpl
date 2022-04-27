@@ -54,6 +54,10 @@ let fieldsJoined (fields: NamedField list) =
     [for f in fields -> sprintf "%s %s" (typeToCsString f.Type_) f.Name]
     |> String.concat ", "
 
+let fieldNamesJoined (fields: NamedField list) =
+    [for f in fields -> f.Name]
+    |> String.concat ", "
+
 type PopValueContext =
     | NewVariable of name: string
     | ExistingVar of name: string
@@ -159,6 +163,12 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             for field in namedFields do
                 write 3 "public %s %s;" (typeToCsString field.Type_) (upperFirst field.Name)
             blank()
+            write 3 "public %s(%s)" name (fieldsJoined namedFields)
+            write 3 "{"
+            for field in namedFields do
+                write 4 "this.%s = %s;" (upperFirst field.Name) field.Name
+            write 3 "}"
+            blank()
             write 3 "internal void Push(bool isReturn)"
             write 3 "{"
             for field in namedFields |> List.rev do
@@ -169,11 +179,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 3 "{"
             for field in namedFields do
                 popValue writer 4 field.Type_ (NewVariable field.Name)
-            let joinedAssignments =
-                namedFields
-                |> List.map (fun nf -> sprintf "%s = %s" (upperFirst nf.Name) nf.Name)
-                |> String.concat ", "
-            write 4 "return new %s { %s };" name joinedAssignments
+            write 4 "return new %s(%s);" name (fieldNamesJoined namedFields)
             write 3 "}"
             write 2 "}"
         | EnumDef values ->

@@ -105,11 +105,6 @@ type PopValueContext =
     | Variable of name: string
     | Return
 
-type PushIsReturn =
-    | Direct of value: bool
-    | Indirect of name: string
-    | NotApplicable
-
 let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
@@ -207,6 +202,11 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             write level "return %s__pop();" sumTypeName
     | _ ->
         write level "// (pop not yet implemented: %A)" type_
+
+type PushIsReturn =
+    | Direct of value: bool
+    | Indirect of name: string
+    | NotApplicable
 
 let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =

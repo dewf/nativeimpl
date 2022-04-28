@@ -332,6 +332,16 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                             // array of tuple implies array of each tuple subtype
                             (alreadyRendered, tupleTypes)
                             ||> List.fold (fun already2 type_ -> renderType (ArrayType type_) already2)
+                        | TypedefType typeDefName ->
+                            // arrays of typedefs of tuple are flattened
+                            // (why penalize the user because they wanted a typedef?)
+                            // (this just creates the dependency on the array-of-<tuplefield>s, so that the requisite array push/pop methods exist)
+                            match typeMap[typeDefName] with
+                            | UserOrGeneric.User (TypeDef (TupleType tupleTypes)) ->
+                                (alreadyRendered, tupleTypes)
+                                ||> List.fold (fun already2 type_ -> renderType (ArrayType type_) already2)
+                            | _ ->
+                                alreadyRendered
                         | _ ->
                             alreadyRendered
                         // and the type itself, of course ...

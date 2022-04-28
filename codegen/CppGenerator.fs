@@ -485,10 +485,9 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 1 "}"
                 write 1 "return __ret;"
                 write 0 "}"
-            match arrayType with
-            | TupleType tupleTypes ->
+            let tupleArray (tupleTypes: NIType list) =
                 // PUSH ========
-                write 0 "void __%sArray__push(%s values, bool isReturn) {" (typeToName arrayType) (typeToCppString gType)
+                write 0 "void %sArray__push(%s values, bool isReturn) {" (typeToName arrayType) (typeToCppString gType)
                 for i, type_ in tupleTypes |> List.indexed do
                     write 1 "std::vector<%s> _%dvalues;" (typeToCppString type_) i
                 write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
@@ -501,7 +500,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 0 "}"
                 // POP =========
                 blank()
-                write 0 "%s __%sArray__pop() {" (typeToCppString gType) (typeToName arrayType)
+                write 0 "%s %sArray__pop() {" (typeToCppString gType) (typeToName arrayType)
                 for i, type_ in tupleTypes |> List.indexed do
                     popValue writer 1 (ArrayType type_) (Variable (sprintf "_%dvalues" i))
                 write 1 "%s __ret;" (typeToCppString gType)
@@ -512,6 +511,9 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 1 "}"
                 write 1 "return __ret;"
                 write 0 "}"
+            match arrayType with
+            | TupleType tupleTypes ->
+                tupleArray tupleTypes
             | StructType structName ->
                 // fetch the fields so we can make a struct-of-arrays
                 match typeMap[structName] with
@@ -545,7 +547,17 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 | _ ->
                     failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
             | TypedefType name ->
-                arrayCommon name arrayType
+                // flatten array of typedef of tuple, to array of tuple
+                match typeMap.TryFind(name) with
+                | Some uog ->
+                    match uog with
+                    | UserOrGeneric.User (TypeDef (TupleType tupleTypes)) ->
+                        tupleArray tupleTypes
+                    | _ ->
+                        // any other typedef in an array context
+                        arrayCommon name arrayType
+                | None ->
+                    failwith "renderWrapperUserTypes: array of typedef: didn't find typedef name in map??"
             | DelegateType name ->
                 arrayCommon name arrayType
             | ArrayType _ ->
@@ -571,9 +583,14 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 0 "}"
             | SumType name ->
                 arrayCommon name arrayType
+            // ignore built-ins below:
+            | Bool
+            | Int8 | Int16 | Int32 | Int64
+            | Float32 | Float64
+            | StringType ->
+                write 0 "// built-in array type: %s" (typeToCppString gType)
             | _ ->
-                // we don't handle any of the primitives, those are all built-in
-                write 0 "// push/pop for generic %s" (typeToCppString gType)
+                write 0 "// TODO: push/pop for generic %s" (typeToCppString gType)
         | _ ->
             write 0 "// push/pop for generic %s" (typeToCppString gType)
     | UserOrGeneric.User userType ->

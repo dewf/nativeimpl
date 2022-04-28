@@ -50,14 +50,17 @@ let rec typeToName = function
     | Bool -> "Bool"
     | Int32 -> "Int"
     | StringType -> "String"
-    | StructType name -> (upperFirst name)
-    | EnumType name -> (upperFirst name)
+    | StructType name -> upperFirst name
+    | EnumType name -> upperFirst name
+    | TypedefType name -> upperFirst name
     | TupleType tupleTypes ->
         let joined =
             tupleTypes
             |> List.map typeToName
             |> String.concat ""
         sprintf "%sTuple" joined
+    | ArrayType niType ->
+        sprintf "%sArray" (typeToName niType)
     | _ -> "(typeToName: not yet supported)"
 
 let argsJoined (typeMap: Map<string, UserOrGeneric>) (args: (string * NIType) list) =
@@ -152,8 +155,9 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | Bool -> write level "NativeImplClient.PushBoolArray(%s);" content
         | Int32 -> write level "NativeImplClient.PushIntArray(%s);" content
         | StringType -> write level "NativeImplClient.PushStringArray(%s);" content
-        | EnumType name -> write level "%sArray__Push(%s);" (upperFirst name) content
-        | StructType name -> write level "%sArray__Push(%s);" (upperFirst name) content
+        | EnumType name -> write level "__%sArray__Push(%s);" (upperFirst name) content
+        | StructType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
+        | TypedefType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
     | EnumType name ->
         write level "%s__Push(%s);" name content
@@ -217,6 +221,46 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
 //                write 1 "return __ret;"
 //                write 0 "}"
             match arrayType with
+            | TypedefType typeDefName ->
+                match typeMap[typeDefName] with
+                | UserOrGeneric.User (TypeDef (TupleType tupleTypes)) ->
+                    // array of typedef of tuple -> flatten to array of tuple
+                    let joinedTypes =
+                        tupleTypes |> List.map (typeToCsString typeMap) |> String.concat ", "
+                    // PUSH ====================
+                    write 2 "private static void __%sArray__Push((%s)[] things, bool isReturn)" typeDefName joinedTypes
+                    write 2 "{"
+                    write 3 "var count = things.Length;"
+                    for i, type_ in tupleTypes |> List.indexed do
+                        write 3 "var _%dvalues = new %s[count];" i (typeToCsString typeMap type_)
+                    write 3 "for (var i = 0; i < count; i++)"
+                    write 3 "{"
+                    for i, _ in tupleTypes |> List.indexed do
+                        write 4 "_%dvalues[i] = things[i].Item%d;" i (i + 1)
+                    write 3 "}"
+                    for i, type_ in tupleTypes |> List.indexed |> List.rev do
+                        pushValue writer 3 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
+                    write 2 "}"
+                    // POP =====================
+                    blank()
+                    write 2 "private static (%s)[] __%sArray__Pop()" joinedTypes typeDefName
+                    write 2 "{"
+                    for i, type_ in tupleTypes |> List.indexed do
+                        popValue writer 3 (ArrayType type_) (NewVariable (sprintf "_%dvalues" i))
+                    write 3 "var count = _0values.Length;"
+                    write 3 "var ret = new (%s)[count];" joinedTypes
+                    write 3 "for (var i = 0; i < count; i++)"
+                    write 3 "{"
+                    for i, _ in tupleTypes |> List.indexed do
+                        write 4 "var _%d = _%dvalues[i];" i i
+                    let joinedVars =
+                        tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
+                    write 4 "ret[i] = (%s);" joinedVars
+                    write 3 "}"
+                    write 3 "return ret;"
+                    write 2 "}"
+                | _ ->
+                    failwithf "array of typedef %A: TODO (basic array treatment)" typeDefName
             | EnumType name ->
                 // push
                 write 2 "private static void %sArray__Push(IEnumerable<%s> items)" (upperFirst name) (upperFirst name)

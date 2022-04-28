@@ -86,15 +86,15 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     | DelegateType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | ArrayType niType ->
-        let popFunc =
-            match niType with
-            | Bool -> "NativeImplClient.PopBoolArray"
-            | Int32 -> "NativeImplClient.PopIntArray"
-            | StringType -> "NativeImplClient.PopStringArray"
-            | _ -> sprintf "(popValue arrayType %A - todo)" niType
-        write level "%s %s();" contextPrefix popFunc
+        match niType with
+        | Bool -> write level "%s NativeImplClient.PopBoolArray();" contextPrefix
+        | Int32 -> write level "%s NativeImplClient.PopIntArray();" contextPrefix
+        | StringType -> write level "%s NativeImplClient.PopStringArray();" contextPrefix
+        | EnumType name -> write level "%s %sArray__Pop();" contextPrefix (upperFirst name)
+        | StructType name -> write level "%s %sArray__Pop();" contextPrefix (upperFirst name)
+        | _ -> write level "// popValue not yet supported: array of %A" niType
     | StructType name ->
-        write level "%s %s.Pop();" contextPrefix (upperFirst name)
+        write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | EnumType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | _ ->
@@ -128,17 +128,17 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | DelegateType name ->
         write level "%s__Push(%s);" name content
     | ArrayType niType ->
-        let pushFunc =
-            match niType with
-            | Bool -> "PushBoolArray"
-            | Int32 -> "PushIntArray"
-            | StringType -> "PushStringArray"
-            | _ -> "(not yet supported)"
-        write level "NativeImplClient.%s(%s);" pushFunc content
+        match niType with
+        | Bool -> write level "NativeImplClient.PushBoolArray(%s);" content
+        | Int32 -> write level "NativeImplClient.PushIntArray(%s);" content
+        | StringType -> write level "NativeImplClient.PushStringArray(%s);" content
+        | EnumType name -> write level "%sArray__Push(%s);" (upperFirst name) content
+        | StructType name -> write level "%sArray__Push(%s);" (upperFirst name) content
+        | _ -> write level "// pushValue not yet supported: Array of %A" niType
     | EnumType name ->
         write level "%s__Push(%s);" name content
-    | StructType _ ->
-        write level "%s.Push(%s);" content (isReturnString())
+    | StructType name ->
+        write level "%s__Push(%s, %s);" name content (isReturnString())
     | _ ->
         write level "(pushValue %A not yet supported)" type_
 
@@ -153,7 +153,87 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
     | UserOrGeneric.FwdInterface ->
         failwith "renderLibraryUserTypes: shouldn't see this (FwdInterface)"
     | UserOrGeneric.Generic gType ->
-        write 2 "// %s" (typeToCsString gType)
+        match gType with
+        | ArrayType arrayType ->
+//            let arrayCommon (name: string) (elementType: NIType) =
+//                // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
+//                // PUSH ========
+//                write 0 "void __%sArray__push(%s[] values, bool isReturn) {" name (typeToCsString elementType)
+//                write 1 "for (auto v = values.rbegin(); v != values.rend(); v++) {" // in reverse!
+//                pushValue writer 2 elementType "*v" (Indirect "isReturn")
+//                write 1 "}"
+//                write 1 "ni_pushSizeT(values.size());"
+//                write 0 "}"
+//                // POP =========
+//                blank()
+//                write 0 "std::vector<%s> %sArray__pop() {" (typeToCppString elementType) name
+//                write 1 "std::vector<%s> __ret;" (typeToCppString elementType)
+//                write 1 "auto count = ni_popSizeT();"
+//                write 1 "for (auto i = 0; i < count; i++) {"
+//                popValue writer 2 elementType (Variable "value")
+//                write 2 "__ret.push_back(value);"
+//                write 1 "}"
+//                write 1 "return __ret;"
+//                write 0 "}"
+            match arrayType with
+            | EnumType name ->
+                // push
+                write 2 "private static void %sArray__Push(IEnumerable<%s> items)" (upperFirst name) (upperFirst name)
+                write 2 "{"
+                write 3 "var intValues = items.Select(i => (int)i).ToArray();"
+                write 3 "NativeImplClient.PushIntArray(intValues);"
+                write 2 "}"
+                // pop
+                blank()
+                write 2 "private static %s[] %sArray__Pop()" (upperFirst name) (upperFirst name)
+                write 2 "{"
+                write 3 "var intValues = NativeImplClient.PopIntArray();"
+                write 3 "return intValues.Select(i => (%s)i).ToArray();" (upperFirst name)
+                write 2 "}"
+            | StructType structName ->
+                // fetch the fields so we can make a struct-of-arrays
+                match typeMap[structName] with
+                | UserOrGeneric.User (StructDef namedFields) ->
+                    // push
+                    write 2 "private static void %sArray__Push(%s[] items)" (upperFirst structName) (upperFirst structName)
+                    write 2 "{"
+                    write 3 "var count = items.Length;"
+                    for i, field in namedFields |> List.indexed do
+                        write 3 "var f%dValues = new %s[count];" i (typeToCsString field.Type_)
+                    write 3 "for (var i = 0; i < count; i++)"
+                    write 3 "{"
+                    for i, field in namedFields |> List.indexed do
+                        write 4 "f%dValues[i] = items[i].%s;" i (upperFirst field.Name)
+                    write 3 "}"
+                    // push in reverse order
+                    for i, field in namedFields |> List.indexed |> List.rev do
+                        pushValue writer 3 (ArrayType field.Type_) (sprintf "f%dValues" i) (Indirect "isReturn")
+                    write 2 "}"
+                    // pop
+                    blank()
+                    write 2 "private static %s[] %sArray__Pop()" (upperFirst structName) (upperFirst structName)
+                    write 2 "{"
+                    for i, field in namedFields |> List.indexed do
+                        popValue writer 3 (ArrayType field.Type_) (NewVariable (sprintf "f%dValues" i))
+                    write 3 "var count = f1Values.Length;"
+                    write 3 "var ret = new %s[count];" (upperFirst structName)
+                    write 3 "for (var i = 0; i < count; i++)"
+                    write 3 "{"
+                    for i, _ in namedFields |> List.indexed do
+                        write 4 "var f%d = f%dValues[i];" i i
+                    let fieldVarsJoined =
+                        namedFields |> List.indexed |> List.map (fun (i, _) -> sprintf "f%d" i) |> String.concat ", "
+                    write 4 "ret[i] = new %s(%s);" (upperFirst structName) fieldVarsJoined
+                    write 3 "}"
+                    write 3 "return ret;"
+                    write 2 "}"
+                | _ ->
+                    failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+            | _ ->
+                // we don't handle any of the primitives, those are all built-in
+                write 2 "// push/pop for generic %s" (typeToCsString gType)
+        | _ ->
+            write 2 "// %s" (typeToCsString gType)
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueHandleDef ->
@@ -163,24 +243,27 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             for field in namedFields do
                 write 3 "public %s %s;" (typeToCsString field.Type_) (upperFirst field.Name)
             blank()
+            // constructor
             write 3 "public %s(%s)" name (fieldsJoined namedFields)
             write 3 "{"
             for field in namedFields do
                 write 4 "this.%s = %s;" (upperFirst field.Name) field.Name
             write 3 "}"
+            write 2 "}"
+            // push
             blank()
-            write 3 "internal void Push(bool isReturn)"
-            write 3 "{"
+            write 2 "private static void %s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "{"
             for field in namedFields |> List.rev do
-                pushValue writer 4 field.Type_ (upperFirst field.Name) (Indirect "isReturn")
-            write 3 "}"
+                pushValue writer 3 field.Type_ (sprintf "value.%s" (upperFirst field.Name)) (Indirect "isReturn")
+            write 2 "}"
+            // pop
             blank()
-            write 3 "internal static %s Pop()" name
-            write 3 "{"
+            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "{"
             for field in namedFields do
-                popValue writer 4 field.Type_ (NewVariable field.Name)
-            write 4 "return new %s(%s);" name (fieldNamesJoined namedFields)
-            write 3 "}"
+                popValue writer 3 field.Type_ (NewVariable field.Name)
+            write 3 "return new %s(%s);" name (fieldNamesJoined namedFields)
             write 2 "}"
         | EnumDef values ->
             write 2 "public enum %s" name
@@ -239,6 +322,8 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     write 0 "using System;"
     write 0 "using System.Diagnostics;"
     write 0 "using System.Runtime.CompilerServices;"
+    write 0 "using System.Collections.Generic;"
+    write 0 "using System.Linq;"
     //write 0 "using System.Runtime.InteropServices;"
     write 0 ""
     write 0 "namespace %sClient" m.Name
@@ -297,6 +382,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
         write 2 "}"
 
     // static init + shutdown ====================================================
+    blank()
     write 2 "public static void Init()"
     write 2 "{"
     write 3 "Debug.Assert(NativeImplClient.Init() == 0);"
@@ -356,6 +442,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
                 | None ->
                     pushValue writer 4 method.Returns invocation (Direct true)
                 write 3 "});"
+
     write 2 "}" // end of Init()
     blank()
     write 2 "public static void Shutdown()"

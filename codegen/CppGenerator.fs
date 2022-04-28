@@ -466,7 +466,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             write 0 "}"
         | ArrayType arrayType ->
             let arrayCommon (name: string) (elementType: NIType) =
-                // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs, basically)
+                // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
                 // PUSH ========
                 write 0 "void %sArray__push(std::vector<%s> values, bool isReturn) {" name (typeToCppString elementType)
                 write 1 "for (auto v = values.rbegin(); v != values.rend(); v++) {" // in reverse!
@@ -551,7 +551,24 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             | ArrayType _ ->
                 arrayCommon (typeToName arrayType) arrayType
             | EnumType name ->
-                arrayCommon name arrayType
+                // PUSH ================
+                write 0 "void %sArray__push(std::vector<%s> values, bool isReturn) {" name name
+                write 1 "std::vector<int> intValues;"
+                write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
+                write 2 "intValues.push_back((int)*i);"
+                write 1 "}"
+                write 1 "pushIntArrayInternal(intValues);"
+                write 0 "}"
+                // POP ==================
+                blank()
+                write 0 "std::vector<%s> %sArray__pop() {" name name
+                write 1 "auto intValues = popIntArrayInternal();"
+                write 1 "std::vector<%s> __ret;" name
+                write 1 "for (auto i = 0; i < intValues.size(); i++) {"
+                write 2 "__ret.push_back((%s)intValues[i]);" name
+                write 1 "}"
+                write 1 "return __ret;"
+                write 0 "}"
             | SumType name ->
                 arrayCommon name arrayType
             | _ ->

@@ -25,7 +25,7 @@ type UserOrGeneric =
     | Generic of NIType
     | FwdInterface      // just a special case for rendering, really - won't be in the type map or anything
     
-let allGenericTypes (module_: Module) =
+let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
     let rec typeAndSubTypes (t: NIType) =
         match t with
         | MapType(keyType, valueType) ->
@@ -36,11 +36,26 @@ let allGenericTypes (module_: Module) =
             let vs = typeAndSubTypes (ArrayType valueType)
             t :: k @ v @ ks @ vs
         | ArrayType niType ->
-            // TODO: maybe we should handle the array-of-struct and array-of-tuple business here? otherwise why generate arrays for them always?
-            t :: typeAndSubTypes niType
+            let subResults =
+                // special handling for array-of-struct and array-of-tuple: we render arrays of each field/subtype
+                match niType with
+                | StructType name ->
+                    match userTypeMap[name] with
+                    | StructDef namedFields ->
+                        namedFields
+                        |> List.collect (fun field -> typeAndSubTypes (ArrayType field.Type_))
+                    | _ ->
+                        failwith "allGenericTypes: some issue getting struct def for array of struct"
+                | TupleType tupleTypes ->
+                    tupleTypes
+                    |> List.collect (fun type_ -> typeAndSubTypes (ArrayType type_))
+                | _ ->
+                    // any other array type, no special handling
+                    typeAndSubTypes niType
+            t :: subResults
         | TupleType niTypes ->
             let subResults =
-                niTypes |> List.collect (fun type_ -> typeAndSubTypes type_ @ typeAndSubTypes (ArrayType type_)) // also potentially need arrays of each field, if array-of-tuple is used
+                niTypes |> List.collect typeAndSubTypes
             t :: subResults
         | _ -> []
     module_.Defs
@@ -50,7 +65,7 @@ let allGenericTypes (module_: Module) =
             | OpaqueHandleDef -> []
             | StructDef namedFields ->
                 namedFields
-                |> List.collect (fun field -> typeAndSubTypes field.Type_ @ typeAndSubTypes (ArrayType field.Type_)) // also potentially need arrays of each field, if array-of-struct is used
+                |> List.collect (fun field -> typeAndSubTypes field.Type_)
             | ExceptionDef namedFields ->
                 namedFields
                 |> List.collect (fun field -> typeAndSubTypes field.Type_)
@@ -104,10 +119,12 @@ let allGenericTypes (module_: Module) =
 
 let userTypesAndGenerics (m: Module) =
     // combined map
+    let userTypes =
+        getUserTypes m
     let m1 =
-        (Map.empty, getUserTypes m)
+        (Map.empty, userTypes)
         ||> Map.fold (fun newMap name userType -> newMap.Add(name, UserOrGeneric.User userType))
-    (m1, allGenericTypes m)
+    (m1, allGenericTypes m userTypes)
     ||> List.fold (fun newMap type_ ->
         let name =
             (typeToInternalKey type_)

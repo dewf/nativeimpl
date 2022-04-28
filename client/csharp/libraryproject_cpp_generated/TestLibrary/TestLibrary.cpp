@@ -52,6 +52,26 @@ ni_ExceptionRef invokeModuleMethodWithExceptions(ni_ModuleMethodRef method)
     return ni_invokeModuleMethodWithExceptions(method);
 }
 
+void pushSizeT(size_t value)
+{
+    ni_pushSizeT(value);
+}
+
+size_t popSizeT()
+{
+    return ni_popSizeT();
+}
+
+void pushSizeTArray(size_t* values, size_t count)
+{
+    ni_pushSizeTArray(values, count);
+}
+
+void popSizeTArray(size_t** values, size_t* count)
+{
+    ni_popSizeTArray(values, count);
+}
+
 void pushBool(bool value)
 {
     ni_pushBool(value);

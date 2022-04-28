@@ -26,6 +26,11 @@ extern "C" {
 	TESTLIBRARY_API void invokeModuleMethod(ni_ModuleMethodRef method);
 	TESTLIBRARY_API ni_ExceptionRef invokeModuleMethodWithExceptions(ni_ModuleMethodRef method);
 
+	TESTLIBRARY_API void pushSizeT(size_t value);
+	TESTLIBRARY_API size_t popSizeT();
+	TESTLIBRARY_API void pushSizeTArray(size_t* values, size_t count);
+	TESTLIBRARY_API void popSizeTArray(size_t** values, size_t* count);
+
 	TESTLIBRARY_API void pushBool(bool value);
 	TESTLIBRARY_API bool popBool();
 	TESTLIBRARY_API void pushBoolArray(bool* values, size_t count);

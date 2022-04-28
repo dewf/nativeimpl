@@ -107,6 +107,18 @@ namespace TestLibraryClient
         internal static extern IntPtr invokeModuleMethodWithExceptions(IntPtr method);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushSizeT(IntPtr value);
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr popSizeT();
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushSizeTArray(IntPtr[] values, IntPtr count);
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popSizeTArray(out IntPtr valuesPtr, out IntPtr count); // size_t**, size_t*
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushBool(bool value);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -316,6 +328,29 @@ namespace TestLibraryClient
             {
                 throw ExceptionBuilderDelegates[exceptionHandle]();
             }
+        }
+
+        public static void PushSizeT(IntPtr value)
+        {
+            NativeMethods.pushSizeT(value);
+        }
+
+        public static IntPtr PopSizeT()
+        {
+            return NativeMethods.popSizeT();
+        }
+
+        public static void PushSizeTArray(IntPtr[] values)
+        {
+            NativeMethods.pushSizeTArray(values, (IntPtr)values.Length);
+        }
+
+        public static IntPtr[] PopSizeTArray()
+        {
+            NativeMethods.popSizeTArray(out var valuesPtr, out var count);
+            var ret = new IntPtr[(int)count];
+            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            return ret;
         }
 
         public static void PushBool(bool b)

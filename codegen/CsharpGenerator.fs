@@ -1,7 +1,6 @@
 ﻿module CsharpGenerator
 
 open System.IO
-open System.Text.RegularExpressions
 open Parser
 
 open Util
@@ -20,7 +19,7 @@ let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
             }
         }"
 
-let rec typeToCsString = function
+let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
     | UnitType -> "void"
     | Bool -> "bool"
     | Int32 -> "int"
@@ -30,7 +29,20 @@ let rec typeToCsString = function
     | InterfaceType name -> upperFirst name
     | ExceptionType name -> upperFirst name
     | DelegateType name -> upperFirst name
-    | ArrayType niType -> sprintf "%s[]" (typeToCsString niType)
+    | ArrayType niType -> sprintf "%s[]" (typeToCsString typeMap niType)
+    | TupleType tupleTypes ->
+        let joined =
+            tupleTypes
+            |> List.map (typeToCsString typeMap)
+            |> String.concat ", "
+        sprintf "(%s)" joined
+    | TypedefType name ->
+        // no C# typedefs so we just render the type directly
+        match typeMap.TryFind(name) with
+        | Some (UserOrGeneric.User (TypeDef niType)) ->
+            typeToCsString typeMap niType
+        | _ ->
+            failwithf "typeToCsString: failed to find typedef definition"
     | _ -> "(typeToString: not yet supported)"
 
 let rec typeToName = function
@@ -40,18 +52,24 @@ let rec typeToName = function
     | StringType -> "String"
     | StructType name -> (upperFirst name)
     | EnumType name -> (upperFirst name)
+    | TupleType tupleTypes ->
+        let joined =
+            tupleTypes
+            |> List.map typeToName
+            |> String.concat ""
+        sprintf "%sTuple" joined
     | _ -> "(typeToName: not yet supported)"
+
+let argsJoined (typeMap: Map<string, UserOrGeneric>) (args: (string * NIType) list) =
+    [for name, type_ in args -> sprintf "%s %s" (typeToCsString typeMap type_) name]
+    |> String.concat ", "
 
 let argNamesJoined (args: (string * NIType) list) =
     [for name, _ in args -> name]
     |> String.concat ", "
 
-let argsJoined (args: (string * NIType) list) =
-    [for name, type_ in args -> sprintf "%s %s" (typeToCsString type_) name]
-    |> String.concat ", "
-
-let fieldsJoined (fields: NamedField list) =
-    [for f in fields -> sprintf "%s %s" (typeToCsString f.Type_) f.Name]
+let fieldsJoined (typeMap: Map<string, UserOrGeneric>) (fields: NamedField list) =
+    [for f in fields -> sprintf "%s %s" (typeToCsString typeMap f.Type_) f.Name]
     |> String.concat ", "
 
 let fieldNamesJoined (fields: NamedField list) =
@@ -97,6 +115,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | EnumType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
+    | TypedefType name ->
+        write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | _ ->
         write level "(popValue %A not yet supported)" type_
 
@@ -139,6 +159,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "%s__Push(%s);" name content
     | StructType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
+    | TypedefType name ->
+        write level "%s__Push(%s, %s);" name content (isReturnString())
     | _ ->
         write level "(pushValue %A not yet supported)" type_
 
@@ -154,6 +176,25 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
         failwith "renderLibraryUserTypes: shouldn't see this (FwdInterface)"
     | UserOrGeneric.Generic gType ->
         match gType with
+        | TupleType tupleTypes ->
+            let typesJoined =
+                tupleTypes |> List.map (typeToCsString typeMap) |> String.concat ", "
+            // PUSH =============
+            write 2 "private static void __%s__Push((%s) value, bool isReturn)" (typeToName gType) typesJoined
+            write 2 "{"
+            for i, type_ in tupleTypes |> List.indexed |> List.rev do
+                pushValue writer 3 type_ (sprintf "value.Item%d" (i+1)) (Indirect "isReturn")
+            write 2 "}"
+            // POP ==============
+            blank()
+            write 2 "private static (%s) __%s__Pop()" (typesJoined) (typeToName gType)
+            write 2 "{"
+            for i, type_ in tupleTypes |> List.indexed do
+                popValue writer 3 type_ (NewVariable (sprintf "_%d" i))
+            let varsJoined =
+                tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
+            write 3 "return (%s);" varsJoined
+            write 2 "}"
         | ArrayType arrayType ->
 //            let arrayCommon (name: string) (elementType: NIType) =
 //                // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
@@ -199,7 +240,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                     write 2 "{"
                     write 3 "var count = items.Length;"
                     for i, field in namedFields |> List.indexed do
-                        write 3 "var f%dValues = new %s[count];" i (typeToCsString field.Type_)
+                        write 3 "var f%dValues = new %s[count];" i (typeToCsString typeMap field.Type_)
                     write 3 "for (var i = 0; i < count; i++)"
                     write 3 "{"
                     for i, field in namedFields |> List.indexed do
@@ -231,9 +272,9 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                     failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
             | _ ->
                 // we don't handle any of the primitives, those are all built-in
-                write 2 "// push/pop for generic %s" (typeToCsString gType)
+                write 2 "// push/pop for generic %s" (typeToCsString typeMap gType)
         | _ ->
-            write 2 "// %s" (typeToCsString gType)
+            write 2 "// %s" (typeToCsString typeMap gType)
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueHandleDef ->
@@ -241,10 +282,10 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
         | StructDef namedFields ->
             write 2 "public struct %s {" name
             for field in namedFields do
-                write 3 "public %s %s;" (typeToCsString field.Type_) (upperFirst field.Name)
+                write 3 "public %s %s;" (typeToCsString typeMap field.Type_) (upperFirst field.Name)
             blank()
             // constructor
-            write 3 "public %s(%s)" name (fieldsJoined namedFields)
+            write 3 "public %s(%s)" name (fieldsJoined typeMap namedFields)
             write 3 "{"
             for field in namedFields do
                 write 4 "this.%s = %s;" (upperFirst field.Name) field.Name
@@ -282,6 +323,22 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "return (%s)NativeImplClient.PopInt();" (upperFirst name)
+            write 2 "}"
+        | TypeDef niType ->
+            // C# has no proper typedefs, so we just emit push/pop that pass through to the real thing
+            // (at least it will make wrapper funcs a bit clearer)
+            // PUSH
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+            write 2 "private static void %s__Push(%s value, bool isReturn)" name (typeToCsString typeMap niType)
+            write 2 "{"
+            write 3 "__%s__Push(value, isReturn);" (typeToName niType)
+            write 2 "}"
+            // POP
+            blank()
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+            write 2 "private static %s %s__Pop()" (typeToCsString typeMap niType) name
+            write 2 "{"
+            write 3 "return __%s__Pop();" (typeToName niType)
             write 2 "}"
         | _ ->
             write 2 "// %A" userType
@@ -332,6 +389,9 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     write 1 "{"
     write 2 "private static ModuleHandle _module;"
 
+    let typeMap =
+        userTypesAndGenerics m
+
     // top level functions
     for namedFunc in moduleMethods do
         write 2 "private static ModuleMethodHandle _%s;" namedFunc.Name
@@ -349,11 +409,9 @@ let writeLibrary (m: Module) (writer: TextWriter) =
 
     // globals declaration
     for name, type_ in globals do
-        write 2 "public static %s %s { get; private set; }" (typeToCsString type_) (upperFirst name)
+        write 2 "public static %s %s { get; private set; }" (typeToCsString typeMap type_) (upperFirst name)
 
     // user types ====================
-    let typeMap =
-        userTypesAndGenerics m
     let containsRefsMap =
         createContainsRefsMap typeMap
     let renderFunc =
@@ -365,7 +423,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     // top-level functions ===========
     for namedFunc in moduleMethods do
         blank()
-        write 2 "public static %s %s(%s)" (typeToCsString namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined namedFunc.Args)
+        write 2 "public static %s %s(%s)" (typeToCsString typeMap namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined typeMap namedFunc.Args)
         write 2 "{"
         // push args in reverse
         for argName, argType in namedFunc.Args |> List.rev do
@@ -434,9 +492,9 @@ let writeLibrary (m: Module) (writer: TextWriter) =
                     write 4 "{"
                     pushValue writer 5 method.Returns invocation (Direct true)
                     write 4 "}"
-                    write 4 "catch (%s e)" (typeToCsString eType)
+                    write 4 "catch (%s e)" (typeToCsString typeMap eType)
                     write 4 "{"
-                    write 5 "NativeImplClient.SetException(_%s);" (lowerFirst (typeToCsString eType))
+                    write 5 "NativeImplClient.SetException(_%s);" (lowerFirst (typeToCsString typeMap eType))
                     write 5 "e.Push();"
                     write 4 "}"
                 | None ->

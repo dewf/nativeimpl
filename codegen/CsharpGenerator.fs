@@ -270,9 +270,15 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                     write 2 "}"
                 | _ ->
                     failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+            // ignore built-ins below:
+            | Bool
+            | Int8 | Int16 | Int32 | Int64
+            | Float32 | Float64
+            | StringType ->
+                write 2 "// built-in array type: %s" (typeToCsString typeMap gType)
             | _ ->
                 // we don't handle any of the primitives, those are all built-in
-                write 2 "// push/pop for generic %s" (typeToCsString typeMap gType)
+                write 2 "// TODO: push/pop for generic %s" (typeToCsString typeMap gType)
         | _ ->
             write 2 "// %s" (typeToCsString typeMap gType)
     | UserOrGeneric.User userType ->

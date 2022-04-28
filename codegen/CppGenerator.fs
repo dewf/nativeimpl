@@ -151,12 +151,12 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             | Bool -> "popBoolArrayInternal"
             | Int32 -> "popIntArrayInternal"
             | StringType -> "popStringArrayInternal"
-            | StructType name -> sprintf "%sArray__pop" name
-            | TypedefType name -> sprintf "%sArray__pop" name
-            | DelegateType name -> sprintf "%sArray__pop" name
-            | ArrayType _ -> sprintf "%sArray__pop" (typeToName niType)
-            | EnumType name -> sprintf "%sArray__pop" name
-            | SumType name -> sprintf "%sArray__pop" name
+            | StructType name -> sprintf "__%sArray__pop" name
+            | TypedefType name -> sprintf "__%sArray__pop" name
+            | DelegateType name -> sprintf "__%sArray__pop" name
+            | ArrayType _ -> sprintf "__%sArray__pop" (typeToName niType)
+            | EnumType name -> sprintf "__%sArray__pop" name
+            | SumType name -> sprintf "__%sArray__pop" name
             | TupleType _ -> sprintf "__%sArray__pop" (typeToName niType)
             | _ -> sprintf "// (pop not yet supported: %A)" type_
         match context with
@@ -239,21 +239,21 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | StringType ->
             write level "pushStringArrayInternal(%s);" content
         | ArrayType niType ->
-            write level "%sArrayArray__push(%s, %s);" (typeToName niType) content (isReturnString())
+            write level "__%sArrayArray__push(%s, %s);" (typeToName niType) content (isReturnString())
         | MapType (keyType, valueType) ->
-            write level "%s%sMapArray__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
+            write level "__%s%sMapArray__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
         | TupleType _ ->
             write level "__%sArray__push(%s, %s);" (typeToName niType) content (isReturnString())
         | StructType name ->
-            write level "%sArray__push(%s, %s);" name content (isReturnString())
+            write level "__%sArray__push(%s, %s);" name content (isReturnString())
         | DelegateType name ->
-            write level "%sArray__push(%s, %s);" name content (isReturnString()) // currently doesn't use the isReturn' value, but lets us emit array stuff more easily
+            write level "__%sArray__push(%s, %s);" name content (isReturnString()) // currently doesn't use the isReturn' value, but lets us emit array stuff more easily
         | TypedefType name ->
-            write level "%sArray__push(%s, %s);" name content (isReturnString())
+            write level "__%sArray__push(%s, %s);" name content (isReturnString())
         | EnumType name ->
-            write level "%sArray__push(%s, %s);" name content (isReturnString())
+            write level "__%sArray__push(%s, %s);" name content (isReturnString())
         | SumType name ->
-            write level "%sArray__push(%s, %s);" name content (isReturnString())
+            write level "__%sArray__push(%s, %s);" name content (isReturnString())
         | _ ->
             write level "// (push not yet supported: ArrayType %A)" niType
     | MapType (keyType, valueType) ->
@@ -468,7 +468,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             let arrayCommon (name: string) (elementType: NIType) =
                 // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
                 // PUSH ========
-                write 0 "void %sArray__push(std::vector<%s> values, bool isReturn) {" name (typeToCppString elementType)
+                write 0 "void __%sArray__push(std::vector<%s> values, bool isReturn) {" name (typeToCppString elementType)
                 write 1 "for (auto v = values.rbegin(); v != values.rend(); v++) {" // in reverse!
                 pushValue writer 2 elementType "*v" (Indirect "isReturn")
                 write 1 "}"
@@ -476,7 +476,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 0 "}"
                 // POP =========
                 blank()
-                write 0 "std::vector<%s> %sArray__pop() {" (typeToCppString elementType) name
+                write 0 "std::vector<%s> __%sArray__pop() {" (typeToCppString elementType) name
                 write 1 "std::vector<%s> __ret;" (typeToCppString elementType)
                 write 1 "auto count = ni_popSizeT();"
                 write 1 "for (auto i = 0; i < count; i++) {"
@@ -487,7 +487,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 0 "}"
             let tupleArray (tupleTypes: NIType list) =
                 // PUSH ========
-                write 0 "void %sArray__push(%s values, bool isReturn) {" (typeToName arrayType) (typeToCppString gType)
+                write 0 "void __%sArray__push(%s values, bool isReturn) {" (typeToName arrayType) (typeToCppString gType)
                 for i, type_ in tupleTypes |> List.indexed do
                     write 1 "std::vector<%s> _%dvalues;" (typeToCppString type_) i
                 write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
@@ -500,7 +500,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 0 "}"
                 // POP =========
                 blank()
-                write 0 "%s %sArray__pop() {" (typeToCppString gType) (typeToName arrayType)
+                write 0 "%s __%sArray__pop() {" (typeToCppString gType) (typeToName arrayType)
                 for i, type_ in tupleTypes |> List.indexed do
                     popValue writer 1 (ArrayType type_) (Variable (sprintf "_%dvalues" i))
                 write 1 "%s __ret;" (typeToCppString gType)
@@ -519,7 +519,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 match typeMap[structName] with
                 | UserOrGeneric.User (StructDef namedFields) ->
                     // PUSH ===========
-                    write 0 "void %sArray__push(%s values, bool isReturn) {" structName (typeToCppString gType)
+                    write 0 "void __%sArray__push(%s values, bool isReturn) {" structName (typeToCppString gType)
                     for field in namedFields |> List.rev do
                         write 1 "std::vector<%s> %s_values;" (typeToCppString field.Type_) field.Name
                     write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
@@ -531,7 +531,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                     write 0 "}"
                     // POP ============
                     blank()
-                    write 0 "%s %sArray__pop() {" (typeToCppString gType) structName
+                    write 0 "%s __%sArray__pop() {" (typeToCppString gType) structName
                     for field in namedFields do
                         popValue writer 1 (ArrayType field.Type_) (Variable (sprintf "%s_values" field.Name))
                     write 1 "std::vector<%s> __ret;" structName
@@ -564,7 +564,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 arrayCommon (typeToName arrayType) arrayType
             | EnumType name ->
                 // PUSH ================
-                write 0 "void %sArray__push(std::vector<%s> values, bool isReturn) {" name name
+                write 0 "void __%sArray__push(std::vector<%s> values, bool isReturn) {" name name
                 write 1 "std::vector<int> intValues;"
                 write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
                 write 2 "intValues.push_back((int)*i);"
@@ -573,7 +573,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 0 "}"
                 // POP ==================
                 blank()
-                write 0 "std::vector<%s> %sArray__pop() {" name name
+                write 0 "std::vector<%s> __%sArray__pop() {" name name
                 write 1 "auto intValues = popIntArrayInternal();"
                 write 1 "std::vector<%s> __ret;" name
                 write 1 "for (auto i = 0; i < intValues.size(); i++) {"

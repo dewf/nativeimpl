@@ -46,6 +46,17 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
             failwithf "typeToCsString: failed to find typedef definition"
     | _ -> "(typeToString: not yet supported)"
 
+let newCsArray (typeMap: Map<string, UserOrGeneric>) (ofType: NIType) (countVar: string) =
+    match ofType with
+    | ArrayType (ArrayType (ArrayType niType)) ->
+        sprintf "new %s[%s][][][]" (typeToCsString typeMap niType) countVar
+    | ArrayType (ArrayType niType) ->
+        sprintf "new %s[%s][][]" (typeToCsString typeMap niType) countVar
+    | ArrayType niType ->
+        sprintf "new %s[%s][]" (typeToCsString typeMap niType) countVar
+    | _ ->
+        sprintf "new %s[%s]" (typeToCsString typeMap ofType) countVar
+
 let rec typeToName = function
     | UnitType -> failwith "typeToName: 'unit' type as name?"
     | Bool -> "Bool"
@@ -223,7 +234,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                 write 2 "private static %s[] __%sArray__Pop()" (typeToCsString typeMap elementType) (typeToName elementType)
                 write 2 "{"
                 write 3 "var count = (int)NativeImplClient.PopSizeT();"
-                write 3 "var ret = new %s[count];" (typeToCsString typeMap elementType)
+                write 3 "var ret = %s;" (newCsArray typeMap elementType "count")
                 write 3 "for (var i = 0; i < count; i++)"
                 write 3 "{"
                 popValue writer 4 elementType (ExistingVar "ret[i]")
@@ -294,7 +305,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                     write 2 "{"
                     write 3 "var count = items.Length;"
                     for i, field in namedFields |> List.indexed do
-                        write 3 "var f%dValues = new %s[count];" i (typeToCsString typeMap field.Type_) // hmm shit, C# syntax here makes this broken/annoying
+                        write 3 "var f%dValues = %s;" i (newCsArray typeMap field.Type_ "count")
                     write 3 "for (var i = 0; i < count; i++)"
                     write 3 "{"
                     for i, field in namedFields |> List.indexed do

@@ -869,7 +869,11 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
         | InterfaceDef namedFunctions ->
             renderHeaderInterface writer name namedFunctions
         | DelegateDef info ->
-            write 0 "typedef %s %s(%s);" (typeToCppString info.Returns) name (joinedArgs info.Args)
+            let maybeThrows =
+                match info.Throws with
+                | Some exc -> sprintf " // throws %s" (typeToCppString exc)
+                | None -> ""
+            write 0 "typedef %s %s(%s);%s" (typeToCppString info.Returns) name (joinedArgs info.Args) maybeThrows
         | TypeDef actual ->
             write 0 "typedef %s %s;" (typeToCppString actual) name
         | EnumDef values ->

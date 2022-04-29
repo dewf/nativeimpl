@@ -148,7 +148,7 @@ type SumTypeValue = {
 type DelegateInfo = {
     Args: (string * NIType) list
     Returns: NIType
-    // no exceptions for now
+    Throws: NIType option
 }
 
 type UserType =
@@ -381,7 +381,7 @@ let parseModule (input: TokenAndLocation list) =
         | Lookahead 1 ([DelegateToken], _, etc) ->
             parseNamedFunction etc
             |> Option.map (fun (nf, etc2) ->
-                (UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns }), etc2))
+                (UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns; Throws = nf.Throws }), etc2))
         | Lookahead 1 ([TypedefToken], line, etc) ->
             let actual, etc2 =
                 parseType etc
@@ -476,8 +476,10 @@ let resolveDelegateTypes (userTypes: Map<string, UserType>) (info: DelegateInfo)
         |> List.map (fun (name, argType) -> (name, resolveType userTypes argType))
     let nextReturns =
         resolveType userTypes info.Returns
-    { info with Args = nextArgs; Returns = nextReturns }
-
+    let nextThrows =
+        info.Throws
+        |> Option.map (resolveType userTypes)
+    { info with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
 let resolveSumTypeTypes (userTypes: Map<string, UserType>) (values: SumTypeValue list) =
     values

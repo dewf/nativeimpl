@@ -86,11 +86,17 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
             | DelegateDef info ->
                 let retTypes =
                     typeAndSubTypes info.Returns
+                let throwTypes =
+                    match info.Throws with
+                    | Some exc ->
+                        typeAndSubTypes exc
+                    | None ->
+                        []
                 let argTypes =
                     info.Args
                     |> List.map snd
                     |> List.collect typeAndSubTypes
-                retTypes @ argTypes
+                retTypes @ throwTypes @ argTypes
             | TypeDef actual ->
                 typeAndSubTypes actual
             | EnumDef _ ->
@@ -246,13 +252,18 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                         let nextAcc =
                             let _, acc =
                                 processType info.Returns acc
+                            let _, acc =
+                                match info.Throws with
+                                | Some exc ->
+                                    processType exc acc
+                                | None ->
+                                    false, acc
                             let acc =
                                 (acc, info.Args)
                                 ||> List.fold (fun acc (_, argType) ->
                                     let _, acc =
                                         processType argType acc
                                     acc)
-                            // no 'throws' yet
                             acc
                         false, nextAcc
                     | TypeDef niType ->
@@ -400,7 +411,13 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                     | DelegateDef info ->
                         let withReturn =
                             renderType info.Returns alreadyRendered
-                        (withReturn, info.Args)
+                        let withThrows =
+                            match info.Throws with
+                            | Some exc ->
+                                renderType exc withReturn
+                            | None ->
+                                withReturn
+                        (withThrows, info.Args)
                         ||> List.fold (fun already2 (_, argType) ->
                             renderType argType already2)
                     | TypeDef actual ->

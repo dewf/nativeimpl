@@ -145,6 +145,11 @@ void execServerFunc(int id)
     ni_execServerFunc(id);
 }
 
+ni_ExceptionRef execServerFuncWithExceptions(int id)
+{
+    return ni_execServerFuncWithExceptions(id);
+}
+
 void releaseServerFunc(int id)
 {
     ni_releaseServerFunc(id);

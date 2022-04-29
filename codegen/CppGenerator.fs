@@ -281,14 +281,11 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
     write 1 "auto wrapper = [cf](%s) {" (joinedArgs info.Args)
     for argName, argType in info.Args |> List.rev do
         pushValue writer 2 argType argName (Direct false)
-    write 2 "cf->remoteExec();"
     match info.Throws with
-    | Some (ExceptionType exceptionName as exc) ->
-        write 2 "if (ni_currentException == %s) {" (lowerFirst exceptionName)
-        popValue writer 3 exc ExceptionContext
-        write 2 "}"
-    | _ ->
-        ()
+    | Some _ ->
+        write 2 "cf->remoteExecWithExceptions();"
+    | None ->
+        write 2 "cf->remoteExec();"
     if typeContainsRefs info.Returns then
         popValue writer 2 info.Returns SafeReturn
     else

@@ -49,7 +49,8 @@ extern "C" {
 	TESTLIBRARY_API void pushClientFunc(int id);
 	TESTLIBRARY_API int popServerFunc();
 
-	TESTLIBRARY_API void execServerFunc(int id); // can't throw exceptions
+	TESTLIBRARY_API void execServerFunc(int id);
+	TESTLIBRARY_API ni_ExceptionRef execServerFuncWithExceptions(int id);
 	TESTLIBRARY_API void releaseServerFunc(int id);
 
 	TESTLIBRARY_API void invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID);

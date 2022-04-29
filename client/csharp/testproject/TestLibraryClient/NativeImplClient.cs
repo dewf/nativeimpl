@@ -164,6 +164,9 @@ namespace TestLibraryClient
         internal static extern void execServerFunc(int id);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr execServerFuncWithExceptions(int id);
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void releaseServerFunc(int id);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -326,7 +329,7 @@ namespace TestLibraryClient
             var exceptionHandle = NativeMethods.invokeModuleMethodWithExceptions(method.Handle);
             if (exceptionHandle != IntPtr.Zero)
             {
-                throw ExceptionBuilderDelegates[exceptionHandle]();
+                ExceptionBuildAndThrowDelegates[exceptionHandle]();
             }
         }
 
@@ -486,6 +489,14 @@ namespace TestLibraryClient
             {
                 NativeMethods.execServerFunc(_id);
             }
+            public void ExecWithExceptions()
+            {
+                var exceptionHandle = NativeMethods.execServerFuncWithExceptions(_id);
+                if (exceptionHandle != IntPtr.Zero)
+                {
+                    ExceptionBuildAndThrowDelegates[exceptionHandle]();
+                }
+            }
         }
         
         public static void InvokeInterfaceMethod(InterfaceMethodHandle method, int serverId)
@@ -498,7 +509,7 @@ namespace TestLibraryClient
             var exceptionHandle = NativeMethods.invokeInterfaceMethodWithExceptions(method.Handle, serverId);
             if (exceptionHandle != IntPtr.Zero)
             {
-                throw ExceptionBuilderDelegates[exceptionHandle]();
+                ExceptionBuildAndThrowDelegates[exceptionHandle]();
             }
         }
 
@@ -568,11 +579,10 @@ namespace TestLibraryClient
         }
         // TODO: these definitely need to be thread-safe
         private static int _nextClientObjectId = 1;
-        private static readonly Dictionary<int, ClientObject> ClientObjects = new Dictionary<int, ClientObject>();
+        private static readonly Dictionary<int, ClientObject> ClientObjects = new();
 
         public delegate void MethodWrapper(ClientObject obj);
-        private static readonly Dictionary<IntPtr, MethodWrapper> MethodWrappers =
-            new Dictionary<IntPtr, MethodWrapper>();
+        private static readonly Dictionary<IntPtr, MethodWrapper> MethodWrappers = new();
         public static void SetClientMethodWrapper(InterfaceMethodHandle method, MethodWrapper wrapper)
         {
             MethodWrappers[method.Handle] = wrapper;
@@ -633,7 +643,7 @@ namespace TestLibraryClient
             }
         }
         // todo: needs to be thread-safe
-        private static readonly List<ServerObject> SafeArea = new List<ServerObject>(); // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
+        private static readonly List<ServerObject> SafeArea = new(); // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
 
         // call this after receiving an interface (maybe even a function, eventually?) as a return value
         public static void ServerClearSafetyArea()
@@ -673,13 +683,12 @@ namespace TestLibraryClient
             Console.WriteLine("=========================================");
         }
 
-        public delegate Exception ExceptionBuilderDelegate();
+        public delegate void ExceptionBuildAndThrowDelegate();
 
-        private static readonly Dictionary<IntPtr, ExceptionBuilderDelegate> ExceptionBuilderDelegates =
-            new Dictionary<IntPtr, ExceptionBuilderDelegate>();
-        public static void SetExceptionBuilder(ExceptionHandle eh, ExceptionBuilderDelegate builder)
+        private static readonly Dictionary<IntPtr, ExceptionBuildAndThrowDelegate> ExceptionBuildAndThrowDelegates = new();
+        public static void SetExceptionBuilder(ExceptionHandle eh, ExceptionBuildAndThrowDelegate builder)
         {
-            ExceptionBuilderDelegates[eh.Handle] = builder;
+            ExceptionBuildAndThrowDelegates[eh.Handle] = builder;
         }
         public static void SetException(ExceptionHandle eh)
         {

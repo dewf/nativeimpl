@@ -201,6 +201,16 @@ void ClientFunc::remoteExec()
 	ni_clientFuncExec(id);
 }
 
+void ClientFunc::remoteExecWithExceptions()
+{
+	ni_clientFuncExec(id);
+	if (ni_currentException != nullptr) {
+		auto e = ni_currentException;
+		ni_currentException = nullptr;
+		ni_buildAndthrow(e);
+	}
+}
+
 ClientFunc::~ClientFunc()
 {
 	// release remote function, we're done with it

@@ -535,8 +535,77 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 4 "ServerDispose();"
             write 3 "}"
             write 2 "}"
-        | _ ->
-            write 2 "// %A" userType
+        | ExceptionDef fields ->
+            write 2 "public class %s : Exception" name
+            write 2 "{"
+            for f in fields do
+                write 3 "public readonly %s %s;" (typeToCsString typeMap f.Type_) (upperFirst f.Name)
+            write 3 "public %s(%s) : base(\"%s\")" name (fieldsJoined typeMap fields) name
+            write 3 "{"
+            for f in fields do
+                write 4 "%s = %s;" (upperFirst f.Name) f.Name
+            write 3 "}"
+            write 3 "internal void PushAndSet()"
+            write 3 "{"
+            for f in fields |> List.rev do
+                pushValue writer 4 f.Type_ (upperFirst f.Name) (Direct true) // true since pushed exceptions are basically returns, any reference fields need to be safely pushed
+            write 4 "NativeImplClient.SetException(_%s);" (lowerFirst name)
+            write 3 "}"
+            write 3 "internal static void BuildAndThrow()"
+            write 3 "{"
+            for f in fields do
+                popValue writer 4 f.Type_ (NewVariable f.Name)
+            let namesJoined =
+                [for f in fields -> f.Name] |> String.concat ", "
+            write 4 "throw new %s(%s);" name namesJoined
+            write 3 "}"
+            write 2 "}"
+        | DelegateDef info ->
+            write 2 "public delegate %s %s(%s);" (typeToCsString typeMap info.Returns) name (argsJoined typeMap info.Args)
+            // push
+            blank()
+            write 2 "private static void %s__Push(%s callback)" name name
+            write 2 "{"
+            write 3 "void CallbackWrapper()"
+            write 3 "{"
+            for argName, argType in info.Args do
+                popValue writer 4 argType (NewVariable argName)
+            let invocation =
+                sprintf "callback(%s)" (argNamesJoined info.Args)
+            match info.Throws with
+            | Some (ExceptionType exceptionName as exc) ->
+                write 4 "try"
+                write 4 "{"
+                pushValue writer 5 info.Returns invocation (Direct true)
+                write 4 "}"
+                write 4 "catch (%s e)" (upperFirst exceptionName)
+                write 4 "{"
+                write 5 "e.PushAndSet();"
+                write 4 "}"
+            | _ ->
+                pushValue writer 5 info.Returns invocation (Direct true)
+            write 3 "}"
+            write 3 "NativeImplClient.PushClientFuncVal(CallbackWrapper, Marshal.GetFunctionPointerForDelegate(callback));"
+            write 2 "}"
+            // pop
+            blank()
+            write 2 "private static %s %s__Pop()" name name
+            write 2 "{"
+            write 3 "var id = NativeImplClient.PopServerFuncValId();"
+            write 3 "var remoteFunc = new NativeImplClient.ServerFunc(id);"
+            write 3 "%s Wrapper(%s)" (typeToCsString typeMap info.Returns) (argsJoined typeMap info.Args)
+            write 3 "{"
+            for argName, argType in info.Args |> List.rev do
+                pushValue writer 4 argType argName (Direct false)
+            match info.Throws with
+            | Some _ ->
+                write 4 "remoteFunc.ExecWithExceptions();"
+            | None ->
+                write 4 "remoteFunc.Exec();"
+            popValue writer 4 info.Returns Return
+            write 3 "}"
+            write 3 "return Wrapper;"
+            write 2 "}"
 
 let writeLibrary (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -576,7 +645,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     write 0 "using System.Runtime.CompilerServices;"
     write 0 "using System.Collections.Generic;"
     write 0 "using System.Linq;"
-    //write 0 "using System.Runtime.InteropServices;"
+    write 0 "using System.Runtime.InteropServices;"
     write 0 ""
     write 0 "namespace %sClient" m.Name
     write 0 "{"
@@ -658,7 +727,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
         blank()
         for name, _ in exceptions do
             write 3 "_%s = NativeImplClient.GetException(_module, \"%s\");" (lowerFirst name) name
-            write 3 "NativeImplClient.SetExceptionBuilder(_%s, %s.Pop);" (lowerFirst name) name
+            write 3 "NativeImplClient.SetExceptionBuilder(_%s, %s.BuildAndThrow);" (lowerFirst name) name
 
     // interface method handles, wrappers
     if not interfaces.IsEmpty then
@@ -702,71 +771,6 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     write 2 "{"
     write 3 "NativeImplClient.Shutdown();"
     write 2 "}"
-
-//    // delegate declarations + push/pop
-//    for name, info in delegates do
-//        blank()
-//        write 2 "public delegate %s %s(%s);" (typeToCsString info.Returns) name (argsJoined info.Args)
-//        // push
-//        blank()
-//        write 2 "private static void %s__Push(%s callback)" name name
-//        write 2 "{"
-//        write 3 "void CallbackWrapper()"
-//        write 3 "{"
-//        for argName, argType in info.Args do
-//            popValue writer 4 argType (NewVariable argName)
-//        let invocation =
-//            sprintf "callback(%s)" (argNamesJoined info.Args)
-//        pushValue writer 4 info.Returns invocation true
-//        write 3 "}"
-//        write 3 "NativeImplClient.PushClientFuncVal(CallbackWrapper, Marshal.GetFunctionPointerForDelegate(callback));"
-//        write 2 "}"
-//        // pop
-//        blank()
-//        write 2 "private static %s %s__Pop()" name name
-//        write 2 "{"
-//        write 3 "var id = NativeImplClient.PopServerFuncValId();"
-//        write 3 "var remoteFunc = new NativeImplClient.ServerFunc(id);"
-//        write 3 "%s Wrapper(%s)" (typeToCsString info.Returns) (argsJoined info.Args)
-//        write 3 "{"
-//        for argName, argType in info.Args |> List.rev do
-//            pushValue writer 4 argType argName false
-//        write 4 "remoteFunc.Exec();"
-//        popValue writer 4 info.Returns Return
-//        write 3 "}"
-//        write 3 "return Wrapper;"
-//        write 2 "}"
-
-//    // interface stuff
-//    for ifaceName, methods in interfaces do
-
-//    // exception bodies
-//    for name, fields in exceptions do
-//        blank()
-//        write 2 "public class %s : Exception" name
-//        write 2 "{"
-//        for f in fields do
-//            write 3 "public readonly %s %s;" (typeToCsString f.Type_) (upperFirst f.Name)
-//        write 3 "public %s(%s) : base(\"%s\")" name (fieldsJoined fields) name
-//        write 3 "{"
-//        for f in fields do
-//            write 4 "%s = %s;" (upperFirst f.Name) f.Name
-//        write 3 "}"
-//        write 3 "public void Push()"
-//        write 3 "{"
-//        for f in fields |> List.rev do
-//            pushValue writer 4 f.Type_ (upperFirst f.Name) false // isReturn = false since we're still holding a reference to whatever it is (not a return value from a function)
-//        write 3 "}"
-//        write 3 "public static %s Pop()" name
-//        write 3 "{"
-//        for f in fields do
-//            popValue writer 4 f.Type_ (NewVariable f.Name)
-//        let namesJoined =
-//            [for f in fields -> f.Name] |> String.concat ", "
-//        write 4 "return new %s(%s);" name namesJoined
-//        write 3 "}"
-//        write 2 "}"
-
     write 1 "}" // end of static class <module name>
     //
     write 0 "}" // end of namespace

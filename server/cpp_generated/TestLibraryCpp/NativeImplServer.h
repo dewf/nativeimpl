@@ -12,7 +12,8 @@ protected:
 public:
 	ClientFunc(int id)
 		:id(id) {}
-	void remoteExec(); // remote exec
+	void remoteExec();
+	void remoteExecWithExceptions();
 	virtual ~ClientFunc(); // will release remote (decreate remote refcount)
 };
 

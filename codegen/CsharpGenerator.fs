@@ -46,14 +46,10 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
             failwithf "typeToCsString: failed to find typedef definition"
     | _ -> "(typeToString: not yet supported)"
 
-let newCsArray (typeMap: Map<string, UserOrGeneric>) (ofType: NIType) (countVar: string) =
+let rec newCsArray (typeMap: Map<string, UserOrGeneric>) (ofType: NIType) (countVar: string) =
     match ofType with
-    | ArrayType (ArrayType (ArrayType niType)) ->
-        sprintf "new %s[%s][][][]" (typeToCsString typeMap niType) countVar
-    | ArrayType (ArrayType niType) ->
-        sprintf "new %s[%s][][]" (typeToCsString typeMap niType) countVar
     | ArrayType niType ->
-        sprintf "new %s[%s][]" (typeToCsString typeMap niType) countVar
+        sprintf "%s[]" (newCsArray typeMap niType countVar)
     | _ ->
         sprintf "new %s[%s]" (typeToCsString typeMap ofType) countVar
 

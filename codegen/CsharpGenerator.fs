@@ -9,7 +9,7 @@ open Common
 
 let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
         {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId, out bool inSafetyArea);
+            NativeImplClient.PopInstanceId(out var id, out var isClientId, out var inSafetyArea);
             if (!isClientId)
             {
                 return new Server%%IFACE%%(id);

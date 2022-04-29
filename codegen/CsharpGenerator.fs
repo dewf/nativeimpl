@@ -1,6 +1,7 @@
 ﻿module CsharpGenerator
 
 open System.IO
+open System.Text.RegularExpressions
 open Parser
 
 open Util
@@ -8,10 +9,10 @@ open Common
 
 let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
         {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId);
+            NativeImplClient.PopInstanceId(out var id, out var isClientId, out bool inSafetyArea);
             if (!isClientId)
             {
-                return new Server_%%IFACE%%(id);
+                return new Server%%IFACE%%(id);
             }
             else
             {
@@ -191,7 +192,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
     blank()
     match content with
     | UserOrGeneric.FwdInterface ->
-        failwith "renderLibraryUserTypes: shouldn't see this (FwdInterface)"
+        () // C# doesn't require forward declarations :)
     | UserOrGeneric.Generic gType ->
         match gType with
         | TupleType tupleTypes ->
@@ -205,7 +206,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 2 "}"
             // POP ==============
             blank()
-            write 2 "private static (%s) __%s__Pop()" (typesJoined) (typeToName gType)
+            write 2 "private static (%s) __%s__Pop()" typesJoined (typeToName gType)
             write 2 "{"
             for i, type_ in tupleTypes |> List.indexed do
                 popValue writer 3 type_ (NewVariable (sprintf "_%d" i))
@@ -468,6 +469,72 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 2 "{"
             write 3 "return __%s__Pop();" (typeToName niType)
             write 2 "}"
+        | InterfaceDef namedFunctions ->
+            blank()
+            // raw interface itself
+            write 2 "public interface %s : IDisposable" (upperFirst name)
+            write 2 "{"
+            for method in namedFunctions do
+                let throwsComment =
+                    match method.Throws with
+                    | Some eType -> sprintf " // throws %s" (typeToCsString typeMap eType)
+                    | None -> ""
+                write 3 "%s %s(%s);%s" (typeToCsString typeMap method.Returns) (upperFirst method.Name) (argsJoined typeMap method.Args) throwsComment
+            write 2 "}"
+            // pop template
+            blank()
+            writer.WriteLine(Regex(@"%%IFACE%%").Replace(interfacePopTemplate, name))
+            // client base class
+            blank()
+            write 2 "public abstract class Client%s : NativeImplClient.ClientObject, %s" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "public virtual void Dispose()"
+            write 3 "{"
+            write 4 "// override if necessary"
+            write 3 "}"
+            // abstract methods for client base class
+            for method in namedFunctions do
+                let throwsComment =
+                    match method.Throws with
+                    | Some eType -> sprintf " // throws %s" (typeToCsString typeMap eType)
+                    | None -> ""
+                write 3 "public abstract %s %s(%s);%s" (typeToCsString typeMap method.Returns) (upperFirst method.Name) (argsJoined typeMap method.Args) throwsComment
+            write 2 "}"
+            // server wrapper
+            blank()
+            write 2 "private class Server%s : NativeImplClient.ServerObject, %s" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "public Server%s(int id) : base(id)" name
+            write 3 "{"
+            write 3 "}"
+            // server wrapper methods
+            for method in namedFunctions do
+                blank()
+                write 3 "public %s %s(%s)" (typeToCsString typeMap method.Returns) (upperFirst method.Name) (argsJoined typeMap method.Args)
+                write 3 "{"
+                // push args
+                for argName, argType in method.Args do
+                    pushValue writer 4 argType argName (Direct false)
+                // invoke remote
+                match method.Throws with
+                | Some _ ->
+                    write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.Name
+                | None ->
+                    write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" (lowerFirst name) method.Name
+                // return (mindful of safety area nonsense)
+                if containsRefs method.Returns then
+                    popValue writer 4 method.Returns (NewVariable "__ret")
+                    write 4 "NativeImplClient.ServerClearSafetyArea();"
+                    write 4 "return __ret;"
+                else
+                    popValue writer 4 method.Returns Return
+                write 3 "}"
+            blank()
+            write 3 "public void Dispose()"
+            write 3 "{"
+            write 4 "ServerDispose();"
+            write 3 "}"
+            write 2 "}"
         | _ ->
             write 2 "// %A" userType
 
@@ -526,10 +593,9 @@ let writeLibrary (m: Module) (writer: TextWriter) =
 
     // interfaces
     for name, methods in interfaces do
-        write 2 "private static InterfaceHandle _%s;" name
+        write 2 "private static InterfaceHandle _%s;" (lowerFirst name)
         for method in methods do
-            write 2 "private static InterfaceMethodHandle _%s_%s;" name method.Name
-        blank()
+            write 2 "private static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
 
     // exceptions
     for name, _ in exceptions do
@@ -596,18 +662,19 @@ let writeLibrary (m: Module) (writer: TextWriter) =
 
     // interface method handles, wrappers
     if not interfaces.IsEmpty then
-        blank()
         for ifaceName, methods in interfaces do
-            write 3 "_%s = NativeImplClient.GetInterface(_module, \"%s\");" ifaceName ifaceName
+            blank()
+            write 3 "_%s = NativeImplClient.GetInterface(_module, \"%s\");" (lowerFirst ifaceName) ifaceName
             // methods
-            for method in methods do
-                write 3 "_%s_%s = NativeImplClient.GetInterfaceMethod(_%s, \"%s\");" ifaceName method.Name ifaceName method.Name
+            if not methods.IsEmpty then
+                for method in methods do
+                    write 3 "_%s_%s = NativeImplClient.GetInterfaceMethod(_%s, \"%s\");" (lowerFirst ifaceName) (lowerFirst method.Name) (lowerFirst ifaceName) method.Name
             // method wrappers
             for method in methods do
                 blank()
-                write 3 "NativeImplClient.SetClientMethodWrapper(_%s_%s, delegate(NativeImplClient.ClientObject obj)" ifaceName method.Name
+                write 3 "NativeImplClient.SetClientMethodWrapper(_%s_%s, delegate(NativeImplClient.ClientObject obj)" (lowerFirst ifaceName) method.Name
                 write 3 "{"
-                write 4 "var inst = (Client_%s) obj;" ifaceName
+                write 4 "var inst = (Client%s) obj;" ifaceName
                 // pop args
                 for argName, argType in method.Args do
                     popValue writer 4 argType (NewVariable argName)
@@ -672,66 +739,6 @@ let writeLibrary (m: Module) (writer: TextWriter) =
 
 //    // interface stuff
 //    for ifaceName, methods in interfaces do
-//        blank()
-//        // raw interface itself
-//        write 2 "public interface %s : IDisposable" ifaceName
-//        write 2 "{"
-//        for method in methods do
-//            let throwsComment =
-//                match method.Throws with
-//                | Some eType -> sprintf " // throws %s" (typeToCsString eType)
-//                | None -> ""
-//            write 3 "%s %s(%s);%s" (typeToCsString method.Returns) (upperFirst method.Name) (argsJoined method.Args) throwsComment
-//        write 2 "}"
-//        // pop template
-//        blank()
-//        writer.WriteLine(Regex(@"%%IFACE%%").Replace(interfacePopTemplate, ifaceName))
-//        // client base class
-//        blank()
-//        write 2 "public abstract class Client_%s : NativeImplClient.ClientObject, %s" ifaceName ifaceName
-//        write 2 "{"
-//        write 3 "public virtual void Dispose()"
-//        write 3 "{"
-//        write 4 "// override if necessary"
-//        write 3 "}"
-//        // abstract methods for client base class
-//        for method in methods do
-//            let throwsComment =
-//                match method.Throws with
-//                | Some eType -> sprintf " // throws %s" (typeToCsString eType)
-//                | None -> ""
-//            write 3 "public abstract %s %s(%s);%s" (typeToCsString method.Returns) (upperFirst method.Name) (argsJoined method.Args) throwsComment
-//        write 2 "}"
-//        // server wrapper
-//        blank()
-//        write 2 "private class Server_%s : NativeImplClient.ServerObject, %s" ifaceName ifaceName
-//        write 2 "{"
-//        write 3 "public Server_%s(int id) : base(id)" ifaceName
-//        write 3 "{"
-//        write 3 "}"
-//        // server wrapper methods
-//        for method in methods do
-//            blank()
-//            write 3 "public %s %s(%s)" (typeToCsString method.Returns) (upperFirst method.Name) (argsJoined method.Args)
-//            write 3 "{"
-//            // push args
-//            for argName, argType in method.Args do
-//                pushValue writer 4 argType argName false
-//            // invoke remote
-//            match method.Throws with
-//            | Some _ ->
-//                write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" ifaceName method.Name
-//            | None ->
-//                write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" ifaceName method.Name
-//            // return
-//            popValue writer 4 method.Returns Return
-//            write 3 "}"
-//        blank()
-//        write 3 "public void Dispose()"
-//        write 3 "{"
-//        write 4 "ServerDispose();"
-//        write 3 "}"
-//        write 2 "}"
 
 //    // exception bodies
 //    for name, fields in exceptions do

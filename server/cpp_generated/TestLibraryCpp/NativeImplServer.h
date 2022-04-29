@@ -45,6 +45,7 @@ extern "C" {
 	void nativeLibraryShutdown();
 	void ni_dumpTables();
 	void ni_execServerFunc(int id);
+	ni_ExceptionRef ni_execServerFuncWithExceptions(int id);
 	void ni_releaseServerFunc(int id);
 	void ni_releaseServerInst(int id);
 	void ni_clearServerSafetyArea();

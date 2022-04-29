@@ -104,47 +104,32 @@ let rec defaultValueForType = function
 type PopValueContext =
     | Variable of name: string
     | Return
+    | SafeReturn
+    | ExceptionContext
 
 let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
+    let contextPrefix =
+        match context with
+        | Variable varName -> sprintf "auto %s =" varName
+        | Return -> "return"
+        | SafeReturn -> "auto __ret ="
+        | ExceptionContext -> ""
     match type_ with
     | UnitType ->
-        match context with
-        | Return -> ()  // empty!
-        | Variable _ ->
-            failwithf "tried to pop a Unit value into a variable, why?"
+        failwithf "tried to pop a Unit value into a variable, why?"
     | Bool ->
-        match context with
-        | Variable name ->
-            write level "auto %s = ni_popBool();" name
-        | Return ->
-            write level "return ni_popBool();"
+        write level "%s ni_popBool();" contextPrefix
     | Int32 ->
-        match context with
-        | Variable name ->
-            write level "auto %s = ni_popInt();" name
-        | Return ->
-            write level "return ni_popInt();"
+        write level "%s ni_popInt();" contextPrefix
     | StringType ->
-        match context with
-        | Variable name ->
-            write level "auto %s = popStringInternal();" name
-        | Return ->
-            write level "return popStringInternal();"
+        write level "%s popStringInternal();" contextPrefix
     | InterfaceType ifaceName ->
-        match context with
-        | Variable name ->
-            write level "auto %s = %s__pop();" name ifaceName
-        | Return ->
-            write level "return %s__pop();" ifaceName
+        write level "%s %s__pop();" contextPrefix ifaceName
     | DelegateType delegateName ->
-        match context with
-        | Variable name ->
-            write level "auto %s = %s__pop();" name delegateName
-        | Return ->
-            write level "return %s__pop();" delegateName
+        write level "%s %s__pop();" contextPrefix delegateName
     | ArrayType niType ->
         let popFunc =
             match niType with
@@ -159,49 +144,29 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             | SumType name -> sprintf "__%sArray__pop" name
             | TupleType _ -> sprintf "__%sArray__pop" (typeToName niType)
             | _ -> sprintf "// (pop not yet supported: %A)" type_
-        match context with
-        | Variable name ->
-            write level "auto %s = %s();" name popFunc
-        | Return ->
-            write level "return %s();" popFunc
+        write level "%s %s();" contextPrefix popFunc
     | MapType (keyType, valueType) ->
-        match context with
-        | Variable name ->
-            write level "auto %s = __%s%sMap__pop();" name (typeToName keyType) (typeToName valueType)
-        | Return ->
-            write level "return __%s%sMap__pop();"  (typeToName keyType) (typeToName valueType)
+        write level "%s __%s%sMap__pop();" contextPrefix (typeToName keyType) (typeToName valueType)
     | TupleType _ ->
-        match context with
-        | Variable name ->
-            write level "auto %s = __%s__pop();" name (typeToName type_)
-        | Return ->
-            write level "return __%s__pop();" (typeToName type_)
+        write level "%s __%s__pop();" contextPrefix (typeToName type_)
     | StructType structName ->
-        match context with
-        | Variable name ->
-            write level "auto %s = %s__pop();" name structName
-        | Return ->
-            write level "return %s__pop();" structName
+        write level "%s %s__pop();" contextPrefix structName
     | TypedefType typedefName ->
-        match context with
-        | Variable name ->
-            write level "auto %s = %s__pop();" name typedefName
-        | Return ->
-            write level "return %s__pop();" typedefName
+        write level "%s %s__pop();" contextPrefix typedefName
     | EnumType enumTypeName ->
-        match context with
-        | Variable name ->
-            write level "auto %s = %s__pop();" name enumTypeName
-        | Return ->
-            write level "return %s__pop();" enumTypeName
+        write level "%s %s__pop();" contextPrefix enumTypeName
     | SumType sumTypeName ->
-        match context with
-        | Variable name ->
-            write level "auto %s = %s__pop();" name sumTypeName
-        | Return ->
-            write level "return %s__pop();" sumTypeName
+        write level "%s %s__pop();" contextPrefix sumTypeName
+    | ExceptionType exceptionName ->
+        write level "%s__buildAndThrow();" exceptionName
     | _ ->
         write level "// (pop not yet implemented: %A)" type_
+    match context with
+    | SafeReturn ->
+        write level "ni_clearClientSafetyArea();"
+        write level "return __ret;"
+    | _ ->
+        ()
 
 type PushIsReturn =
     | Direct of value: bool
@@ -268,6 +233,9 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "%s__push(%s);" name content
     | SumType name ->
         write level "%s__push(%s, %s);" name content (isReturnString())
+    | ExceptionType name ->
+        assert (isReturn = Direct true)          // maybe needs a separate value for exceptions?
+        write level "%s__push(%s);" name content // isreturn irrelevant, exceptions must push everything safely because they are basically returns
     | _ ->
         write level "// (pushValue not supported yet: %A)" type_
 
@@ -291,11 +259,21 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
         popValue writer 2 argType (Variable argName)
     let invocation =
         sprintf "f(%s)" (joinedArgNames info.Args)
-    pushValue writer 2 info.Returns invocation (Direct true)
+    match info.Throws with
+    | Some (ExceptionType exceptionName as exc) ->
+        write 2 "try {"
+        pushValue writer 3 info.Returns invocation (Direct true)
+        write 2 "}"
+        write 2 "catch (const %s& e) {" (typeToCppString exc)
+        write 3 "ni_setException(%s);" (lowerFirst exceptionName)
+        pushValue writer 3 exc "e" (Direct true)
+        write 2 "}"
+    | _ ->
+        pushValue writer 2 info.Returns invocation (Direct true)
     write 1 "};"
     write 1 "pushServerFuncVal(wrapper, uniqueKey);"
     write 0 "}"
-    // pop
+    // pop =============
     blank()
     write 0 "std::function<%s> %s__pop() {" name name
     write 1 "auto id = ni_popClientFunc();"
@@ -304,10 +282,15 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
     for argName, argType in info.Args |> List.rev do
         pushValue writer 2 argType argName (Direct false)
     write 2 "cf->remoteExec();"
+    match info.Throws with
+    | Some (ExceptionType exceptionName as exc) ->
+        write 2 "if (ni_currentException == %s) {" (lowerFirst exceptionName)
+        popValue writer 3 exc ExceptionContext
+        write 2 "}"
+    | _ ->
+        ()
     if typeContainsRefs info.Returns then
-        popValue writer 2 info.Returns (Variable "__ret")
-        write 2 "ni_clearClientSafetyArea();"
-        write 2 "return __ret;"
+        popValue writer 2 info.Returns SafeReturn
     else
         popValue writer 2 info.Returns Return
     write 1 "};"
@@ -339,9 +322,7 @@ let renderWrapperInterface (writer: TextWriter) (name: string) (methods: NamedFu
         if typeContainsRefs namedFunc.Returns then
             // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
             // this is to prevent premature deref which could free the instance before we've gotten ahold of it
-            popValue writer 2 namedFunc.Returns (Variable "__ret")
-            write 2 "ni_clearClientSafetyArea();"
-            write 2 "return __ret;"
+            popValue writer 2 namedFunc.Returns SafeReturn
         else
             popValue writer 2 namedFunc.Returns Return
         write 1 "}"
@@ -365,7 +346,7 @@ let renderWrapperException (writer: TextWriter) (name: string) (exFields: NamedF
     for namedField in exFields |> List.rev do
         let memberVar =
             sprintf "e.%s" namedField.Name
-        pushValue writer 1 namedField.Type_ memberVar (Direct false) // false = not a concern because it still exists in this class instance
+        pushValue writer 1 namedField.Type_ memberVar (Direct true) // true = exceptions are always returned by definition, so any references in their fields need to be kept safe ... right?
     write 0 "}"
     // build and throw
     blank()
@@ -705,13 +686,13 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
         let invocation =
             sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
         match namedFunction.Throws with
-        | Some (ExceptionType exceptionName) ->
+        | Some (ExceptionType exceptionName as exc) ->
             write 1 "try {"
             pushValue writer 2 namedFunction.Returns invocation (Direct true)
             write 1 "}"
             write 1 "catch (const %s& e) {" exceptionName
             write 2 "ni_setException(%s);" (lowerFirst exceptionName)
-            write 2 "%s__push(e);" exceptionName
+            pushValue writer 2 exc "e" (Direct true)
             write 1 "}"
         | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
             pushValue writer 1 namedFunction.Returns invocation (Direct true)

@@ -35,7 +35,8 @@ extern "C" {
 	extern int nativeLibraryInit();		 // must be defined by library itself, to register methods, start runtime, etc
 	extern void nativeLibraryShutdown(); // any native cleanup (runtime shutdown etc)
 	extern void ni_dumpTables();
-	extern void ni_execServerFunc(int id); // can't throw exceptions
+	extern void ni_execServerFunc(int id);
+	extern ni_ExceptionRef ni_execServerFuncWithExceptions(int id);
 	extern void ni_releaseServerFunc(int id);
 	extern void ni_releaseServerInst(int id);
 }
@@ -108,6 +109,8 @@ extern "C" {
 
 	void ni_dumpTables();
 
+	// ni_setException (and the invocation methods returning ni_ExceptionRef) exist because the client is assumed
+	// to not have direct memory access to ni_currentException, like the server does.
 	void ni_setException(ni_ExceptionRef e);
 	void ni_buildAndthrow(ni_ExceptionRef e);
 }

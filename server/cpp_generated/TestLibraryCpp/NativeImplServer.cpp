@@ -39,6 +39,14 @@ void ni_execServerFunc(int id)
 	serverFuncVals[id].wrapper();
 }
 
+ni_ExceptionRef ni_execServerFuncWithExceptions(int id) {
+	assert(ni_currentException == nullptr);
+	serverFuncVals[id].wrapper();
+	auto ret = ni_currentException;
+	ni_currentException = nullptr;
+	return ret;
+}
+
 void ni_releaseServerFunc(int id)
 {
 	serverFuncVals[id].refCount -= 1;

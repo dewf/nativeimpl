@@ -465,9 +465,9 @@ namespace TestLibraryClient
             return NativeMethods.popServerFunc();
         }
 
-        public static void PopInstanceId(out int id, out bool isClientId, out bool inSafetyArea)
+        public static void PopInstanceId(out int id, out bool isClientId)
         {
-            id = NativeMethods.popInstance(out isClientId, out inSafetyArea);
+            id = NativeMethods.popInstance(out isClientId, out var inSafetyArea); // do something with 'inSafetyArea' ?
         }
         
         public class ServerFunc

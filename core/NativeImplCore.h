@@ -93,19 +93,32 @@ extern "C" {
 
 	void ni_pushClientFunc(int id);
 	void ni_pushServerFunc(int id);
+	// the reason for two separate pops is that, unlike interfaces, we have no way of "short-circuiting" these
+	// (ie, if a client sends a function value to the server, and the server returns it, it's always wrapped anew as a server function)
+	// this was simpler at the time than using single-method-interfaces which could carry information about their origin
+	// perhaps to be revisited at some point, but the idea behind function values was more for simple lambda type stuff,
+	// not meant to make roundtrips between client and server, the way interfaces might
 	int ni_popClientFunc();
 	int ni_popServerFunc();
 
 	void ni_invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID);
 	ni_ExceptionRef ni_invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID);
 
+	// TODO: get rid of the safety area flag, it was there so we could only conditionally clear the safety area,
+	// but I think all the ifs and checking (conditional setting of 'remotesafetyareadirty' or whatever) will end up
+	// being equivalent to simply clearing the remote safety area unconditionally at the end of every invocation returning (something containing) an interface reference
 	void ni_pushInstance(int id, bool isClientId, bool inSafetyArea);
 	int ni_popInstance(bool* isClientID, bool* inSafetyArea);
 
 	void ni_releaseServerInst(int id);
 
+	// safety area functions: the act of pushing remote interfaces can destroy the local proxy (if no other local proxies exist),
+	// prematurely dereferencing the remote side
+	// eg, server pushing a client instance (converting to a simple ID on the stack), would instantly destroy the proxy
+	//   before the client has a chance to grab it off the stack and save it from a potentially fatal deref.
+	// the safety area protects until a return value (containing interface references) is fully grabbed
 	void ni_clearClientSafetyArea();
-	void ni_clearServerSafetyArea(); // clear server resources from safety area (protects values being returned with no other shared_ptrs existing)
+	void ni_clearServerSafetyArea();
 
 	void ni_dumpTables();
 

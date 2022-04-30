@@ -22,6 +22,7 @@ let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
 
 let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
     | UnitType -> "void"
+    | SizeT -> "IntPtr"
     | Bool -> "bool"
     | Int32 -> "int"
     | StringType -> "string"
@@ -58,6 +59,7 @@ let rec newCsArray (typeMap: Map<string, UserOrGeneric>) (ofType: NIType) (count
 
 let rec typeToName = function
     | UnitType -> failwith "typeToName: 'unit' type as name?"
+    | SizeT -> "SizeT"
     | Bool -> "Bool"
     | Int32 -> "Int"
     | StringType -> "String"
@@ -111,6 +113,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     match type_ with
     | UnitType ->
         () // nothin'
+    | SizeT ->
+        write level "%s NativeImplClient.PopSizeT();" contextPrefix
     | Bool ->
         write level "%s NativeImplClient.PopBool();" contextPrefix
     | Int32 ->
@@ -167,6 +171,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     match type_ with
     | UnitType ->
         write level "%s;" content // content directly (method invocation etc)
+    | SizeT ->
+        write level "NativeImplClient.PushSizeT(%s);" content
     | Bool ->
         write level "NativeImplClient.PushBool(%s);" content
     | Int32 ->
@@ -798,7 +804,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
                     write 4 "catch (%s e)" (typeToCsString typeMap eType)
                     write 4 "{"
                     write 5 "NativeImplClient.SetException(_%s);" (lowerFirst (typeToCsString typeMap eType))
-                    write 5 "e.Push();"
+                    write 5 "e.PushAndSet();"
                     write 4 "}"
                 | None ->
                     pushValue writer 4 method.Returns invocation (Direct true)

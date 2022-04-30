@@ -14,6 +14,7 @@ type Token =
     | InterfaceToken
     | EnumToken
     | SumTypeToken
+    | SizeTToken
     | BoolToken
     | IntToken
     | FloatToken
@@ -43,6 +44,7 @@ let stringToToken (lineNumber: int) = function
     | "interface" -> InterfaceToken
     | "enum" -> EnumToken
     | "sumtype" -> SumTypeToken
+    | "size_t" -> SizeTToken
     | "bool" -> BoolToken
     | "int" | "int32" -> IntToken
     | "float" | "float32" -> FloatToken

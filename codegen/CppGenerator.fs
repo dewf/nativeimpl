@@ -34,6 +34,7 @@ public:
 
 let rec typeToName = function
     | UnitType -> "Unit"
+    | SizeT -> "SizeT"
     | Bool -> "Bool"
     | Int32 -> "Int"
     | StringType -> "String"
@@ -51,6 +52,7 @@ let rec typeToName = function
 
 let rec typeToCppString = function
     | UnitType -> "void"
+    | SizeT -> "size_t"
     | Bool -> "bool"
     | Int32 -> "int"
     | StringType -> "std::string"
@@ -85,6 +87,7 @@ let joinedArgNames (args: (string * NIType) list) =
 
 let rec defaultValueForType = function
     | UnitType -> failwith "defaultValueForType called on UnitType"
+    | SizeT -> "0"
     | Bool -> "false"
     | Int32 -> "0"
     | StringType -> "\"default\""
@@ -120,6 +123,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     match type_ with
     | UnitType ->
         failwithf "tried to pop a Unit value into a variable, why?"
+    | SizeT ->
+        write level "%s ni_popSizeT();" contextPrefix
     | Bool ->
         write level "%s ni_popBool();" contextPrefix
     | Int32 ->
@@ -186,6 +191,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     match type_ with
     | UnitType ->
         write level "%s;" content // no push!
+    | SizeT ->
+        write level "ni_pushSizeT(%s);" content
     | Bool ->
         write level "ni_pushBool(%s);" content
     | Int32 ->
@@ -767,11 +774,14 @@ let renderHeaderException (writer: TextWriter) (exName: string) (exFields: Named
     write 0 "public:"
     for namedField in exFields do
         write 1 "%s %s;" (typeToCppString namedField.Type_) namedField.Name
-    let joinedInitializers =
-        [for nf in exFields -> sprintf "%s(%s)" nf.Name nf.Name]
-        |> String.concat ", "
-    write 1 "%s(%s)" exName (joinedFields exFields)
-    write 2 ": %s {}" joinedInitializers
+    if exFields.IsEmpty then
+        write 1 "%s() {}" exName
+    else
+        let joinedInitializers =
+            [for nf in exFields -> sprintf "%s(%s)" nf.Name nf.Name]
+            |> String.concat ", "
+        write 1 "%s(%s)" exName (joinedFields exFields)
+        write 2 ": %s {}" joinedInitializers
     write 0 "};"
 
 let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFunction list) =
@@ -841,10 +851,10 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
         | OpaqueHandleDef ->
             write 0 "struct __%s; typedef struct __%s* %s;" name name name
         | StructDef namedFields ->
-            write 0 "typedef struct {"
+            write 0 "struct %s {" name
             for field in namedFields do
                 write 1 "%s %s;" (typeToCppString field.Type_) field.Name
-            write 0 "} %s;" name
+            write 0 "};"
         | ExceptionDef namedFields ->
             renderHeaderException writer name namedFields
         | InterfaceDef namedFunctions ->

@@ -28,6 +28,7 @@ module List =
 
 type NIType =
     | UnitType
+    | SizeT
     | Bool
     | Int8 | Int16 | Int32 | Int64
     | Float32 | Float64
@@ -63,6 +64,8 @@ let rec parseType (input: TokenAndLocation list) =
         Unresolved (name, line), etc
     | Lookahead 1 ([UnitToken], _, etc) ->
         UnitType, etc
+    | Lookahead 1 ([SizeTToken], _, etc) ->
+        SizeT, etc
     | Lookahead 1 ([BoolToken], _, etc) ->
         Bool, etc
     | Lookahead 1 ([IntToken], _, etc) ->
@@ -154,7 +157,7 @@ type DelegateInfo = {
 type UserType =
     | OpaqueHandleDef
     | StructDef of fields: NamedField list
-    | ExceptionDef of fields: NamedField list
+    | ExceptionDef of fields: NamedField list      // created as an args list, although they are accessible fields
     | InterfaceDef of methods: NamedFunction list
     | DelegateDef of info: DelegateInfo
     | TypeDef of actual: NIType
@@ -368,10 +371,25 @@ let parseModule (input: TokenAndLocation list) =
                 parseFields line etc
             (UserType (name, StructDef fields), etc2)
             |> Some
-        | Lookahead 3 ([ExceptionToken; Identifier name; LeftBrace], line, etc) ->
-            let fields, etc2 =
-                parseFields line etc
-            (UserType (name, ExceptionDef fields), etc2)
+        | Lookahead 2 ([ExceptionToken; Identifier name], line, etc) ->
+            // does it have arguments? (these become fields)
+            let args, etc =
+                match etc with
+                | Lookahead 1 ([StatementEnd], _, etc) -> // nope
+                    [], etc
+                | Lookahead 1 ([LeftParen], line, etc) ->
+                    let args, etc =
+                        parseArgsList line etc
+                    match etc with
+                    | Lookahead 1 ([StatementEnd], _, etc) ->
+                        args, etc
+                    | _ ->
+                        failwithf "expected statement end at line %d" line
+                | _ ->
+                    failwith "error parsing exception: expecting statement end or arguments list"
+            let fields =
+                args |> List.map (fun (name, type_) -> { Name = name; Type_ = type_ })
+            (UserType (name, ExceptionDef fields), etc)
             |> Some
         | Lookahead 3 ([InterfaceToken; Identifier name; LeftBrace], line, etc) ->
             let methods, etc2 =

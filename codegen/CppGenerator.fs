@@ -267,17 +267,21 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
         popValue writer 2 argType (Variable argName)
     let invocation =
         sprintf "f(%s)" (joinedArgNames info.Args)
-    match info.Throws with
-    | Some (ExceptionType exceptionName as exc) ->
+    if info.Throws.IsEmpty then
+        pushValue writer 2 info.Returns invocation (Direct true)
+    else
         write 2 "try {"
         pushValue writer 3 info.Returns invocation (Direct true)
         write 2 "}"
-        write 2 "catch (const %s& e) {" (typeToCppString exc)
-        write 3 "ni_setException(%s);" (lowerFirst exceptionName)
-        pushValue writer 3 exc "e" (Direct true)
-        write 2 "}"
-    | _ ->
-        pushValue writer 2 info.Returns invocation (Direct true)
+        for exc in info.Throws do
+            match exc with
+            | ExceptionType exceptionName ->
+                write 2 "catch (const %s& e) {" (typeToCppString exc)
+                write 3 "ni_setException(%s);" (lowerFirst exceptionName)
+                pushValue writer 3 exc "e" (Direct true)
+                write 2 "}"
+            | _ ->
+                failwithf "renderWrapperDelegate: 'throws' contained non exception type (%A)" exc
     write 1 "};"
     write 1 "pushServerFuncVal(wrapper, uniqueKey);"
     write 0 "}"
@@ -289,11 +293,10 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
     write 1 "auto wrapper = [cf](%s) {" (joinedArgs info.Args)
     for argName, argType in info.Args |> List.rev do
         pushValue writer 2 argType argName (Direct false)
-    match info.Throws with
-    | Some _ ->
-        write 2 "cf->remoteExecWithExceptions();"
-    | None ->
+    if info.Throws.IsEmpty then
         write 2 "cf->remoteExec();"
+    else
+        write 2 "cf->remoteExecWithExceptions();"
     if typeContainsRefs info.Returns then
         popValue writer 2 info.Returns SafeReturn
     else
@@ -318,11 +321,10 @@ let renderWrapperInterface (writer: TextWriter) (name: string) (methods: NamedFu
         for argName, argType in namedFunc.Args |> List.rev do
             pushValue writer 2 argType argName (Direct false)
         // invoke
-        match namedFunc.Throws with
-        | Some _ ->
-            write 2 "invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
-        | None ->
+        if namedFunc.Throws.IsEmpty then
             write 2 "invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
+        else
+            write 2 "invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
         // pop result
         if typeContainsRefs namedFunc.Returns then
             // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
@@ -692,17 +694,21 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
             popValue writer 1 argType (Variable argName)
         let invocation =
             sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
-        match namedFunction.Throws with
-        | Some (ExceptionType exceptionName as exc) ->
+        if namedFunction.Throws.IsEmpty then
+            pushValue writer 1 namedFunction.Returns invocation (Direct true)
+        else
             write 1 "try {"
             pushValue writer 2 namedFunction.Returns invocation (Direct true)
             write 1 "}"
-            write 1 "catch (const %s& e) {" exceptionName
-            write 2 "ni_setException(%s);" (lowerFirst exceptionName)
-            pushValue writer 2 exc "e" (Direct true)
-            write 1 "}"
-        | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
-            pushValue writer 1 namedFunction.Returns invocation (Direct true)
+            for exc in namedFunction.Throws do
+                match exc with
+                | ExceptionType exceptionName ->
+                    write 1 "catch (const %s& e) {" exceptionName
+                    write 2 "ni_setException(%s);" (lowerFirst exceptionName)
+                    pushValue writer 2 exc "e" (Direct true)
+                    write 1 "}"
+                | _ ->
+                    failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
         write 0 "}"
 
     // interface wrappers
@@ -716,17 +722,21 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
                 popValue writer 1 argType (Variable argName)
             let invocation =
                 sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
-            match nf.Throws with
-            | Some (ExceptionType exceptionName) ->
+            if nf.Throws.IsEmpty then
+                pushValue writer 1 nf.Returns invocation (Direct true)
+            else
                 write 1 "try {"
                 pushValue writer 2 nf.Returns invocation (Direct true)
                 write 1 "}"
-                write 1 "catch (const %s& e) {" exceptionName
-                write 2 "ni_setException(%s);" (lowerFirst exceptionName)
-                write 2 "%s__push(e);" exceptionName
-                write 1 "}"
-            | _ -> // note we're not handling Some (non-exception types)! need to be errored out on type checking ...
-                pushValue writer 1 nf.Returns invocation (Direct true)
+                for exc in nf.Throws do
+                    match exc with
+                    | ExceptionType exceptionName ->
+                        write 1 "catch (const %s& e) {" exceptionName
+                        write 2 "ni_setException(%s);" (lowerFirst exceptionName)
+                        write 2 "%s__push(e);" exceptionName
+                        write 1 "}"
+                    | _ ->
+                        failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
             write 0 "}")
 
     // globals/constants func
@@ -792,9 +802,14 @@ let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFun
     write 0 "public:"
     for namedFunc in methods do
         let throwsComment =
-            match namedFunc.Throws with
-            | Some exceptionType -> sprintf "  // throws %s" (typeToCppString exceptionType)
-            | None -> ""
+            if namedFunc.Throws.IsEmpty then
+                ""
+            else
+                let joined =
+                    namedFunc.Throws
+                    |> List.map typeToCppString
+                    |> String.concat ", "
+                sprintf " // throws %s" joined
         write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
     write 0 "};"
     write 0 ""
@@ -861,9 +876,14 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
             renderHeaderInterface writer name namedFunctions
         | DelegateDef info ->
             let maybeThrows =
-                match info.Throws with
-                | Some exc -> sprintf " // throws %s" (typeToCppString exc)
-                | None -> ""
+                if info.Throws.IsEmpty then
+                    ""
+                else
+                    let joined =
+                        info.Throws
+                        |> List.map typeToCppString
+                        |> String.concat ", "
+                    sprintf " // throws %s" joined
             write 0 "typedef %s %s(%s);%s" (typeToCppString info.Returns) name (joinedArgs info.Args) maybeThrows
         | TypeDef actual ->
             write 0 "typedef %s %s;" (typeToCppString actual) name
@@ -912,9 +932,14 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
     blank()
     for namedFunc in moduleMethods do
         let throwsComment =
-            match namedFunc.Throws with
-            | Some exceptionType -> sprintf "  // throws %s" (typeToCppString exceptionType)
-            | None -> ""
+            if namedFunc.Throws.IsEmpty then
+                ""
+            else
+                let joined =
+                    namedFunc.Throws
+                    |> List.map typeToCppString
+                    |> String.concat ", "
+                sprintf " // throws %s" joined
         write 0 "%s %s(%s);%s" (typeToCppString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
 
 let generateImplementationCpp (m: Module) (writer: TextWriter) =
@@ -943,9 +968,14 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
     for namedFunc in moduleMethods do
         blank()
         let throwsComment =
-            match namedFunc.Throws with
-            | Some exceptionType -> sprintf "  // throws %s" (typeToCppString exceptionType)
-            | None -> ""
+            if namedFunc.Throws.IsEmpty then
+                ""
+            else
+                let joined =
+                    namedFunc.Throws
+                    |> List.map typeToCppString
+                    |> String.concat ", "
+                sprintf " // throws %s" joined
         write 0 "%s %s(%s) {%s" (typeToCppString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
         if namedFunc.Returns <> UnitType then
             write 1 "return %s;" (defaultValueForType namedFunc.Returns)

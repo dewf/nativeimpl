@@ -80,18 +80,14 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                         |> List.collect typeAndSubTypes
                     let throwTypes =
                         nf.Throws
-                        |> Option.map typeAndSubTypes
-                        |> Option.defaultValue []
+                        |> List.collect typeAndSubTypes
                     retTypes @ argTypes @ throwTypes)
             | DelegateDef info ->
                 let retTypes =
                     typeAndSubTypes info.Returns
                 let throwTypes =
-                    match info.Throws with
-                    | Some exc ->
-                        typeAndSubTypes exc
-                    | None ->
-                        []
+                    info.Throws
+                    |> List.collect typeAndSubTypes
                 let argTypes =
                     info.Args
                     |> List.map snd
@@ -118,8 +114,7 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                 |> List.collect typeAndSubTypes
             let throwTypes =
                 nf.Throws
-                |> Option.map typeAndSubTypes
-                |> Option.defaultValue []
+                |> List.collect typeAndSubTypes
             retTypes @ argTypes @ throwTypes)
     |> List.distinct
 
@@ -238,13 +233,11 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                                             processType argType acc
                                         acc)
                                 let acc =
-                                    match namedFunc.Throws with
-                                    | Some etype ->
+                                    (acc, namedFunc.Throws)
+                                    ||> List.fold (fun acc eType ->
                                         let _, acc =
-                                            processType etype acc
-                                        acc
-                                    | None ->
-                                        acc
+                                            processType eType acc
+                                        acc)
                                 acc)
                         true, nextAcc
                     | DelegateDef info ->
@@ -252,12 +245,12 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                         let nextAcc =
                             let _, acc =
                                 processType info.Returns acc
-                            let _, acc =
-                                match info.Throws with
-                                | Some exc ->
-                                    processType exc acc
-                                | None ->
-                                    false, acc
+                            let acc =
+                                (acc, info.Throws)
+                                ||> List.fold (fun acc eType ->
+                                    let _, acc =
+                                        processType eType acc
+                                    acc)
                             let acc =
                                 (acc, info.Args)
                                 ||> List.fold (fun acc (_, argType) ->
@@ -399,24 +392,20 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                         ||> List.fold (fun already2 namedFunc ->
                             let withReturn =
                                 renderType namedFunc.Returns already2
-                            let withThrow =
-                                match namedFunc.Throws with
-                                | Some etype ->
-                                    renderType etype withReturn
-                                | None ->
-                                    withReturn
-                            (withThrow, namedFunc.Args)
+                            let withThrows =
+                                (withReturn, namedFunc.Throws)
+                                ||> List.fold (fun already3 eType ->
+                                    renderType eType already3)
+                            (withThrows, namedFunc.Args)
                             ||> List.fold (fun already3 (_, argType) ->
                                 renderType argType already3))
                     | DelegateDef info ->
                         let withReturn =
                             renderType info.Returns alreadyRendered
                         let withThrows =
-                            match info.Throws with
-                            | Some exc ->
-                                renderType exc withReturn
-                            | None ->
-                                withReturn
+                            (withReturn, info.Throws)
+                            ||> List.fold (fun already3 eType ->
+                                renderType eType already3)
                         (withThrows, info.Args)
                         ||> List.fold (fun already2 (_, argType) ->
                             renderType argType already2)

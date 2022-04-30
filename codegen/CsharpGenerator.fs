@@ -522,9 +522,14 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 2 "{"
             for method in namedFunctions do
                 let throwsComment =
-                    match method.Throws with
-                    | Some eType -> sprintf " // throws %s" (typeToCsString typeMap eType)
-                    | None -> ""
+                    if method.Throws.IsEmpty then
+                        ""
+                    else
+                        let joined =
+                            method.Throws
+                            |> List.map (typeToCsString typeMap)
+                            |> String.concat ", "
+                        sprintf " // throws %s" joined
                 write 3 "%s %s(%s);%s" (typeToCsString typeMap method.Returns) (upperFirst method.Name) (argsJoined typeMap method.Args) throwsComment
             write 2 "}"
             // pop template
@@ -541,9 +546,14 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             // abstract methods for client base class
             for method in namedFunctions do
                 let throwsComment =
-                    match method.Throws with
-                    | Some eType -> sprintf " // throws %s" (typeToCsString typeMap eType)
-                    | None -> ""
+                    if method.Throws.IsEmpty then
+                        ""
+                    else
+                        let joined =
+                            method.Throws
+                            |> List.map (typeToCsString typeMap)
+                            |> String.concat ", "
+                        sprintf " // throws %s" joined
                 write 3 "public abstract %s %s(%s);%s" (typeToCsString typeMap method.Returns) (upperFirst method.Name) (argsJoined typeMap method.Args) throwsComment
             write 2 "}"
             // server wrapper
@@ -562,11 +572,10 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                 for argName, argType in method.Args do
                     pushValue writer 4 argType argName (Direct false)
                 // invoke remote
-                match method.Throws with
-                | Some _ ->
-                    write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.Name
-                | None ->
+                if method.Throws.IsEmpty then
                     write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" (lowerFirst name) method.Name
+                else
+                    write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.Name
                 // return (mindful of safety area nonsense)
                 if containsRefs method.Returns then
                     popValue writer 4 method.Returns (NewVariable "__ret")
@@ -618,18 +627,22 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                 popValue writer 4 argType (NewVariable argName)
             let invocation =
                 sprintf "callback(%s)" (argNamesJoined info.Args)
-            match info.Throws with
-            | Some (ExceptionType exceptionName as exc) ->
+            if info.Throws.IsEmpty then
+                pushValue writer 5 info.Returns invocation (Direct true)
+            else
                 write 4 "try"
                 write 4 "{"
                 pushValue writer 5 info.Returns invocation (Direct true)
                 write 4 "}"
-                write 4 "catch (%s e)" (upperFirst exceptionName)
-                write 4 "{"
-                write 5 "e.PushAndSet();"
-                write 4 "}"
-            | _ ->
-                pushValue writer 5 info.Returns invocation (Direct true)
+                for exc in info.Throws do
+                    match exc with
+                    | ExceptionType exceptionName as exc ->
+                        write 4 "catch (%s e)" (upperFirst exceptionName)
+                        write 4 "{"
+                        write 5 "e.PushAndSet();"
+                        write 4 "}"
+                    | _ ->
+                        failwithf "C# writing delegate: 'throws' contained non-exception type"
             write 3 "}"
             write 3 "NativeImplClient.PushClientFuncVal(CallbackWrapper, Marshal.GetFunctionPointerForDelegate(callback));"
             write 2 "}"
@@ -643,11 +656,10 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 3 "{"
             for argName, argType in info.Args |> List.rev do
                 pushValue writer 4 argType argName (Direct false)
-            match info.Throws with
-            | Some _ ->
-                write 4 "remoteFunc.ExecWithExceptions();"
-            | None ->
+            if info.Throws.IsEmpty then
                 write 4 "remoteFunc.Exec();"
+            else
+                write 4 "remoteFunc.ExecWithExceptions();"
             popValue writer 4 info.Returns Return
             write 3 "}"
             write 3 "return Wrapper;"
@@ -738,11 +750,10 @@ let writeLibrary (m: Module) (writer: TextWriter) =
         for argName, argType in namedFunc.Args |> List.rev do
             pushValue writer 3 argType argName (Direct false)
         // invoke remote
-        match namedFunc.Throws with
-        | Some _ ->
-            write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.Name
-        | None ->
+        if namedFunc.Throws.IsEmpty then
             write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.Name
+        else
+            write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.Name
         // return pop
         popValue writer 3 namedFunc.Returns (if containsRefs namedFunc.Returns then SafeReturn else Return)
         write 2 "}"
@@ -795,19 +806,23 @@ let writeLibrary (m: Module) (writer: TextWriter) =
                 // exec + return
                 let invocation =
                     sprintf "inst.%s(%s)" (upperFirst method.Name) (argNamesJoined method.Args)
-                match method.Throws with
-                | Some eType ->
+                if method.Throws.IsEmpty then
+                    pushValue writer 4 method.Returns invocation (Direct true)
+                else
                     write 4 "try"
                     write 4 "{"
                     pushValue writer 5 method.Returns invocation (Direct true)
                     write 4 "}"
-                    write 4 "catch (%s e)" (typeToCsString typeMap eType)
-                    write 4 "{"
-                    write 5 "NativeImplClient.SetException(_%s);" (lowerFirst (typeToCsString typeMap eType))
-                    write 5 "e.PushAndSet();"
-                    write 4 "}"
-                | None ->
-                    pushValue writer 4 method.Returns invocation (Direct true)
+                    for exc in method.Throws do
+                        match exc with
+                        | ExceptionType _ ->
+                            write 4 "catch (%s e)" (typeToCsString typeMap exc)
+                            write 4 "{"
+                            write 5 "NativeImplClient.SetException(_%s);" (lowerFirst (typeToCsString typeMap exc))
+                            write 5 "e.PushAndSet();"
+                            write 4 "}"
+                        | _ ->
+                            failwith "C# interface wrappers: 'throws' contained non-exception type"
                 write 3 "});"
 
     write 2 "}" // end of Init()

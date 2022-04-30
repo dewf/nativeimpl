@@ -135,7 +135,7 @@ type NamedFunction = {
     Name: string
     Args: (string * NIType) list
     Returns: NIType
-    Throws: NIType option // only Exceptions are allowed ...
+    Throws: NIType list
 }
 
 type NamedField = {
@@ -151,7 +151,7 @@ type SumTypeValue = {
 type DelegateInfo = {
     Args: (string * NIType) list
     Returns: NIType
-    Throws: NIType option
+    Throws: NIType list
 }
 
 type UserType =
@@ -246,6 +246,34 @@ let parseArgsList (line: int) (input: TokenAndLocation list) =
     | None ->
         failwithf "function at line %d missing closing )" line
 
+let parseIdentifierList (line: int) (input: TokenAndLocation list) (endToken: Token) =
+    let parseOneIdentifier (input': TokenAndLocation list) =
+        if input'.IsEmpty then
+            None
+        else
+            match input' with
+            | Lookahead 2 ([Identifier name; Comma], _, etc) ->
+                Some (name, etc)
+            | [{Location = _; Token = Identifier name}] ->
+                Some (name, List.empty)
+            | _ ->
+                failwithf "parseIdentifierList: expected identifier at line %d (%A)" line input'
+    let maybeEndIndex =
+        input |> List.tryFindIndex (fun tl -> tl.Token = endToken)
+    match maybeEndIndex with
+    | Some index ->
+        let idTokens, etc =
+            input |> List.splitAt index
+        let identifiers =
+            idTokens |> List.unfold parseOneIdentifier
+        match etc with
+        | Lookahead 1 ([endToken], line, etc) ->
+            identifiers, etc
+        | _ ->
+            failwithf "expected end of identifiers on line %d" line
+    | None ->
+        failwithf "expected end of identifiers on line %d" line
+
 let parseNamedFunction (input: TokenAndLocation list) =
     if input.IsEmpty then
         None
@@ -253,14 +281,18 @@ let parseNamedFunction (input: TokenAndLocation list) =
         let returnType, etc =
             parseType input
         match etc with
-        | Lookahead 2 ([Identifier funcName; LeftParen], line, etc2) ->
-            let args, etc3 =
-                parseArgsList line etc2
-            match etc3 with
-            | Lookahead 1 ([StatementEnd], _, etc4) ->
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = None }, etc4)
-            | Lookahead 3 ([ThrowsToken; Identifier exceptionName; StatementEnd], line, etc4) ->
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = Some (Unresolved (exceptionName, line)) }, etc4)
+        | Lookahead 2 ([Identifier funcName; LeftParen], line, etc) ->
+            let args, etc =
+                parseArgsList line etc
+            match etc with
+            | Lookahead 1 ([StatementEnd], _, etc) ->
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty }, etc)
+            | Lookahead 1 ([ThrowsToken], line, etc) ->
+                let identifiers, etc =
+                    parseIdentifierList line etc StatementEnd
+                let throwsList =
+                    identifiers |> List.map (fun name -> (Unresolved (name, line)))
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList }, etc)
             | _ ->
                 failwithf "failed to parse function at line %d" line
         | { Location = line } :: _ ->
@@ -485,7 +517,7 @@ let resolveFunctionTypes (userTypes: Map<string, UserType>) (nf: NamedFunction) 
         resolveType userTypes nf.Returns
     let nextThrows =
         nf.Throws
-        |> Option.map (resolveType userTypes)
+        |> List.map (resolveType userTypes)
     { nf with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
 let resolveDelegateTypes (userTypes: Map<string, UserType>) (info: DelegateInfo) =
@@ -496,7 +528,7 @@ let resolveDelegateTypes (userTypes: Map<string, UserType>) (info: DelegateInfo)
         resolveType userTypes info.Returns
     let nextThrows =
         info.Throws
-        |> Option.map (resolveType userTypes)
+        |> List.map (resolveType userTypes)
     { info with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
 let resolveSumTypeTypes (userTypes: Map<string, UserType>) (values: SumTypeValue list) =

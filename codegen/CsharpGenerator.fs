@@ -92,6 +92,7 @@ type PopValueContext =
     | NewVariable of name: string
     | ExistingVar of name: string
     | Return
+    | SafeReturn
 
 let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -102,6 +103,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | NewVariable name -> sprintf "var %s =" name
         | ExistingVar name -> sprintf "%s =" name
         | Return -> "return"
+        | SafeReturn -> "var __ret ="
     match type_ with
     | UnitType ->
         () // nothin'
@@ -134,6 +136,12 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | _ ->
         write level "(popValue %A not yet supported)" type_
+    match context with
+    | SafeReturn ->
+        write level "NativeImplClient.ServerClearSafetyArea();"
+        write level "return __ret;"
+    | _ ->
+        ()
 
 type PushIsReturn =
     | Direct of value: bool
@@ -677,9 +685,9 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     // user types ====================
     let containsRefsMap =
         createContainsRefsMap typeMap
+    let containsRefs (type_: NIType) =
+        containsRefsMap.ContainsKey(typeToInternalKey type_)
     let renderFunc =
-        let containsRefs (type_: NIType) =
-            containsRefsMap.ContainsKey(typeToInternalKey type_)
         renderLibraryUserTypes writer containsRefs
     renderUserTypes typeMap renderFunc
 
@@ -698,8 +706,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
         | None ->
             write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.Name
         // return pop
-        popValue writer 3 namedFunc.Returns Return
-        // TODO: clear safety area?
+        popValue writer 3 namedFunc.Returns (if containsRefs namedFunc.Returns then SafeReturn else Return)
         write 2 "}"
 
     // static init + shutdown ====================================================

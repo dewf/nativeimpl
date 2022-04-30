@@ -143,6 +143,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             | EnumType name -> sprintf "__%sArray__pop" name
             | SumType name -> sprintf "__%sArray__pop" name
             | TupleType _ -> sprintf "__%sArray__pop" (typeToName niType)
+            | MapType _ -> sprintf "__%sArray__pop" (typeToName niType)
             | _ -> sprintf "// (pop not yet supported: %A)" type_
         write level "%s %s();" contextPrefix popFunc
     | MapType (keyType, valueType) ->
@@ -561,6 +562,8 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 write 0 "}"
             | SumType name ->
                 arrayCommon name arrayType
+            | MapType _ ->
+                arrayCommon (typeToName arrayType) arrayType
             // ignore built-ins below:
             | Bool
             | Int8 | Int16 | Int32 | Int64

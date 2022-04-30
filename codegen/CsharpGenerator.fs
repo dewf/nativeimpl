@@ -45,7 +45,9 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
             typeToCsString typeMap niType
         | _ ->
             failwithf "typeToCsString: failed to find typedef definition"
-    | _ -> "(typeToString: not yet supported)"
+    | MapType (keyType, valueType) ->
+        sprintf "Dictionary<%s,%s>" (typeToCsString typeMap keyType) (typeToCsString typeMap valueType)
+    | x -> sprintf "(typeToCsString: not yet supported: %A)" x
 
 let rec newCsArray (typeMap: Map<string, UserOrGeneric>) (ofType: NIType) (countVar: string) =
     match ofType with
@@ -70,7 +72,9 @@ let rec typeToName = function
         sprintf "%sTuple" joined
     | ArrayType niType ->
         sprintf "%sArray" (typeToName niType)
-    | _ -> "(typeToName: not yet supported)"
+    | MapType (keyType, valueType) ->
+        sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
+    | x -> sprintf "(typeToName: not yet supported: %A)" x
 
 let argsJoined (typeMap: Map<string, UserOrGeneric>) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCsString typeMap type_) name]
@@ -125,7 +129,10 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | EnumType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
         | StructType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
         | ArrayType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType))
+        | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
         | _ -> write level "// popValue not yet supported: array of %A" niType
+    | MapType _ ->
+        write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | StructType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | EnumType name ->
@@ -135,7 +142,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     | TypedefType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | _ ->
-        write level "(popValue %A not yet supported)" type_
+        write level "// popValue %A not yet supported" type_
     match context with
     | SafeReturn ->
         write level "NativeImplClient.ServerClearSafetyArea();"
@@ -179,6 +186,7 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | StructType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
         | TypedefType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
         | ArrayType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
+        | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
     | EnumType name ->
         write level "%s__Push(%s);" name content
@@ -188,8 +196,10 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | TypedefType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
+    | MapType _ ->
+        write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | _ ->
-        write level "(pushValue %A not yet supported)" type_
+        write level "// pushValue %A not yet supported" type_
 
 let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -326,7 +336,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                     write 2 "{"
                     for i, field in namedFields |> List.indexed do
                         popValue writer 3 (ArrayType field.Type_) (NewVariable (sprintf "f%dValues" i))
-                    write 3 "var count = f1Values.Length;"
+                    write 3 "var count = f0Values.Length;"
                     write 3 "var ret = new %s[count];" (upperFirst structName)
                     write 3 "for (var i = 0; i < count; i++)"
                     write 3 "{"
@@ -340,20 +350,42 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                     write 2 "}"
                 | _ ->
                     failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
-            | ArrayType niType ->
+            | ArrayType _ ->
                 // array of array of ...
-                arrayCommon (typeToName gType) (ArrayType niType)
+                arrayCommon (typeToName arrayType) arrayType
+            | MapType _ ->
+                arrayCommon (typeToName arrayType) arrayType
             // ignore built-ins below:
             | Bool
             | Int8 | Int16 | Int32 | Int64
             | Float32 | Float64
             | StringType ->
+                // we don't handle any of the primitives, those are all built-in
                 write 2 "// built-in array type: %s" (typeToCsString typeMap gType)
             | _ ->
-                // we don't handle any of the primitives, those are all built-in
                 write 2 "// TODO: push/pop for generic %s" (typeToCsString typeMap gType)
+        | MapType (keyType, valueType) ->
+            // push
+            write 2 "static void __%s__Push(Dictionary<%s, %s> map, bool isReturn)" (typeToName gType) (typeToCsString typeMap keyType) (typeToCsString typeMap valueType)
+            write 2 "{"
+            pushValue writer 3 (ArrayType valueType) (sprintf "map.Values.ToArray()") (Indirect "isReturn")
+            pushValue writer 3 (ArrayType keyType) (sprintf "map.Keys.ToArray()") (Indirect "isReturn")
+            write 2 "}"
+            // pop
+            blank()
+            write 2 "static Dictionary<%s, %s> __%s__Pop()" (typeToCsString typeMap keyType) (typeToCsString typeMap valueType) (typeToName gType)
+            write 2 "{"
+            popValue writer 3 (ArrayType keyType) (NewVariable "keys")
+            popValue writer 3 (ArrayType valueType) (NewVariable "values")
+            write 3 "var ret = new Dictionary<%s,%s>();" (typeToCsString typeMap keyType) (typeToCsString typeMap valueType)
+            write 3 "for (var i = 0; i < keys.Length; i++)"
+            write 3 "{"
+            write 4 "ret[keys[i]] = values[i];"
+            write 3 "}"
+            write 3 "return ret;"
+            write 2 "}"
         | _ ->
-            write 2 "// %s" (typeToCsString typeMap gType)
+            write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString typeMap gType)
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueHandleDef ->

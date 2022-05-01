@@ -38,6 +38,7 @@ let rec typeToName = function
     | Bool -> "Bool"
     | Int32 -> "Int"
     | StringType -> "String"
+    | OpaqueHandleType name -> upperFirst name
     | InterfaceType name -> upperFirst name
     | ExceptionType name -> upperFirst name
     | DelegateType name -> upperFirst name
@@ -56,6 +57,7 @@ let rec typeToCppString = function
     | Bool -> "bool"
     | Int32 -> "int"
     | StringType -> "std::string"
+    | OpaqueHandleType name -> name
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
     | ExceptionType name -> name
     | DelegateType name -> sprintf "std::function<%s>" name
@@ -91,6 +93,7 @@ let rec defaultValueForType = function
     | Bool -> "false"
     | Int32 -> "0"
     | StringType -> "\"default\""
+    | OpaqueHandleType name -> sprintf "new __%s()" (upperFirst name)
     | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
     | DelegateType name -> sprintf "std::function<%s>()" name
     | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString niType)
@@ -131,6 +134,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         write level "%s ni_popInt();" contextPrefix
     | StringType ->
         write level "%s popStringInternal();" contextPrefix
+    | OpaqueHandleType name ->
+        write level "%s (%s)ni_popSizeT();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
         write level "%s %s__pop();" contextPrefix ifaceName
     | DelegateType delegateName ->
@@ -199,6 +204,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "ni_pushInt(%s);" content
     | StringType ->
         write level "pushStringInternal(%s);" content
+    | OpaqueHandleType _ ->
+        write level "ni_pushSizeT((size_t)%s);" content
     | InterfaceType name ->
         write level "%s__push(%s, %s);" name content (isReturnString())
     | DelegateType name ->
@@ -952,6 +959,11 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
         |> List.choose (function
             | Global(name, niType) -> Some (name, niType)
             | _ -> None)
+    let opaqueHandles =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, OpaqueHandleDef) -> Some name
+            | _ -> None)
     let moduleMethods =
         m.Defs
         |> List.choose (function
@@ -964,6 +976,13 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
         blank()
         for globalName, globalType in globals do
             write 0 "const %s %s = %s;" (typeToCppString globalType) globalName (defaultValueForType globalType)
+    // opaque handles
+    if opaqueHandles.Length > 0 then
+        blank()
+        for name in opaqueHandles do
+            write 0 "struct __%s {" (upperFirst name)
+            write 1 "// your content here"
+            write 0 "};"
     // functions
     for namedFunc in moduleMethods do
         blank()

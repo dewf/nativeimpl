@@ -26,6 +26,7 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
     | Bool -> "bool"
     | Int32 -> "int"
     | StringType -> "string"
+    | OpaqueHandleType name -> upperFirst name
     | EnumType name -> upperFirst name
     | SumType name -> upperFirst name
     | StructType name -> upperFirst name
@@ -121,6 +122,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         write level "%s NativeImplClient.PopInt();" contextPrefix
     | StringType ->
         write level "%s NativeImplClient.PopString();" contextPrefix
+    | OpaqueHandleType name ->
+        write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
         write level "%s %s__Pop();" contextPrefix (upperFirst ifaceName)
     | DelegateType name ->
@@ -179,10 +182,12 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "NativeImplClient.PushInt(%s);" content
     | StringType ->
         write level "NativeImplClient.PushString(%s);" content
+    | OpaqueHandleType name ->
+        write level "%s__Push(%s);" (upperFirst name) content
     | InterfaceType _ ->
         write level "((NativeImplClient.IPushable)%s).Push(%s);" content (isReturnString())
     | DelegateType name ->
-        write level "%s__Push(%s);" name content
+        write level "%s__Push(%s);" (upperFirst name) content
     | ArrayType niType ->
         match niType with
         | Bool -> write level "NativeImplClient.PushBoolArray(%s);" content
@@ -395,7 +400,28 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueHandleDef ->
-            write 2 "// anything for opaque here? push/pop perhaps? %s" name
+            // definition
+            write 2 "public struct %s" (upperFirst name)
+            write 2 "{"
+            write 3 "internal readonly IntPtr NativeHandle;"
+            write 3 "internal %s(IntPtr nativeHandle)" (upperFirst name)
+            write 3 "{"
+            write 4 "NativeHandle = nativeHandle;"
+            write 3 "}"
+            write 2 "}"
+            // push
+            blank()
+            write 2 "private static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            pushValue writer 3 SizeT "value.NativeHandle" NotApplicable
+            write 2 "}"
+            // pop
+            blank()
+            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            popValue writer 3 SizeT (NewVariable "nativeHandle")
+            write 3 "return new %s(nativeHandle);" (upperFirst name)
+            write 2 "}"
         | StructDef namedFields ->
             write 2 "public struct %s {" name
             for field in namedFields do

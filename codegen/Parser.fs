@@ -74,6 +74,8 @@ let rec parseType (input: TokenAndLocation list) =
         Float32, etc
     | Lookahead 1 ([StringToken], _, etc) ->
         StringType, etc
+    | Lookahead 3 ([OpaqueToken; Identifier name; StatementEnd], _, etc) ->
+        OpaqueHandleType name, etc
     | Lookahead 2 ([ArrayToken; LeftBracket], line, etc1) ->
         let arrayType, etc2 =
             parseType etc1

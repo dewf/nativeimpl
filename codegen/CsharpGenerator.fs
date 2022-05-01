@@ -142,6 +142,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | StructType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
+    | TupleType _ ->
+        write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | EnumType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | SumType name ->
@@ -205,6 +207,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | StructType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
+    | TupleType _ ->
+        write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | TypedefType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | MapType _ ->

@@ -658,7 +658,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             let invocation =
                 sprintf "callback(%s)" (argNamesJoined info.Args)
             if info.Throws.IsEmpty then
-                pushValue writer 5 info.Returns invocation (Direct true)
+                pushValue writer 4 info.Returns invocation (Direct true)
             else
                 write 4 "try"
                 write 4 "{"

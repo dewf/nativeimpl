@@ -226,7 +226,7 @@ let parseArg (input: TokenAndLocation list) =
             // 'rewind' to first element of input, since we know it parsed a type successfully
             match input with
             | { Location = line } :: _ ->
-                failwithf "error parsing function arg at line %d: %A" line etc
+                failwithf "error parsing function arg at line %d: expected identifier" line
             | _ ->
                 failwithf "parseArg ???"
 

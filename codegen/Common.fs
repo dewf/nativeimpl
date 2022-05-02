@@ -47,8 +47,11 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                     | _ ->
                         failwith "allGenericTypes: some issue getting struct def for array of struct"
                 | TupleType tupleTypes ->
-                    tupleTypes
-                    |> List.collect (fun type_ -> typeAndSubTypes (ArrayType type_))
+                    let sub =
+                        tupleTypes
+                        |> List.collect (fun type_ -> typeAndSubTypes (ArrayType type_))
+                    // niType because a tuple is itself generic! (whereas above, with struct, the struct niType itself is NOT included)
+                    niType :: sub
                 | _ ->
                     // any other array type, no special handling
                     typeAndSubTypes niType
@@ -97,8 +100,8 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                 typeAndSubTypes actual
             | EnumDef _ ->
                 []
-            | SumTypeDef enumValues ->
-                enumValues
+            | SumTypeDef values ->
+                values
                 |> List.collect (fun value ->
                     value.Args
                     |> List.map snd
@@ -189,7 +192,7 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                             |> List.exists id
                         result, nextAcc
                     | _ ->
-                        failwith "createContainsRefsMap: unsupported generic type"
+                        failwithf "createContainsRefsMap: unsupported generic type (%A)" niType
                 | UserOrGeneric.User userType ->
                     match userType with
                     | OpaqueHandleDef ->

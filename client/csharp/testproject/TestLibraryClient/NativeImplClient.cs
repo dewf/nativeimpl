@@ -217,8 +217,8 @@ namespace TestLibraryClient
             public int RefCount;
         }
         // TODO: these definitely need to be thread-safe
-        private static readonly Dictionary<int, FuncValInfo> FuncValDict = new Dictionary<int, FuncValInfo>();
-        private static readonly Dictionary<IntPtr, int> ReverseFuncValDict = new Dictionary<IntPtr, int>();
+        private static readonly Dictionary<int, FuncValInfo> FuncValDict = new ();
+        private static readonly Dictionary<IntPtr, int> ReverseFuncValDict = new ();
         private static int _nextFuncValId = 1;
         private static void FuncValExecutor(int id)
         {
@@ -521,65 +521,70 @@ namespace TestLibraryClient
             }
         }
 
-        // public static void PushInstanceId(int id, bool isClientId, bool inSafetyArea)
-        // {
-        //     NativeMethods.pushInstance(id, isClientId, inSafetyArea);
-        // }
-
         public interface IPushable
         {
             void Push(bool isReturn);
         }
 
-        public abstract class ClientObject : IPushable
+        public abstract class ClientResource : IPushable
         {
-            private int _id = -1;
-            private int _refCount = 0;
-
-            internal int Id => _id;
-            internal int RefCount => _refCount;
+            internal int Id { get; private set; } = -1;
+            internal int RefCount { get; private set; }
+            protected abstract void NativePush();
 
             void IPushable.Push(bool isReturn) // isReturn unused here
             {
-                if (_id == -1)
+                if (Id == -1)
                 {
                     // unset as yet
-                    _id = _nextClientObjectId++;
-                    _refCount = 1;
-                    ClientObjects[_id] = this;
-                    Console.WriteLine($"C# ClientObject: pushed {_id}");
+                    Id = _nextClientResourceId++;
+                    RefCount = 1;
+                    ClientResources[Id] = this;
+                    Console.WriteLine($"C# ClientObject: pushed {Id}");
                 }
                 else
                 {
                     // just increase refcount as we pass it over
-                    _refCount++;
-                    Console.WriteLine($"C# ClientObject: increased refcount to {_refCount}");
+                    RefCount++;
+                    Console.WriteLine($"C# ClientObject: increased refcount to {RefCount}");
                 }
-                // actually push, durr
-                NativeMethods.pushInstance(_id, true, false);
+                NativePush();
             }
 
             public void Release()
             {
-                _refCount -= 1;
-                if (_refCount == 0)
+                RefCount -= 1;
+                if (RefCount == 0)
                 {
-                    Console.WriteLine($"C# ReleaseClientObjectID {_id} - refCount 0, removing from clientObjects table");
-                    ClientObjects.Remove(_id);
-                    _id = -1; // reset ID, since we're not in the object table anymore
+                    Console.WriteLine($"C# ReleaseClientObjectID {Id} - refCount 0, removing from clientObjects table");
+                    ClientResources.Remove(Id);
+                    Id = -1; // reset ID, since we're not in the object table anymore
                     // all this does is remove this object from the 'checked-out' table -
                     // things we were keeping alive as long as the remote (server) side had reference to them
                     // but that doesn't mean we're ready to dispose it - might still be useful to us on this side!
                 }
             }
-            public static ClientObject GetById(int id)
+            protected static ClientResource GetResourceById(int id)
             {
-                return ClientObjects[id];
+                return ClientResources[id];
             }
         }
+
+        public abstract class ClientObject : ClientResource
+        {
+            protected override void NativePush()
+            {
+                NativeMethods.pushInstance(Id, true, false);
+            }
+            public static ClientObject GetById(int id)
+            {
+                return (ClientObject)GetResourceById(id);
+            }
+        }
+
         // TODO: these definitely need to be thread-safe
-        private static int _nextClientObjectId = 1;
-        private static readonly Dictionary<int, ClientObject> ClientObjects = new();
+        private static int _nextClientResourceId = 1;
+        private static readonly Dictionary<int, ClientResource> ClientResources = new();
 
         public delegate void MethodWrapper(ClientObject obj);
         private static readonly Dictionary<IntPtr, MethodWrapper> MethodWrappers = new();
@@ -587,12 +592,12 @@ namespace TestLibraryClient
         {
             MethodWrappers[method.Handle] = wrapper;
         }
-        
+
         // these two need to be passed to remote
         private static void ReleaseClientObjectId(int id) // called from remote
         {
             // should we check for _remoteIsShutdown here?
-            ClientObjects[id].Release();
+            ClientResources[id].Release();
         }
         private static void InvokeClientMethod(IntPtr methodHandle, int clientId)
         {
@@ -600,21 +605,23 @@ namespace TestLibraryClient
             MethodWrappers[methodHandle](obj);
         }
 
-        public class ServerObject : IPushable
+        public abstract class ServerResource : IPushable
         {
             protected readonly int Id;
             private bool _remoteReleased;
-            protected ServerObject(int id)
+            protected ServerResource(int id)
             {
                 Id = id;
             }
 
-            ~ServerObject()
+            ~ServerResource()
             {
                 // backstop in case the derived class not manually disposed
-                Console.WriteLine($"ServerObject id {Id} - dtor invoked, calling ServerDispose()");
+                Console.WriteLine($"ServerResource id {Id} - dtor invoked, calling ServerDispose()");
                 ServerDispose();
             }
+
+            protected abstract void NativePush(bool inSafeArea);
             
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             protected void ServerDispose()
@@ -639,11 +646,23 @@ namespace TestLibraryClient
                     // (dependent on probably-unlikely GC collection, but better safe than sorry)
                     MakeSafe();
                 }
-                NativeMethods.pushInstance(Id, false, isReturn);
+                NativePush(isReturn);
             }
         }
+
+        public abstract class ServerObject : ServerResource
+        {
+            protected ServerObject(int id) : base(id)
+            {
+            }
+            protected override void NativePush(bool inSafeArea)
+            {
+                NativeMethods.pushInstance(Id, false, inSafeArea);
+            }
+        }
+
         // todo: needs to be thread-safe
-        private static readonly List<ServerObject> SafeArea = new(); // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
+        private static readonly List<ServerResource> SafeArea = new(); // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
 
         // call this after receiving an interface (maybe even a function, eventually?) as a return value
         public static void ServerClearSafetyArea()
@@ -675,7 +694,7 @@ namespace TestLibraryClient
             }
 
             Console.WriteLine("== C# server objects:");
-            foreach (var (key, value) in ClientObjects)
+            foreach (var (key, value) in ClientResources)
             {
                 Console.WriteLine($" - obj {value.Id}: refcount {value.RefCount}");
             }

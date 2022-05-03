@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace TestLibraryClient
 {
-    public static class NativeMethods
+    internal static class NativeMethods
     {
         internal delegate void ExecFunctionDelegate(int id);
         internal delegate void ReleaseFunctionDelegate(int id);

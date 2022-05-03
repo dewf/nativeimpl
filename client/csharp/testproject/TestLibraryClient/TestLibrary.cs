@@ -14,8 +14,8 @@ namespace TestLibraryClient
         private static ModuleMethodHandle _returnsThing;
         private static ModuleMethodHandle _applyFunc;
         private static InterfaceHandle _myThing;
-        private static InterfaceMethodHandle _myThing_doSomething;
-
+        private static InterfaceMethodHandle _myThingDoSomething;
+        
         public delegate int IntFunc(int x);
 
         private static void IntFunc__Push(IntFunc callback)
@@ -27,11 +27,11 @@ namespace TestLibraryClient
             }
             NativeImplClient.PushClientFuncVal(CallbackWrapper, Marshal.GetFunctionPointerForDelegate(callback));
         }
-
+        
         private static IntFunc IntFunc__Pop()
         {
             var id = NativeImplClient.PopServerFuncValId();
-            var remoteFunc = new NativeImplClient.ServerFunc(id);
+            var remoteFunc = new ServerFunc(id);
             int Wrapper(int x)
             {
                 NativeImplClient.PushInt(x);
@@ -41,13 +41,12 @@ namespace TestLibraryClient
             return Wrapper;
         }
 
-
-        public interface MyThing : IDisposable
+        public interface IMyThing : IDisposable
         {
             int DoSomething(int x);
         }
 
-        private static MyThing MyThing__Pop()
+        private static IMyThing MyThing__Pop()
         {
             NativeImplClient.PopInstanceId(out var id, out var isClientId);
             if (!isClientId)
@@ -56,11 +55,11 @@ namespace TestLibraryClient
             }
             else
             {
-                return (MyThing) NativeImplClient.ClientObject.GetById(id);
+                return (IMyThing) ClientObject.GetById(id);
             }
         }
 
-        public abstract class ClientMyThing : NativeImplClient.ClientObject, MyThing
+        public abstract class ClientMyThing : ClientObject, IMyThing
         {
             public virtual void Dispose()
             {
@@ -69,7 +68,7 @@ namespace TestLibraryClient
             public abstract int DoSomething(int x);
         }
 
-        private class ServerMyThing : NativeImplClient.ServerObject, MyThing
+        private class ServerMyThing : ServerObject, IMyThing
         {
             public ServerMyThing(int id) : base(id)
             {
@@ -78,7 +77,7 @@ namespace TestLibraryClient
             public int DoSomething(int x)
             {
                 NativeImplClient.PushInt(x);
-                NativeImplClient.InvokeInterfaceMethod(_myThing_doSomething, Id);
+                NativeImplClient.InvokeInterfaceMethod(_myThingDoSomething, Id);
                 return NativeImplClient.PopInt();
             }
 
@@ -88,13 +87,13 @@ namespace TestLibraryClient
             }
         }
 
-        public static void TakesThing(MyThing thing)
+        public static void TakesThing(IMyThing thing)
         {
-            ((NativeImplClient.IPushable)thing).Push(false);
+            ((IPushable)thing).Push(false);
             NativeImplClient.InvokeModuleMethod(_takesThing);
         }
 
-        public static MyThing ReturnsThing()
+        public static IMyThing ReturnsThing()
         {
             NativeImplClient.InvokeModuleMethod(_returnsThing);
             var __ret = MyThing__Pop();
@@ -118,9 +117,9 @@ namespace TestLibraryClient
             _applyFunc = NativeImplClient.GetModuleMethod(_module, "applyFunc");
 
             _myThing = NativeImplClient.GetInterface(_module, "MyThing");
-            _myThing_doSomething = NativeImplClient.GetInterfaceMethod(_myThing, "doSomething");
+            _myThingDoSomething = NativeImplClient.GetInterfaceMethod(_myThing, "doSomething");
 
-            NativeImplClient.SetClientMethodWrapper(_myThing_doSomething, delegate(NativeImplClient.ClientObject obj)
+            NativeImplClient.SetClientMethodWrapper(_myThingDoSomething, delegate(ClientObject obj)
             {
                 var inst = (ClientMyThing) obj;
                 var x = NativeImplClient.PopInt();
@@ -132,5 +131,10 @@ namespace TestLibraryClient
         {
             NativeImplClient.Shutdown();
         }
+
+        public static void DumpTables()
+        {
+            NativeImplClient.DumpTables();
+        }        
     }
 }

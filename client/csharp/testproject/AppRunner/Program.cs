@@ -24,9 +24,9 @@ namespace AppRunner
             {
                 Console.WriteLine("C# returned thing .DoSomething(1234) = {0}", thing.DoSomething(1234));
             }
-
+            
             GC.Collect();
-            NativeImplClient.DumpTables();
+            TestLibrary.DumpTables();
             
             Console.WriteLine("TestLibrary.Shutdown:");
             TestLibrary.Shutdown();

@@ -12,11 +12,17 @@ public:
 };
 
 class ServerResource : public Pushable {
-public:
+private:
+	int refCount = 0;
+protected:
 	int id = -1;
+public:
+	void release();
 	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
-	static std::shared_ptr<ServerResource> getResourceById(int id);
 	~ServerResource();
+
+	static std::shared_ptr<ServerResource> getResourceById(int id);
+	static void dumpTables();
 protected:
 	virtual void nativePush() = 0; // implemented specifically for: objects, buffers, etc
 	virtual void releaseExtra() {} // anything else you might want to do here, when destroyed (eg used by ServerFuncVal to remove itself from reverse map)

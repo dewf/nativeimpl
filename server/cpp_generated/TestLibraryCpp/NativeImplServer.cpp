@@ -5,21 +5,12 @@
 #include <vector>
 #include <assert.h>
 
-struct ServerResourceInfo {
-	int id;
-	std::shared_ptr<ServerResource> resource;
-	int refCount;
-};
 static int nextServerObjId = 1;
-static std::map<int, ServerResourceInfo> serverResources;
-
-static std::map<size_t, int> reverseServerFuncVals;
+static std::map<int, std::shared_ptr<ServerResource>> serverResources;
+static std::map<size_t, int> reverseServerFuncVals; // to attempt to de-duplicate identical std::functions
 
 void ni_dumpTables() {
-	printf("== C++ server resources:\n");
-	for (auto i = serverResources.begin(); i != serverResources.end(); i++) {
-		printf(" - obj %d: refcount %d\n", i->first, i->second.refCount);
-	}
+	ServerResource::dumpTables();
 }
 
 void ni_execServerFunc(int id)
@@ -37,8 +28,7 @@ ni_ExceptionRef ni_execServerFuncWithExceptions(int id) {
 
 void ni_releaseServerFunc(int id)
 {
-	// for now ...
-	ni_releaseServerInst(id);
+	ServerResource::getResourceById(id)->release();
 }
 
 void pushServerFuncVal(std::function<void()> wrapper, size_t key) {
@@ -139,7 +129,15 @@ std::vector<size_t> popSizeTArrayInternal()
 }
 
 std::shared_ptr<ServerResource> ServerResource::getResourceById(int id) {
-	return serverResources[id].resource;
+	return serverResources[id];
+}
+
+void ServerResource::dumpTables()
+{
+	printf("== C++ server resources:\n");
+	for (auto i = serverResources.begin(); i != serverResources.end(); i++) {
+		printf(" - obj %d: refcount %d\n", i->first, i->second->refCount);
+	}
 }
 
 ServerResource::~ServerResource()
@@ -147,18 +145,30 @@ ServerResource::~ServerResource()
 	releaseExtra();
 }
 
+void ServerResource::release()
+{
+	refCount -= 1;
+	if (refCount == 0) {
+		printf("C++: releasing server obj %d\n", id); // only removes from table, still might exist on this side somewhere
+		serverResources.erase(id);
+	}
+	else {
+		printf("C++: releaseServerInstID(%d) - refCount still %d\n", id, refCount);
+	}
+}
+
 void ServerResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	// isReturn not used for server stuff, that's just to help out with the safe area / protecting client objects
 	if (id == -1) { // unset as of yet
 		id = nextServerObjId++;
-		auto serverOuter = std::dynamic_pointer_cast<ServerResource>(outer);
-		serverResources[id] = ServerResourceInfo{ id, serverOuter, 1 };
+		refCount = 1;
+		serverResources[id] = std::dynamic_pointer_cast<ServerResource>(outer);
 		//printf("ServerObject::soPush()ed into serverObjects[%d]\n", id);
 	}
 	else {
 		// add ref to existing
-		serverResources[id].refCount++; // this assumes that it's going across a boundary which will be balanced by an eventual deref. is that always true?
-		printf("bumped server ID %d refcount to %d\n", id, serverResources[id].refCount);
+		refCount++; // this assumes that it's going across a boundary which will be balanced by an eventual deref. is that always true?
+		printf("bumped server ID %d refcount to %d\n", id, refCount);
 	}
 	nativePush();
 }
@@ -176,14 +186,7 @@ void ServerObject::nativePush()
 
 void ni_releaseServerInst(int id)
 {
-	serverResources[id].refCount -= 1;
-	if (serverResources[id].refCount == 0) {
-		printf("C++: releasing server obj %d\n", id);
-		serverResources.erase(id);
-	}
-	else {
-		printf("C++: releaseServerInstID(%d) - refCount still %d\n", id, serverResources[id].refCount);
-	}
+	ServerResource::getResourceById(id)->release();
 }
 
 // while server objects are kept alive ("checked out") via the serverObjects/refcount,

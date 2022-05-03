@@ -3,13 +3,27 @@ using TestLibraryClient;
 
 namespace AppRunner
 {
+    internal class Thing : TestLibrary.ClientMyThing
+    {
+        public override int DoSomething(int x)
+        {
+            Console.WriteLine("C# Thing.DoSomething({0})", x);
+            return x + 1001;
+        }
+    }
+    
     public static class Program
     {
         public static void Main(string[] args)
         {
             TestLibrary.Init();
-
-            var x = TestLibrary.SimpleFunction(100);
+            
+            TestLibrary.ApplyFunc(x => x * 123);
+            TestLibrary.TakesThing(new Thing());
+            using (var thing = TestLibrary.ReturnsThing())
+            {
+                Console.WriteLine("C# returned thing .DoSomething(1234) = {0}", thing.DoSomething(1234));
+            }
 
             GC.Collect();
             NativeImplClient.DumpTables();

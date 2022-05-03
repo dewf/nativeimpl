@@ -1,4 +1,13 @@
 module TestLibrary;
 
-int simpleFunction(int x);
+interface MyThing {
+   int doSomething(int x);
+}
+
+void takesThing(MyThing thing);
+MyThing returnsThing();
+
+delegate int IntFunc(int x);
+void applyFunc(IntFunc f);
+
 

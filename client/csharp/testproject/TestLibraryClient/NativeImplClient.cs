@@ -626,7 +626,7 @@ namespace TestLibraryClient
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             protected void ServerDispose()
             {
-                if (_remoteReleased) return;
+                if (_remoteReleased || _remoteIsShutdown) return;
                 ReleaseServerInstanceId(Id);
                 _remoteReleased = true;
             }

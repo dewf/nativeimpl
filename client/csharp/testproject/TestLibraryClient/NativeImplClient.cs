@@ -51,152 +51,6 @@ namespace TestLibraryClient
         }
     }
 
-    internal static class NativeMethods
-    {
-        internal delegate void ExecFunctionDelegate(int id);
-        internal delegate void ReleaseFunctionDelegate(int id);
-        internal delegate void ClientMethodDelegate(IntPtr methodHandle, int objectId);
-        internal delegate void ClientObjReleaseDelegate(int objectId);
-        internal delegate void ClientClearSafetyAreaDelegate();
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int nativeImplInit(
-            ExecFunctionDelegate execFunctionDelegate,
-            ReleaseFunctionDelegate releaseFunctionDelegate,
-            ClientMethodDelegate methodDelegate,
-            ClientObjReleaseDelegate objReleaseDelegate,
-            ClientClearSafetyAreaDelegate clientClearSafetyAreaDelegate
-            );
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void nativeImplShutdown();
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr getModule(
-            [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))]
-            string name);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr getModuleMethod(
-            IntPtr module,
-            [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))]
-            string name);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr getInterface(
-            IntPtr module,
-            [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))]
-            string name);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr getInterfaceMethod(
-            IntPtr iface,
-            [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))]
-            string name);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr getException(
-            IntPtr module,
-            [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(Utf8Marshaler))]
-            string name);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void invokeModuleMethod(IntPtr method);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr invokeModuleMethodWithExceptions(IntPtr method);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushSizeT(IntPtr value);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr popSizeT();
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushSizeTArray(IntPtr[] values, IntPtr count);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void popSizeTArray(out IntPtr valuesPtr, out IntPtr count); // size_t**, size_t*
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushBool(bool value);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern bool popBool();
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushBoolArray(byte[] values, IntPtr count); // bool*, size_t
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void popBoolArray(out IntPtr valuesPtr, out IntPtr count); // bool**, size_t*
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushInt(int x);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int popInt();
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushIntArray(int[] values, IntPtr count); // size_t count
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void popIntArray(out IntPtr values, out IntPtr count); // both args are pointers
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushString(IntPtr str, IntPtr length); // size_t length
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void popString(out IntPtr strPtr, out IntPtr length); // size_t* length
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushStringArray(IntPtr[] strs, IntPtr[] lengths, IntPtr count); // const char **, size_t*, size_t
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void popStringArray(out IntPtr strsPtr, out IntPtr lengthsPtr, out IntPtr count); // const char ***, size_t**, size_t*
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushClientFunc(int id);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int popServerFunc();
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void execServerFunc(int id);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr execServerFuncWithExceptions(int id);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void releaseServerFunc(int id);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void invokeInterfaceMethod(IntPtr method, int serverId);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern IntPtr invokeInterfaceMethodWithExceptions(IntPtr method, int serverId);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushInstance(int id, bool isClientId, bool inSafetyArea);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int popInstance(out bool isClientId, out bool inSafetyArea);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int releaseServerInst(int id);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void clearServerSafetyArea();
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void dumpTables();
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushModuleConstants(IntPtr module);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void setException(IntPtr exceptionHandle);
-    }
-
     public static class NativeImplClient
     {
         // these MUST be saved, else GC will take the delegates out from under us. ohnononono!
@@ -206,61 +60,66 @@ namespace TestLibraryClient
         private static NativeMethods.ClientObjReleaseDelegate _savedClientObjReleaseDelegate;
         private static NativeMethods.ClientClearSafetyAreaDelegate _savedClientClearSafetyAreaDelegate;
 
-        private static bool _remoteIsShutdown = false; // TODO: probably needs to be thread-safe
+        // TODO: all this below won't work with threads ...
+        private static bool _remoteIsShutdown = false;
 
-        // callback-related stuff
-        public delegate void FuncValWrapper();
-        private struct FuncValInfo
-        {
-            public FuncValWrapper Wrapper;
-            public IntPtr Key;
-            public int RefCount;
-        }
-        // TODO: these definitely need to be thread-safe
-        private static readonly Dictionary<int, FuncValInfo> FuncValDict = new ();
         private static readonly Dictionary<IntPtr, int> ReverseFuncValDict = new ();
-        private static int _nextFuncValId = 1;
+
+        private static int _nextClientResourceId = 1;
+        private static readonly Dictionary<int, ClientResource> ClientResources = new();
+        public delegate void MethodWrapper(ClientObject obj);
+        private static readonly Dictionary<IntPtr, MethodWrapper> MethodWrappers = new();
+
+        private static readonly List<ServerResource> SafeArea = new(); // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
+
+        public delegate void ExceptionBuildAndThrowDelegate();
+        private static readonly Dictionary<IntPtr, ExceptionBuildAndThrowDelegate> ExceptionBuildAndThrowDelegates = new();
+
+        public delegate void FuncValWrapper();
+        private class ClientFuncVal : ClientResource
+        {
+            public readonly FuncValWrapper Wrapper;
+            private readonly IntPtr _key;
+            private ClientFuncVal(FuncValWrapper wrapper, IntPtr key)
+            {
+                Wrapper = wrapper;
+                _key = key;
+            }
+            protected override void NativePush()
+            {
+                NativeMethods.pushClientFunc(Id);
+            }
+            protected override void ReleaseExtra()
+            {
+                ReverseFuncValDict.Remove(_key);
+            }
+            public static ClientFuncVal AddFuncVal(FuncValWrapper wrapper, IntPtr uniqueKey)
+            {
+                Console.WriteLine($"Func Val Unique Key: {uniqueKey}");
+                if (ReverseFuncValDict.ContainsKey(uniqueKey))
+                {
+                    // return existing
+                    var id = ReverseFuncValDict[uniqueKey];
+                    return (ClientFuncVal)ClientResources[id];
+                }
+                // else create anew
+                var clientFunc = new ClientFuncVal(wrapper, uniqueKey);
+                ReverseFuncValDict[uniqueKey] = clientFunc.Id;
+                return clientFunc;
+            }
+        }
+        public static void PushClientFuncVal(FuncValWrapper wrapper, IntPtr uniqueKey)
+        {
+            var funcVal = ClientFuncVal.AddFuncVal(wrapper, uniqueKey);
+            ((IPushable)funcVal).Push(false); // isReturn = false (more correctly, "not applicable") - client resources don't need to be protected on return
+        }
         private static void FuncValExecutor(int id)
         {
-            FuncValDict[id].Wrapper();
+            ((ClientFuncVal)ClientResources[id]).Wrapper();
         }
         private static void ReleaseFuncVal(int id)
         {
-            Console.WriteLine($"C# ReleaseFuncVal {id}");
-            // decrement
-            var info = FuncValDict[id];
-            info.RefCount -= 1;
-            if (info.RefCount == 0)
-            {
-                // truly delete
-                ReverseFuncValDict.Remove(info.Key);
-                FuncValDict.Remove(id);
-                Console.WriteLine("C# callback {0} removed", id);
-            }
-            else
-            {
-                FuncValDict[id] = info; // store w/ updated refcount
-                Console.WriteLine($" - updated refcount: {info.RefCount}");
-            }
-        }
-        private static int AddFuncVal(FuncValWrapper wrapper, IntPtr uniqueKey)
-        {
-            Console.WriteLine($"Func Val Unique Key: {uniqueKey}");
-            // insert if this delegate unique
-            if (!ReverseFuncValDict.ContainsKey(uniqueKey))
-            {
-                var id = _nextFuncValId++;
-                FuncValDict[id] = new FuncValInfo { Wrapper = wrapper, Key = uniqueKey, RefCount = 1 };
-                ReverseFuncValDict[uniqueKey] = id;
-                return id;
-            }
-            // else increment the refcount of existing
-            var id2 = ReverseFuncValDict[uniqueKey];
-            var fv = FuncValDict[id2];
-            fv.RefCount += 1;
-            FuncValDict[id2] = fv;
-            Console.WriteLine($" - AddFuncVal refcount: {fv.RefCount}");
-            return id2;
+            ClientResources[id].Release();
         }
 
         public static int Init()
@@ -453,13 +312,6 @@ namespace TestLibraryClient
             return result;
         }
         
-        public static void PushClientFuncVal(FuncValWrapper del, IntPtr key)
-        {
-            var id = AddFuncVal(del, key);
-            Console.WriteLine($"AddFuncVal id: {id}");
-            NativeMethods.pushClientFunc(id);
-        }
-        
         public static int PopServerFuncValId()
         {
             return NativeMethods.popServerFunc();
@@ -469,33 +321,34 @@ namespace TestLibraryClient
         {
             id = NativeMethods.popInstance(out isClientId, out var inSafetyArea); // do something with 'inSafetyArea' ?
         }
-        
-        public class ServerFunc
+
+        public class ServerFunc : ServerResource
         {
-            private readonly int _id;
-            public ServerFunc(int id)
+            public ServerFunc(int id) : base(id)
             {
-                _id = id;
             }
-            ~ServerFunc()
+            protected override void NativePush(bool inSafeArea)
             {
-                // verify remote not shut down to avoid problems
-                if (!_remoteIsShutdown)
-                {
-                    NativeMethods.releaseServerFunc(_id);
-                }
+                // ServerFuncs currently will never be pushed - we don't support "short-circuiting" of function values,
+                // they are always wrapped afresh from each side (so a server function returned from our side,
+                // becomes a client function - use a single method interface for that kind of thing)
+                throw new NotImplementedException();
             }
             public void Exec()
             {
-                NativeMethods.execServerFunc(_id);
+                NativeMethods.execServerFunc(Id);
             }
             public void ExecWithExceptions()
             {
-                var exceptionHandle = NativeMethods.execServerFuncWithExceptions(_id);
+                var exceptionHandle = NativeMethods.execServerFuncWithExceptions(Id);
                 if (exceptionHandle != IntPtr.Zero)
                 {
                     ExceptionBuildAndThrowDelegates[exceptionHandle]();
                 }
+            }
+            protected override void CustomRelease() // TODO: get rid of this soon!
+            {
+                NativeMethods.releaseServerFunc(Id);
             }
         }
         
@@ -532,6 +385,11 @@ namespace TestLibraryClient
             internal int RefCount { get; private set; }
             protected abstract void NativePush();
 
+            protected virtual void ReleaseExtra()
+            {
+                // anything else you might want to do here, when refcount = 0? (used by ClientFunc to remove from reverse dict)
+            }
+
             void IPushable.Push(bool isReturn) // isReturn unused here
             {
                 if (Id == -1)
@@ -556,14 +414,17 @@ namespace TestLibraryClient
                 RefCount -= 1;
                 if (RefCount == 0)
                 {
-                    Console.WriteLine($"C# ReleaseClientObjectID {Id} - refCount 0, removing from clientObjects table");
+                    Console.WriteLine($"C# Release on ClientResource {Id} - refCount 0, removing from clientObjects table");
                     ClientResources.Remove(Id);
                     Id = -1; // reset ID, since we're not in the object table anymore
                     // all this does is remove this object from the 'checked-out' table -
                     // things we were keeping alive as long as the remote (server) side had reference to them
                     // but that doesn't mean we're ready to dispose it - might still be useful to us on this side!
+                    
+                    ReleaseExtra(); // currently just for clientfuncval, which needs to remove the reverse mapping
                 }
             }
+
             protected static ClientResource GetResourceById(int id)
             {
                 return ClientResources[id];
@@ -582,12 +443,6 @@ namespace TestLibraryClient
             }
         }
 
-        // TODO: these definitely need to be thread-safe
-        private static int _nextClientResourceId = 1;
-        private static readonly Dictionary<int, ClientResource> ClientResources = new();
-
-        public delegate void MethodWrapper(ClientObject obj);
-        private static readonly Dictionary<IntPtr, MethodWrapper> MethodWrappers = new();
         public static void SetClientMethodWrapper(InterfaceMethodHandle method, MethodWrapper wrapper)
         {
             MethodWrappers[method.Handle] = wrapper;
@@ -622,12 +477,15 @@ namespace TestLibraryClient
             }
 
             protected abstract void NativePush(bool inSafeArea);
+            protected virtual void CustomRelease() // TODO: only keep until we've fixed up both sides to use the new resources for funcvals, then don't need this anymore
+            {
+                ReleaseServerInstanceId(Id);
+            }
             
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             protected void ServerDispose()
             {
                 if (_remoteReleased || _remoteIsShutdown) return;
-                ReleaseServerInstanceId(Id);
+                CustomRelease();
                 _remoteReleased = true;
             }
 
@@ -661,14 +519,12 @@ namespace TestLibraryClient
             }
         }
 
-        // todo: needs to be thread-safe
-        private static readonly List<ServerResource> SafeArea = new(); // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
-
         // call this after receiving an interface (maybe even a function, eventually?) as a return value
         public static void ServerClearSafetyArea()
         {
             // TODO: in the future, perhaps check to see if the remote safety area is 'dirty' -- we'll know from the flags returned on popInstace()
-            // could avoid this call entirely, not that it's terribly oppressive
+            // (have given that a lot of thought and will probably go in the direction of not even having the 'inSafetyArea' flag on resource pops,
+            // could potentially require lots of branching for return types with lots of resource refs, is it really worth it?
             NativeMethods.clearServerSafetyArea();
         }
 
@@ -687,13 +543,13 @@ namespace TestLibraryClient
             
             Console.WriteLine("Local tables-----------------------------");
             
-            Console.WriteLine("== C# server func vals:");
-            foreach (var (key, value) in FuncValDict)
-            {
-                Console.WriteLine($" - fun {key}: refcount {value.RefCount}");
-            }
+            // Console.WriteLine("== C# server func vals:");
+            // foreach (var (key, value) in FuncValDict)
+            // {
+            //     Console.WriteLine($" - fun {key}: refcount {value.RefCount}");
+            // }
 
-            Console.WriteLine("== C# server objects:");
+            Console.WriteLine("== C# client resources:");
             foreach (var (key, value) in ClientResources)
             {
                 Console.WriteLine($" - obj {value.Id}: refcount {value.RefCount}");
@@ -702,9 +558,6 @@ namespace TestLibraryClient
             Console.WriteLine("=========================================");
         }
 
-        public delegate void ExceptionBuildAndThrowDelegate();
-
-        private static readonly Dictionary<IntPtr, ExceptionBuildAndThrowDelegate> ExceptionBuildAndThrowDelegates = new();
         public static void SetExceptionBuilder(ExceptionHandle eh, ExceptionBuildAndThrowDelegate builder)
         {
             ExceptionBuildAndThrowDelegates[eh.Handle] = builder;

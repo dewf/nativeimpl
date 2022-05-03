@@ -15,13 +15,13 @@ static int nextServerFuncId = 1;
 static std::map<int, ServerFuncVal> serverFuncVals;
 static std::map<size_t, int> reverseServerFuncVals;
 
-struct ServerObjectInfo {
+struct ServerResourceInfo {
 	int id;
-	std::shared_ptr<ServerObject> object;
+	std::shared_ptr<ServerResource> resource;
 	int refCount;
 };
 static int nextServerObjId = 1;
-static std::map<int, ServerObjectInfo> serverObjects;
+static std::map<int, ServerResourceInfo> serverResources;
 
 void ni_dumpTables() {
 	printf("== C++ server func vals:\n");
@@ -29,7 +29,7 @@ void ni_dumpTables() {
 		printf(" - func %d: refcount %d\n", i->first, i->second.refCount);
 	}
 	printf("== C++ server objects:\n");
-	for (auto i = serverObjects.begin(); i != serverObjects.end(); i++) {
+	for (auto i = serverResources.begin(); i != serverResources.end(); i++) {
 		printf(" - obj %d: refcount %d\n", i->first, i->second.refCount);
 	}
 }
@@ -176,24 +176,35 @@ std::vector<size_t> popSizeTArrayInternal()
 	return ret;
 }
 
-void ServerObject::push(std::shared_ptr<Pushable> outer, bool isReturn) {
+std::shared_ptr<ServerResource> ServerResource::getResourceById(int id) {
+	return serverResources[id].resource;
+}
+
+void ServerResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	// isReturn not used for server stuff, that's just to help out with the safe area / protecting client objects
 	if (id == -1) { // unset as of yet
 		id = nextServerObjId++;
-		auto serverOuter = std::dynamic_pointer_cast<ServerObject>(outer);
-		serverObjects[id] = ServerObjectInfo{ id, serverOuter, 1 };
+		auto serverOuter = std::dynamic_pointer_cast<ServerResource>(outer);
+		serverResources[id] = ServerResourceInfo{ id, serverOuter, 1 };
 		//printf("ServerObject::soPush()ed into serverObjects[%d]\n", id);
 	}
 	else {
 		// add ref to existing
-		serverObjects[id].refCount++; // this assumes that it's going across a boundary which will be balanced by an eventual deref. is that always true?
-		printf("bumped server ID %d refcount to %d\n", id, serverObjects[id].refCount);
+		serverResources[id].refCount++; // this assumes that it's going across a boundary which will be balanced by an eventual deref. is that always true?
+		printf("bumped server ID %d refcount to %d\n", id, serverResources[id].refCount);
 	}
-	ni_pushInstance(id, false, false);
+	nativePush();
 }
 
-std::shared_ptr<ServerObject> ServerObject::getByID(int id) {
-	return serverObjects[id].object;
+std::shared_ptr<ServerObject> ServerObject::getByID(int id)
+{
+	auto res = ServerResource::getResourceById(id);
+	return std::dynamic_pointer_cast<ServerObject>(res);
+}
+
+void ServerObject::nativePush()
+{
+	ni_pushInstance(id, false, false);
 }
 
 void ClientFunc::remoteExec()
@@ -223,13 +234,13 @@ ClientFunc::~ClientFunc()
 
 void ni_releaseServerInst(int id)
 {
-	serverObjects[id].refCount -= 1;
-	if (serverObjects[id].refCount == 0) {
+	serverResources[id].refCount -= 1;
+	if (serverResources[id].refCount == 0) {
 		printf("C++: releasing server obj %d\n", id);
-		serverObjects.erase(id);
+		serverResources.erase(id);
 	}
 	else {
-		printf("C++: releaseServerInstID(%d) - refCount still %d\n", id, serverObjects[id].refCount);
+		printf("C++: releaseServerInstID(%d) - refCount still %d\n", id, serverResources[id].refCount);
 	}
 }
 
@@ -279,3 +290,4 @@ ClientObject::~ClientObject() {
 	printf("C++ ClientObject::dtor, remote releasing\n");
 	::ni_clientObjRelease(id);
 }
+

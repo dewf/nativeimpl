@@ -22,11 +22,19 @@ public:
 	virtual void push(std::shared_ptr<Pushable> outer, bool isReturn) = 0;
 };
 
-class ServerObject : public Pushable {
+class ServerResource : public Pushable {
 public:
 	int id = -1;
-	static std::shared_ptr<ServerObject> getByID(int id);
 	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
+protected:
+	static std::shared_ptr<ServerResource> getResourceById(int id);
+	virtual void nativePush() = 0; // implemented specifically for: objects, buffers, etc
+};
+
+class ServerObject : public ServerResource {
+public:
+	static std::shared_ptr<ServerObject> getByID(int id);
+	void nativePush() override;
 };
 
 class ClientObject : public Pushable {

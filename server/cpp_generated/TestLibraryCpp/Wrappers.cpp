@@ -20,7 +20,7 @@ void IntFunc__push(std::function<IntFunc> f) {
 
 std::function<IntFunc> IntFunc__pop() {
     auto id = ni_popClientFunc();
-    auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id));
+    auto cf = std::shared_ptr<ClientFuncVal>(new ClientFuncVal(id));
     auto wrapper = [cf](int x) {
         ni_pushInt(x);
         cf->remoteExec();

@@ -6,17 +6,6 @@
 #include <functional>
 #include <vector>
 
-class ClientFunc {
-protected:
-	int id;
-public:
-	ClientFunc(int id)
-		:id(id) {}
-	void remoteExec();
-	void remoteExecWithExceptions();
-	virtual ~ClientFunc(); // will release remote (decreate remote refcount)
-};
-
 class Pushable {
 public:
 	virtual void push(std::shared_ptr<Pushable> outer, bool isReturn) = 0;
@@ -26,9 +15,22 @@ class ServerResource : public Pushable {
 public:
 	int id = -1;
 	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
-protected:
 	static std::shared_ptr<ServerResource> getResourceById(int id);
+	~ServerResource();
+protected:
 	virtual void nativePush() = 0; // implemented specifically for: objects, buffers, etc
+	virtual void releaseExtra() {} // anything else you might want to do here, when destroyed (eg used by ServerFuncVal to remove itself from reverse map)
+};
+
+class ClientResource : public Pushable {
+protected:
+	int id;
+	virtual void nativePush(bool inSafetyArea) = 0;
+	virtual void customRelease();
+public:
+	ClientResource(int id) : id(id) {}
+	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
+	virtual ~ClientResource();
 };
 
 class ServerObject : public ServerResource {
@@ -38,16 +40,6 @@ protected:
 	void nativePush() override;
 };
 
-class ClientResource : public Pushable {
-protected:
-	int id;
-	virtual void nativePush(bool inSafetyArea) = 0;
-public:
-	ClientResource(int id) : id(id) {}
-	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
-	virtual ~ClientResource();
-};
-
 class ClientObject : public ClientResource {
 public:
 	ClientObject(int id) : ClientResource(id) {}
@@ -55,6 +47,30 @@ public:
 	void invokeMethodWithExceptions(ni_InterfaceMethodRef method);
 protected:
 	void nativePush(bool inSafetyArea) override;
+};
+
+class ClientFuncVal : public ClientResource {
+public:
+	ClientFuncVal(int id) : ClientResource(id) {}
+	void remoteExec();
+	void remoteExecWithExceptions();
+protected:
+	void nativePush(bool inSafetyArea) override;
+	void customRelease() override;					// TODO: get rid of this when we no longer distinguish between func val and object release
+};
+
+class ServerFuncVal : public ServerResource {
+private:
+	ServerFuncVal(std::function<void()> wrapper, size_t uniqueKey)
+		: wrapper(wrapper), uniqueKey(uniqueKey) {}
+	size_t uniqueKey;
+public:
+	std::function<void()> wrapper;
+	void nativePush() override;
+	static std::shared_ptr<ServerFuncVal> getById(int id);
+	static std::shared_ptr<ServerFuncVal> create(std::function<void()> wrapper, size_t key);
+protected:
+	void releaseExtra() override;
 };
 
 // our "exports" back to core (well, the DLL being built around core)

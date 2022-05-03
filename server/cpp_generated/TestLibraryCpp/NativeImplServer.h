@@ -34,18 +34,27 @@ protected:
 class ServerObject : public ServerResource {
 public:
 	static std::shared_ptr<ServerObject> getByID(int id);
+protected:
 	void nativePush() override;
 };
 
-class ClientObject : public Pushable {
-private:
+class ClientResource : public Pushable {
+protected:
 	int id;
+	virtual void nativePush(bool inSafetyArea) = 0;
 public:
-	ClientObject(int id) : id(id) {}
+	ClientResource(int id) : id(id) {}
+	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
+	virtual ~ClientResource();
+};
+
+class ClientObject : public ClientResource {
+public:
+	ClientObject(int id) : ClientResource(id) {}
 	void invokeMethod(ni_InterfaceMethodRef method);
 	void invokeMethodWithExceptions(ni_InterfaceMethodRef method);
-	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
-	virtual ~ClientObject();
+protected:
+	void nativePush(bool inSafetyArea) override;
 };
 
 // our "exports" back to core (well, the DLL being built around core)

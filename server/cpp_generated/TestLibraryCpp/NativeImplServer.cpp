@@ -249,13 +249,34 @@ void ni_releaseServerInst(int id)
 // and releasing them prematurely (dropping remote refcount to 0)
 // the other side will call clearServerSafetyArea when it's gotten the return value
 // each side has its own safety area, to protect the other's resources during function return handoff
-static std::vector<std::shared_ptr<ClientObject>> safeArea;
+static std::vector<std::shared_ptr<ClientResource>> safeArea;
 
 // clear server resources from safety area (protects values being returned with no other shared_ptrs existing on this side)
 void ni_clearServerSafetyArea() {
 	printf("C++ before safety clear =====\n");
 	safeArea.clear();
 	printf("C++ after safety clear!! ====\n");
+}
+
+void ClientResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
+	if (isReturn) {
+		// for return values, to keep them alive until other side has taken them
+		printf("C++ ClientObject %d safepush\n", id);
+		// preserve for return values etc
+		auto clientOuter = std::dynamic_pointer_cast<ClientResource>(outer);
+		safeArea.push_back(clientOuter);
+	}
+	nativePush(isReturn);
+}
+
+ClientResource::~ClientResource() {
+	printf("C++ ClientObject::dtor, remote releasing\n");
+	::ni_clientObjRelease(id);
+}
+
+void ClientObject::nativePush(bool inSafetyArea)
+{
+	ni_pushInstance(id, true, inSafetyArea);
 }
 
 void ClientObject::invokeMethod(ni_InterfaceMethodRef method) {
@@ -274,20 +295,3 @@ void ClientObject::invokeMethodWithExceptions(ni_InterfaceMethodRef method) {
 		ni_buildAndthrow(e);
 	}
 }
-
-void ClientObject::push(std::shared_ptr<Pushable> outer, bool isReturn) {
-	if (isReturn) {
-		// for return values, to keep them alive until other side has taken them
-		printf("C++ ClientObject %d safepush\n", id);
-		// preserve for return values etc
-		auto clientOuter = std::dynamic_pointer_cast<ClientObject>(outer);
-		safeArea.push_back(clientOuter);
-	}
-	ni_pushInstance(id, true, isReturn);
-}
-
-ClientObject::~ClientObject() {
-	printf("C++ ClientObject::dtor, remote releasing\n");
-	::ni_clientObjRelease(id);
-}
-

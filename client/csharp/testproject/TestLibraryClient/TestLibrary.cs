@@ -14,6 +14,7 @@ namespace TestLibraryClient
         private static ModuleMethodHandle _returnsThing;
         private static ModuleMethodHandle _applyFunc;
         private static ModuleMethodHandle _takesBuffer;
+        private static ModuleMethodHandle _returnsBuffer;
         private static InterfaceHandle _myThing;
         private static InterfaceMethodHandle _myThingDoSomething;
         
@@ -97,9 +98,9 @@ namespace TestLibraryClient
         public static IMyThing ReturnsThing()
         {
             NativeImplClient.InvokeModuleMethod(_returnsThing);
-            var __ret = MyThing__Pop();
-            NativeImplClient.ServerClearSafetyArea();
-            return __ret;
+            var ret = MyThing__Pop();
+            NativeImplClient.ServerClearSafetyArea(); // maximum of once at very end of top-level pop
+            return ret;
         }
 
         public static void ApplyFunc(IntFunc f)
@@ -114,6 +115,27 @@ namespace TestLibraryClient
             NativeImplClient.InvokeModuleMethod(_takesBuffer);
         }
 
+        private static INativeBuffer<int> NativeIntBuffer__Pop()
+        {
+            NativeMethods.popBuffer(out var id, out var isClientId, out var inSafetyArea, out var bufferDescriptor);
+            if (isClientId)
+            {
+                return ClientBuffer<int>.GetById(id);
+            }
+            else
+            {
+                return new ServerBuffer<int>(id, bufferDescriptor);
+            }
+        }
+
+        public static INativeBuffer<int> ReturnsBuffer()
+        {
+            NativeImplClient.InvokeModuleMethod(_returnsBuffer);
+            var ret = NativeIntBuffer__Pop();
+            NativeImplClient.ServerClearSafetyArea();
+            return ret;
+        }
+
         public static void Init()
         {
             Debug.Assert(NativeImplClient.Init() == 0);
@@ -123,6 +145,7 @@ namespace TestLibraryClient
             _returnsThing = NativeImplClient.GetModuleMethod(_module, "returnsThing");
             _applyFunc = NativeImplClient.GetModuleMethod(_module, "applyFunc");
             _takesBuffer = NativeImplClient.GetModuleMethod(_module, "takesBuffer");
+            _returnsBuffer = NativeImplClient.GetModuleMethod(_module, "returnsBuffer");
 
             _myThing = NativeImplClient.GetInterface(_module, "MyThing");
             _myThingDoSomething = NativeImplClient.GetInterfaceMethod(_myThing, "doSomething");

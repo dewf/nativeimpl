@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace TestLibraryClient
 {
-    public class ClientBuffer<T> : ClientResource, IDisposable, INativeBuffer<T>
+    public class ClientBuffer<T> : ClientResource, INativeBuffer<T>
     {
         private IntPtr _block;
         private bool _disposed;
@@ -56,6 +56,11 @@ namespace TestLibraryClient
             Console.WriteLine("ClientBuffer {0} disposed", _block);
             _block = IntPtr.Zero;
             _disposed = true;
+        }
+
+        public static ClientBuffer<T> GetById(int id)
+        {
+            return (ClientBuffer<T>)GetResourceById(id);
         }
     }
 }

@@ -27,3 +27,4 @@ void takesThing(std::shared_ptr<MyThing> thing);
 std::shared_ptr<MyThing> returnsThing();
 void applyFunc(std::function<IntFunc> f);
 void takesBuffer(std::shared_ptr<NativeBuffer<int>> buffer);
+std::shared_ptr<NativeBuffer<int>> returnsBuffer();

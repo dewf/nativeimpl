@@ -34,3 +34,14 @@ void takesBuffer(std::shared_ptr<NativeBuffer<int>> buffer)
     }
     printf("C++ takesBuffer done!\n");
 }
+
+std::shared_ptr<NativeBuffer<int>> returnsBuffer()
+{
+    auto buf = new ServerBuffer<int>({ 123 });
+    size_t length;
+    auto ptr = buf->getSpan(&length);
+    for (auto i = 0; i < 123; i++) {
+        ptr[i] = 111 + i;
+    }
+    return std::shared_ptr<NativeBuffer<int>>(buf);
+}

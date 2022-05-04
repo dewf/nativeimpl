@@ -41,6 +41,19 @@ namespace AppRunner
                 // }
             }
             Console.WriteLine("end ClientBuffer 'using' block");
+
+            using (var serverBuffer = TestLibrary.ReturnsBuffer())
+            {
+                var span = serverBuffer.GetSpan(out var length);
+                Console.WriteLine("server length: {0}", length);
+                for (var i = 0; i < length; i++)
+                {
+                    Console.WriteLine("C# viewing server span: [{0}] = {1}", i, span[i]);
+                }
+                // send back to server to see what happens!
+                TestLibrary.TakesBuffer(serverBuffer);
+            }
+            Console.WriteLine("end server buffer 'using' block");
             
             GC.Collect();
             TestLibrary.DumpTables();

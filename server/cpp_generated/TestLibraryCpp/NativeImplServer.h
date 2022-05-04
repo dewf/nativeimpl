@@ -99,6 +99,46 @@ public:
 	}
 };
 
+template <typename T>
+class ServerBuffer : public ServerResource, public NativeBuffer<T> {
+private:
+	void* block;
+	int elementSize;
+	size_t totalCount;
+	size_t totalSize;
+protected:
+	void nativePush() override {
+		ni_BufferDescriptor desc;
+		desc.start = block;
+		desc.elementSize = elementSize;
+		desc.totalCount = totalCount;
+		desc.totalSize = totalSize;
+		ni_pushBuffer(id, false, false, &desc);
+	}
+	void releaseExtra() override {
+		free(block);
+		block = nullptr;
+	}
+public:
+	ServerBuffer(std::vector<int> dims) {
+		elementSize = sizeof(T);
+		totalCount = 1;
+		for (auto i = dims.begin(); i != dims.end(); i++) {
+			totalCount *= *i;
+		}
+		totalSize = totalCount * elementSize;
+		block = malloc(totalSize);
+	}
+	T* getSpan(size_t* length) override {
+		*length = totalCount;
+		return (T*)block;
+	}
+	static std::shared_ptr<ServerBuffer<T>> getByID(int id) {
+		auto res = ServerResource::getResourceById(id);
+		return std::dynamic_pointer_cast<ServerBuffer<T>>(res);
+	}
+};
+
 
 // our "exports" back to core (well, the DLL being built around core)
 extern "C" {

@@ -70,8 +70,7 @@ void applyFunc__wrapper() {
     applyFunc(f);
 }
 
-std::shared_ptr<NativeBuffer<int>> NativeIntBuffer__pop()
-{
+std::shared_ptr<NativeBuffer<int>> NativeIntBuffer__pop() {
     int id;
     bool isClientId;
     bool inSafetyArea;
@@ -82,14 +81,22 @@ std::shared_ptr<NativeBuffer<int>> NativeIntBuffer__pop()
         return std::shared_ptr<NativeBuffer<int>>(buf);
     }
     else {
-        // server buffer not yet done!
-        throw "whoops";
+        return ServerBuffer<int>::getByID(id);
     }
+}
+
+inline void NativeIntBuffer__push(std::shared_ptr<NativeBuffer<int>> buf, bool isReturn) {
+    auto pushable = std::dynamic_pointer_cast<Pushable>(buf);
+    pushable->push(pushable, isReturn);
 }
 
 void takesBuffer__wrapper() {
     auto buffer = NativeIntBuffer__pop();
     takesBuffer(buffer);
+}
+
+void returnsBuffer__wrapper() {
+    NativeIntBuffer__push(returnsBuffer(), true);
 }
 
 void MyThing_doSomething__wrapper(int serverID) {
@@ -104,6 +111,7 @@ extern "C" int nativeLibraryInit() {
     ni_registerModuleMethod(m, "returnsThing", &returnsThing__wrapper);
     ni_registerModuleMethod(m, "applyFunc", &applyFunc__wrapper);
     ni_registerModuleMethod(m, "takesBuffer", &takesBuffer__wrapper);
+    ni_registerModuleMethod(m, "returnsBuffer", &returnsBuffer__wrapper);
     auto myThing = ni_registerInterface(m, "MyThing");
     myThing_doSomething = ni_registerInterfaceMethod(myThing, "doSomething", &MyThing_doSomething__wrapper);
     return 0; // = OK

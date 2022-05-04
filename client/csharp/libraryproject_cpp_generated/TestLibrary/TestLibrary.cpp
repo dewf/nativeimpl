@@ -138,6 +138,16 @@ void popStringArray(const char*** strs, size_t** lengths, size_t* count)
     ni_popStringArray(strs, lengths, count);
 }
 
+void pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor)
+{
+    ni_pushBuffer(id, isClientId, inSafetyArea, descriptor);
+}
+
+void popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor)
+{
+    ni_popBuffer(id, isClientId, inSafetyArea, descriptor);
+}
+
 void pushClientFunc(int id)
 {
     ni_pushClientFunc(id);

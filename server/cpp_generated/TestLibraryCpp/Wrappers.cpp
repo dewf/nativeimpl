@@ -70,6 +70,28 @@ void applyFunc__wrapper() {
     applyFunc(f);
 }
 
+std::shared_ptr<NativeBuffer<int>> NativeIntBuffer__pop()
+{
+    int id;
+    bool isClientId;
+    bool inSafetyArea;
+    ni_BufferDescriptor descriptor;
+    ni_popBuffer(&id, &isClientId, &inSafetyArea, &descriptor);
+    if (isClientId) {
+        auto buf = new ClientBuffer<int>(id, descriptor);
+        return std::shared_ptr<NativeBuffer<int>>(buf);
+    }
+    else {
+        // server buffer not yet done!
+        throw "whoops";
+    }
+}
+
+void takesBuffer__wrapper() {
+    auto buffer = NativeIntBuffer__pop();
+    takesBuffer(buffer);
+}
+
 void MyThing_doSomething__wrapper(int serverID) {
     auto inst = ServerMyThing::getByID(serverID);
     auto x = ni_popInt();
@@ -81,6 +103,7 @@ extern "C" int nativeLibraryInit() {
     ni_registerModuleMethod(m, "takesThing", &takesThing__wrapper);
     ni_registerModuleMethod(m, "returnsThing", &returnsThing__wrapper);
     ni_registerModuleMethod(m, "applyFunc", &applyFunc__wrapper);
+    ni_registerModuleMethod(m, "takesBuffer", &takesBuffer__wrapper);
     auto myThing = ni_registerInterface(m, "MyThing");
     myThing_doSomething = ni_registerInterfaceMethod(myThing, "doSomething", &MyThing_doSomething__wrapper);
     return 0; // = OK

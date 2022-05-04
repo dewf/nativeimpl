@@ -21,3 +21,14 @@ std::shared_ptr<MyThing> returnsThing() {
 void applyFunc(std::function<IntFunc> f) {
     printf("C++ applyFunc(1234) = %d\n", f(1234));
 }
+
+void takesBuffer(std::shared_ptr<NativeBuffer<int>> buffer)
+{
+    printf("C++ takesBuffer:\n");
+    size_t length;
+    auto ptr = buffer->getSpan(&length);
+    for (auto i = 0; i < length; i++) {
+        printf(" -> index %d: value %d\n", i, ptr[i]);
+    }
+    printf("C++ takesBuffer done!\n");
+}

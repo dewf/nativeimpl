@@ -77,6 +77,29 @@ protected:
 	void releaseExtra() override;
 };
 
+template <typename T>
+class NativeBuffer {
+public:
+	virtual T* getSpan(size_t* length) = 0;
+};
+
+template <typename T>
+class ClientBuffer : public ClientResource, public NativeBuffer<T> {
+private:
+	ni_BufferDescriptor descriptor;
+public:
+	ClientBuffer(int id, ni_BufferDescriptor& descriptor)
+		: ClientResource(id), descriptor(descriptor) {}
+	T* getSpan(size_t* length) override {
+		*length = descriptor.totalCount;
+		return (T*)descriptor.start;
+	}
+	void nativePush(bool inSafetyArea) override {
+		ni_pushBuffer(id, true, inSafetyArea, &descriptor);
+	}
+};
+
+
 // our "exports" back to core (well, the DLL being built around core)
 extern "C" {
 	int nativeLibraryInit();

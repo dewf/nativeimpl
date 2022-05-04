@@ -87,6 +87,16 @@ extern "C" {
 	void ni_pushStringArray(const char** strs, size_t* lengths, size_t count);
 	void ni_popStringArray(const char*** strs, size_t** lengths, size_t* count);
 
+	struct ni_BufferDescriptor {
+		// TODO: provisions for multi-dimensional, indirect pointers, instead of contiguous, stride, etc?
+		void* start;
+		int elementSize;
+		size_t totalCount;
+		size_t totalSize;
+	};
+	void ni_pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor);
+	void ni_popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor);
+
 	void ni_pushClientFunc(int id);
 	void ni_pushServerFunc(int id);
 	// the reason for two separate pops is that, unlike interfaces, we have no way of "short-circuiting" these

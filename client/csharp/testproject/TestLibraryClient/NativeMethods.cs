@@ -104,6 +104,20 @@ namespace TestLibraryClient
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void popStringArray(out IntPtr strsPtr, out IntPtr lengthsPtr, out IntPtr count); // const char ***, size_t**, size_t*
 
+        public struct BufferDescriptor
+        {
+            public IntPtr Start;
+            public int ElementSize;
+            public IntPtr TotalCount;
+            public IntPtr TotalSize;
+        }
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushBuffer(int id, bool isClientId, bool inSafetyArea, ref BufferDescriptor descriptor);
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popBuffer(out int id, out bool isClientId, out bool inSafetyArea, out BufferDescriptor descriptor);
+
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushClientFunc(int id);
 

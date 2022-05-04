@@ -13,6 +13,7 @@ namespace TestLibraryClient
         private static ModuleMethodHandle _takesThing;
         private static ModuleMethodHandle _returnsThing;
         private static ModuleMethodHandle _applyFunc;
+        private static ModuleMethodHandle _takesBuffer;
         private static InterfaceHandle _myThing;
         private static InterfaceMethodHandle _myThingDoSomething;
         
@@ -107,6 +108,12 @@ namespace TestLibraryClient
             NativeImplClient.InvokeModuleMethod(_applyFunc);
         }
 
+        public static void TakesBuffer(INativeBuffer<int> buffer)
+        {
+            ((IPushable)buffer).Push(false);
+            NativeImplClient.InvokeModuleMethod(_takesBuffer);
+        }
+
         public static void Init()
         {
             Debug.Assert(NativeImplClient.Init() == 0);
@@ -115,6 +122,7 @@ namespace TestLibraryClient
             _takesThing = NativeImplClient.GetModuleMethod(_module, "takesThing");
             _returnsThing = NativeImplClient.GetModuleMethod(_module, "returnsThing");
             _applyFunc = NativeImplClient.GetModuleMethod(_module, "applyFunc");
+            _takesBuffer = NativeImplClient.GetModuleMethod(_module, "takesBuffer");
 
             _myThing = NativeImplClient.GetInterface(_module, "MyThing");
             _myThingDoSomething = NativeImplClient.GetInterfaceMethod(_myThing, "doSomething");

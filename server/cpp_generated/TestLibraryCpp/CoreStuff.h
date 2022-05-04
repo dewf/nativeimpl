@@ -57,6 +57,16 @@ extern "C" {
 	extern void ni_pushStringArray(const char** strs, size_t* lengths, size_t count);
 	extern void ni_popStringArray(const char*** strs, size_t** lengths, size_t* count);
 
+	struct ni_BufferDescriptor {
+		// TODO: provisions for multi-dimensional, indirect pointers, instead of contiguous, stride, etc?
+		void* start;
+		int elementSize;
+		size_t totalCount;
+		size_t totalSize;
+	};
+	extern void ni_pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor);
+	extern void ni_popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor);
+
 	extern int ni_popClientFunc();
 	extern void ni_pushServerFunc(int id);
 

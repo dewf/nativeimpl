@@ -64,6 +64,7 @@ public:
 	virtual int clientFuncId() { throw WrongTypeException(); }
 	virtual int serverFuncId() { throw WrongTypeException(); }
 	virtual int instanceId(bool* isClientId, bool* inSafetyArea) { throw WrongTypeException(); }
+	virtual void buffer(int *id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor) { throw WrongTypeException(); }
 };
 
 class SizeTItem : public StackItem {
@@ -192,10 +193,29 @@ public:
 		id(id),
 		isClientId(isClientId),
 		inSafetyArea(inSafetyArea) {}
-	int instanceId(bool* isClientId, bool* inSafetyArea) {
+	int instanceId(bool* isClientId, bool* inSafetyArea) override {
 		*isClientId = this->isClientId;
 		*inSafetyArea = this->inSafetyArea;
 		return id;
+	}
+};
+
+class BufferItem : public StackItem {
+public:
+	int id;
+	bool isClientId;
+	bool inSafetyArea;
+	ni_BufferDescriptor descriptor;
+	BufferItem(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor)
+		: id(id), isClientId(isClientId)
+	{
+		this->descriptor = *descriptor;
+	}
+	void buffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor) override {
+		*id = this->id;
+		*isClientId = this->isClientId;
+		*inSafetyArea = this->inSafetyArea;
+		*descriptor = this->descriptor;
 	}
 };
 
@@ -507,6 +527,19 @@ void ni_popStringArray(const char*** strs, size_t** lengths, size_t* count)
 	*strs = lastPoppedStrs;
 	*lengths = lastPoppedStrLengths;
 	*count = _count;
+}
+
+void ni_pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor)
+{
+	vstack.push(new BufferItem(id, isClientId, inSafetyArea, descriptor));
+}
+
+void ni_popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor)
+{
+	auto item = vstack.top();
+	item->buffer(id, isClientId, inSafetyArea, descriptor);
+	vstack.pop();
+	delete item;
 }
 
 // visible to client ===========================================

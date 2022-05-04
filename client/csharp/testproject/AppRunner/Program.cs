@@ -25,14 +25,18 @@ namespace AppRunner
                 Console.WriteLine("C# returned thing .DoSomething(1234) = {0}", thing.DoSomething(1234));
             }
 
-            var buffer = new ClientBuffer<int>(128);
-            var span = buffer.GetSpan(out var length);
-            for (var i = 0; i < length; i++)
+            using (var buffer = new ClientBuffer<int>(128))
             {
-                span[i] = i;
+                var span = buffer.GetSpan(out var length);
+                for (var i = 0; i < length; i++)
+                {
+                    span[i] = i;
+                }
+                Console.WriteLine("Wrote {0} values to buffer", length);
+                TestLibrary.TakesBuffer(buffer);
+                Console.WriteLine("TakesBuffer() finished!");
             }
-            Console.WriteLine("Wrote {0} values to buffer", length);
-            TestLibrary.TakesBuffer(buffer);
+            Console.WriteLine("end ClientBuffer 'using' block");
             
             GC.Collect();
             TestLibrary.DumpTables();

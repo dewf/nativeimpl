@@ -20,6 +20,7 @@ namespace TestLibraryClient
             _totalSize = _totalCount * _elementSize;
             _block = Marshal.AllocHGlobal((IntPtr)_totalSize);
             GC.AddMemoryPressure(_totalSize);
+            Console.WriteLine("ClientBuffer {0} allocated", _block);
         }
         
         public Span<T> GetSpan(out int length)
@@ -52,6 +53,7 @@ namespace TestLibraryClient
             if (_disposed) return;
             Marshal.FreeHGlobal(_block);
             GC.RemoveMemoryPressure(_totalSize);
+            Console.WriteLine("ClientBuffer {0} disposed", _block);
             _block = IntPtr.Zero;
             _disposed = true;
         }

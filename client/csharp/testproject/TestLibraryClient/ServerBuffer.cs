@@ -1,0 +1,34 @@
+﻿using System;
+
+namespace TestLibraryClient
+{
+    internal class ServerBuffer<T> : ServerResource, INativeBuffer<T>
+    {
+        private NativeMethods.BufferDescriptor _desc;
+        
+        public ServerBuffer(int id, NativeMethods.BufferDescriptor desc) : base(id)
+        {
+            _desc = desc;
+        }
+        
+        protected override void NativePush(bool inSafeArea)
+        {
+            NativeMethods.pushBuffer(Id, false, inSafeArea, ref _desc);
+        }
+
+        public void Dispose()
+        {
+            ServerDispose();
+        }
+
+        public Span<T> GetSpan(out int length)
+        {
+            unsafe
+            {
+                var ptr = _desc.Start.ToPointer();
+                length = (int)_desc.TotalCount;
+                return new Span<T>(ptr, length);
+            }
+        }
+    }
+}

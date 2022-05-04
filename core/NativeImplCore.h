@@ -10,9 +10,8 @@ NIHANDLE(Object);
 NIHANDLE(Exception);
 
 typedef void (*niClientFuncExec)(int id);
-typedef void (*niClientFuncRelease)(int id);
 typedef void (*niClientMethodExec)(ni_InterfaceMethodRef method, int objID);
-typedef void (*niClientObjRelease)(int objID);
+typedef void (*niClientResourceRelease)(int id);
 typedef void (*niClientClearSafetyArea)();
 
 // server registration methods (server-facing only, not visible through DLL)
@@ -37,26 +36,23 @@ extern "C" {
 	extern void ni_dumpTables();
 	extern void ni_execServerFunc(int id);
 	extern ni_ExceptionRef ni_execServerFuncWithExceptions(int id);
-	extern void ni_releaseServerFunc(int id);
-	extern void ni_releaseServerInst(int id);
+	extern void ni_releaseServerResource(int id);
 }
 
 // visible to both client and server
 extern "C" {
 	// will there be any problems with allowing direct access to these?
 	extern niClientFuncExec ni_clientFuncExec;
-	extern niClientFuncRelease ni_clientFuncRelease;
 	extern niClientMethodExec ni_clientMethodExec;
-	extern niClientObjRelease ni_clientObjRelease;
+	extern niClientResourceRelease ni_clientResourceRelease;
 	extern niClientClearSafetyArea ni_clientClearSafetyArea;
 	extern ni_ExceptionRef ni_currentException;
 
 	// mostly client stuff, but some used by server as well
 	int ni_nativeImplInit(
 		niClientFuncExec clientFuncExec,
-		niClientFuncRelease clientFuncRelease,
 		niClientMethodExec clientMethodExec,
-		niClientObjRelease clientObjRelease,
+		niClientResourceRelease clientResourceRelease,
 		niClientClearSafetyArea clientClearSafetyArea
 	);
 	void ni_nativeImplShutdown();
@@ -109,8 +105,6 @@ extern "C" {
 	// being equivalent to simply clearing the remote safety area unconditionally at the end of every invocation returning (something containing) an interface reference
 	void ni_pushInstance(int id, bool isClientId, bool inSafetyArea);
 	int ni_popInstance(bool* isClientID, bool* inSafetyArea);
-
-	void ni_releaseServerInst(int id);
 
 	// safety area functions: the act of pushing remote interfaces can destroy the local proxy (if no other local proxies exist),
 	// prematurely dereferencing the remote side

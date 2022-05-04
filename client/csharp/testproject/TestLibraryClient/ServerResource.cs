@@ -26,20 +26,11 @@ namespace TestLibraryClient
         }
 
         protected abstract void NativePush(bool inSafeArea);
-        protected virtual void CustomRelease()
-        {
-            // TODO: only keep until we've fixed up both sides to use the new resources for funcvals, then don't need this anymore
-            // (move native method here back to ServerDispose() directly)
-            if (!NativeImplClient.RemoteIsShutdown)
-            {
-                NativeMethods.releaseServerInst(Id);
-            }
-        }
         
         protected void ServerDispose()
         {
             if (_remoteReleased || NativeImplClient.RemoteIsShutdown) return;
-            CustomRelease();
+            NativeMethods.releaseServerResource(Id);
             _remoteReleased = true;
         }
 

@@ -32,7 +32,6 @@ class ClientResource : public Pushable {
 protected:
 	int id;
 	virtual void nativePush(bool inSafetyArea) = 0;
-	virtual void customRelease();
 public:
 	ClientResource(int id) : id(id) {}
 	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
@@ -62,7 +61,6 @@ public:
 	void remoteExecWithExceptions();
 protected:
 	void nativePush(bool inSafetyArea) override;
-	void customRelease() override;					// TODO: get rid of this when we no longer distinguish between func val and object release
 };
 
 class ServerFuncVal : public ServerResource {
@@ -86,8 +84,7 @@ extern "C" {
 	void ni_dumpTables();
 	void ni_execServerFunc(int id);
 	ni_ExceptionRef ni_execServerFuncWithExceptions(int id);
-	void ni_releaseServerFunc(int id);
-	void ni_releaseServerInst(int id);
+	void ni_releaseServerResource(int id);
 	void ni_clearServerSafetyArea();
 }
 

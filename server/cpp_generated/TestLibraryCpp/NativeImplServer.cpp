@@ -26,11 +26,6 @@ ni_ExceptionRef ni_execServerFuncWithExceptions(int id) {
 	return ret;
 }
 
-void ni_releaseServerFunc(int id)
-{
-	ServerResource::getResourceById(id)->release();
-}
-
 void pushServerFuncVal(std::function<void()> wrapper, size_t key) {
 	auto funcVal = ServerFuncVal::create(wrapper, key);
 	funcVal->push(funcVal, false); // false = "not applicable" - server func vals would never be in the safety area, that only applies to client stuff
@@ -184,7 +179,7 @@ void ServerObject::nativePush()
 	ni_pushInstance(id, false, false);
 }
 
-void ni_releaseServerInst(int id)
+void ni_releaseServerResource(int id)
 {
 	ServerResource::getResourceById(id)->release();
 }
@@ -203,11 +198,6 @@ void ni_clearServerSafetyArea() {
 	printf("C++ after safety clear!! ====\n");
 }
 
-void ClientResource::customRelease()
-{
-	::ni_clientObjRelease(id);
-}
-
 void ClientResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	if (isReturn) {
 		// for return values, to keep them alive until other side has taken them
@@ -220,8 +210,9 @@ void ClientResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 }
 
 ClientResource::~ClientResource() {
-	printf("C++ ClientObject::dtor, remote releasing\n");
-	customRelease();
+	printf("C++ ClientResource::dtor (id %d), remote releasing\n", id);
+	fflush(stdout);
+	::ni_clientResourceRelease(id);
 }
 
 void ClientObject::nativePush(bool inSafetyArea)
@@ -266,17 +257,6 @@ void ClientFuncVal::nativePush(bool inSafetyArea)
 	// currently this should never be called, only server func values can be pushed
 	// (a client function returned would be wrapped as a server func)
 	throw "oops";
-}
-
-void ClientFuncVal::customRelease()
-{
-	// TODO: get rid of this when we're done merging the func / object release into a single resource release on both sides
-	// release remote function, we're done with it
-	// (only reduces remote refcount - there may be other client refCounts referring to separate ClientFuncs on this side!)
-	// although I think a weak_ptr table (id -> weak_ptr) will get rid of that issue, deduplicating for us!
-	printf("c++: ClientFunc dtor releasing func id: %d\n", id);
-	fflush(stdout);
-	ni_clientFuncRelease(id);
 }
 
 void ServerFuncVal::nativePush()

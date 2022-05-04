@@ -6,17 +6,15 @@ namespace TestLibraryClient
     internal static class NativeMethods
     {
         internal delegate void ExecFunctionDelegate(int id);
-        internal delegate void ReleaseFunctionDelegate(int id);
         internal delegate void ClientMethodDelegate(IntPtr methodHandle, int objectId);
-        internal delegate void ClientObjReleaseDelegate(int objectId);
+        internal delegate void ClientResourceReleaseDelegate(int id);
         internal delegate void ClientClearSafetyAreaDelegate();
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int nativeImplInit(
             ExecFunctionDelegate execFunctionDelegate,
-            ReleaseFunctionDelegate releaseFunctionDelegate,
             ClientMethodDelegate methodDelegate,
-            ClientObjReleaseDelegate objReleaseDelegate,
+            ClientResourceReleaseDelegate resourceReleaseDelegate,
             ClientClearSafetyAreaDelegate clientClearSafetyAreaDelegate
             );
 
@@ -119,9 +117,6 @@ namespace TestLibraryClient
         internal static extern IntPtr execServerFuncWithExceptions(int id);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void releaseServerFunc(int id);
-
-        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void invokeInterfaceMethod(IntPtr method, int serverId);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -134,7 +129,7 @@ namespace TestLibraryClient
         internal static extern int popInstance(out bool isClientId, out bool inSafetyArea);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int releaseServerInst(int id);
+        internal static extern int releaseServerResource(int id);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void clearServerSafetyArea();

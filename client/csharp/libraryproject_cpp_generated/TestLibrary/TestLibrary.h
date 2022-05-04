@@ -9,9 +9,8 @@
 extern "C" {
 	TESTLIBRARY_API int nativeImplInit(
 		niClientFuncExec clientFuncExec,
-		niClientFuncRelease clientFuncRelease,
 		niClientMethodExec clientMethodExec,
-		niClientObjRelease clientObjRelease,
+		niClientResourceRelease clientResourceRelease,
 		niClientClearSafetyArea clientClearSafetyArea
 	);
 	TESTLIBRARY_API void nativeImplShutdown();
@@ -51,14 +50,14 @@ extern "C" {
 
 	TESTLIBRARY_API void execServerFunc(int id);
 	TESTLIBRARY_API ni_ExceptionRef execServerFuncWithExceptions(int id);
-	TESTLIBRARY_API void releaseServerFunc(int id);
 
 	TESTLIBRARY_API void invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID);
 	TESTLIBRARY_API ni_ExceptionRef invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID);
 
 	TESTLIBRARY_API void pushInstance(int id, bool isClientId, bool inSafetyArea);
 	TESTLIBRARY_API int popInstance(bool* isClientId, bool* inSafetyArea);
-	TESTLIBRARY_API void releaseServerInst(int id);
+
+	TESTLIBRARY_API void releaseServerResource(int id);
 
 	TESTLIBRARY_API void clearServerSafetyArea(); // clear server resources from safety area (protects values being returned with no other shared_ptrs existing)
 

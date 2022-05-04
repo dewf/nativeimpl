@@ -2,9 +2,17 @@
 
 #include "../../../../core/NativeImplCore.h"
 
-int nativeImplInit(niClientFuncExec clientFuncExec, niClientFuncRelease clientFuncRelease, niClientMethodExec clientMethodExec, niClientObjRelease clientObjRelease, niClientClearSafetyArea clientClearSafetyArea)
+int nativeImplInit(
+    niClientFuncExec clientFuncExec,
+    niClientMethodExec clientMethodExec,
+    niClientResourceRelease clientResourceRelease,
+    niClientClearSafetyArea clientClearSafetyArea)
 {
-    return ni_nativeImplInit(clientFuncExec, clientFuncRelease, clientMethodExec, clientObjRelease, clientClearSafetyArea);
+    return ni_nativeImplInit(
+        clientFuncExec,
+        clientMethodExec,
+        clientResourceRelease,
+        clientClearSafetyArea);
 }
 
 void nativeImplShutdown()
@@ -150,11 +158,6 @@ ni_ExceptionRef execServerFuncWithExceptions(int id)
     return ni_execServerFuncWithExceptions(id);
 }
 
-void releaseServerFunc(int id)
-{
-    ni_releaseServerFunc(id);
-}
-
 void invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID)
 {
     ni_invokeInterfaceMethod(method, serverID);
@@ -175,9 +178,9 @@ int popInstance(bool* isClientID, bool* inSafetyArea)
     return ni_popInstance(isClientID, inSafetyArea);
 }
 
-void releaseServerInst(int id)
+void releaseServerResource(int id)
 {
-    ni_releaseServerInst(id);
+    ni_releaseServerResource(id);
 }
 
 void clearServerSafetyArea()

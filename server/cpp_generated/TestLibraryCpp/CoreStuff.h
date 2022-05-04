@@ -12,18 +12,16 @@ NIHANDLE(Object);
 NIHANDLE(Exception);
 
 typedef void (*niClientFuncExec)(int id);
-typedef void (*niClientFuncRelease)(int id);
 typedef void (*niClientMethodExec)(ni_InterfaceMethodRef method, int objID);
-typedef void (*niClientObjRelease)(int objID);
+typedef void (*niClientResourceRelease)(int id);
 typedef void (*niClientClearSafetyArea)();
 
 // our imports from core (we could include directly, but this lets us simulate what it will be like for other languages)
 extern "C" {
 	// instead of accessing these directly, perhaps they should be behind functions exported from core?
 	extern niClientFuncExec ni_clientFuncExec;
-	extern niClientFuncRelease ni_clientFuncRelease;
 	extern niClientMethodExec ni_clientMethodExec;
-	extern niClientObjRelease ni_clientObjRelease;
+	extern niClientResourceRelease ni_clientResourceRelease;
 	extern niClientClearSafetyArea ni_clientClearSafetyArea;
 	extern ni_ExceptionRef ni_currentException;
 

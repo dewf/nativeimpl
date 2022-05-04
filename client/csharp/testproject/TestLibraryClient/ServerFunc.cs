@@ -29,10 +29,5 @@ namespace TestLibraryClient
                 NativeImplClient.ExceptionBuildAndThrowDelegates[exceptionHandle]();
             }
         }
-        
-        protected override void CustomRelease() // TODO: get rid of this soon!
-        {
-            NativeMethods.releaseServerFunc(Id);
-        }
     }
 }

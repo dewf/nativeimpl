@@ -13,9 +13,8 @@ namespace TestLibraryClient
     {
         // these MUST be saved, else GC will take the delegates out from under us. ohnononono!
         private static NativeMethods.ExecFunctionDelegate _savedExecFunctionDelegate;
-        private static NativeMethods.ReleaseFunctionDelegate _savedReleaseFunctionDelegate;
         private static NativeMethods.ClientMethodDelegate _savedClientMethodDelegate;
-        private static NativeMethods.ClientObjReleaseDelegate _savedClientObjReleaseDelegate;
+        private static NativeMethods.ClientResourceReleaseDelegate _savedClientResourceReleaseDelegate;
         private static NativeMethods.ClientClearSafetyAreaDelegate _savedClientClearSafetyAreaDelegate;
 
         public static bool RemoteIsShutdown;
@@ -42,16 +41,14 @@ namespace TestLibraryClient
         {
             // delegates must be saved from GC until the end of the program, kthx
             _savedExecFunctionDelegate = FuncValExecutor;
-            _savedReleaseFunctionDelegate = ReleaseFuncVal;
             _savedClientMethodDelegate = InvokeClientMethod;
-            _savedClientObjReleaseDelegate = ReleaseClientObjectId;
+            _savedClientResourceReleaseDelegate = ReleaseClientResourceId;
             _savedClientClearSafetyAreaDelegate = ClientClearSafetyArea;
 
             return NativeMethods.nativeImplInit(
                 _savedExecFunctionDelegate,
-                _savedReleaseFunctionDelegate,
                 _savedClientMethodDelegate,
-                _savedClientObjReleaseDelegate,
+                _savedClientResourceReleaseDelegate,
                 _savedClientClearSafetyAreaDelegate
                 );
         }
@@ -252,21 +249,13 @@ namespace TestLibraryClient
             }
         }
 
-        // public static void ReleaseServerInstanceId(int id)
-        // {
-        //     if (!Globals.RemoteIsShutdown)
-        //     {
-        //         NativeMethods.releaseServerInst(id);
-        //     }
-        // }
-
         public static void SetClientMethodWrapper(InterfaceMethodHandle method, MethodWrapper wrapper)
         {
             MethodWrappers[method.Handle] = wrapper;
         }
 
         // these two need to be passed to remote
-        private static void ReleaseClientObjectId(int id) // called from remote
+        private static void ReleaseClientResourceId(int id) // called from remote
         {
             // should we check for _remoteIsShutdown here?
             ClientResource.GetResourceById(id).Release();

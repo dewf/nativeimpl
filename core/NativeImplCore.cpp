@@ -209,9 +209,8 @@ static std::map<std::string, ni_ModuleRef> modules;
 static std::stack<StackItem *> vstack;
 
 niClientFuncExec ni_clientFuncExec;
-niClientFuncRelease ni_clientFuncRelease;
 niClientMethodExec ni_clientMethodExec;
-niClientObjRelease ni_clientObjRelease;
+niClientResourceRelease ni_clientResourceRelease;
 niClientClearSafetyArea ni_clientClearSafetyArea;
 
 ni_ExceptionRef ni_currentException = nullptr;
@@ -294,16 +293,14 @@ void ni_pushServerFunc(int id)
 
 int ni_nativeImplInit(
 	niClientFuncExec clientFuncExec,
-	niClientFuncRelease clientFuncRelease,
 	niClientMethodExec clientMethodExec,
-	niClientObjRelease clientObjRelease,
+	niClientResourceRelease clientResourceRelease,
 	niClientClearSafetyArea clientClearSafetyArea
 	)
 {
 	::ni_clientFuncExec = clientFuncExec;
-	::ni_clientFuncRelease = clientFuncRelease;
 	::ni_clientMethodExec = clientMethodExec;
-	::ni_clientObjRelease = clientObjRelease;
+	::ni_clientResourceRelease = clientResourceRelease;
 	::ni_clientClearSafetyArea = clientClearSafetyArea;
 
 	// library-specific registrations etc
@@ -316,9 +313,8 @@ void ni_nativeImplShutdown()
 
 	// de-fang the callbacks so they don't wreak havoc
 	ni_clientFuncExec = &nullIntMethod;
-	ni_clientFuncRelease = &nullIntMethod;
 	ni_clientMethodExec = &nullMethodExec;
-	ni_clientObjRelease = &nullIntMethod;
+	ni_clientResourceRelease = &nullIntMethod;
 	ni_clientClearSafetyArea = &nullVoidMethod;
 
 	printf(" - callbacks disabled\n");

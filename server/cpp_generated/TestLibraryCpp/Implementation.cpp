@@ -29,6 +29,8 @@ void takesBuffer(std::shared_ptr<NativeBuffer<int>> buffer)
     auto ptr = buffer->getSpan(&length);
     for (auto i = 0; i < length; i++) {
         printf(" -> index %d: value %d\n", i, ptr[i]);
+        // add 100 to value
+        ptr[i] += 100;
     }
     printf("C++ takesBuffer done!\n");
 }

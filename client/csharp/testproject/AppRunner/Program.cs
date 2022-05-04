@@ -25,7 +25,7 @@ namespace AppRunner
                 Console.WriteLine("C# returned thing .DoSomething(1234) = {0}", thing.DoSomething(1234));
             }
 
-            using (var buffer = new ClientBuffer<int>(128))
+            using (var buffer = new ClientBuffer<int>(50))
             {
                 var span = buffer.GetSpan(out var length);
                 for (var i = 0; i < length; i++)
@@ -34,7 +34,11 @@ namespace AppRunner
                 }
                 Console.WriteLine("Wrote {0} values to buffer", length);
                 TestLibrary.TakesBuffer(buffer);
-                Console.WriteLine("TakesBuffer() finished!");
+                Console.WriteLine("TakesBuffer() finished! Checking values:");
+                // for (var i = 0; i < length; i++)
+                // {
+                //     Console.WriteLine("C# buffer[{0}] = {1}", i, span[i]);
+                // }
             }
             Console.WriteLine("end ClientBuffer 'using' block");
             

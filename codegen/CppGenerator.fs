@@ -125,7 +125,9 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | ExceptionContext -> ""
     match type_ with
     | UnitType ->
-        failwithf "tried to pop a Unit value into a variable, why?"
+        match context with
+        | Return -> () // do nothing
+        | _ -> failwith "tried to pop a Unit value in a non-Return context, why?"
     | SizeT ->
         write level "%s ni_popSizeT();" contextPrefix
     | Bool ->
@@ -296,7 +298,7 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
     blank()
     write 0 "std::function<%s> %s__pop() {" name name
     write 1 "auto id = ni_popClientFunc();"
-    write 1 "auto cf = std::shared_ptr<ClientFunc>(new ClientFunc(id));"
+    write 1 "auto cf = std::shared_ptr<ClientFuncVal>(new ClientFuncVal(id));"
     write 1 "auto wrapper = [cf](%s) {" (joinedArgs info.Args)
     for argName, argType in info.Args |> List.rev do
         pushValue writer 2 argType argName (Direct false)

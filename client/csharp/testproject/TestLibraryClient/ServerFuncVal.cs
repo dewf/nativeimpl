@@ -2,9 +2,9 @@
 
 namespace TestLibraryClient
 {
-    internal class ServerFunc : ServerResource
+    internal class ServerFuncVal : ServerResource
     {
-        public ServerFunc(int id) : base(id)
+        public ServerFuncVal(int id) : base(id)
         {
         }
         

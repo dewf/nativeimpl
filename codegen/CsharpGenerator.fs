@@ -113,7 +113,9 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | SafeReturn -> "var __ret ="
     match type_ with
     | UnitType ->
-        () // nothin'
+        match context with
+        | Return -> () // nothing'
+        | _ -> failwith "tried to pop a Unit value in a non-Return context, why?"
     | SizeT ->
         write level "%s NativeImplClient.PopSizeT();" contextPrefix
     | Bool ->
@@ -681,7 +683,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 2 "private static %s %s__Pop()" name name
             write 2 "{"
             write 3 "var id = NativeImplClient.PopServerFuncValId();"
-            write 3 "var remoteFunc = new NativeImplClient.ServerFunc(id);"
+            write 3 "var remoteFunc = new ServerFuncVal(id);"
             write 3 "%s Wrapper(%s)" (typeToCsString typeMap info.Returns) (argsJoined typeMap info.Args)
             write 3 "{"
             for argName, argType in info.Args |> List.rev do

@@ -12,6 +12,7 @@ let rec typeToInternalKey = function
     | DelegateType name -> name
     | ArrayType niType -> sprintf "array[%s]" (typeToInternalKey niType)
     | MapType (keyType, valueType) -> sprintf "map[%s,%s]" (typeToInternalKey keyType) (typeToInternalKey valueType)
+    | BufferType niType -> sprintf "buffer[%s]" (typeToInternalKey niType)
     | TupleType niTypes -> sprintf "tuple[%s]" (niTypes |> List.map typeToInternalKey |> String.concat ",")
     | StructType name -> name
     | TypedefType name -> name
@@ -56,6 +57,8 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                     // any other array type, no special handling
                     typeAndSubTypes niType
             t :: subResults
+        | BufferType _ ->
+            [t] // buffers only support primitive elements, no subresults
         | TupleType niTypes ->
             let subResults =
                 niTypes |> List.collect typeAndSubTypes
@@ -158,6 +161,10 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
         | TupleType _ ->
             let name = (typeToInternalKey type_)
             processDeps name acc
+        | BufferType _ ->
+            // buffers only contain primitives (so no processDeps), but are themselves reference types (that require clearing remote safety area when returned)
+            let name = (typeToInternalKey type_)
+            true, acc.Add(name, true)
         | _ ->
             // primitive types
             false, acc
@@ -191,6 +198,9 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                             subValues
                             |> List.exists id
                         result, nextAcc
+                    | BufferType _ ->
+                        // always
+                        true, acc
                     | _ ->
                         failwithf "createContainsRefsMap: unsupported generic type (%A)" niType
                 | UserOrGeneric.User userType ->
@@ -328,6 +338,9 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
         | TupleType _ ->
             let name = (typeToInternalKey type_)
             renderDeps name alreadyRendered
+        | BufferType _ ->
+            let name = (typeToInternalKey type_)
+            renderDeps name alreadyRendered
         | _ ->
             alreadyRendered
     and renderDeps (name: string) (alreadyRendered: Set<string>) =
@@ -378,6 +391,10 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                     | TupleType tupleTypes ->
                         (alreadyRendered, tupleTypes)
                         ||> List.fold (fun already2 type_ -> renderType type_ already2)
+                    | BufferType elemType ->
+                        // could probably omit this since it's always a primitive type ...
+                        alreadyRendered
+                        |> renderType elemType
                     | _ ->
                         failwithf "renderUserTypes.renderDeps: unsupported generic type %A!" gType
                 | UserOrGeneric.User userType ->

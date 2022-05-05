@@ -22,6 +22,7 @@ type Token =
     | UnitToken
     | DelegateToken
     | TypedefToken
+    | BufferToken
     | LeftBrace
     | RightBrace
     | LeftParen
@@ -53,6 +54,7 @@ let stringToToken (lineNumber: int) = function
     | "unit" -> UnitToken
     | "delegate" -> DelegateToken
     | "typedef" -> TypedefToken
+    | "buffer" -> BufferToken
     | "{" -> LeftBrace
     | "}" -> RightBrace
     | "(" -> LeftParen

@@ -34,6 +34,7 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
     | ExceptionType name -> upperFirst name
     | DelegateType name -> upperFirst name
     | ArrayType niType -> sprintf "%s[]" (typeToCsString typeMap niType)
+    | BufferType elemType -> sprintf "INativeBuffer<%s>" (typeToCsString typeMap elemType)
     | TupleType tupleTypes ->
         let joined =
             tupleTypes
@@ -77,6 +78,8 @@ let rec typeToName = function
         sprintf "%sArray" (typeToName niType)
     | MapType (keyType, valueType) ->
         sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
+    | BufferType elemType ->
+        sprintf "Native%sBuffer" (typeToName elemType)
     | x -> sprintf "(typeToName: not yet supported: %A)" x
 
 let argsJoined (typeMap: Map<string, UserOrGeneric>) (args: (string * NIType) list) =
@@ -146,6 +149,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | TupleType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
+    | BufferType _ ->
+        write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | EnumType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | SumType name ->
@@ -189,7 +194,7 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | OpaqueHandleType name ->
         write level "%s__Push(%s);" (upperFirst name) content
     | InterfaceType _ ->
-        write level "((NativeImplClient.IPushable)%s).Push(%s);" content (isReturnString())
+        write level "((IPushable)%s).Push(%s);" content (isReturnString())
     | DelegateType name ->
         write level "%s__Push(%s);" (upperFirst name) content
     | ArrayType niType ->
@@ -211,6 +216,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | TupleType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
+    | BufferType _ ->
+        write level "((IPushable)%s).Push(%s);" content (isReturnString())
     | TypedefType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | MapType _ ->
@@ -230,6 +237,21 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
         () // C# doesn't require forward declarations :)
     | UserOrGeneric.Generic gType ->
         match gType with
+        | BufferType elemType ->
+            // push is simple, doesn't require a separate function
+            // POP ==============
+            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap gType) (typeToName gType)
+            write 2 "{"
+            write 3 "NativeMethods.popBuffer(out var id, out var isClientId, out var inSafetyArea, out var bufferDescriptor);"
+            write 3 "if (isClientId)"
+            write 3 "{"
+            write 4 "return ClientBuffer<%s>.GetById(id);" (typeToCsString typeMap elemType)
+            write 3 "}"
+            write 3 "else"
+            write 3 "{"
+            write 4 "return new ServerBuffer<%s>(id, bufferDescriptor);" (typeToCsString typeMap elemType)
+            write 3 "}"
+            write 2 "}"
         | TupleType tupleTypes ->
             let typesJoined =
                 tupleTypes |> List.map (typeToCsString typeMap) |> String.concat ", "
@@ -862,6 +884,11 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     write 2 "public static void Shutdown()"
     write 2 "{"
     write 3 "NativeImplClient.Shutdown();"
+    write 2 "}"
+    blank()
+    write 2 "public static void DumpTables()"
+    write 2 "{"
+    write 3 "NativeImplClient.DumpTables();"
     write 2 "}"
     write 1 "}" // end of static class <module name>
     //

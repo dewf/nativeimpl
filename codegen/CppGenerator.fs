@@ -45,6 +45,7 @@ let rec typeToName = function
     | ArrayType niType -> sprintf "%sArray" (typeToName niType)
     | MapType (keyType, valueType) -> sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
     | TupleType tupleTypes -> sprintf "%sTuple" (tupleTypes |> List.map typeToName |> String.concat "")
+    | BufferType elemType -> sprintf "Native%sBuffer" (typeToName elemType)
     | StructType name -> upperFirst name
     | TypedefType name -> upperFirst name
     | EnumType name -> upperFirst name
@@ -64,6 +65,7 @@ let rec typeToCppString = function
     | ArrayType niType -> sprintf "std::vector<%s>" (typeToCppString niType)
     | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (typeToCppString keyType) (typeToCppString valueType)
     | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map typeToCppString |> String.concat ",")
+    | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (typeToCppString elemType)
     | StructType name -> name
     | TypedefType name -> name
     | EnumType name -> name
@@ -98,6 +100,7 @@ let rec defaultValueForType = function
     | DelegateType name -> sprintf "std::function<%s>()" name
     | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString niType)
     | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToCppString keyType) (typeToCppString valueType)
+    | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>()" (typeToCppString elemType)
     | TupleType tupleTypes ->
         let typesJoined =
             tupleTypes |> List.map typeToCppString |> String.concat ","
@@ -161,6 +164,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     | MapType (keyType, valueType) ->
         write level "%s __%s%sMap__pop();" contextPrefix (typeToName keyType) (typeToName valueType)
     | TupleType _ ->
+        write level "%s __%s__pop();" contextPrefix (typeToName type_)
+    | BufferType _ ->
         write level "%s __%s__pop();" contextPrefix (typeToName type_)
     | StructType structName ->
         write level "%s %s__pop();" contextPrefix structName
@@ -241,6 +246,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | MapType (keyType, valueType) ->
         write level "__%s%sMap__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
     | TupleType _ ->
+        write level "__%s__push(%s, %s);" (typeToName type_) content (isReturnString())
+    | BufferType _ ->
         write level "__%s__push(%s, %s);" (typeToName type_) content (isReturnString())
     | StructType name ->
         write level "%s__push(%s, %s);" name content (isReturnString())
@@ -420,6 +427,27 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
         write 0 "std::shared_ptr<%s> %s__pop();" name name
     | UserOrGeneric.Generic gType ->
         match gType with
+        | BufferType elemType ->
+            // PUSH =====
+            write 0 "inline void __%s__push(%s buf, bool isReturn) {" (typeToName gType) (typeToCppString gType)
+            write 1 "auto pushable = std::dynamic_pointer_cast<Pushable>(buf);"
+            write 1 "pushable->push(pushable, isReturn);"
+            write 0 "}"
+            // POP ======
+            blank()
+            write 0 "%s __%s__pop() {" (typeToCppString gType) (typeToName gType)
+            write 1 "int id;"
+            write 1 "bool isClientId, inSafetyArea;"
+            write 1 "ni_BufferDescriptor descriptor;"
+            write 1 "ni_popBuffer(&id, &isClientId, &inSafetyArea, &descriptor);"
+            write 1 "if (isClientId) {"
+            write 2 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString elemType)
+            write 2 "return %s(buf);" (typeToCppString gType)
+            write 1 "}"
+            write 1 "else {"
+            write 2 "return ServerBuffer<%s>::getByID(id);" (typeToCppString elemType)
+            write 1 "}"
+            write 0 "}"
         | TupleType tupleTypes ->
             // PUSH =====
             write 0 "void __%s__push(%s value, bool isReturn) {" (typeToName gType) (typeToCppString gType)
@@ -868,6 +896,8 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
             write 0 "// %s" (typeToCppString gType) // likewise
         | TupleType _ ->
             write 0 "// %s" (typeToCppString gType) // !
+        | BufferType _ ->
+            write 0 "// %s" (typeToCppString gType)
         | _ ->
             failwithf "renderUserTypes: unsupported generic type %A" gType
     | UserOrGeneric.User userType ->

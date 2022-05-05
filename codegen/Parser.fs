@@ -36,6 +36,7 @@ type NIType =
     | ArrayType of NIType
     | MapType of keyType: NIType * valueType: NIType
     | TupleType of tupleTypes: NIType list
+    | BufferType of elemType: NIType
     //
     | Unresolved of name: string * line: int
     // these have to be resolved by checking a table, otherwise unresolved
@@ -47,6 +48,13 @@ type NIType =
     | TypedefType of name: string
     | EnumType of name: string
     | SumType of name: string
+
+let isPrimitiveType = function
+    | SizeT
+    | Bool
+    | Int8 | Int16 | Int32 | Int64
+    | Float32 | Float64 -> true
+    | _ -> false
 
 let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], line, etc)
     let front, etc =
@@ -98,6 +106,16 @@ let rec parseType (input: TokenAndLocation list) =
                 failwithf "missing ] for array type at line %d" line
         | _ ->
             failwithf "missing comma for array type at line %d" line
+    | Lookahead 2 ([BufferToken; LeftBracket], line, etc) ->
+        let elemType, etc =
+            parseType etc
+        if not (isPrimitiveType elemType) then
+            failwithf "incorrect buffer element type [%A] at line %d (must be primitive type)" elemType line
+        match etc with
+        | Lookahead 1 ([RightBracket], _, etc) ->
+            BufferType elemType, etc
+        | _ ->
+            failwithf "failed to parse buffer type at line %d" line
     | Lookahead 2 ([TupleToken; LeftBracket], line, etc) ->
         let closeIndex =
             etc |> List.tryFindIndex (fun tl -> tl.Token = RightBracket)

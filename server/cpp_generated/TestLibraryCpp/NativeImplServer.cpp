@@ -131,7 +131,7 @@ void ServerResource::dumpTables()
 {
 	printf("== C++ server resources:\n");
 	for (auto i = serverResources.begin(); i != serverResources.end(); i++) {
-		printf(" - obj %d: refcount %d\n", i->first, i->second->refCount);
+		printf(" - id %d (%s): refcount %d\n",  i->first, i->second->kind, i->second->refCount);
 	}
 }
 

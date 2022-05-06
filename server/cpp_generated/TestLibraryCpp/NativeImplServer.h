@@ -14,8 +14,10 @@ public:
 class ServerResource : public Pushable {
 private:
 	int refCount = 0;
+	const char* kind = "unknown";
 protected:
 	int id = -1;
+	ServerResource(const char* kind) : kind(kind) {}
 public:
 	void release();
 	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
@@ -25,7 +27,10 @@ public:
 	static void dumpTables();
 protected:
 	virtual void nativePush() = 0; // implemented specifically for: objects, buffers, etc
-	virtual void releaseExtra() {} // anything else you might want to do here, when destroyed (eg used by ServerFuncVal to remove itself from reverse map)
+
+	// anything else you might want to do here, when destroyed (eg used by ServerFuncVal to remove itself from reverse map)
+	// (tried virtual destructors but things were behaving strangely)
+	virtual void releaseExtra() {}
 };
 
 class ClientResource : public Pushable {
@@ -40,6 +45,7 @@ public:
 
 class ServerObject : public ServerResource {
 public:
+	ServerObject() : ServerResource("object") {}
 	static std::shared_ptr<ServerObject> getByID(int id);
 protected:
 	void nativePush() override;
@@ -66,7 +72,9 @@ protected:
 class ServerFuncVal : public ServerResource {
 private:
 	ServerFuncVal(std::function<void()> wrapper, size_t uniqueKey)
-		: wrapper(wrapper), uniqueKey(uniqueKey) {}
+		: ServerResource("funcval"),
+		wrapper(wrapper),
+		uniqueKey(uniqueKey) {}
 	size_t uniqueKey;
 public:
 	std::function<void()> wrapper;
@@ -120,7 +128,9 @@ protected:
 		block = nullptr;
 	}
 public:
-	ServerBuffer(std::vector<int> dims) {
+	ServerBuffer(std::vector<int> dims)
+		: ServerResource("buffer")
+	{
 		elementSize = sizeof(T);
 		totalCount = 1;
 		for (auto i = dims.begin(); i != dims.end(); i++) {

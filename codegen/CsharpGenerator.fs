@@ -829,8 +829,18 @@ let writeLibrary (m: Module) (writer: TextWriter) =
         write 2 "}"
 
     // static init + shutdown ====================================================
+    let maybeModuleInit =
+        moduleMethods
+        |> List.tryFind (fun nf -> nf.Name = "moduleInit")
+    let maybeModuleShutdown =
+        moduleMethods
+        |> List.tryFind (fun nf -> nf.Name = "moduleShutdown")
     blank()
-    write 2 "public static void Init()"
+    match maybeModuleInit with
+    | Some initFunc ->
+        write 2 "public static %s Init(%s)" (typeToCsString typeMap initFunc.Returns) (argsJoined typeMap initFunc.Args)
+    | None ->
+        write 2 "public static void Init()"
     write 2 "{"
     write 3 "Debug.Assert(NativeImplClient.Init() == 0);"
     write 3 "_module = NativeImplClient.GetModule(\"%s\");" m.Name
@@ -895,10 +905,21 @@ let writeLibrary (m: Module) (writer: TextWriter) =
                             failwith "C# interface wrappers: 'throws' contained non-exception type"
                 write 3 "});"
 
+    // invoke user's ModuleInit, if it exists
+    match maybeModuleInit with
+    | Some initFunc ->
+        write 3 "return ModuleInit(%s);" (argNamesJoined initFunc.Args)
+    | None ->
+        ()
     write 2 "}" // end of Init()
     blank()
     write 2 "public static void Shutdown()"
     write 2 "{"
+    match maybeModuleShutdown with
+    | Some _ ->
+        write 3 "ModuleShutdown();"
+    | None ->
+        ()
     write 3 "NativeImplClient.Shutdown();"
     write 2 "}"
     blank()

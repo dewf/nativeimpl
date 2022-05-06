@@ -34,10 +34,13 @@ public:
 
 let rec typeToName = function
     | UnitType -> "Unit"
-    | SizeT -> "SizeT"
-    | Bool -> "Bool"
-    | Int32 -> "Int"
-    | StringType -> "String"
+    | Primitive prim ->
+        match prim with
+        | SizeT -> "SizeT"
+        | Bool -> "Bool"
+        | Int32 -> "Int"
+        | StringType -> "String"
+        | x -> sprintf "(typeToName: primitive not done yet [%A]" x
     | OpaqueHandleType name -> upperFirst name
     | InterfaceType name -> upperFirst name
     | ExceptionType name -> upperFirst name
@@ -50,14 +53,17 @@ let rec typeToName = function
     | TypedefType name -> upperFirst name
     | EnumType name -> upperFirst name
     | SumType name -> upperFirst name
-    | x -> sprintf "(typeToName2: not done yet [%A]" x
+    | x -> sprintf "(typeToName: not done yet [%A]" x
 
 let rec typeToCppString = function
     | UnitType -> "void"
-    | SizeT -> "size_t"
-    | Bool -> "bool"
-    | Int32 -> "int"
-    | StringType -> "std::string"
+    | Primitive prim ->
+        match prim with
+        | SizeT -> "size_t"
+        | Bool -> "bool"
+        | Int32 -> "int"
+        | StringType -> "std::string"
+        | x -> sprintf "(typeToCppString: primitive not done yet [%A])" x
     | OpaqueHandleType name -> name
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
     | ExceptionType name -> name
@@ -91,10 +97,14 @@ let joinedArgNames (args: (string * NIType) list) =
 
 let rec defaultValueForType = function
     | UnitType -> failwith "defaultValueForType called on UnitType"
-    | SizeT -> "0"
-    | Bool -> "false"
-    | Int32 -> "0"
-    | StringType -> "\"default\""
+    | Primitive prim ->
+        match prim with
+        | SizeT -> "0"
+        | Bool -> "false"
+        | Int32 -> "0"
+        | StringType -> "\"default\""
+        | _ ->
+            "(defaultValueForType: not yet supported)"
     | OpaqueHandleType name -> sprintf "new __%s()" (upperFirst name)
     | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
     | DelegateType name -> sprintf "std::function<%s>()" name
@@ -131,14 +141,18 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         match context with
         | Return -> () // do nothing
         | _ -> failwith "tried to pop a Unit value in a non-Return context, why?"
-    | SizeT ->
-        write level "%s ni_popSizeT();" contextPrefix
-    | Bool ->
-        write level "%s ni_popBool();" contextPrefix
-    | Int32 ->
-        write level "%s ni_popInt();" contextPrefix
-    | StringType ->
-        write level "%s popStringInternal();" contextPrefix
+    | Primitive prim ->
+        match prim with
+        | SizeT ->
+            write level "%s ni_popSizeT();" contextPrefix
+        | Bool ->
+            write level "%s ni_popBool();" contextPrefix
+        | Int32 ->
+            write level "%s ni_popInt();" contextPrefix
+        | StringType ->
+            write level "%s popStringInternal();" contextPrefix
+        | _ ->
+            write level "// (pop not yet implemented: prim %A)" prim
     | OpaqueHandleType name ->
         write level "%s (%s)ni_popSizeT();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
@@ -148,9 +162,12 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     | ArrayType niType ->
         let popFunc =
             match niType with
-            | Bool -> "popBoolArrayInternal"
-            | Int32 -> "popIntArrayInternal"
-            | StringType -> "popStringArrayInternal"
+            | Primitive prim ->
+                match prim with
+                | Bool -> "popBoolArrayInternal"
+                | Int32 -> "popIntArrayInternal"
+                | StringType -> "popStringArrayInternal"
+                | _ -> sprintf "// (pop not yet supported: prim %A)" prim
             | StructType name -> sprintf "__%sArray__pop" name
             | TypedefType name -> sprintf "__%sArray__pop" name
             | DelegateType name -> sprintf "__%sArray__pop" name
@@ -203,14 +220,18 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     match type_ with
     | UnitType ->
         write level "%s;" content // no push!
-    | SizeT ->
-        write level "ni_pushSizeT(%s);" content
-    | Bool ->
-        write level "ni_pushBool(%s);" content
-    | Int32 ->
-        write level "ni_pushInt(%s);" content
-    | StringType ->
-        write level "pushStringInternal(%s);" content
+    | Primitive prim ->
+        match prim with
+        | SizeT ->
+            write level "ni_pushSizeT(%s);" content
+        | Bool ->
+            write level "ni_pushBool(%s);" content
+        | Int32 ->
+            write level "ni_pushInt(%s);" content
+        | StringType ->
+            write level "pushStringInternal(%s);" content
+        | _ ->
+            write level "// (pushValue not supported yet: prim %A)" prim
     | OpaqueHandleType _ ->
         write level "ni_pushSizeT((size_t)%s);" content
     | InterfaceType name ->
@@ -219,12 +240,16 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "%s__push(%s);" name content // still hmm about safety area for functions ...
     | ArrayType niType ->
         match niType with
-        | Bool ->
-            write level "pushBoolArrayInternal(%s);" content
-        | Int32 ->
-            write level "pushIntArrayInternal(%s);" content
-        | StringType ->
-            write level "pushStringArrayInternal(%s);" content
+        | Primitive prim ->
+            match prim with
+            | Bool ->
+                write level "pushBoolArrayInternal(%s);" content
+            | Int32 ->
+                write level "pushIntArrayInternal(%s);" content
+            | StringType ->
+                write level "pushStringArrayInternal(%s);" content
+            | _ ->
+                write level "// (push not yet supported: array of prim %A)" prim
         | ArrayType niType ->
             write level "__%sArrayArray__push(%s, %s);" (typeToName niType) content (isReturnString())
         | MapType (keyType, valueType) ->
@@ -396,12 +421,12 @@ let renderWrapperSumType (writer: TextWriter) (sumTypeName: string) (values: Sum
             pushValue writer 2 argType content (Indirect "isReturn")
         write 2 "break;"
     write 1 "}"
-    pushValue writer 1 Int32 "(int)value.tag" (Indirect "isReturn")
+    pushValue writer 1 (Primitive Int32) "(int)value.tag" (Indirect "isReturn")
     write 0 "}"
     // pop
     blank()
     write 0 "%s %s__pop() {" sumTypeName sumTypeName
-    popValue writer 1 Int32 (Variable "which")
+    popValue writer 1 (Primitive Int32) (Variable "which")
     write 1 "switch ((%s::Tag)which) {" sumTypeName
     for value in values do
         write 1 "case %s::Tag::%s: {" sumTypeName (upperFirst value.Name)
@@ -611,10 +636,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             | MapType _ ->
                 arrayCommon (typeToName arrayType) arrayType
             // ignore built-ins below:
-            | Bool
-            | Int8 | Int16 | Int32 | Int64
-            | Float32 | Float64
-            | StringType ->
+            | Primitive _ ->
                 write 0 "// built-in array type: %s" (typeToCppString gType)
             | _ ->
                 write 0 "// TODO: push/pop for generic %s" (typeToCppString gType)
@@ -652,11 +674,11 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             write 0 "}"
         | EnumDef _ ->
             write 0 "inline void %s__push(%s value) {" name name
-            pushValue writer 1 Int32 "(int)value" NotApplicable
+            pushValue writer 1 (Primitive Int32) "(int)value" NotApplicable
             write 0 "}"
             blank()
             write 0 "inline %s %s__pop() {" name name
-            popValue writer 1 Int32 (Variable "tag")
+            popValue writer 1 (Primitive Int32) (Variable "tag")
             write 1 "return (%s)tag;" name
             write 0 "}"
         | SumTypeDef values ->
@@ -879,7 +901,7 @@ let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumT
         write 1 "std::shared_ptr<%s> %s;" value.Name (lowerFirst value.Name)
     write 0 "};"
 
-let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
+let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGeneric) (_typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt

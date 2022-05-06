@@ -26,13 +26,16 @@ module List =
                 (List.rev revFront), current
         takeMore count xs []
 
-type NIType =
-    | UnitType
+type NIPrimitive =
     | SizeT
     | Bool
     | Int8 | Int16 | Int32 | Int64
     | Float32 | Float64
     | StringType
+
+type NIType =
+    | UnitType
+    | Primitive of prim: NIPrimitive
     | ArrayType of NIType
     | MapType of keyType: NIType * valueType: NIType
     | TupleType of tupleTypes: NIType list
@@ -49,12 +52,11 @@ type NIType =
     | EnumType of name: string
     | SumType of name: string
 
-let isPrimitiveType = function
-    | SizeT
-    | Bool
-    | Int8 | Int16 | Int32 | Int64
-    | Float32 | Float64 -> true
-    | _ -> false
+let validBufferElementType = function
+    | Primitive prim ->
+        prim <> StringType
+    | _ ->
+        false
 
 let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], line, etc)
     let front, etc =
@@ -73,15 +75,15 @@ let rec parseType (input: TokenAndLocation list) =
     | Lookahead 1 ([UnitToken], _, etc) ->
         UnitType, etc
     | Lookahead 1 ([SizeTToken], _, etc) ->
-        SizeT, etc
+        Primitive SizeT, etc
     | Lookahead 1 ([BoolToken], _, etc) ->
-        Bool, etc
+        Primitive Bool, etc
     | Lookahead 1 ([IntToken], _, etc) ->
-        Int32, etc
+        Primitive Int32, etc
     | Lookahead 1 ([FloatToken], _, etc) ->
-        Float32, etc
+        Primitive Float32, etc
     | Lookahead 1 ([StringToken], _, etc) ->
-        StringType, etc
+        Primitive StringType, etc
     | Lookahead 3 ([OpaqueToken; Identifier name; StatementEnd], _, etc) ->
         OpaqueHandleType name, etc
     | Lookahead 2 ([ArrayToken; LeftBracket], line, etc1) ->
@@ -109,7 +111,7 @@ let rec parseType (input: TokenAndLocation list) =
     | Lookahead 2 ([BufferToken; LeftBracket], line, etc) ->
         let elemType, etc =
             parseType etc
-        if not (isPrimitiveType elemType) then
+        if not (validBufferElementType elemType) then
             failwithf "incorrect buffer element type [%A] at line %d (must be primitive type)" elemType line
         match etc with
         | Lookahead 1 ([RightBracket], _, etc) ->
@@ -287,7 +289,7 @@ let parseIdentifierList (line: int) (input: TokenAndLocation list) (endToken: To
         let identifiers =
             idTokens |> List.unfold parseOneIdentifier
         match etc with
-        | Lookahead 1 ([endToken], line, etc) ->
+        | Lookahead 1 ([token], _, etc) when token = endToken ->
             identifiers, etc
         | _ ->
             failwithf "expected end of identifiers on line %d" line
@@ -344,7 +346,7 @@ let parseFunctionList (line: int) (input: TokenAndLocation list) =
 
 let parseOneEnumValue (input: TokenAndLocation list) =
     match input with
-    | Lookahead 2 ([Identifier name; Comma], line, etc) ->
+    | Lookahead 2 ([Identifier name; Comma], _, etc) ->
         Some (name, etc)
     | [{ Token = Identifier name }] -> // last one
         Some (name, [])
@@ -372,7 +374,7 @@ let parseEnumValues (line: int) (input: TokenAndLocation list) =
 
 let parseOneSumTypeValue (input: TokenAndLocation list) =
     match input with
-    | Lookahead 1 ([Identifier name], line, etc) ->
+    | Lookahead 1 ([Identifier name], _, etc) ->
         // does it have args?
         let args, etc2 =
             match etc with
@@ -423,7 +425,7 @@ let parseModule (input: TokenAndLocation list) =
                 parseFields line etc
             (UserType (name, StructDef fields), etc2)
             |> Some
-        | Lookahead 2 ([ExceptionToken; Identifier name], line, etc) ->
+        | Lookahead 2 ([ExceptionToken; Identifier name], _, etc) ->
             // does it have arguments? (these become fields)
             let args, etc =
                 match etc with

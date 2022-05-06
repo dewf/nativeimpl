@@ -22,10 +22,13 @@ let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
 
 let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
     | UnitType -> "void"
-    | SizeT -> "IntPtr"
-    | Bool -> "bool"
-    | Int32 -> "int"
-    | StringType -> "string"
+    | Primitive prim ->
+        match prim with
+        | SizeT -> "IntPtr"
+        | Bool -> "bool"
+        | Int32 -> "int"
+        | StringType -> "string"
+        | _ -> sprintf "(typeToCsString: prim not yet supported: %A)" prim
     | OpaqueHandleType name -> upperFirst name
     | EnumType name -> upperFirst name
     | SumType name -> upperFirst name
@@ -61,10 +64,13 @@ let rec newCsArray (typeMap: Map<string, UserOrGeneric>) (ofType: NIType) (count
 
 let rec typeToName = function
     | UnitType -> failwith "typeToName: 'unit' type as name?"
-    | SizeT -> "SizeT"
-    | Bool -> "Bool"
-    | Int32 -> "Int"
-    | StringType -> "String"
+    | Primitive prim ->
+        match prim with
+        | SizeT -> "SizeT"
+        | Bool -> "Bool"
+        | Int32 -> "Int"
+        | StringType -> "String"
+        | _ -> sprintf "(typeToName: not yet supported: prim %A)" prim
     | StructType name -> upperFirst name
     | EnumType name -> upperFirst name
     | TypedefType name -> upperFirst name
@@ -119,14 +125,18 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         match context with
         | Return -> () // nothing'
         | _ -> failwith "tried to pop a Unit value in a non-Return context, why?"
-    | SizeT ->
-        write level "%s NativeImplClient.PopSizeT();" contextPrefix
-    | Bool ->
-        write level "%s NativeImplClient.PopBool();" contextPrefix
-    | Int32 ->
-        write level "%s NativeImplClient.PopInt();" contextPrefix
-    | StringType ->
-        write level "%s NativeImplClient.PopString();" contextPrefix
+    | Primitive prim ->
+        match prim with
+        | SizeT ->
+            write level "%s NativeImplClient.PopSizeT();" contextPrefix
+        | Bool ->
+            write level "%s NativeImplClient.PopBool();" contextPrefix
+        | Int32 ->
+            write level "%s NativeImplClient.PopInt();" contextPrefix
+        | StringType ->
+            write level "%s NativeImplClient.PopString();" contextPrefix
+        | _ ->
+            write level "// popValue prim %A not yet supported" prim
     | OpaqueHandleType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
@@ -135,9 +145,12 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | ArrayType niType ->
         match niType with
-        | Bool -> write level "%s NativeImplClient.PopBoolArray();" contextPrefix
-        | Int32 -> write level "%s NativeImplClient.PopIntArray();" contextPrefix
-        | StringType -> write level "%s NativeImplClient.PopStringArray();" contextPrefix
+        | Primitive prim ->
+            match prim with
+            | Bool -> write level "%s NativeImplClient.PopBoolArray();" contextPrefix
+            | Int32 -> write level "%s NativeImplClient.PopIntArray();" contextPrefix
+            | StringType -> write level "%s NativeImplClient.PopStringArray();" contextPrefix
+            | _ -> write level "// popValue not yet supported: array of prim %A" prim
         | EnumType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
         | StructType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
         | ArrayType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType))
@@ -183,14 +196,18 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     match type_ with
     | UnitType ->
         write level "%s;" content // content directly (method invocation etc)
-    | SizeT ->
-        write level "NativeImplClient.PushSizeT(%s);" content
-    | Bool ->
-        write level "NativeImplClient.PushBool(%s);" content
-    | Int32 ->
-        write level "NativeImplClient.PushInt(%s);" content
-    | StringType ->
-        write level "NativeImplClient.PushString(%s);" content
+    | Primitive prim ->
+        match prim with
+        | SizeT ->
+            write level "NativeImplClient.PushSizeT(%s);" content
+        | Bool ->
+            write level "NativeImplClient.PushBool(%s);" content
+        | Int32 ->
+            write level "NativeImplClient.PushInt(%s);" content
+        | StringType ->
+            write level "NativeImplClient.PushString(%s);" content
+        | _ ->
+            write level "// pushValue prim %A not yet supported" prim
     | OpaqueHandleType name ->
         write level "%s__Push(%s);" (upperFirst name) content
     | InterfaceType _ ->
@@ -199,9 +216,12 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "%s__Push(%s);" (upperFirst name) content
     | ArrayType niType ->
         match niType with
-        | Bool -> write level "NativeImplClient.PushBoolArray(%s);" content
-        | Int32 -> write level "NativeImplClient.PushIntArray(%s);" content
-        | StringType -> write level "NativeImplClient.PushStringArray(%s);" content
+        | Primitive prim ->
+            match prim with
+            | Bool -> write level "NativeImplClient.PushBoolArray(%s);" content
+            | Int32 -> write level "NativeImplClient.PushIntArray(%s);" content
+            | StringType -> write level "NativeImplClient.PushStringArray(%s);" content
+            | _ -> write level "// pushValue not yet supported: Array of prim %A" prim
         | EnumType name -> write level "__%sArray__Push(%s);" (upperFirst name) content
         | StructType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
         | TypedefType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
@@ -395,11 +415,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             | MapType _ ->
                 arrayCommon (typeToName arrayType) arrayType
             // ignore built-ins below:
-            | Bool
-            | Int8 | Int16 | Int32 | Int64
-            | Float32 | Float64
-            | StringType ->
-                // we don't handle any of the primitives, those are all built-in
+            | Primitive _ ->
                 write 2 "// built-in array type: %s" (typeToCsString typeMap gType)
             | _ ->
                 write 2 "// TODO: push/pop for generic %s" (typeToCsString typeMap gType)
@@ -441,13 +457,13 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             blank()
             write 2 "private static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
             write 2 "{"
-            pushValue writer 3 SizeT "value.NativeHandle" NotApplicable
+            pushValue writer 3 (Primitive SizeT) "value.NativeHandle" NotApplicable
             write 2 "}"
             // pop
             blank()
             write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
-            popValue writer 3 SizeT (NewVariable "nativeHandle")
+            popValue writer 3 (Primitive SizeT) (NewVariable "nativeHandle")
             write 3 "return new %s(nativeHandle);" (upperFirst name)
             write 2 "}"
         | StructDef namedFields ->

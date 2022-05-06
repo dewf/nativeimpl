@@ -4,9 +4,12 @@ open Parser
 
 let rec typeToInternalKey = function
     | UnitType -> "void"
-    | Bool -> "bool"
-    | Int32 -> "int32"
-    | StringType -> "string"
+    | Primitive prim ->
+        match prim with
+        | Bool -> "bool"
+        | Int32 -> "int32"
+        | StringType -> "string"
+        | x -> sprintf "(typeToInternalKey: primitive not done yet [%A])" x
     | InterfaceType name -> name
     | ExceptionType name -> name
     | DelegateType name -> name
@@ -142,6 +145,10 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
     // such that we'd need to clear the remote safety area?
     let rec processType (type_: NIType) (acc: Map<string, bool>) =
         match type_ with
+        | UnitType ->
+            false, acc
+        | Primitive _ ->
+            false, acc
         | OpaqueHandleType name -> processDeps name acc
         | StructType name -> processDeps name acc
         | InterfaceType name ->
@@ -165,9 +172,8 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
             // buffers only contain primitives (so no processDeps), but are themselves reference types (that require clearing remote safety area when returned)
             let name = (typeToInternalKey type_)
             true, acc.Add(name, true)
-        | _ ->
-            // primitive types
-            false, acc
+        | Unresolved _ ->
+            failwith "createContainsRefsMap/processType encountered 'Unresolved' type??"
     and processDeps (name: string) (acc: Map<string, bool>) =
         if acc.ContainsKey(name) then
             acc[name], acc
@@ -311,6 +317,10 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
 let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string -> UserOrGeneric -> Map<string, UserOrGeneric> -> unit) =
     let rec renderType (type_: NIType) (alreadyRendered: Set<string>) =
         match type_ with
+        | UnitType ->
+            alreadyRendered
+        | Primitive _ ->
+            alreadyRendered
         | OpaqueHandleType name -> renderDeps name alreadyRendered
         | StructType name -> renderDeps name alreadyRendered
         | InterfaceType name ->
@@ -341,13 +351,13 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
         | BufferType _ ->
             let name = (typeToInternalKey type_)
             renderDeps name alreadyRendered
-        | _ ->
-            alreadyRendered
+        | Unresolved _ ->
+            failwith "renderUserTypes/renderType: 'Unresolved' type encountered??"
     and renderDeps (name: string) (alreadyRendered: Set<string>) =
         if alreadyRendered.Contains(name) then
             alreadyRendered
         else
-            let content = typeMap.[name]
+            let content = typeMap[name]
             let subRendered =
                 match content with
                 | UserOrGeneric.FwdInterface ->

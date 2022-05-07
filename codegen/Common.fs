@@ -10,6 +10,8 @@ let rec typeToInternalKey = function
         | Int32 -> "int32"
         | StringType -> "string"
         | x -> sprintf "(typeToInternalKey: primitive not done yet [%A])" x
+    | Unresolved _ -> failwith "typeToInternalKey: Unresolved??"
+    | OpaqueHandleType name -> name
     | InterfaceType name -> name
     | ExceptionType name -> name
     | DelegateType name -> name
@@ -21,7 +23,6 @@ let rec typeToInternalKey = function
     | TypedefType name -> name
     | EnumType name -> name
     | SumType name -> name
-    | x -> sprintf "(typeToInternalKey: not done yet [%A])" x
 
 [<RequireQualifiedAccess>]
 type UserOrGeneric =
@@ -149,7 +150,8 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
             false, acc
         | Primitive _ ->
             false, acc
-        | OpaqueHandleType name -> processDeps name acc
+        | OpaqueHandleType name ->
+            false, acc.Add(name, false)
         | StructType name -> processDeps name acc
         | InterfaceType name ->
             // never traverse into interface dependencies themselves ...

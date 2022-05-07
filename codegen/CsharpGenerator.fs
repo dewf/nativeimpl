@@ -138,7 +138,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | _ ->
             write level "// popValue prim %A not yet supported" prim
     | OpaqueHandleType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
+        write level "%s new %s(NativeImplClient.PopSizeT());" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
         write level "%s %s__Pop();" contextPrefix (upperFirst ifaceName)
     | DelegateType name ->
@@ -208,8 +208,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             write level "NativeImplClient.PushString(%s);" content
         | _ ->
             write level "// pushValue prim %A not yet supported" prim
-    | OpaqueHandleType name ->
-        write level "%s__Push(%s);" (upperFirst name) content
+    | OpaqueHandleType _ ->
+        write level "NativeImplClient.PushSizeT(%s.NativeHandle);" content
     | InterfaceType _ ->
         write level "((IPushable)%s).Push(%s);" content (isReturnString())
     | DelegateType name ->
@@ -453,19 +453,19 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 4 "NativeHandle = nativeHandle;"
             write 3 "}"
             write 2 "}"
-            // push
-            blank()
-            write 2 "private static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
-            write 2 "{"
-            pushValue writer 3 (Primitive SizeT) "value.NativeHandle" NotApplicable
-            write 2 "}"
-            // pop
-            blank()
-            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
-            write 2 "{"
-            popValue writer 3 (Primitive SizeT) (NewVariable "nativeHandle")
-            write 3 "return new %s(nativeHandle);" (upperFirst name)
-            write 2 "}"
+//            // push
+//            blank()
+//            write 2 "private static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
+//            write 2 "{"
+//            pushValue writer 3 (Primitive SizeT) "value.NativeHandle" NotApplicable
+//            write 2 "}"
+//            // pop
+//            blank()
+//            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+//            write 2 "{"
+//            popValue writer 3 (Primitive SizeT) (NewVariable "nativeHandle")
+//            write 3 "return new %s(nativeHandle);" (upperFirst name)
+//            write 2 "}"
         | StructDef namedFields ->
             write 2 "public struct %s {" name
             for field in namedFields do
@@ -648,9 +648,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                     write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.Name
                 // return (mindful of safety area nonsense)
                 if containsRefs method.Returns then
-                    popValue writer 4 method.Returns (NewVariable "__ret")
-                    write 4 "NativeImplClient.ServerClearSafetyArea();"
-                    write 4 "return __ret;"
+                    popValue writer 4 method.Returns SafeReturn
                 else
                     popValue writer 4 method.Returns Return
                 write 3 "}"
@@ -809,7 +807,8 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     let containsRefsMap =
         createContainsRefsMap typeMap
     let containsRefs (type_: NIType) =
-        containsRefsMap.ContainsKey(typeToInternalKey type_)
+        containsRefsMap.TryFind(typeToInternalKey type_)
+        |> Option.defaultValue false
     let renderFunc =
         renderLibraryUserTypes writer containsRefs
     renderUserTypes typeMap renderFunc

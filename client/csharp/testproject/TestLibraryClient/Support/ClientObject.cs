@@ -1,4 +1,4 @@
-﻿namespace TestLibraryClient
+﻿namespace TestLibraryClient.Support
 {
     public abstract class ClientObject : ClientResource
     {

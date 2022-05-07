@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace TestLibraryClient
+namespace TestLibraryClient.Support
 {
     public abstract class ClientResource : IPushable
     {

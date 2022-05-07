@@ -1,4 +1,4 @@
-﻿namespace TestLibraryClient
+﻿namespace TestLibraryClient.Support
 {
     internal abstract class ServerObject : ServerResource
     {

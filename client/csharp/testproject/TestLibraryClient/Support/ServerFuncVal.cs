@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace TestLibraryClient
+namespace TestLibraryClient.Support
 {
     internal class ServerFuncVal : ServerResource
     {

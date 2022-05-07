@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace TestLibraryClient
+namespace TestLibraryClient.Support
 {
     public interface INativeBuffer<T> : IDisposable
     {

@@ -774,6 +774,9 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     write 0 "using System.Collections.Generic;"
     write 0 "using System.Linq;"
     write 0 "using System.Runtime.InteropServices;"
+    write 0 "using TestLibraryClient.Support;"
+    write 0 "using ModuleHandle = TestLibraryClient.Support.ModuleHandle;" // sigh
+
     write 0 ""
     write 0 "namespace %sClient" m.Name
     write 0 "{"

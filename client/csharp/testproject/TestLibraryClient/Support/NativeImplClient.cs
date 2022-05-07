@@ -4,7 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace TestLibraryClient
+namespace TestLibraryClient.Support
 {
     internal delegate void MethodWrapper(ClientObject obj);
     internal delegate void ExceptionBuildAndThrowDelegate();

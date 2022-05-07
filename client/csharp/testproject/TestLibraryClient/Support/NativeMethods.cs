@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 
-namespace TestLibraryClient
+namespace TestLibraryClient.Support
 {
     internal static class NativeMethods
     {

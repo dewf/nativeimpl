@@ -2,7 +2,7 @@
 using System.Linq;
 using System.Runtime.InteropServices;
 
-namespace TestLibraryClient
+namespace TestLibraryClient.Support
 {
     public class ClientBuffer<T> : ClientResource, INativeBuffer<T>
     {

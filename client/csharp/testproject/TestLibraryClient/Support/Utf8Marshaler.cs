@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace TestLibraryClient
+namespace TestLibraryClient.Support
 {
     // from https://www.codeproject.com/Articles/138614/Advanced-Topics-in-PInvoke-String-Marshaling
     public class Utf8Marshaler : ICustomMarshaler {

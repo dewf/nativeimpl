@@ -16,7 +16,7 @@ let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
             }
             else
             {
-                return (%%IFACE%%) NativeImplClient.ClientObject.GetById(id);
+                return (%%IFACE%%) ClientObject.GetById(id);
             }
         }"
 
@@ -607,7 +607,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             writer.WriteLine(Regex(@"%%IFACE%%").Replace(interfacePopTemplate, name))
             // client base class
             blank()
-            write 2 "public abstract class Client%s : NativeImplClient.ClientObject, %s" (upperFirst name) (upperFirst name)
+            write 2 "public abstract class Client%s : ClientObject, %s" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "public virtual void Dispose()"
             write 3 "{"
@@ -628,7 +628,7 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 2 "}"
             // server wrapper
             blank()
-            write 2 "private class Server%s : NativeImplClient.ServerObject, %s" (upperFirst name) (upperFirst name)
+            write 2 "private class Server%s : ServerObject, %s" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "public Server%s(int id) : base(id)" name
             write 3 "{"
@@ -877,7 +877,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
             // method wrappers
             for method in methods do
                 blank()
-                write 3 "NativeImplClient.SetClientMethodWrapper(_%s_%s, delegate(NativeImplClient.ClientObject obj)" (lowerFirst ifaceName) method.Name
+                write 3 "NativeImplClient.SetClientMethodWrapper(_%s_%s, delegate(ClientObject obj)" (lowerFirst ifaceName) method.Name
                 write 3 "{"
                 write 4 "var inst = (Client%s) obj;" ifaceName
                 // pop args

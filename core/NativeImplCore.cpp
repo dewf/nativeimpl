@@ -207,7 +207,7 @@ public:
 	bool inSafetyArea;
 	ni_BufferDescriptor descriptor;
 	BufferItem(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor)
-		: id(id), isClientId(isClientId)
+		: id(id), isClientId(isClientId), inSafetyArea(inSafetyArea)
 	{
 		this->descriptor = *descriptor;
 	}

@@ -638,8 +638,8 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                 blank()
                 write 3 "public %s %s(%s)" (typeToCsString typeMap method.Returns) (upperFirst method.Name) (argsJoined typeMap method.Args)
                 write 3 "{"
-                // push args
-                for argName, argType in method.Args do
+                // push args (in reverse!!)
+                for argName, argType in method.Args |> List.rev do
                     pushValue writer 4 argType argName (Direct false)
                 // invoke remote
                 if method.Throws.IsEmpty then

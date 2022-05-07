@@ -129,6 +129,7 @@ struct __Window; typedef struct __Window* Window;
 class WindowDelegate {
 public:
     virtual void onDestroyed() = 0;
+    virtual void onResized(int newWidth, int newHeight) = 0;
 };
 
 // inherit from this to create server instances of WindowDelegate

@@ -76,6 +76,10 @@ namespace AppRunner
                 TestLibrary.ExitRunloop();
             }
         }
+        public override void OnResized(int newWidth, int newHeight)
+        {
+            Console.WriteLine("Window resized to: {0} / {1}", newWidth, newHeight);
+        }
         public override void Dispose()
         {
             // hmmm ?

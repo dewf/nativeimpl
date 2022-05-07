@@ -2,6 +2,7 @@
 #include "Implementation.h"
 
 ni_InterfaceMethodRef windowDelegate_onDestroyed;
+ni_InterfaceMethodRef windowDelegate_onResized;
 
 
 
@@ -22,6 +23,11 @@ public:
     ClientWindowDelegate(int id) : ClientObject(id) {}
     void onDestroyed() override {
         invokeMethod(windowDelegate_onDestroyed);
+    }
+    void onResized(int newWidth, int newHeight) override {
+        ni_pushInt(newHeight);
+        ni_pushInt(newWidth);
+        invokeMethod(windowDelegate_onResized);
     }
 };
 
@@ -130,6 +136,13 @@ void WindowDelegate_onDestroyed__wrapper(int serverID) {
     inst->onDestroyed();
 }
 
+void WindowDelegate_onResized__wrapper(int serverID) {
+    auto inst = ServerWindowDelegate::getByID(serverID);
+    auto newWidth = ni_popInt();
+    auto newHeight = ni_popInt();
+    inst->onResized(newWidth, newHeight);
+}
+
 extern "C" int nativeLibraryInit() {
     auto m = ni_registerModule("TestLibrary");
     ni_registerModuleMethod(m, "createWindow", &createWindow__wrapper);
@@ -150,6 +163,7 @@ extern "C" int nativeLibraryInit() {
     ni_registerModuleMethod(m, "moduleShutdown", &moduleShutdown__wrapper);
     auto windowDelegate = ni_registerInterface(m, "WindowDelegate");
     windowDelegate_onDestroyed = ni_registerInterfaceMethod(windowDelegate, "onDestroyed", &WindowDelegate_onDestroyed__wrapper);
+    windowDelegate_onResized = ni_registerInterfaceMethod(windowDelegate, "onResized", &WindowDelegate_onResized__wrapper);
     return 0; // = OK
 }
 

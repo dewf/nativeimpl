@@ -2,12 +2,15 @@ module TestLibrary;
 
 interface WindowDelegate {
     void onDestroyed();
+    void onResized(int newWidth, int newHeight);
+    void onRepaint(CGContext context);
 }
 
 opaque Window;
 Window createWindow(string title, WindowDelegate del);
 void windowShow(Window w);
 void windowSetMenuBar(Window w, MenuBar mb);
+void windowInvalidate(Window w, int x, int y, int width, int height); // or 0s for whole window
 void windowDestroy(Window w);
 
 opaque Accelerator;
@@ -25,6 +28,25 @@ void menuAddSeparator(Menu menu);
 opaque MenuBar;
 MenuBar createMenuBar();
 void menuBarAddMenu(MenuBar mb, string label, Menu menu);
+
+struct CGPoint {
+   double x;
+   double y;
+}
+
+struct CGSize {
+   double width;
+   double height;
+}
+
+struct CGRect {
+   CGPoint origin;
+   CGSize size;
+}
+
+opaque CGContext;
+void cgContextSetRGBFillColor(CGContext c, double red, double green, double blue, double alpha);
+void cgContextFillRect(CGContext c, CGRect rect);
 
 int runloop();
 void exitRunloop();

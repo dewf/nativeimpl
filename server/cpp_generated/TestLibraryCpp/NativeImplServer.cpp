@@ -221,13 +221,11 @@ void ClientObject::nativePush(bool inSafetyArea)
 }
 
 void ClientObject::invokeMethod(ni_InterfaceMethodRef method) {
-	printf("C++ ClientObject::invokeMethod(%p) on id: %d\n", method, id);
 	::ni_clientMethodExec(method, id);
 	assert(ni_currentException == nullptr); // never use this where an exception can throw! (trying to keep things tight for maximum throughput)
 }
 
 void ClientObject::invokeMethodWithExceptions(ni_InterfaceMethodRef method) {
-	printf("C++ ClientObject::invokeMethodWithExceptions(%p) on id: %d\n", method, id);
 	assert(ni_currentException == nullptr);
 	::ni_clientMethodExec(method, id);
 	if (ni_currentException != nullptr) {

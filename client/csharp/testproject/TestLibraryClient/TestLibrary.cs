@@ -30,6 +30,7 @@ namespace TestLibraryClient
         private static ModuleMethodHandle _moduleShutdown;
         private static InterfaceHandle _windowDelegate;
         private static InterfaceMethodHandle _windowDelegate_onDestroyed;
+        private static InterfaceMethodHandle _windowDelegate_onResized;
 
         public struct Accelerator
         {
@@ -203,6 +204,7 @@ namespace TestLibraryClient
         public interface WindowDelegate : IDisposable
         {
             void OnDestroyed();
+            void OnResized(int newWidth, int newHeight);
         }
 
         private static WindowDelegate WindowDelegate__Pop()
@@ -225,6 +227,7 @@ namespace TestLibraryClient
                 // override if necessary
             }
             public abstract void OnDestroyed();
+            public abstract void OnResized(int newWidth, int newHeight);
         }
 
         private class ServerWindowDelegate : ServerObject, WindowDelegate
@@ -236,6 +239,13 @@ namespace TestLibraryClient
             public void OnDestroyed()
             {
                 NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onDestroyed, Id);
+            }
+
+            public void OnResized(int newWidth, int newHeight)
+            {
+                NativeImplClient.PushInt(newHeight);
+                NativeImplClient.PushInt(newWidth);
+                NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onResized, Id);
             }
 
             public void Dispose()
@@ -374,11 +384,20 @@ namespace TestLibraryClient
 
             _windowDelegate = NativeImplClient.GetInterface(_module, "WindowDelegate");
             _windowDelegate_onDestroyed = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onDestroyed");
+            _windowDelegate_onResized = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onResized");
 
             NativeImplClient.SetClientMethodWrapper(_windowDelegate_onDestroyed, delegate(ClientObject obj)
             {
                 var inst = (ClientWindowDelegate) obj;
                 inst.OnDestroyed();
+            });
+
+            NativeImplClient.SetClientMethodWrapper(_windowDelegate_onResized, delegate(ClientObject obj)
+            {
+                var inst = (ClientWindowDelegate) obj;
+                var newWidth = NativeImplClient.PopInt();
+                var newHeight = NativeImplClient.PopInt();
+                inst.OnResized(newWidth, newHeight);
             });
             return ModuleInit();
         }

@@ -1,5 +1,8 @@
 #include "Implementation.h"
 #include "../../../../moonshot/openwl/source/openwl.h"
+#include "../../../../moonshot/opendl/source/opendl.h"
+
+#include <assert.h>
 
 int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData);
 
@@ -41,6 +44,7 @@ void windowSetMenuBar(Window w, MenuBar mb) {
 
 void windowDestroy(Window w) {
     wl_WindowDestroy(w->wlWindow);
+    delete w;
 }
 
 Accelerator createAccelerator(KeyEnum key) {
@@ -55,7 +59,7 @@ Action createAction(int id, std::string label, Accelerator acc) {
 
 Menu createMenu() {
     auto ret = wl_MenuCreate();
-    return new __Menu { ret };
+    return new __Menu{ ret };
 }
 
 void menuAddAction(Menu menu, Action action) {
@@ -88,22 +92,56 @@ void exitRunloop() {
 }
 
 int moduleInit() {
-    wl_PlatformOptions opts{};
-    opts.useDirect2D = false;
-    return wl_Init(&myCallback, &opts);
+    wl_PlatformOptions wlOpts{};
+    wlOpts.useDirect2D = true;
+    if (wl_Init(&myCallback, &wlOpts) == 0) {
+        dl_PlatformOptions dlOpts;
+        dlOpts.factory = wlOpts.outParams.factory;
+        return dl_Init(&dlOpts);
+    }
+    return -1;
 }
 
 void moduleShutdown() {
+    dl_Shutdown();
     wl_Shutdown();
 }
 
+dl_CGContextRef createContext(wl_PlatformContext* platformContext) {
+#ifdef WL_PLATFORM_WINDOWS
+    auto context = dl_CGContextCreateD2D(platformContext->d2d.target);
+#elif defined(WL_PLATFORM_MACOS)
+    auto context = dl_CGContextCreateQuartz(platformContext->context, height);
+#elif defined(WL_PLATFORM_LINUX)
+    auto context = dl_CGContextCreateCairo(platformContext->cr, width, height);
+#endif
+    return context;
+}
+
 int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData) {
-    event->handled = true;
     auto privWindow = (Window)userData;
+    event->handled = true;
     switch (event->eventType) {
     case wl_kEventTypeWindowDestroyed:
         privWindow->del->onDestroyed();
         break;
+    case wl_kEventTypeWindowResized:
+        privWindow->del->onResized(event->resizeEvent.newWidth, event->resizeEvent.newHeight);
+        break;
+    case wl_kEventTypeWindowRepaint: {
+        auto context = createContext(&event->repaintEvent.platformContext);
+        dl_CGContextSaveGState(context);
+        // on draw event
+        dl_CGContextRestoreGState(context);
+        dl_CGContextRelease(context);
+        break;
+    }
+#ifdef WL_PLATFORM_WINDOWS
+    case wl_kEventTypeD2DTargetRecreated:
+        // this just lets us know to flush any cached stuff we have for a target / init a new cache
+        dl_D2DTargetRecreated(event->d2dTargetRecreatedEvent.newTarget, event->d2dTargetRecreatedEvent.oldTarget);
+        break;
+#endif
     default:
         event->handled = false;
     }

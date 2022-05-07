@@ -171,6 +171,12 @@ std::vector<bool> popBoolArrayInternal();
 void pushIntArrayInternal(std::vector<int> values);
 std::vector<int> popIntArrayInternal();
 
+void pushFloatArrayInternal(std::vector<float> values);
+std::vector<float> popFloatArrayInternal();
+
+void pushDoubleArrayInternal(std::vector<double> values);
+std::vector<double> popDoubleArrayInternal();
+
 void pushStringArrayInternal(std::vector<std::string> values);
 std::vector<std::string> popStringArrayInternal();
 

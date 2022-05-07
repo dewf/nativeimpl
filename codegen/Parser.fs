@@ -82,6 +82,8 @@ let rec parseType (input: TokenAndLocation list) =
         Primitive Int32, etc
     | Lookahead 1 ([FloatToken], _, etc) ->
         Primitive Float32, etc
+    | Lookahead 1 ([Float64Token], _, etc) ->
+        Primitive Float64, etc
     | Lookahead 1 ([StringToken], _, etc) ->
         Primitive StringType, etc
     | Lookahead 3 ([OpaqueToken; Identifier name; StatementEnd], _, etc) ->

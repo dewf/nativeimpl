@@ -3,8 +3,43 @@
 
 ni_InterfaceMethodRef windowDelegate_onDestroyed;
 ni_InterfaceMethodRef windowDelegate_onResized;
+ni_InterfaceMethodRef windowDelegate_onRepaint;
 
 
+
+
+void CGPoint__push(CGPoint value, bool isReturn) {
+    ni_pushDouble(value.y);
+    ni_pushDouble(value.x);
+}
+
+CGPoint CGPoint__pop() {
+    auto x = ni_popDouble();
+    auto y = ni_popDouble();
+    return CGPoint { x, y };
+}
+
+void CGSize__push(CGSize value, bool isReturn) {
+    ni_pushDouble(value.height);
+    ni_pushDouble(value.width);
+}
+
+CGSize CGSize__pop() {
+    auto width = ni_popDouble();
+    auto height = ni_popDouble();
+    return CGSize { width, height };
+}
+
+void CGRect__push(CGRect value, bool isReturn) {
+    CGSize__push(value.size, isReturn);
+    CGPoint__push(value.origin, isReturn);
+}
+
+CGRect CGRect__pop() {
+    auto origin = CGPoint__pop();
+    auto size = CGSize__pop();
+    return CGRect { origin, size };
+}
 
 inline void KeyEnum__push(KeyEnum value) {
     ni_pushInt((int)value);
@@ -28,6 +63,10 @@ public:
         ni_pushInt(newHeight);
         ni_pushInt(newWidth);
         invokeMethod(windowDelegate_onResized);
+    }
+    void onRepaint(CGContext context) override {
+        ni_pushSizeT((size_t)context);
+        invokeMethod(windowDelegate_onRepaint);
     }
 };
 
@@ -63,6 +102,15 @@ void windowSetMenuBar__wrapper() {
     auto w = (Window)ni_popSizeT();
     auto mb = (MenuBar)ni_popSizeT();
     windowSetMenuBar(w, mb);
+}
+
+void windowInvalidate__wrapper() {
+    auto w = (Window)ni_popSizeT();
+    auto x = ni_popInt();
+    auto y = ni_popInt();
+    auto width = ni_popInt();
+    auto height = ni_popInt();
+    windowInvalidate(w, x, y, width, height);
 }
 
 void windowDestroy__wrapper() {
@@ -115,6 +163,21 @@ void menuBarAddMenu__wrapper() {
     menuBarAddMenu(mb, label, menu);
 }
 
+void cgContextSetRGBFillColor__wrapper() {
+    auto c = (CGContext)ni_popSizeT();
+    auto red = ni_popDouble();
+    auto green = ni_popDouble();
+    auto blue = ni_popDouble();
+    auto alpha = ni_popDouble();
+    cgContextSetRGBFillColor(c, red, green, blue, alpha);
+}
+
+void cgContextFillRect__wrapper() {
+    auto c = (CGContext)ni_popSizeT();
+    auto rect = CGRect__pop();
+    cgContextFillRect(c, rect);
+}
+
 void runloop__wrapper() {
     ni_pushInt(runloop());
 }
@@ -143,11 +206,18 @@ void WindowDelegate_onResized__wrapper(int serverID) {
     inst->onResized(newWidth, newHeight);
 }
 
+void WindowDelegate_onRepaint__wrapper(int serverID) {
+    auto inst = ServerWindowDelegate::getByID(serverID);
+    auto context = (CGContext)ni_popSizeT();
+    inst->onRepaint(context);
+}
+
 extern "C" int nativeLibraryInit() {
     auto m = ni_registerModule("TestLibrary");
     ni_registerModuleMethod(m, "createWindow", &createWindow__wrapper);
     ni_registerModuleMethod(m, "windowShow", &windowShow__wrapper);
     ni_registerModuleMethod(m, "windowSetMenuBar", &windowSetMenuBar__wrapper);
+    ni_registerModuleMethod(m, "windowInvalidate", &windowInvalidate__wrapper);
     ni_registerModuleMethod(m, "windowDestroy", &windowDestroy__wrapper);
     ni_registerModuleMethod(m, "createAccelerator", &createAccelerator__wrapper);
     ni_registerModuleMethod(m, "createAction", &createAction__wrapper);
@@ -157,6 +227,8 @@ extern "C" int nativeLibraryInit() {
     ni_registerModuleMethod(m, "menuAddSeparator", &menuAddSeparator__wrapper);
     ni_registerModuleMethod(m, "createMenuBar", &createMenuBar__wrapper);
     ni_registerModuleMethod(m, "menuBarAddMenu", &menuBarAddMenu__wrapper);
+    ni_registerModuleMethod(m, "cgContextSetRGBFillColor", &cgContextSetRGBFillColor__wrapper);
+    ni_registerModuleMethod(m, "cgContextFillRect", &cgContextFillRect__wrapper);
     ni_registerModuleMethod(m, "runloop", &runloop__wrapper);
     ni_registerModuleMethod(m, "exitRunloop", &exitRunloop__wrapper);
     ni_registerModuleMethod(m, "moduleInit", &moduleInit__wrapper);
@@ -164,6 +236,7 @@ extern "C" int nativeLibraryInit() {
     auto windowDelegate = ni_registerInterface(m, "WindowDelegate");
     windowDelegate_onDestroyed = ni_registerInterfaceMethod(windowDelegate, "onDestroyed", &WindowDelegate_onDestroyed__wrapper);
     windowDelegate_onResized = ni_registerInterfaceMethod(windowDelegate, "onResized", &WindowDelegate_onResized__wrapper);
+    windowDelegate_onRepaint = ni_registerInterfaceMethod(windowDelegate, "onRepaint", &WindowDelegate_onRepaint__wrapper);
     return 0; // = OK
 }
 

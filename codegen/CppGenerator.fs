@@ -39,6 +39,8 @@ let rec typeToName = function
         | SizeT -> "SizeT"
         | Bool -> "Bool"
         | Int32 -> "Int"
+        | Float32 -> "Float"
+        | Float64 -> "Double"
         | StringType -> "String"
         | x -> sprintf "(typeToName: primitive not done yet [%A]" x
     | OpaqueHandleType name -> upperFirst name
@@ -62,6 +64,8 @@ let rec typeToCppString = function
         | SizeT -> "size_t"
         | Bool -> "bool"
         | Int32 -> "int"
+        | Float32 -> "float"
+        | Float64 -> "double"
         | StringType -> "std::string"
         | x -> sprintf "(typeToCppString: primitive not done yet [%A])" x
     | OpaqueHandleType name -> name
@@ -102,6 +106,8 @@ let rec defaultValueForType = function
         | SizeT -> "0"
         | Bool -> "false"
         | Int32 -> "0"
+        | Float32 -> "0.0f"
+        | Float64 -> "0.0"
         | StringType -> "\"default\""
         | _ ->
             "(defaultValueForType: not yet supported)"
@@ -149,6 +155,10 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             write level "%s ni_popBool();" contextPrefix
         | Int32 ->
             write level "%s ni_popInt();" contextPrefix
+        | Float32 ->
+            write level "%s ni_popFloat();" contextPrefix
+        | Float64 ->
+            write level "%s ni_popDouble();" contextPrefix
         | StringType ->
             write level "%s popStringInternal();" contextPrefix
         | _ ->
@@ -166,6 +176,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
                 match prim with
                 | Bool -> "popBoolArrayInternal"
                 | Int32 -> "popIntArrayInternal"
+                | Float32 -> "popFloatArrayInternal"
+                | Float64 -> "popDoubleArrayInternal"
                 | StringType -> "popStringArrayInternal"
                 | _ -> sprintf "// (pop not yet supported: prim %A)" prim
             | StructType name -> sprintf "__%sArray__pop" name
@@ -228,6 +240,10 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             write level "ni_pushBool(%s);" content
         | Int32 ->
             write level "ni_pushInt(%s);" content
+        | Float32 ->
+            write level "ni_pushFloat(%s);" content
+        | Float64 ->
+            write level "ni_pushDouble(%s);" content
         | StringType ->
             write level "pushStringInternal(%s);" content
         | _ ->
@@ -246,6 +262,10 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
                 write level "pushBoolArrayInternal(%s);" content
             | Int32 ->
                 write level "pushIntArrayInternal(%s);" content
+            | Float32 ->
+                write level "pushFloatArrayInternal(%s);" content
+            | Float64 ->
+                write level "pushDoubleArrayInternal(%s);" content
             | StringType ->
                 write level "pushStringArrayInternal(%s);" content
             | _ ->

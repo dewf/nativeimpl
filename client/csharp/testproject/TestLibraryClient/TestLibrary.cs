@@ -15,6 +15,7 @@ namespace TestLibraryClient
         private static ModuleMethodHandle _createWindow;
         private static ModuleMethodHandle _windowShow;
         private static ModuleMethodHandle _windowSetMenuBar;
+        private static ModuleMethodHandle _windowInvalidate;
         private static ModuleMethodHandle _windowDestroy;
         private static ModuleMethodHandle _createAccelerator;
         private static ModuleMethodHandle _createAction;
@@ -24,6 +25,8 @@ namespace TestLibraryClient
         private static ModuleMethodHandle _menuAddSeparator;
         private static ModuleMethodHandle _createMenuBar;
         private static ModuleMethodHandle _menuBarAddMenu;
+        private static ModuleMethodHandle _cgContextSetRGBFillColor;
+        private static ModuleMethodHandle _cgContextFillRect;
         private static ModuleMethodHandle _runloop;
         private static ModuleMethodHandle _exitRunloop;
         private static ModuleMethodHandle _moduleInit;
@@ -31,6 +34,7 @@ namespace TestLibraryClient
         private static InterfaceHandle _windowDelegate;
         private static InterfaceMethodHandle _windowDelegate_onDestroyed;
         private static InterfaceMethodHandle _windowDelegate_onResized;
+        private static InterfaceMethodHandle _windowDelegate_onRepaint;
 
         public struct Accelerator
         {
@@ -48,6 +52,84 @@ namespace TestLibraryClient
             {
                 NativeHandle = nativeHandle;
             }
+        }
+
+        public struct CGContext
+        {
+            internal readonly IntPtr NativeHandle;
+            internal CGContext(IntPtr nativeHandle)
+            {
+                NativeHandle = nativeHandle;
+            }
+        }
+
+        public struct CGPoint {
+            public double X;
+            public double Y;
+            public CGPoint(double x, double y)
+            {
+                this.X = x;
+                this.Y = y;
+            }
+        }
+
+        private static void CGPoint__Push(CGPoint value, bool isReturn)
+        {
+            NativeImplClient.PushDouble(value.Y);
+            NativeImplClient.PushDouble(value.X);
+        }
+
+        private static CGPoint CGPoint__Pop()
+        {
+            var x = NativeImplClient.PopDouble();
+            var y = NativeImplClient.PopDouble();
+            return new CGPoint(x, y);
+        }
+
+        public struct CGSize {
+            public double Width;
+            public double Height;
+            public CGSize(double width, double height)
+            {
+                this.Width = width;
+                this.Height = height;
+            }
+        }
+
+        private static void CGSize__Push(CGSize value, bool isReturn)
+        {
+            NativeImplClient.PushDouble(value.Height);
+            NativeImplClient.PushDouble(value.Width);
+        }
+
+        private static CGSize CGSize__Pop()
+        {
+            var width = NativeImplClient.PopDouble();
+            var height = NativeImplClient.PopDouble();
+            return new CGSize(width, height);
+        }
+
+        public struct CGRect {
+            public CGPoint Origin;
+            public CGSize Size;
+            public CGRect(CGPoint origin, CGSize size)
+            {
+                this.Origin = origin;
+                this.Size = size;
+            }
+        }
+
+        private static void CGRect__Push(CGRect value, bool isReturn)
+        {
+            CGSize__Push(value.Size, isReturn);
+            CGPoint__Push(value.Origin, isReturn);
+        }
+
+        private static CGRect CGRect__Pop()
+        {
+            var origin = CGPoint__Pop();
+            var size = CGSize__Pop();
+            return new CGRect(origin, size);
         }
 
         public enum KeyEnum
@@ -205,6 +287,7 @@ namespace TestLibraryClient
         {
             void OnDestroyed();
             void OnResized(int newWidth, int newHeight);
+            void OnRepaint(CGContext context);
         }
 
         private static WindowDelegate WindowDelegate__Pop()
@@ -228,6 +311,7 @@ namespace TestLibraryClient
             }
             public abstract void OnDestroyed();
             public abstract void OnResized(int newWidth, int newHeight);
+            public abstract void OnRepaint(CGContext context);
         }
 
         private class ServerWindowDelegate : ServerObject, WindowDelegate
@@ -246,6 +330,12 @@ namespace TestLibraryClient
                 NativeImplClient.PushInt(newHeight);
                 NativeImplClient.PushInt(newWidth);
                 NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onResized, Id);
+            }
+
+            public void OnRepaint(CGContext context)
+            {
+                NativeImplClient.PushSizeT(context.NativeHandle);
+                NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onRepaint, Id);
             }
 
             public void Dispose()
@@ -273,6 +363,16 @@ namespace TestLibraryClient
             NativeImplClient.PushSizeT(mb.NativeHandle);
             NativeImplClient.PushSizeT(w.NativeHandle);
             NativeImplClient.InvokeModuleMethod(_windowSetMenuBar);
+        }
+
+        public static void WindowInvalidate(Window w, int x, int y, int width, int height)
+        {
+            NativeImplClient.PushInt(height);
+            NativeImplClient.PushInt(width);
+            NativeImplClient.PushInt(y);
+            NativeImplClient.PushInt(x);
+            NativeImplClient.PushSizeT(w.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_windowInvalidate);
         }
 
         public static void WindowDestroy(Window w)
@@ -338,6 +438,23 @@ namespace TestLibraryClient
             NativeImplClient.InvokeModuleMethod(_menuBarAddMenu);
         }
 
+        public static void CgContextSetRGBFillColor(CGContext c, double red, double green, double blue, double alpha)
+        {
+            NativeImplClient.PushDouble(alpha);
+            NativeImplClient.PushDouble(blue);
+            NativeImplClient.PushDouble(green);
+            NativeImplClient.PushDouble(red);
+            NativeImplClient.PushSizeT(c.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_cgContextSetRGBFillColor);
+        }
+
+        public static void CgContextFillRect(CGContext c, CGRect rect)
+        {
+            CGRect__Push(rect, false);
+            NativeImplClient.PushSizeT(c.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_cgContextFillRect);
+        }
+
         public static int Runloop()
         {
             NativeImplClient.InvokeModuleMethod(_runloop);
@@ -368,6 +485,7 @@ namespace TestLibraryClient
             _createWindow = NativeImplClient.GetModuleMethod(_module, "createWindow");
             _windowShow = NativeImplClient.GetModuleMethod(_module, "windowShow");
             _windowSetMenuBar = NativeImplClient.GetModuleMethod(_module, "windowSetMenuBar");
+            _windowInvalidate = NativeImplClient.GetModuleMethod(_module, "windowInvalidate");
             _windowDestroy = NativeImplClient.GetModuleMethod(_module, "windowDestroy");
             _createAccelerator = NativeImplClient.GetModuleMethod(_module, "createAccelerator");
             _createAction = NativeImplClient.GetModuleMethod(_module, "createAction");
@@ -377,6 +495,8 @@ namespace TestLibraryClient
             _menuAddSeparator = NativeImplClient.GetModuleMethod(_module, "menuAddSeparator");
             _createMenuBar = NativeImplClient.GetModuleMethod(_module, "createMenuBar");
             _menuBarAddMenu = NativeImplClient.GetModuleMethod(_module, "menuBarAddMenu");
+            _cgContextSetRGBFillColor = NativeImplClient.GetModuleMethod(_module, "cgContextSetRGBFillColor");
+            _cgContextFillRect = NativeImplClient.GetModuleMethod(_module, "cgContextFillRect");
             _runloop = NativeImplClient.GetModuleMethod(_module, "runloop");
             _exitRunloop = NativeImplClient.GetModuleMethod(_module, "exitRunloop");
             _moduleInit = NativeImplClient.GetModuleMethod(_module, "moduleInit");
@@ -385,6 +505,7 @@ namespace TestLibraryClient
             _windowDelegate = NativeImplClient.GetInterface(_module, "WindowDelegate");
             _windowDelegate_onDestroyed = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onDestroyed");
             _windowDelegate_onResized = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onResized");
+            _windowDelegate_onRepaint = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onRepaint");
 
             NativeImplClient.SetClientMethodWrapper(_windowDelegate_onDestroyed, delegate(ClientObject obj)
             {
@@ -398,6 +519,13 @@ namespace TestLibraryClient
                 var newWidth = NativeImplClient.PopInt();
                 var newHeight = NativeImplClient.PopInt();
                 inst.OnResized(newWidth, newHeight);
+            });
+
+            NativeImplClient.SetClientMethodWrapper(_windowDelegate_onRepaint, delegate(ClientObject obj)
+            {
+                var inst = (ClientWindowDelegate) obj;
+                var context = new CGContext(NativeImplClient.PopSizeT());
+                inst.OnRepaint(context);
             });
             return ModuleInit();
         }

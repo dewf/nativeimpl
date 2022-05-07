@@ -82,6 +82,16 @@ extern "C" {
 	void ni_pushIntArray(int* values, size_t count);
 	void ni_popIntArray(int** values, size_t* count);
 
+	void ni_pushFloat(float x);
+	float ni_popFloat();
+	void ni_pushFloatArray(float* values, size_t count);
+	void ni_popFloatArray(float** values, size_t* count);
+
+	void ni_pushDouble(double x);
+	double ni_popDouble();
+	void ni_pushDoubleArray(double* values, size_t count);
+	void ni_popDoubleArray(double** values, size_t* count);
+
 	void ni_pushString(const char* str, size_t length);     // length is optional
 	void ni_popString(const char** strPtr, size_t* length); // result guaranteed until the next popString
 	void ni_pushStringArray(const char** strs, size_t* lengths, size_t count);

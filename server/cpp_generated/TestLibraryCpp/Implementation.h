@@ -10,6 +10,23 @@ struct __Accelerator; typedef struct __Accelerator* Accelerator;
 
 struct __Action; typedef struct __Action* Action;
 
+struct __CGContext; typedef struct __CGContext* CGContext;
+
+struct CGPoint {
+    double x;
+    double y;
+};
+
+struct CGSize {
+    double width;
+    double height;
+};
+
+struct CGRect {
+    CGPoint origin;
+    CGSize size;
+};
+
 enum class KeyEnum {
     KeyUnknown,
     KeyEscape,
@@ -130,6 +147,7 @@ class WindowDelegate {
 public:
     virtual void onDestroyed() = 0;
     virtual void onResized(int newWidth, int newHeight) = 0;
+    virtual void onRepaint(CGContext context) = 0;
 };
 
 // inherit from this to create server instances of WindowDelegate
@@ -145,6 +163,7 @@ public:
 Window createWindow(std::string title, std::shared_ptr<WindowDelegate> del);
 void windowShow(Window w);
 void windowSetMenuBar(Window w, MenuBar mb);
+void windowInvalidate(Window w, int x, int y, int width, int height);
 void windowDestroy(Window w);
 Accelerator createAccelerator(KeyEnum key);
 Action createAction(int id, std::string label, Accelerator acc);
@@ -154,6 +173,8 @@ void menuAddSubmenu(Menu menu, std::string label, Menu sub);
 void menuAddSeparator(Menu menu);
 MenuBar createMenuBar();
 void menuBarAddMenu(MenuBar mb, std::string label, Menu menu);
+void cgContextSetRGBFillColor(CGContext c, double red, double green, double blue, double alpha);
+void cgContextFillRect(CGContext c, CGRect rect);
 int runloop();
 void exitRunloop();
 int moduleInit();

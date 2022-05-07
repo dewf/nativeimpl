@@ -93,6 +93,30 @@ namespace TestLibraryClient.Support
         internal static extern void popIntArray(out IntPtr values, out IntPtr count); // both args are pointers
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushFloat(float x);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern float popFloat();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushFloatArray(float[] values, IntPtr count);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popFloatArray(out IntPtr values, out IntPtr count);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushDouble(double x);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern double popDouble();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushDoubleArray(double[] values, IntPtr count);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popDoubleArray(out IntPtr values, out IntPtr count);
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushString(IntPtr str, IntPtr length); // size_t length
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]

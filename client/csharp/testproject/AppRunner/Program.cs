@@ -55,6 +55,7 @@ namespace AppRunner
     {
         private readonly bool _exitOnClose;
         private readonly TestLibrary.Window _privWindow;
+        private int _width, _height;
         public Window(string title, bool exitOnClose)
         {
             _exitOnClose = exitOnClose;
@@ -68,6 +69,10 @@ namespace AppRunner
         {
             TestLibrary.WindowShow(_privWindow);
         }
+        public void Invalidate(int x, int y, int width, int height)
+        {
+            TestLibrary.WindowInvalidate(_privWindow, x, y, width, height);
+        }
         public override void OnDestroyed()
         {
             if (_exitOnClose)
@@ -78,7 +83,23 @@ namespace AppRunner
         }
         public override void OnResized(int newWidth, int newHeight)
         {
+            _width = newWidth;
+            _height = newHeight;
             Console.WriteLine("Window resized to: {0} / {1}", newWidth, newHeight);
+        }
+        public override void OnRepaint(TestLibrary.CGContext context)
+        {
+            var origin = new TestLibrary.CGPoint(0, 0);
+            var size = new TestLibrary.CGSize(_width, _height);
+            var rect = new TestLibrary.CGRect(origin, size);
+            TestLibrary.CgContextSetRGBFillColor(context, 0, 0, 0, 1);
+            TestLibrary.CgContextFillRect(context, rect);
+            
+            var origin2 = new TestLibrary.CGPoint(100, 100);
+            var size2 = new TestLibrary.CGSize(100, 100);
+            var rect2 = new TestLibrary.CGRect(origin2, size2);
+            TestLibrary.CgContextSetRGBFillColor(context, 1, 0, 0, 1);
+            TestLibrary.CgContextFillRect(context, rect2);
         }
         public override void Dispose()
         {

@@ -123,6 +123,36 @@ std::vector<size_t> popSizeTArrayInternal()
 	return ret;
 }
 
+void pushFloatArrayInternal(std::vector<float> values)
+{
+	ni_pushFloatArray(values.data(), values.size());
+}
+
+std::vector<float> popFloatArrayInternal()
+{
+	std::vector<float> ret;
+	float* values;
+	size_t count;
+	ni_popFloatArray(&values, &count);
+	ret.assign(values, values + count);
+	return ret;
+}
+
+void pushDoubleArrayInternal(std::vector<double> values)
+{
+	ni_pushDoubleArray(values.data(), values.size());
+}
+
+std::vector<double> popDoubleArrayInternal()
+{
+	std::vector<double> ret;
+	double* values;
+	size_t count;
+	ni_popDoubleArray(&values, &count);
+	ret.assign(values, values + count);
+	return ret;
+}
+
 std::shared_ptr<ServerResource> ServerResource::getResourceById(int id) {
 	return serverResources[id];
 }

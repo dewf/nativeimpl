@@ -120,6 +120,46 @@ void popIntArray(int** values, size_t* count)
     ni_popIntArray(values, count);
 }
 
+void pushFloat(float x)
+{
+    ni_pushFloat(x);
+}
+
+float popFloat()
+{
+    return ni_popFloat();
+}
+
+void pushFloatArray(float* values, size_t count)
+{
+    ni_pushFloatArray(values, count);
+}
+
+void popFloatArray(float** values, size_t* count)
+{
+    ni_popFloatArray(values, count);
+}
+
+void pushDouble(double x)
+{
+    ni_pushDouble(x);
+}
+
+double popDouble()
+{
+    return ni_popDouble();
+}
+
+void pushDoubleArray(double* values, size_t count)
+{
+    ni_pushDoubleArray(values, count);
+}
+
+void popDoubleArray(double** values, size_t* count)
+{
+    ni_popDoubleArray(values, count);
+}
+
 void pushString(const char* str, size_t length) {
     ni_pushString(str, length);
 }

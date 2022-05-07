@@ -8,6 +8,8 @@ let rec typeToInternalKey = function
         match prim with
         | Bool -> "bool"
         | Int32 -> "int32"
+        | Float32 -> "float32"
+        | Float64 -> "float64"
         | StringType -> "string"
         | x -> sprintf "(typeToInternalKey: primitive not done yet [%A])" x
     | Unresolved _ -> failwith "typeToInternalKey: Unresolved??"

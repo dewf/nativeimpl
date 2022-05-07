@@ -40,6 +40,16 @@ extern "C" {
 	TESTLIBRARY_API void pushIntArray(int* values, size_t count);
 	TESTLIBRARY_API void popIntArray(int** values, size_t* count);
 
+	TESTLIBRARY_API void pushFloat(float x);
+	TESTLIBRARY_API float popFloat();
+	TESTLIBRARY_API void pushFloatArray(float* values, size_t count);
+	TESTLIBRARY_API void popFloatArray(float** values, size_t* count);
+
+	TESTLIBRARY_API void pushDouble(double x);
+	TESTLIBRARY_API double popDouble();
+	TESTLIBRARY_API void pushDoubleArray(double* values, size_t count);
+	TESTLIBRARY_API void popDoubleArray(double** values, size_t* count);
+
 	TESTLIBRARY_API void pushString(const char* str, size_t length);
 	TESTLIBRARY_API void popString(const char** strPtr, size_t* length);
 	TESTLIBRARY_API void pushStringArray(const char** strs, size_t* lengths, size_t count);

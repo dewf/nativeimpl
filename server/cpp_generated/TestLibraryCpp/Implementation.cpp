@@ -4,6 +4,8 @@
 
 #include <assert.h>
 
+#define DLRECT(x) (*((dl_CGRect*)&x))
+
 int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData);
 
 struct __Window {
@@ -27,6 +29,10 @@ struct __MenuBar {
     wl_MenuBarRef wlMenuBar;
 };
 
+struct __CGContext {
+    dl_CGContextRef dlContext;
+};
+
 Window createWindow(std::string title, std::shared_ptr<WindowDelegate> del) {
     wl_WindowProperties props{};
     auto ret = new __Window{ nullptr, del };
@@ -40,6 +46,11 @@ void windowShow(Window w) {
 
 void windowSetMenuBar(Window w, MenuBar mb) {
     wl_WindowSetMenuBar(w->wlWindow, mb->wlMenuBar);
+}
+
+void windowInvalidate(Window w, int x, int y, int width, int height)
+{
+    wl_WindowInvalidate(w->wlWindow, x, y, width, height);
 }
 
 void windowDestroy(Window w) {
@@ -81,6 +92,16 @@ MenuBar createMenuBar() {
 
 void menuBarAddMenu(MenuBar mb, std::string label, Menu menu) {
     wl_MenuBarAddMenu(mb->wlMenuBar, label.c_str(), menu->wlMenu);
+}
+
+void cgContextSetRGBFillColor(CGContext c, double red, double green, double blue, double alpha)
+{
+    dl_CGContextSetRGBFillColor(c->dlContext, red, green, blue, alpha);
+}
+
+void cgContextFillRect(CGContext c, CGRect rect)
+{
+    dl_CGContextFillRect(c->dlContext, DLRECT(rect));
 }
 
 int runloop() {
@@ -129,11 +150,14 @@ int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData) {
         privWindow->del->onResized(event->resizeEvent.newWidth, event->resizeEvent.newHeight);
         break;
     case wl_kEventTypeWindowRepaint: {
-        auto context = createContext(&event->repaintEvent.platformContext);
-        dl_CGContextSaveGState(context);
-        // on draw event
-        dl_CGContextRestoreGState(context);
-        dl_CGContextRelease(context);
+        auto dlContext = createContext(&event->repaintEvent.platformContext);
+        dl_CGContextSaveGState(dlContext);
+
+        __CGContext context{ dlContext };
+        privWindow->del->onRepaint(&context);
+
+        dl_CGContextRestoreGState(dlContext);
+        dl_CGContextRelease(dlContext);
         break;
     }
 #ifdef WL_PLATFORM_WINDOWS

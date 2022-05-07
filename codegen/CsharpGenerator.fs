@@ -27,6 +27,8 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
         | SizeT -> "IntPtr"
         | Bool -> "bool"
         | Int32 -> "int"
+        | Float32 -> "float"
+        | Float64 -> "double"
         | StringType -> "string"
         | _ -> sprintf "(typeToCsString: prim not yet supported: %A)" prim
     | OpaqueHandleType name -> upperFirst name
@@ -69,6 +71,8 @@ let rec typeToName = function
         | SizeT -> "SizeT"
         | Bool -> "Bool"
         | Int32 -> "Int"
+        | Float32 -> "Float"
+        | Float64 -> "Double"
         | StringType -> "String"
         | _ -> sprintf "(typeToName: not yet supported: prim %A)" prim
     | StructType name -> upperFirst name
@@ -133,6 +137,10 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             write level "%s NativeImplClient.PopBool();" contextPrefix
         | Int32 ->
             write level "%s NativeImplClient.PopInt();" contextPrefix
+        | Float32 ->
+            write level "%s NativeImplClient.PopFloat();" contextPrefix
+        | Float64 ->
+            write level "%s NativeImplClient.PopDouble();" contextPrefix
         | StringType ->
             write level "%s NativeImplClient.PopString();" contextPrefix
         | _ ->
@@ -149,6 +157,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             match prim with
             | Bool -> write level "%s NativeImplClient.PopBoolArray();" contextPrefix
             | Int32 -> write level "%s NativeImplClient.PopIntArray();" contextPrefix
+            | Float32 -> write level "%s NativeImplClient.PopFloatArray();" contextPrefix
+            | Float64 -> write level "%s NativeImplClient.PopDoubleArray();" contextPrefix
             | StringType -> write level "%s NativeImplClient.PopStringArray();" contextPrefix
             | _ -> write level "// popValue not yet supported: array of prim %A" prim
         | EnumType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
@@ -204,6 +214,10 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             write level "NativeImplClient.PushBool(%s);" content
         | Int32 ->
             write level "NativeImplClient.PushInt(%s);" content
+        | Float32 ->
+            write level "NativeImplClient.PushFloat(%s);" content
+        | Float64 ->
+            write level "NativeImplClient.PushDouble(%s);" content
         | StringType ->
             write level "NativeImplClient.PushString(%s);" content
         | _ ->
@@ -220,6 +234,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             match prim with
             | Bool -> write level "NativeImplClient.PushBoolArray(%s);" content
             | Int32 -> write level "NativeImplClient.PushIntArray(%s);" content
+            | Float32 -> write level "NativeImplClient.PushFloatArray(%s);" content
+            | Float64 -> write level "NativeImplClient.PushDoubleArray(%s);" content
             | StringType -> write level "NativeImplClient.PushStringArray(%s);" content
             | _ -> write level "// pushValue not yet supported: Array of prim %A" prim
         | EnumType name -> write level "__%sArray__Push(%s);" (upperFirst name) content

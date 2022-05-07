@@ -55,15 +55,26 @@ class StackItem {
 public:
 	virtual size_t sizeTValue() { throw WrongTypeException(); }
 	virtual std::vector<size_t> sizeTArray() { throw WrongTypeException(); }
+
 	virtual bool boolValue() { throw WrongTypeException(); }
 	virtual std::vector<uint8_t> boolArray() { throw WrongTypeException(); } // using 'bool' doesn't allow .data access
+
 	virtual int intValue() { throw WrongTypeException(); }
 	virtual std::vector<int> intArray() { throw WrongTypeException(); }
+
+	virtual float floatValue() { throw WrongTypeException(); }
+	virtual std::vector<float> floatArray() { throw WrongTypeException(); }
+
+	virtual double doubleValue() { throw WrongTypeException(); }
+	virtual std::vector<double> doubleArray() { throw WrongTypeException(); }
+
 	virtual std::string stringValue() { throw WrongTypeException(); }
 	virtual std::vector<std::string> stringArray() { throw WrongTypeException(); }
+
 	virtual int clientFuncId() { throw WrongTypeException(); }
 	virtual int serverFuncId() { throw WrongTypeException(); }
 	virtual int instanceId(bool* isClientId, bool* inSafetyArea) { throw WrongTypeException(); }
+
 	virtual void buffer(int *id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor) { throw WrongTypeException(); }
 };
 
@@ -123,6 +134,46 @@ public:
 		values.assign(ptr, ptr + count);
 	}
 	std::vector<int> intArray() override {
+		return values;
+	}
+};
+
+class FloatItem : public StackItem {
+public:
+	float x;
+	FloatItem(float x) : x(x) {}
+	float floatValue() override {
+		return x;
+	}
+};
+
+class FloatArrayItem : public StackItem {
+public:
+	std::vector<float> values;
+	FloatArrayItem(float* ptr, size_t count) {
+		values.assign(ptr, ptr + count);
+	}
+	std::vector<float> floatArray() override {
+		return values;
+	}
+};
+
+class DoubleItem : public StackItem {
+public:
+	double x;
+	DoubleItem(double x) : x(x) {}
+	double doubleValue() override {
+		return x;
+	}
+};
+
+class DoubleArrayItem : public StackItem {
+public:
+	std::vector<double> values;
+	DoubleArrayItem(double* ptr, size_t count) {
+		values.assign(ptr, ptr + count);
+	}
+	std::vector<double> doubleArray() override {
 		return values;
 	}
 };
@@ -482,6 +533,68 @@ void ni_popIntArray(int** values, size_t* count) {
 	delete item;
 	*values = lastIntArray.data();
 	*count = lastIntArray.size();
+}
+
+void ni_pushFloat(float x)
+{
+	vstack.push(new FloatItem(x));
+}
+
+float ni_popFloat()
+{
+	auto item = vstack.top();
+	auto x = item->floatValue();
+	vstack.pop();
+	delete item;
+	return x;
+}
+
+void ni_pushFloatArray(float* values, size_t count)
+{
+	vstack.push(new FloatArrayItem(values, count));
+}
+
+static std::vector<float> lastFloatArray;
+
+void ni_popFloatArray(float** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastFloatArray = item->floatArray();
+	vstack.pop();
+	delete item;
+	*values = lastFloatArray.data();
+	*count = lastFloatArray.size();
+}
+
+void ni_pushDouble(double x)
+{
+	vstack.push(new DoubleItem(x));
+}
+
+double ni_popDouble()
+{
+	auto item = vstack.top();
+	auto x = item->doubleValue();
+	vstack.pop();
+	delete item;
+	return x;
+}
+
+void ni_pushDoubleArray(double* values, size_t count)
+{
+	vstack.push(new DoubleArrayItem(values, count));
+}
+
+static std::vector<double> lastDoubleArray;
+
+void ni_popDoubleArray(double** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastDoubleArray = item->doubleArray();
+	vstack.pop();
+	delete item;
+	*values = lastDoubleArray.data();
+	*count = lastDoubleArray.size();
 }
 
 void ni_pushString(const char* str, size_t length) {

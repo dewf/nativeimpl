@@ -18,6 +18,7 @@ type Token =
     | BoolToken
     | IntToken
     | FloatToken
+    | Float64Token
     | StringToken
     | UnitToken
     | DelegateToken
@@ -49,6 +50,7 @@ let stringToToken (lineNumber: int) = function
     | "bool" -> BoolToken
     | "int" | "int32" -> IntToken
     | "float" | "float32" -> FloatToken
+    | "double" | "float64" -> Float64Token
     | "string" -> StringToken
     | "void" -> UnitToken
     | "unit" -> UnitToken

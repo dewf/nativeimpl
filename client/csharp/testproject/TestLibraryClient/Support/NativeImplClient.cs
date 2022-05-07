@@ -175,6 +175,52 @@ namespace TestLibraryClient.Support
             return ret;
         }
 
+        public static void PushFloat(float x)
+        {
+            NativeMethods.pushFloat(x);
+        }
+
+        public static float PopFloat()
+        {
+            return NativeMethods.popFloat();
+        }
+
+        public static void PushFloatArray(float[] values)
+        {
+            NativeMethods.pushFloatArray(values, (IntPtr)values.Length);
+        }
+
+        public static float[] PopFloatArray()
+        {
+            NativeMethods.popFloatArray(out var valuesPtr, out var count);
+            var ret = new float[(int)count];
+            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            return ret;
+        }
+        
+        public static void PushDouble(double x)
+        {
+            NativeMethods.pushDouble(x);
+        }
+        
+        public static double PopDouble()
+        {
+            return NativeMethods.popDouble();
+        }
+        
+        public static void PushDoubleArray(double[] values)
+        {
+            NativeMethods.pushDoubleArray(values, (IntPtr)values.Length);
+        }
+        
+        public static double[] PopDoubleArray()
+        {
+            NativeMethods.popDoubleArray(out var valuesPtr, out var count);
+            var ret = new double[(int)count];
+            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            return ret;
+        }
+
         public static void PushString(string str)
         {
             var bytes = Encoding.UTF8.GetBytes(str);

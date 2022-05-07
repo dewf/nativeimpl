@@ -13,25 +13,23 @@ namespace TestLibraryClient
     {
         private static ModuleHandle _module;
         private static ModuleMethodHandle _createWindow;
-        private static ModuleMethodHandle _runloop;
-        private static ModuleMethodHandle _exitRunloop;
+        private static ModuleMethodHandle _windowShow;
+        private static ModuleMethodHandle _windowSetMenuBar;
+        private static ModuleMethodHandle _windowDestroy;
         private static ModuleMethodHandle _createAccelerator;
         private static ModuleMethodHandle _createAction;
         private static ModuleMethodHandle _createMenu;
+        private static ModuleMethodHandle _menuAddAction;
+        private static ModuleMethodHandle _menuAddSubmenu;
+        private static ModuleMethodHandle _menuAddSeparator;
         private static ModuleMethodHandle _createMenuBar;
+        private static ModuleMethodHandle _menuBarAddMenu;
+        private static ModuleMethodHandle _runloop;
+        private static ModuleMethodHandle _exitRunloop;
         private static ModuleMethodHandle _moduleInit;
         private static ModuleMethodHandle _moduleShutdown;
         private static InterfaceHandle _windowDelegate;
         private static InterfaceMethodHandle _windowDelegate_onDestroyed;
-        private static InterfaceHandle _window;
-        private static InterfaceMethodHandle _window_show;
-        private static InterfaceMethodHandle _window_setMenuBar;
-        private static InterfaceHandle _menu;
-        private static InterfaceMethodHandle _menu_addAction;
-        private static InterfaceMethodHandle _menu_addSubmenu;
-        private static InterfaceMethodHandle _menu_addSeparator;
-        private static InterfaceHandle _menuBar;
-        private static InterfaceMethodHandle _menuBar_addMenu;
 
         public struct Accelerator
         {
@@ -174,167 +172,30 @@ namespace TestLibraryClient
             return (KeyEnum)NativeImplClient.PopInt();
         }
 
-
-
-        public interface Menu : IDisposable
+        public struct Menu
         {
-            void AddAction(Action action);
-            void AddSubmenu(string label, Menu sub);
-            void AddSeparator();
-        }
-
-        private static Menu Menu__Pop()
-        {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId);
-            if (!isClientId)
+            internal readonly IntPtr NativeHandle;
+            internal Menu(IntPtr nativeHandle)
             {
-                return new ServerMenu(id);
-            }
-            else
-            {
-                return (Menu) ClientObject.GetById(id);
+                NativeHandle = nativeHandle;
             }
         }
 
-        public abstract class ClientMenu : ClientObject, Menu
+        public struct MenuBar
         {
-            public virtual void Dispose()
+            internal readonly IntPtr NativeHandle;
+            internal MenuBar(IntPtr nativeHandle)
             {
-                // override if necessary
-            }
-            public abstract void AddAction(Action action);
-            public abstract void AddSubmenu(string label, Menu sub);
-            public abstract void AddSeparator();
-        }
-
-        private class ServerMenu : ServerObject, Menu
-        {
-            public ServerMenu(int id) : base(id)
-            {
-            }
-
-            public void AddAction(Action action)
-            {
-                NativeImplClient.PushSizeT(action.NativeHandle);
-                NativeImplClient.InvokeInterfaceMethod(_menu_addAction, Id);
-            }
-
-            public void AddSubmenu(string label, Menu sub)
-            {
-                ((IPushable)sub).Push(false);
-                NativeImplClient.PushString(label);
-                NativeImplClient.InvokeInterfaceMethod(_menu_addSubmenu, Id);
-            }
-
-            public void AddSeparator()
-            {
-                NativeImplClient.InvokeInterfaceMethod(_menu_addSeparator, Id);
-            }
-
-            public void Dispose()
-            {
-                ServerDispose();
+                NativeHandle = nativeHandle;
             }
         }
 
-
-        public interface MenuBar : IDisposable
+        public struct Window
         {
-            void AddMenu(string label, Menu menu);
-        }
-
-        private static MenuBar MenuBar__Pop()
-        {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId);
-            if (!isClientId)
+            internal readonly IntPtr NativeHandle;
+            internal Window(IntPtr nativeHandle)
             {
-                return new ServerMenuBar(id);
-            }
-            else
-            {
-                return (MenuBar) ClientObject.GetById(id);
-            }
-        }
-
-        public abstract class ClientMenuBar : ClientObject, MenuBar
-        {
-            public virtual void Dispose()
-            {
-                // override if necessary
-            }
-            public abstract void AddMenu(string label, Menu menu);
-        }
-
-        private class ServerMenuBar : ServerObject, MenuBar
-        {
-            public ServerMenuBar(int id) : base(id)
-            {
-            }
-
-            public void AddMenu(string label, Menu menu)
-            {
-                ((IPushable)menu).Push(false);
-                NativeImplClient.PushString(label);
-                NativeImplClient.InvokeInterfaceMethod(_menuBar_addMenu, Id);
-            }
-
-            public void Dispose()
-            {
-                ServerDispose();
-            }
-        }
-
-
-
-        public interface Window : IDisposable
-        {
-            void Show();
-            void SetMenuBar(MenuBar mb);
-        }
-
-        private static Window Window__Pop()
-        {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId);
-            if (!isClientId)
-            {
-                return new ServerWindow(id);
-            }
-            else
-            {
-                return (Window) ClientObject.GetById(id);
-            }
-        }
-
-        public abstract class ClientWindow : ClientObject, Window
-        {
-            public virtual void Dispose()
-            {
-                // override if necessary
-            }
-            public abstract void Show();
-            public abstract void SetMenuBar(MenuBar mb);
-        }
-
-        private class ServerWindow : ServerObject, Window
-        {
-            public ServerWindow(int id) : base(id)
-            {
-            }
-
-            public void Show()
-            {
-                NativeImplClient.InvokeInterfaceMethod(_window_show, Id);
-            }
-
-            public void SetMenuBar(MenuBar mb)
-            {
-                ((IPushable)mb).Push(false);
-                NativeImplClient.InvokeInterfaceMethod(_window_setMenuBar, Id);
-            }
-
-            public void Dispose()
-            {
-                ServerDispose();
+                NativeHandle = nativeHandle;
             }
         }
 
@@ -388,20 +249,26 @@ namespace TestLibraryClient
             ((IPushable)del).Push(false);
             NativeImplClient.PushString(title);
             NativeImplClient.InvokeModuleMethod(_createWindow);
-            var __ret = Window__Pop();
-            NativeImplClient.ServerClearSafetyArea();
-            return __ret;
+            return new Window(NativeImplClient.PopSizeT());
         }
 
-        public static int Runloop()
+        public static void WindowShow(Window w)
         {
-            NativeImplClient.InvokeModuleMethod(_runloop);
-            return NativeImplClient.PopInt();
+            NativeImplClient.PushSizeT(w.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_windowShow);
         }
 
-        public static void ExitRunloop()
+        public static void WindowSetMenuBar(Window w, MenuBar mb)
         {
-            NativeImplClient.InvokeModuleMethod(_exitRunloop);
+            NativeImplClient.PushSizeT(mb.NativeHandle);
+            NativeImplClient.PushSizeT(w.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_windowSetMenuBar);
+        }
+
+        public static void WindowDestroy(Window w)
+        {
+            NativeImplClient.PushSizeT(w.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_windowDestroy);
         }
 
         public static Accelerator CreateAccelerator(KeyEnum key)
@@ -423,17 +290,53 @@ namespace TestLibraryClient
         public static Menu CreateMenu()
         {
             NativeImplClient.InvokeModuleMethod(_createMenu);
-            var __ret = Menu__Pop();
-            NativeImplClient.ServerClearSafetyArea();
-            return __ret;
+            return new Menu(NativeImplClient.PopSizeT());
+        }
+
+        public static void MenuAddAction(Menu menu, Action action)
+        {
+            NativeImplClient.PushSizeT(action.NativeHandle);
+            NativeImplClient.PushSizeT(menu.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_menuAddAction);
+        }
+
+        public static void MenuAddSubmenu(Menu menu, string label, Menu sub)
+        {
+            NativeImplClient.PushSizeT(sub.NativeHandle);
+            NativeImplClient.PushString(label);
+            NativeImplClient.PushSizeT(menu.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_menuAddSubmenu);
+        }
+
+        public static void MenuAddSeparator(Menu menu)
+        {
+            NativeImplClient.PushSizeT(menu.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_menuAddSeparator);
         }
 
         public static MenuBar CreateMenuBar()
         {
             NativeImplClient.InvokeModuleMethod(_createMenuBar);
-            var __ret = MenuBar__Pop();
-            NativeImplClient.ServerClearSafetyArea();
-            return __ret;
+            return new MenuBar(NativeImplClient.PopSizeT());
+        }
+
+        public static void MenuBarAddMenu(MenuBar mb, string label, Menu menu)
+        {
+            NativeImplClient.PushSizeT(menu.NativeHandle);
+            NativeImplClient.PushString(label);
+            NativeImplClient.PushSizeT(mb.NativeHandle);
+            NativeImplClient.InvokeModuleMethod(_menuBarAddMenu);
+        }
+
+        public static int Runloop()
+        {
+            NativeImplClient.InvokeModuleMethod(_runloop);
+            return NativeImplClient.PopInt();
+        }
+
+        public static void ExitRunloop()
+        {
+            NativeImplClient.InvokeModuleMethod(_exitRunloop);
         }
 
         public static int ModuleInit()
@@ -453,12 +356,19 @@ namespace TestLibraryClient
             _module = NativeImplClient.GetModule("TestLibrary");
 
             _createWindow = NativeImplClient.GetModuleMethod(_module, "createWindow");
-            _runloop = NativeImplClient.GetModuleMethod(_module, "runloop");
-            _exitRunloop = NativeImplClient.GetModuleMethod(_module, "exitRunloop");
+            _windowShow = NativeImplClient.GetModuleMethod(_module, "windowShow");
+            _windowSetMenuBar = NativeImplClient.GetModuleMethod(_module, "windowSetMenuBar");
+            _windowDestroy = NativeImplClient.GetModuleMethod(_module, "windowDestroy");
             _createAccelerator = NativeImplClient.GetModuleMethod(_module, "createAccelerator");
             _createAction = NativeImplClient.GetModuleMethod(_module, "createAction");
             _createMenu = NativeImplClient.GetModuleMethod(_module, "createMenu");
+            _menuAddAction = NativeImplClient.GetModuleMethod(_module, "menuAddAction");
+            _menuAddSubmenu = NativeImplClient.GetModuleMethod(_module, "menuAddSubmenu");
+            _menuAddSeparator = NativeImplClient.GetModuleMethod(_module, "menuAddSeparator");
             _createMenuBar = NativeImplClient.GetModuleMethod(_module, "createMenuBar");
+            _menuBarAddMenu = NativeImplClient.GetModuleMethod(_module, "menuBarAddMenu");
+            _runloop = NativeImplClient.GetModuleMethod(_module, "runloop");
+            _exitRunloop = NativeImplClient.GetModuleMethod(_module, "exitRunloop");
             _moduleInit = NativeImplClient.GetModuleMethod(_module, "moduleInit");
             _moduleShutdown = NativeImplClient.GetModuleMethod(_module, "moduleShutdown");
 
@@ -469,60 +379,6 @@ namespace TestLibraryClient
             {
                 var inst = (ClientWindowDelegate) obj;
                 inst.OnDestroyed();
-            });
-
-            _window = NativeImplClient.GetInterface(_module, "Window");
-            _window_show = NativeImplClient.GetInterfaceMethod(_window, "show");
-            _window_setMenuBar = NativeImplClient.GetInterfaceMethod(_window, "setMenuBar");
-
-            NativeImplClient.SetClientMethodWrapper(_window_show, delegate(ClientObject obj)
-            {
-                var inst = (ClientWindow) obj;
-                inst.Show();
-            });
-
-            NativeImplClient.SetClientMethodWrapper(_window_setMenuBar, delegate(ClientObject obj)
-            {
-                var inst = (ClientWindow) obj;
-                var mb = MenuBar__Pop();
-                inst.SetMenuBar(mb);
-            });
-
-            _menu = NativeImplClient.GetInterface(_module, "Menu");
-            _menu_addAction = NativeImplClient.GetInterfaceMethod(_menu, "addAction");
-            _menu_addSubmenu = NativeImplClient.GetInterfaceMethod(_menu, "addSubmenu");
-            _menu_addSeparator = NativeImplClient.GetInterfaceMethod(_menu, "addSeparator");
-
-            NativeImplClient.SetClientMethodWrapper(_menu_addAction, delegate(ClientObject obj)
-            {
-                var inst = (ClientMenu) obj;
-                var action = new Action(NativeImplClient.PopSizeT());
-                inst.AddAction(action);
-            });
-
-            NativeImplClient.SetClientMethodWrapper(_menu_addSubmenu, delegate(ClientObject obj)
-            {
-                var inst = (ClientMenu) obj;
-                var label = NativeImplClient.PopString();
-                var sub = Menu__Pop();
-                inst.AddSubmenu(label, sub);
-            });
-
-            NativeImplClient.SetClientMethodWrapper(_menu_addSeparator, delegate(ClientObject obj)
-            {
-                var inst = (ClientMenu) obj;
-                inst.AddSeparator();
-            });
-
-            _menuBar = NativeImplClient.GetInterface(_module, "MenuBar");
-            _menuBar_addMenu = NativeImplClient.GetInterfaceMethod(_menuBar, "addMenu");
-
-            NativeImplClient.SetClientMethodWrapper(_menuBar_addMenu, delegate(ClientObject obj)
-            {
-                var inst = (ClientMenuBar) obj;
-                var label = NativeImplClient.PopString();
-                var menu = Menu__Pop();
-                inst.AddMenu(label, menu);
             });
             return ModuleInit();
         }

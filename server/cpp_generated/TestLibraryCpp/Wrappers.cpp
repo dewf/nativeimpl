@@ -2,12 +2,6 @@
 #include "Implementation.h"
 
 ni_InterfaceMethodRef windowDelegate_onDestroyed;
-ni_InterfaceMethodRef window_show;
-ni_InterfaceMethodRef window_setMenuBar;
-ni_InterfaceMethodRef menu_addAction;
-ni_InterfaceMethodRef menu_addSubmenu;
-ni_InterfaceMethodRef menu_addSeparator;
-ni_InterfaceMethodRef menuBar_addMenu;
 
 
 
@@ -20,101 +14,8 @@ inline KeyEnum KeyEnum__pop() {
     return (KeyEnum)tag;
 }
 
-void Menu__push(std::shared_ptr<Menu> thing, bool isReturn);
-std::shared_ptr<Menu> Menu__pop();
 
-class ClientMenu : public ClientObject, public Menu {
-public:
-    ClientMenu(int id) : ClientObject(id) {}
-    void addAction(Action action) override {
-        ni_pushSizeT((size_t)action);
-        invokeMethod(menu_addAction);
-    }
-    void addSubmenu(std::string label, std::shared_ptr<Menu> sub) override {
-        Menu__push(sub, false);
-        pushStringInternal(label);
-        invokeMethod(menu_addSubmenu);
-    }
-    void addSeparator() override {
-        invokeMethod(menu_addSeparator);
-    }
-};
 
-inline void Menu__push(std::shared_ptr<Menu> inst, bool isReturn) {
-    auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-    pushable->push(pushable, isReturn);
-}
-
-std::shared_ptr<Menu> Menu__pop()
-{
-    bool isClientID, inSafetyArea;
-    auto id = ni_popInstance(&isClientID, &inSafetyArea);
-    if (isClientID) {
-        return std::shared_ptr<Menu>(new ClientMenu(id));
-    }
-    else {
-        return ServerMenu::getByID(id);
-    }
-}
-
-class ClientMenuBar : public ClientObject, public MenuBar {
-public:
-    ClientMenuBar(int id) : ClientObject(id) {}
-    void addMenu(std::string label, std::shared_ptr<Menu> menu) override {
-        Menu__push(menu, false);
-        pushStringInternal(label);
-        invokeMethod(menuBar_addMenu);
-    }
-};
-
-inline void MenuBar__push(std::shared_ptr<MenuBar> inst, bool isReturn) {
-    auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-    pushable->push(pushable, isReturn);
-}
-
-std::shared_ptr<MenuBar> MenuBar__pop()
-{
-    bool isClientID, inSafetyArea;
-    auto id = ni_popInstance(&isClientID, &inSafetyArea);
-    if (isClientID) {
-        return std::shared_ptr<MenuBar>(new ClientMenuBar(id));
-    }
-    else {
-        return ServerMenuBar::getByID(id);
-    }
-}
-
-void MenuBar__push(std::shared_ptr<MenuBar> thing, bool isReturn);
-std::shared_ptr<MenuBar> MenuBar__pop();
-
-class ClientWindow : public ClientObject, public Window {
-public:
-    ClientWindow(int id) : ClientObject(id) {}
-    void show() override {
-        invokeMethod(window_show);
-    }
-    void setMenuBar(std::shared_ptr<MenuBar> mb) override {
-        MenuBar__push(mb, false);
-        invokeMethod(window_setMenuBar);
-    }
-};
-
-inline void Window__push(std::shared_ptr<Window> inst, bool isReturn) {
-    auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-    pushable->push(pushable, isReturn);
-}
-
-std::shared_ptr<Window> Window__pop()
-{
-    bool isClientID, inSafetyArea;
-    auto id = ni_popInstance(&isClientID, &inSafetyArea);
-    if (isClientID) {
-        return std::shared_ptr<Window>(new ClientWindow(id));
-    }
-    else {
-        return ServerWindow::getByID(id);
-    }
-}
 
 class ClientWindowDelegate : public ClientObject, public WindowDelegate {
 public:
@@ -144,15 +45,23 @@ std::shared_ptr<WindowDelegate> WindowDelegate__pop()
 void createWindow__wrapper() {
     auto title = popStringInternal();
     auto del = WindowDelegate__pop();
-    Window__push(createWindow(title, del), true);
+    ni_pushSizeT((size_t)createWindow(title, del));
 }
 
-void runloop__wrapper() {
-    ni_pushInt(runloop());
+void windowShow__wrapper() {
+    auto w = (Window)ni_popSizeT();
+    windowShow(w);
 }
 
-void exitRunloop__wrapper() {
-    exitRunloop();
+void windowSetMenuBar__wrapper() {
+    auto w = (Window)ni_popSizeT();
+    auto mb = (MenuBar)ni_popSizeT();
+    windowSetMenuBar(w, mb);
+}
+
+void windowDestroy__wrapper() {
+    auto w = (Window)ni_popSizeT();
+    windowDestroy(w);
 }
 
 void createAccelerator__wrapper() {
@@ -168,11 +77,44 @@ void createAction__wrapper() {
 }
 
 void createMenu__wrapper() {
-    Menu__push(createMenu(), true);
+    ni_pushSizeT((size_t)createMenu());
+}
+
+void menuAddAction__wrapper() {
+    auto menu = (Menu)ni_popSizeT();
+    auto action = (Action)ni_popSizeT();
+    menuAddAction(menu, action);
+}
+
+void menuAddSubmenu__wrapper() {
+    auto menu = (Menu)ni_popSizeT();
+    auto label = popStringInternal();
+    auto sub = (Menu)ni_popSizeT();
+    menuAddSubmenu(menu, label, sub);
+}
+
+void menuAddSeparator__wrapper() {
+    auto menu = (Menu)ni_popSizeT();
+    menuAddSeparator(menu);
 }
 
 void createMenuBar__wrapper() {
-    MenuBar__push(createMenuBar(), true);
+    ni_pushSizeT((size_t)createMenuBar());
+}
+
+void menuBarAddMenu__wrapper() {
+    auto mb = (MenuBar)ni_popSizeT();
+    auto label = popStringInternal();
+    auto menu = (Menu)ni_popSizeT();
+    menuBarAddMenu(mb, label, menu);
+}
+
+void runloop__wrapper() {
+    ni_pushInt(runloop());
+}
+
+void exitRunloop__wrapper() {
+    exitRunloop();
 }
 
 void moduleInit__wrapper() {
@@ -188,64 +130,26 @@ void WindowDelegate_onDestroyed__wrapper(int serverID) {
     inst->onDestroyed();
 }
 
-void Window_show__wrapper(int serverID) {
-    auto inst = ServerWindow::getByID(serverID);
-    inst->show();
-}
-
-void Window_setMenuBar__wrapper(int serverID) {
-    auto inst = ServerWindow::getByID(serverID);
-    auto mb = MenuBar__pop();
-    inst->setMenuBar(mb);
-}
-
-void Menu_addAction__wrapper(int serverID) {
-    auto inst = ServerMenu::getByID(serverID);
-    auto action = (Action)ni_popSizeT();
-    inst->addAction(action);
-}
-
-void Menu_addSubmenu__wrapper(int serverID) {
-    auto inst = ServerMenu::getByID(serverID);
-    auto label = popStringInternal();
-    auto sub = Menu__pop();
-    inst->addSubmenu(label, sub);
-}
-
-void Menu_addSeparator__wrapper(int serverID) {
-    auto inst = ServerMenu::getByID(serverID);
-    inst->addSeparator();
-}
-
-void MenuBar_addMenu__wrapper(int serverID) {
-    auto inst = ServerMenuBar::getByID(serverID);
-    auto label = popStringInternal();
-    auto menu = Menu__pop();
-    inst->addMenu(label, menu);
-}
-
 extern "C" int nativeLibraryInit() {
     auto m = ni_registerModule("TestLibrary");
     ni_registerModuleMethod(m, "createWindow", &createWindow__wrapper);
-    ni_registerModuleMethod(m, "runloop", &runloop__wrapper);
-    ni_registerModuleMethod(m, "exitRunloop", &exitRunloop__wrapper);
+    ni_registerModuleMethod(m, "windowShow", &windowShow__wrapper);
+    ni_registerModuleMethod(m, "windowSetMenuBar", &windowSetMenuBar__wrapper);
+    ni_registerModuleMethod(m, "windowDestroy", &windowDestroy__wrapper);
     ni_registerModuleMethod(m, "createAccelerator", &createAccelerator__wrapper);
     ni_registerModuleMethod(m, "createAction", &createAction__wrapper);
     ni_registerModuleMethod(m, "createMenu", &createMenu__wrapper);
+    ni_registerModuleMethod(m, "menuAddAction", &menuAddAction__wrapper);
+    ni_registerModuleMethod(m, "menuAddSubmenu", &menuAddSubmenu__wrapper);
+    ni_registerModuleMethod(m, "menuAddSeparator", &menuAddSeparator__wrapper);
     ni_registerModuleMethod(m, "createMenuBar", &createMenuBar__wrapper);
+    ni_registerModuleMethod(m, "menuBarAddMenu", &menuBarAddMenu__wrapper);
+    ni_registerModuleMethod(m, "runloop", &runloop__wrapper);
+    ni_registerModuleMethod(m, "exitRunloop", &exitRunloop__wrapper);
     ni_registerModuleMethod(m, "moduleInit", &moduleInit__wrapper);
     ni_registerModuleMethod(m, "moduleShutdown", &moduleShutdown__wrapper);
     auto windowDelegate = ni_registerInterface(m, "WindowDelegate");
     windowDelegate_onDestroyed = ni_registerInterfaceMethod(windowDelegate, "onDestroyed", &WindowDelegate_onDestroyed__wrapper);
-    auto window = ni_registerInterface(m, "Window");
-    window_show = ni_registerInterfaceMethod(window, "show", &Window_show__wrapper);
-    window_setMenuBar = ni_registerInterfaceMethod(window, "setMenuBar", &Window_setMenuBar__wrapper);
-    auto menu = ni_registerInterface(m, "Menu");
-    menu_addAction = ni_registerInterfaceMethod(menu, "addAction", &Menu_addAction__wrapper);
-    menu_addSubmenu = ni_registerInterfaceMethod(menu, "addSubmenu", &Menu_addSubmenu__wrapper);
-    menu_addSeparator = ni_registerInterfaceMethod(menu, "addSeparator", &Menu_addSeparator__wrapper);
-    auto menuBar = ni_registerInterface(m, "MenuBar");
-    menuBar_addMenu = ni_registerInterfaceMethod(menuBar, "addMenu", &MenuBar_addMenu__wrapper);
     return 0; // = OK
 }
 

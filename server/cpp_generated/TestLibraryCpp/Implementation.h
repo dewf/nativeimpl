@@ -120,57 +120,11 @@ enum class KeyEnum {
     KeyMediaPlayPause
 };
 
-class Menu; // fwd decl
+struct __Menu; typedef struct __Menu* Menu;
 
-class Menu {
-public:
-    virtual void addAction(Action action) = 0;
-    virtual void addSubmenu(std::string label, std::shared_ptr<Menu> sub) = 0;
-    virtual void addSeparator() = 0;
-};
+struct __MenuBar; typedef struct __MenuBar* MenuBar;
 
-// inherit from this to create server instances of Menu
-class ServerMenu : public Menu, public ServerObject {
-public:
-    virtual ~ServerMenu() {}
-    static std::shared_ptr<ServerMenu> getByID(int id) {
-        auto obj = ServerObject::getByID(id);
-        return std::static_pointer_cast<ServerMenu>(obj);
-    }
-};
-
-class MenuBar {
-public:
-    virtual void addMenu(std::string label, std::shared_ptr<Menu> menu) = 0;
-};
-
-// inherit from this to create server instances of MenuBar
-class ServerMenuBar : public MenuBar, public ServerObject {
-public:
-    virtual ~ServerMenuBar() {}
-    static std::shared_ptr<ServerMenuBar> getByID(int id) {
-        auto obj = ServerObject::getByID(id);
-        return std::static_pointer_cast<ServerMenuBar>(obj);
-    }
-};
-
-class MenuBar; // fwd decl
-
-class Window {
-public:
-    virtual void show() = 0;
-    virtual void setMenuBar(std::shared_ptr<MenuBar> mb) = 0;
-};
-
-// inherit from this to create server instances of Window
-class ServerWindow : public Window, public ServerObject {
-public:
-    virtual ~ServerWindow() {}
-    static std::shared_ptr<ServerWindow> getByID(int id) {
-        auto obj = ServerObject::getByID(id);
-        return std::static_pointer_cast<ServerWindow>(obj);
-    }
-};
+struct __Window; typedef struct __Window* Window;
 
 class WindowDelegate {
 public:
@@ -187,12 +141,19 @@ public:
     }
 };
 
-std::shared_ptr<Window> createWindow(std::string title, std::shared_ptr<WindowDelegate> del);
-int runloop();
-void exitRunloop();
+Window createWindow(std::string title, std::shared_ptr<WindowDelegate> del);
+void windowShow(Window w);
+void windowSetMenuBar(Window w, MenuBar mb);
+void windowDestroy(Window w);
 Accelerator createAccelerator(KeyEnum key);
 Action createAction(int id, std::string label, Accelerator acc);
-std::shared_ptr<Menu> createMenu();
-std::shared_ptr<MenuBar> createMenuBar();
+Menu createMenu();
+void menuAddAction(Menu menu, Action action);
+void menuAddSubmenu(Menu menu, std::string label, Menu sub);
+void menuAddSeparator(Menu menu);
+MenuBar createMenuBar();
+void menuBarAddMenu(MenuBar mb, std::string label, Menu menu);
+int runloop();
+void exitRunloop();
 int moduleInit();
 void moduleShutdown();

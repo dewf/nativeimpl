@@ -3,6 +3,54 @@ using TestLibraryClient;
 
 namespace AppRunner
 {
+    public class Accelerator
+    {
+        internal readonly TestLibrary.Accelerator PrivAccel;
+        public Accelerator(TestLibrary.KeyEnum key)
+        {
+            PrivAccel = TestLibrary.CreateAccelerator(key);
+        }
+    }
+    public class Action
+    {
+        internal readonly TestLibrary.Action PrivAction;
+        public Action(int id, string label, Accelerator accel)
+        {
+            PrivAction = TestLibrary.CreateAction(id, label, accel.PrivAccel);
+        }
+    }
+    public class Menu
+    {
+        internal readonly TestLibrary.Menu PrivMenu;
+        public Menu()
+        {
+            PrivMenu = TestLibrary.CreateMenu();
+        }
+        public void AddAction(Action action)
+        {
+            TestLibrary.MenuAddAction(PrivMenu, action.PrivAction);
+        }
+        public void AddSeparator()
+        {
+            TestLibrary.MenuAddSeparator(PrivMenu);
+        }
+        public void AddSubmenu(string label, Menu sub)
+        {
+            TestLibrary.MenuAddSubmenu(PrivMenu, label, sub.PrivMenu);
+        }
+    }
+    public class MenuBar
+    {
+        internal readonly TestLibrary.MenuBar PrivMenuBar;
+        public MenuBar()
+        {
+            PrivMenuBar = TestLibrary.CreateMenuBar();
+        }
+        public void AddMenu(string label, Menu menu)
+        {
+            TestLibrary.MenuBarAddMenu(PrivMenuBar, label, menu.PrivMenu);
+        }
+    }
     public class Window : TestLibrary.ClientWindowDelegate
     {
         private readonly bool _exitOnClose;
@@ -12,13 +60,13 @@ namespace AppRunner
             _exitOnClose = exitOnClose;
             _privWindow = TestLibrary.CreateWindow(title, this);
         }
-        public void SetMenuBar(TestLibrary.MenuBar mb)
+        public void SetMenuBar(MenuBar mb)
         {
-            _privWindow.SetMenuBar(mb);
+            TestLibrary.WindowSetMenuBar(_privWindow, mb.PrivMenuBar);
         }
         public void Show()
         {
-            _privWindow.Show();
+            TestLibrary.WindowShow(_privWindow);
         }
         public override void OnDestroyed()
         {
@@ -30,7 +78,9 @@ namespace AppRunner
         }
         public override void Dispose()
         {
-            _privWindow.Dispose();
+            // hmmm ?
+            Console.WriteLine("C# Window.Dispose() called");
+            TestLibrary.WindowDestroy(_privWindow);
         }
     }
     
@@ -41,12 +91,13 @@ namespace AppRunner
             TestLibrary.Init();
 
             var window = new Window("My title!!", true);
-            var fileMenu = TestLibrary.CreateMenu();
-            var accel = TestLibrary.CreateAccelerator(TestLibrary.KeyEnum.KeyE);
-            var action1 = TestLibrary.CreateAction(101, "E&xit", accel);
-            fileMenu.AddAction(action1);
+            
+            var fileMenu = new Menu();
+            var accel = new Accelerator(TestLibrary.KeyEnum.KeyE);
+            var action = new Action(101, "E&xit", accel);
+            fileMenu.AddAction(action);
 
-            var menuBar = TestLibrary.CreateMenuBar();
+            var menuBar = new MenuBar();
             menuBar.AddMenu("&File", fileMenu);
             window.SetMenuBar(menuBar);
                 

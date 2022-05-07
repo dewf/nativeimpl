@@ -4,32 +4,30 @@ interface WindowDelegate {
     void onDestroyed();
 }
 
-interface Window {
-    void show();
-    void setMenuBar(MenuBar mb);
-}
-
+opaque Window;
 Window createWindow(string title, WindowDelegate del);
-int runloop();
-void exitRunloop();
+void windowShow(Window w);
+void windowSetMenuBar(Window w, MenuBar mb);
+void windowDestroy(Window w);
 
 opaque Accelerator;
-opaque Action;
-
 Accelerator createAccelerator(KeyEnum key);                 // TODO: modifiers (bitmask / combinable set)
+
+opaque Action;
 Action createAction(int id, string label, Accelerator acc); // special nullable/optional syntax?
 
-interface Menu {
-   void addAction(Action action);
-   void addSubmenu(string label, Menu sub);
-   void addSeparator();
-}
+opaque Menu;
 Menu createMenu();
+void menuAddAction(Menu menu, Action action);
+void menuAddSubmenu(Menu menu, string label, Menu sub);
+void menuAddSeparator(Menu menu);
 
-interface MenuBar {
-   void addMenu(string label, Menu menu);
-}
+opaque MenuBar;
 MenuBar createMenuBar();
+void menuBarAddMenu(MenuBar mb, string label, Menu menu);
+
+int runloop();
+void exitRunloop();
 
 int moduleInit();
 void moduleShutdown();

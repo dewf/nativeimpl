@@ -444,7 +444,8 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
         fprintfn writer fmt
     let blank () = write 0 ""
     let typeContainsRefs (type_: NIType) =
-        containsRefsMap.ContainsKey(typeToInternalKey type_)
+        containsRefsMap.TryFind(typeToInternalKey type_)
+        |> Option.defaultValue false
     blank()
     match content with
     | UserOrGeneric.FwdInterface ->
@@ -645,7 +646,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueHandleDef ->
-            write 0 "// anything for opaque here? push/pop perhaps? %s" name
+            ()
         | StructDef namedFields ->
             write 0 "void %s__push(%s value, bool isReturn) {" name name
             for field in namedFields |> List.rev do
@@ -725,8 +726,8 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
     for name, userType in userTypes do
         let lowerName = lowerFirst name
         match userType with
-        | OpaqueHandleDef ->
-            write 0 "NIHANDLE(%s);" lowerName
+//        | OpaqueHandleDef ->
+//            write 0 "NIHANDLE(%s);" lowerName
         | InterfaceDef namedFunctions ->
             namedFunctions
             |> List.iter (fun nf ->

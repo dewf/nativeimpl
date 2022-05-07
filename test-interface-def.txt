@@ -1,13 +1,18 @@
 module TestLibrary;
 
-interface MyThing {
-   int doSomething(int x);
+interface WindowDelegate {
+    void onDestroyed();
 }
 
-void takesThing(MyThing thing);
-MyThing returnsThing();
+interface Window {
+    void show();
+}
 
-delegate int IntFunc(int x);
-void applyFunc(IntFunc f);
+Window createWindow(string title, WindowDelegate del);
+int runloop();
+void exitRunloop();
+
+int moduleInit();
+void moduleShutdown();
 
 

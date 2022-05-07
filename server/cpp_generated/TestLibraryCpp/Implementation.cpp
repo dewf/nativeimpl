@@ -1,47 +1,61 @@
 #include "Implementation.h"
+#include "../../../../moonshot/openwl/source/openwl.h"
 
-void takesThing(std::shared_ptr<MyThing> thing) {
-    printf("C++ takesThing:\n");
-    printf("  - thing->doSomething(1234) = %d\n", thing->doSomething(1234));
-}
-
-class FakeThing : public ServerMyThing {
+class PrivateWindow : public ServerWindow {
+private:
+	wl_WindowRef handle;
+	std::shared_ptr<WindowDelegate> del;
 public:
-    int doSomething(int x) override {
-        auto res = x + 2002;
-        printf("C++ FakeThing.doSomething(%d) = %d\n", x, res);
-        return res;
-    }
+	PrivateWindow(std::shared_ptr<WindowDelegate> del)
+		: del(del) {}
+	void setHandle(wl_WindowRef handle) {
+		this->handle = handle;
+	}
+	// callback events
+	void onDestroyed() {
+		del->onDestroyed();
+	}
+	// interface methods ===================
+	void show() override {
+		wl_WindowShow(handle);
+	}
 };
 
-std::shared_ptr<MyThing> returnsThing() {
-    return std::shared_ptr<MyThing>(new FakeThing());
+static int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData) {
+	event->handled = true;
+	auto privWindow = (PrivateWindow*)userData;
+	switch (event->eventType) {
+	case wl_kEventTypeWindowDestroyed:
+		privWindow->onDestroyed();
+		break;
+	default:
+		event->handled = false;
+	}
+	return 0;
 }
 
-void applyFunc(std::function<IntFunc> f) {
-    printf("C++ applyFunc(1234) = %d\n", f(1234));
+std::shared_ptr<Window> createWindow(std::string title, std::shared_ptr<WindowDelegate> del) {
+	wl_WindowProperties props{};
+	auto window = new PrivateWindow(del);
+	auto handle = wl_WindowCreate(1024, 768, title.c_str(), window, &props);
+	window->setHandle(handle);
+	return std::shared_ptr<Window>(window);
 }
 
-void takesBuffer(std::shared_ptr<NativeBuffer<int>> buffer)
-{
-    printf("C++ takesBuffer:\n");
-    size_t length;
-    auto ptr = buffer->getSpan(&length);
-    for (auto i = 0; i < length; i++) {
-        printf(" -> index %d: value %d\n", i, ptr[i]);
-        // add 100 to value
-        ptr[i] += 100;
-    }
-    printf("C++ takesBuffer done!\n");
+int runloop() {
+	return wl_Runloop();
 }
 
-std::shared_ptr<NativeBuffer<int>> returnsBuffer()
-{
-    auto buf = new ServerBuffer<int>({ 123 });
-    size_t length;
-    auto ptr = buf->getSpan(&length);
-    for (auto i = 0; i < 123; i++) {
-        ptr[i] = 111 + i;
-    }
-    return std::shared_ptr<NativeBuffer<int>>(buf);
+void exitRunloop() {
+	wl_ExitRunloop();
+}
+
+int moduleInit() {
+	wl_PlatformOptions opts{};
+	opts.useDirect2D = false;
+	return wl_Init(&myCallback, &opts);
+}
+
+void moduleShutdown() {
+	wl_Shutdown();
 }

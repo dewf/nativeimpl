@@ -6,25 +6,38 @@
 #include <map>
 #include <tuple>
 
-typedef int IntFunc(int x);
-
-class MyThing {
+class Window {
 public:
-    virtual int doSomething(int x) = 0;
+    virtual void show() = 0;
 };
 
-// inherit from this to create server instances of MyThing
-class ServerMyThing : public MyThing, public ServerObject {
+// inherit from this to create server instances of Window
+class ServerWindow : public Window, public ServerObject {
 public:
-    virtual ~ServerMyThing() {}
-    static std::shared_ptr<ServerMyThing> getByID(int id) {
+    virtual ~ServerWindow() {}
+    static std::shared_ptr<ServerWindow> getByID(int id) {
         auto obj = ServerObject::getByID(id);
-        return std::static_pointer_cast<ServerMyThing>(obj);
+        return std::static_pointer_cast<ServerWindow>(obj);
     }
 };
 
-void takesThing(std::shared_ptr<MyThing> thing);
-std::shared_ptr<MyThing> returnsThing();
-void applyFunc(std::function<IntFunc> f);
-void takesBuffer(std::shared_ptr<NativeBuffer<int>> buffer);
-std::shared_ptr<NativeBuffer<int>> returnsBuffer();
+class WindowDelegate {
+public:
+    virtual void onDestroyed() = 0;
+};
+
+// inherit from this to create server instances of WindowDelegate
+class ServerWindowDelegate : public WindowDelegate, public ServerObject {
+public:
+    virtual ~ServerWindowDelegate() {}
+    static std::shared_ptr<ServerWindowDelegate> getByID(int id) {
+        auto obj = ServerObject::getByID(id);
+        return std::static_pointer_cast<ServerWindowDelegate>(obj);
+    }
+};
+
+std::shared_ptr<Window> createWindow(std::string title, std::shared_ptr<WindowDelegate> del);
+int runloop();
+void exitRunloop();
+int moduleInit();
+void moduleShutdown();

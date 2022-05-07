@@ -3,12 +3,30 @@ using TestLibraryClient;
 
 namespace AppRunner
 {
-    internal class Thing : TestLibrary.ClientMyThing
+    public class Window : TestLibrary.ClientWindowDelegate
     {
-        public override int DoSomething(int x)
+        private readonly bool _exitOnClose;
+        private readonly TestLibrary.Window _handle;
+        public Window(string title, bool exitOnClose)
         {
-            Console.WriteLine("C# Thing.DoSomething({0})", x);
-            return x + 1001;
+            _exitOnClose = exitOnClose;
+            _handle = TestLibrary.CreateWindow(title, this);
+        }
+        public void Show()
+        {
+            _handle.Show();
+        }
+        public override void OnDestroyed()
+        {
+            if (_exitOnClose)
+            {
+                Console.WriteLine("C# OnDestroyed() called! Shutting down ...");
+                TestLibrary.ExitRunloop();
+            }
+        }
+        public override void Dispose()
+        {
+            _handle.Dispose();
         }
     }
     
@@ -17,43 +35,41 @@ namespace AppRunner
         public static void Main(string[] args)
         {
             TestLibrary.Init();
-            
-            TestLibrary.ApplyFunc(x => x * 123);
-            TestLibrary.TakesThing(new Thing());
-            using (var thing = TestLibrary.ReturnsThing())
-            {
-                Console.WriteLine("C# returned thing .DoSomething(1234) = {0}", thing.DoSomething(1234));
-            }
 
-            using (var buffer = new ClientBuffer<int>(50))
+            using (var window = new Window("My title!!", true))
             {
-                var span = buffer.GetSpan(out var length);
-                for (var i = 0; i < length; i++)
-                {
-                    span[i] = i;
-                }
-                Console.WriteLine("Wrote {0} values to buffer", length);
-                TestLibrary.TakesBuffer(buffer);
-                Console.WriteLine("TakesBuffer() finished! Checking values:");
-                // for (var i = 0; i < length; i++)
-                // {
-                //     Console.WriteLine("C# buffer[{0}] = {1}", i, span[i]);
-                // }
+                window.Show();
+                TestLibrary.Runloop();
             }
-            Console.WriteLine("end ClientBuffer 'using' block");
-
-            using (var serverBuffer = TestLibrary.ReturnsBuffer())
-            {
-                var span = serverBuffer.GetSpan(out var length);
-                Console.WriteLine("server length: {0}", length);
-                for (var i = 0; i < length; i++)
-                {
-                    Console.WriteLine("C# viewing server span: [{0}] = {1}", i, span[i]);
-                }
-                // send back to server to see what happens!
-                TestLibrary.TakesBuffer(serverBuffer);
-            }
-            Console.WriteLine("end server buffer 'using' block");
+            // using (var buffer = new ClientBuffer<int>(50))
+            // {
+            //     var span = buffer.GetSpan(out var length);
+            //     for (var i = 0; i < length; i++)
+            //     {
+            //         span[i] = i;
+            //     }
+            //     Console.WriteLine("Wrote {0} values to buffer", length);
+            //     TestLibrary.TakesBuffer(buffer);
+            //     Console.WriteLine("TakesBuffer() finished! Checking values:");
+            //     // for (var i = 0; i < length; i++)
+            //     // {
+            //     //     Console.WriteLine("C# buffer[{0}] = {1}", i, span[i]);
+            //     // }
+            // }
+            // Console.WriteLine("end ClientBuffer 'using' block");
+            //
+            // using (var serverBuffer = TestLibrary.ReturnsBuffer())
+            // {
+            //     var span = serverBuffer.GetSpan(out var length);
+            //     Console.WriteLine("server length: {0}", length);
+            //     for (var i = 0; i < length; i++)
+            //     {
+            //         Console.WriteLine("C# viewing server span: [{0}] = {1}", i, span[i]);
+            //     }
+            //     // send back to server to see what happens!
+            //     TestLibrary.TakesBuffer(serverBuffer);
+            // }
+            // Console.WriteLine("end server buffer 'using' block");
             
             GC.Collect();
             TestLibrary.DumpTables();

@@ -4,83 +4,61 @@ using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using TestLibraryClient.Support;
+using ModuleHandle = TestLibraryClient.Support.ModuleHandle;
 
 namespace TestLibraryClient
 {
     public static class TestLibrary
     {
         private static ModuleHandle _module;
-        private static ModuleMethodHandle _takesThing;
-        private static ModuleMethodHandle _returnsThing;
-        private static ModuleMethodHandle _applyFunc;
-        private static ModuleMethodHandle _takesBuffer;
-        private static ModuleMethodHandle _returnsBuffer;
-        private static InterfaceHandle _myThing;
-        private static InterfaceMethodHandle _myThingDoSomething;
-        
-        public delegate int IntFunc(int x);
+        private static ModuleMethodHandle _createWindow;
+        private static ModuleMethodHandle _runloop;
+        private static ModuleMethodHandle _exitRunloop;
+        private static ModuleMethodHandle _moduleInit;
+        private static ModuleMethodHandle _moduleShutdown;
+        private static InterfaceHandle _windowDelegate;
+        private static InterfaceMethodHandle _windowDelegate_onDestroyed;
+        private static InterfaceHandle _window;
+        private static InterfaceMethodHandle _window_show;
 
-        private static void IntFunc__Push(IntFunc callback)
+
+        public interface Window : IDisposable
         {
-            void CallbackWrapper()
-            {
-                var x = NativeImplClient.PopInt();
-                NativeImplClient.PushInt(callback(x));
-            }
-            NativeImplClient.PushClientFuncVal(CallbackWrapper, Marshal.GetFunctionPointerForDelegate(callback));
-        }
-        
-        private static IntFunc IntFunc__Pop()
-        {
-            var id = NativeImplClient.PopServerFuncValId();
-            var remoteFunc = new ServerFunc(id);
-            int Wrapper(int x)
-            {
-                NativeImplClient.PushInt(x);
-                remoteFunc.Exec();
-                return NativeImplClient.PopInt();
-            }
-            return Wrapper;
+            void Show();
         }
 
-        public interface IMyThing : IDisposable
-        {
-            int DoSomething(int x);
-        }
-
-        private static IMyThing MyThing__Pop()
+        private static Window Window__Pop()
         {
             NativeImplClient.PopInstanceId(out var id, out var isClientId);
             if (!isClientId)
             {
-                return new ServerMyThing(id);
+                return new ServerWindow(id);
             }
             else
             {
-                return (IMyThing) ClientObject.GetById(id);
+                return (Window) ClientObject.GetById(id);
             }
         }
 
-        public abstract class ClientMyThing : ClientObject, IMyThing
+        public abstract class ClientWindow : ClientObject, Window
         {
             public virtual void Dispose()
             {
                 // override if necessary
             }
-            public abstract int DoSomething(int x);
+            public abstract void Show();
         }
 
-        private class ServerMyThing : ServerObject, IMyThing
+        private class ServerWindow : ServerObject, Window
         {
-            public ServerMyThing(int id) : base(id)
+            public ServerWindow(int id) : base(id)
             {
             }
 
-            public int DoSomething(int x)
+            public void Show()
             {
-                NativeImplClient.PushInt(x);
-                NativeImplClient.InvokeInterfaceMethod(_myThingDoSomething, Id);
-                return NativeImplClient.PopInt();
+                NativeImplClient.InvokeInterfaceMethod(_window_show, Id);
             }
 
             public void Dispose()
@@ -89,83 +67,123 @@ namespace TestLibraryClient
             }
         }
 
-        public static void TakesThing(IMyThing thing)
+
+        public interface WindowDelegate : IDisposable
         {
-            ((IPushable)thing).Push(false);
-            NativeImplClient.InvokeModuleMethod(_takesThing);
+            void OnDestroyed();
         }
 
-        public static IMyThing ReturnsThing()
+        private static WindowDelegate WindowDelegate__Pop()
         {
-            NativeImplClient.InvokeModuleMethod(_returnsThing);
-            var ret = MyThing__Pop();
-            NativeImplClient.ServerClearSafetyArea(); // maximum of once at very end of top-level pop
-            return ret;
-        }
-
-        public static void ApplyFunc(IntFunc f)
-        {
-            IntFunc__Push(f);
-            NativeImplClient.InvokeModuleMethod(_applyFunc);
-        }
-
-        public static void TakesBuffer(INativeBuffer<int> buffer)
-        {
-            ((IPushable)buffer).Push(false);
-            NativeImplClient.InvokeModuleMethod(_takesBuffer);
-        }
-
-        private static INativeBuffer<int> NativeIntBuffer__Pop()
-        {
-            NativeMethods.popBuffer(out var id, out var isClientId, out var inSafetyArea, out var bufferDescriptor);
-            if (isClientId)
+            NativeImplClient.PopInstanceId(out var id, out var isClientId);
+            if (!isClientId)
             {
-                return ClientBuffer<int>.GetById(id);
+                return new ServerWindowDelegate(id);
             }
             else
             {
-                return new ServerBuffer<int>(id, bufferDescriptor);
+                return (WindowDelegate) ClientObject.GetById(id);
             }
         }
 
-        public static INativeBuffer<int> ReturnsBuffer()
+        public abstract class ClientWindowDelegate : ClientObject, WindowDelegate
         {
-            NativeImplClient.InvokeModuleMethod(_returnsBuffer);
-            var ret = NativeIntBuffer__Pop();
-            NativeImplClient.ServerClearSafetyArea();
-            return ret;
+            public virtual void Dispose()
+            {
+                // override if necessary
+            }
+            public abstract void OnDestroyed();
         }
 
-        public static void Init()
+        private class ServerWindowDelegate : ServerObject, WindowDelegate
+        {
+            public ServerWindowDelegate(int id) : base(id)
+            {
+            }
+
+            public void OnDestroyed()
+            {
+                NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onDestroyed, Id);
+            }
+
+            public void Dispose()
+            {
+                ServerDispose();
+            }
+        }
+
+        public static Window CreateWindow(string title, WindowDelegate del)
+        {
+            ((IPushable)del).Push(false);
+            NativeImplClient.PushString(title);
+            NativeImplClient.InvokeModuleMethod(_createWindow);
+            var __ret = Window__Pop();
+            NativeImplClient.ServerClearSafetyArea();
+            return __ret;
+        }
+
+        public static int Runloop()
+        {
+            NativeImplClient.InvokeModuleMethod(_runloop);
+            return NativeImplClient.PopInt();
+        }
+
+        public static void ExitRunloop()
+        {
+            NativeImplClient.InvokeModuleMethod(_exitRunloop);
+        }
+
+        public static int ModuleInit()
+        {
+            NativeImplClient.InvokeModuleMethod(_moduleInit);
+            return NativeImplClient.PopInt();
+        }
+
+        public static void ModuleShutdown()
+        {
+            NativeImplClient.InvokeModuleMethod(_moduleShutdown);
+        }
+
+        public static int Init()
         {
             Debug.Assert(NativeImplClient.Init() == 0);
             _module = NativeImplClient.GetModule("TestLibrary");
 
-            _takesThing = NativeImplClient.GetModuleMethod(_module, "takesThing");
-            _returnsThing = NativeImplClient.GetModuleMethod(_module, "returnsThing");
-            _applyFunc = NativeImplClient.GetModuleMethod(_module, "applyFunc");
-            _takesBuffer = NativeImplClient.GetModuleMethod(_module, "takesBuffer");
-            _returnsBuffer = NativeImplClient.GetModuleMethod(_module, "returnsBuffer");
+            _createWindow = NativeImplClient.GetModuleMethod(_module, "createWindow");
+            _runloop = NativeImplClient.GetModuleMethod(_module, "runloop");
+            _exitRunloop = NativeImplClient.GetModuleMethod(_module, "exitRunloop");
+            _moduleInit = NativeImplClient.GetModuleMethod(_module, "moduleInit");
+            _moduleShutdown = NativeImplClient.GetModuleMethod(_module, "moduleShutdown");
 
-            _myThing = NativeImplClient.GetInterface(_module, "MyThing");
-            _myThingDoSomething = NativeImplClient.GetInterfaceMethod(_myThing, "doSomething");
+            _windowDelegate = NativeImplClient.GetInterface(_module, "WindowDelegate");
+            _windowDelegate_onDestroyed = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onDestroyed");
 
-            NativeImplClient.SetClientMethodWrapper(_myThingDoSomething, delegate(ClientObject obj)
+            NativeImplClient.SetClientMethodWrapper(_windowDelegate_onDestroyed, delegate(ClientObject obj)
             {
-                var inst = (ClientMyThing) obj;
-                var x = NativeImplClient.PopInt();
-                NativeImplClient.PushInt(inst.DoSomething(x));
+                var inst = (ClientWindowDelegate) obj;
+                inst.OnDestroyed();
             });
+
+            _window = NativeImplClient.GetInterface(_module, "Window");
+            _window_show = NativeImplClient.GetInterfaceMethod(_window, "show");
+
+            NativeImplClient.SetClientMethodWrapper(_window_show, delegate(ClientObject obj)
+            {
+                var inst = (ClientWindow) obj;
+                inst.Show();
+            });
+            return ModuleInit();
         }
 
         public static void Shutdown()
         {
+            ModuleShutdown();
             NativeImplClient.Shutdown();
         }
 
         public static void DumpTables()
         {
             NativeImplClient.DumpTables();
-        }        
+        }
     }
 }

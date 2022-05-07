@@ -6,15 +6,19 @@ namespace AppRunner
     public class Window : TestLibrary.ClientWindowDelegate
     {
         private readonly bool _exitOnClose;
-        private readonly TestLibrary.Window _handle;
+        private readonly TestLibrary.Window _privWindow;
         public Window(string title, bool exitOnClose)
         {
             _exitOnClose = exitOnClose;
-            _handle = TestLibrary.CreateWindow(title, this);
+            _privWindow = TestLibrary.CreateWindow(title, this);
+        }
+        public void SetMenuBar(TestLibrary.MenuBar mb)
+        {
+            _privWindow.SetMenuBar(mb);
         }
         public void Show()
         {
-            _handle.Show();
+            _privWindow.Show();
         }
         public override void OnDestroyed()
         {
@@ -26,7 +30,7 @@ namespace AppRunner
         }
         public override void Dispose()
         {
-            _handle.Dispose();
+            _privWindow.Dispose();
         }
     }
     
@@ -38,6 +42,15 @@ namespace AppRunner
 
             using (var window = new Window("My title!!", true))
             {
+                var fileMenu = TestLibrary.CreateMenu();
+                var accel = TestLibrary.CreateAccelerator(TestLibrary.KeyEnum.KeyE);
+                var action1 = TestLibrary.CreateAction(101, "E&xit", accel);
+                fileMenu.AddAction(action1);
+
+                var menuBar = TestLibrary.CreateMenuBar();
+                menuBar.AddMenu("&File", fileMenu);
+                window.SetMenuBar(menuBar);
+                
                 window.Show();
                 TestLibrary.Runloop();
             }

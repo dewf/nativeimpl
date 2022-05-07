@@ -6,13 +6,152 @@ interface WindowDelegate {
 
 interface Window {
     void show();
+    void setMenuBar(MenuBar mb);
 }
 
 Window createWindow(string title, WindowDelegate del);
 int runloop();
 void exitRunloop();
 
+opaque Accelerator;
+opaque Action;
+
+Accelerator createAccelerator(KeyEnum key);                 // TODO: modifiers (bitmask / combinable set)
+Action createAction(int id, string label, Accelerator acc); // special nullable/optional syntax?
+
+interface Menu {
+   void addAction(Action action);
+   void addSubmenu(string label, Menu sub);
+   void addSeparator();
+}
+Menu createMenu();
+
+interface MenuBar {
+   void addMenu(string label, Menu menu);
+}
+MenuBar createMenuBar();
+
 int moduleInit();
 void moduleShutdown();
 
-
+enum KeyEnum {
+		KeyUnknown,
+		//
+		KeyEscape,
+		KeyTab,
+		KeyBackspace,
+		KeyReturn,
+		KeySpace,
+		//
+		KeyF1,
+		KeyF2,
+		KeyF3,
+		KeyF4,
+		KeyF5,
+		KeyF6,
+		KeyF7,
+		KeyF8,
+		KeyF9,
+		KeyF10,
+		KeyF11,
+		KeyF12,
+		KeyF13,
+		KeyF14,
+		KeyF15,
+		KeyF16,
+		KeyF17,
+		KeyF18,
+		KeyF19,
+		//
+		Key0,
+		Key1,
+		Key2,
+		Key3,
+		Key4,
+		Key5,
+		Key6,
+		Key7,
+		Key8,
+		Key9,
+		//
+		KeyA,
+		KeyB,
+		KeyC,
+		KeyD,
+		KeyE,
+		KeyF,
+		KeyG,
+		KeyH,
+		KeyI,
+		KeyJ,
+		KeyK,
+		KeyL,
+		KeyM,
+		KeyN,
+		KeyO,
+		KeyP,
+		KeyQ,
+		KeyR,
+		KeyS,
+		KeyT,
+		KeyU,
+		KeyV,
+		KeyW,
+		KeyX,
+		KeyY,
+		KeyZ,
+		// modifiers
+		KeyControl,
+		KeyShift,
+		KeyAltOption,
+		KeyWinCommand,
+		KeyFn,
+		// home/end block
+		KeyInsert,
+		KeyDelete,
+		KeyPageUp,
+		KeyPageDown,
+		KeyHome,
+		KeyEnd,
+		// arrow keys
+		KeyLeftArrow,
+		KeyUpArrow,
+		KeyRightArrow,
+		KeyDownArrow,
+		// keypad numbers
+		KeyKP0,
+		KeyKP1,
+		KeyKP2,
+		KeyKP3,
+		KeyKP4,
+		KeyKP5,
+		KeyKP6,
+		KeyKP7,
+		KeyKP8,
+		KeyKP9,
+		// keypad ops
+		KeyKPClear,
+		KeyKPEquals,
+		KeyKPDivide,
+		KeyKPMultiply,
+		KeyKPSubtract,
+		KeyKPAdd,
+		KeyKPEnter,
+		KeyKPDecimal,
+		// locks
+		KeyCapsLock,
+		KeyNumLock,
+		KeyScrollLock,
+		// misc
+		KeyPrintScreen,
+		KeyPause,  // Pause/Break button minus Ctrl
+		KeyCancel, // Ctrl-Break
+		// media
+		KeyMediaMute,
+		KeyMediaVolumeDown,
+		KeyMediaVolumeUp,
+		KeyMediaNext,
+		KeyMediaPrev,
+		KeyMediaStop,
+		KeyMediaPlayPause,
+}

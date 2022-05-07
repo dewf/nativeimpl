@@ -22,7 +22,6 @@ public:
 	void release();
 	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
 	~ServerResource();
-
 	static std::shared_ptr<ServerResource> getResourceById(int id);
 	static void dumpTables();
 protected:

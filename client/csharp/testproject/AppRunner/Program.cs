@@ -40,20 +40,19 @@ namespace AppRunner
         {
             TestLibrary.Init();
 
-            using (var window = new Window("My title!!", true))
-            {
-                var fileMenu = TestLibrary.CreateMenu();
-                var accel = TestLibrary.CreateAccelerator(TestLibrary.KeyEnum.KeyE);
-                var action1 = TestLibrary.CreateAction(101, "E&xit", accel);
-                fileMenu.AddAction(action1);
+            var window = new Window("My title!!", true);
+            var fileMenu = TestLibrary.CreateMenu();
+            var accel = TestLibrary.CreateAccelerator(TestLibrary.KeyEnum.KeyE);
+            var action1 = TestLibrary.CreateAction(101, "E&xit", accel);
+            fileMenu.AddAction(action1);
 
-                var menuBar = TestLibrary.CreateMenuBar();
-                menuBar.AddMenu("&File", fileMenu);
-                window.SetMenuBar(menuBar);
+            var menuBar = TestLibrary.CreateMenuBar();
+            menuBar.AddMenu("&File", fileMenu);
+            window.SetMenuBar(menuBar);
                 
-                window.Show();
-                TestLibrary.Runloop();
-            }
+            window.Show();
+            TestLibrary.Runloop();
+
             // using (var buffer = new ClientBuffer<int>(50))
             // {
             //     var span = buffer.GetSpan(out var length);

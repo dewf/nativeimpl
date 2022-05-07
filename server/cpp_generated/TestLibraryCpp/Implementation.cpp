@@ -33,9 +33,7 @@ private:
 public:
 	PrivateMenuBar(wl_MenuBarRef menuBar) : menuBar(menuBar) {}
 	void addMenu(std::string label, std::shared_ptr<Menu> menu) override {
-		printf("in C++ PrivateMenuBar::addMenu\n");
 		auto serverMenu = std::dynamic_pointer_cast<PrivateMenu>(menu);
-		printf("menubar %08p adding menu %08p\n", menuBar, serverMenu->menu);
 		wl_MenuBarAddMenu(menuBar, label.c_str(), serverMenu->menu);
 	}
 };

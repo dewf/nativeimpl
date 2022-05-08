@@ -1,5 +1,6 @@
 ﻿module Parser
 open Tokenizer
+open Util
 
 module List =
 //    let safeTake (n: int) (xs: 'a list) =
@@ -86,8 +87,6 @@ let rec parseType (input: TokenAndLocation list) =
         Primitive Float64, etc
     | Lookahead 1 ([StringToken], _, etc) ->
         Primitive StringType, etc
-    | Lookahead 3 ([OpaqueToken; Identifier name; StatementEnd], _, etc) ->
-        OpaqueHandleType name, etc
     | Lookahead 2 ([ArrayToken; LeftBracket], line, etc1) ->
         let arrayType, etc2 =
             parseType etc1
@@ -419,13 +418,36 @@ let parseSumTypeValues (line: int) (input: TokenAndLocation list) =
 let parseModule (input: TokenAndLocation list) =
     let parseNext (remaining: TokenAndLocation list) =
         match remaining with
-        | Lookahead 3 ([OpaqueToken; Identifier name; StatementEnd], _, etc) ->
-            (UserType (name, OpaqueHandleDef), etc)
-            |> Some
+        | Lookahead 2 ([OpaqueToken; Identifier opaqueName], line, etc) ->
+            match etc with
+            | Lookahead 1 ([StatementEnd], _, etc) ->
+                ([UserType (opaqueName, OpaqueHandleDef)], etc)
+                |> Some
+            | Lookahead 1 ([LeftBrace], line, etc) ->
+                // opaque with "methods" (expand to OOP-esque functions)
+                let methods, etc =
+                    parseFunctionList line etc
+                let thisName =
+                    "_this" //(upperOnly opaqueName).ToLowerInvariant()
+                let functions =
+                    methods
+                    |> List.map (fun nf ->
+                        // prefix the function name + add a 1st argument for 'this'
+                        let nextName =
+                            sprintf "%s%s" (lowerFirst opaqueName) (upperFirst nf.Name)
+                        let nextArgs =
+                            (thisName, Unresolved (opaqueName, line)) :: nf.Args
+                        FunctionDef { nf with Name = nextName; Args = nextArgs })
+                let results =
+                    UserType (opaqueName, OpaqueHandleDef) :: functions
+                (results, etc)
+                |> Some
+            | _ ->
+                failwithf "error parsing opaque token on line %d" line
         | Lookahead 3 ([StructToken; Identifier name; LeftBrace], line, etc) ->
             let fields, etc2 =
                 parseFields line etc
-            (UserType (name, StructDef fields), etc2)
+            ([UserType (name, StructDef fields)], etc2)
             |> Some
         | Lookahead 2 ([ExceptionToken; Identifier name], _, etc) ->
             // does it have arguments? (these become fields)
@@ -445,35 +467,37 @@ let parseModule (input: TokenAndLocation list) =
                     failwith "error parsing exception: expecting statement end or arguments list"
             let fields =
                 args |> List.map (fun (name, type_) -> { Name = name; Type_ = type_ })
-            (UserType (name, ExceptionDef fields), etc)
+            ([UserType (name, ExceptionDef fields)], etc)
             |> Some
         | Lookahead 3 ([InterfaceToken; Identifier name; LeftBrace], line, etc) ->
             let methods, etc2 =
                 parseFunctionList line etc
-            (UserType (name, InterfaceDef methods), etc2)
+            ([UserType (name, InterfaceDef methods)], etc2)
             |> Some
         | Lookahead 1 ([DelegateToken], _, etc) ->
             parseNamedFunction etc
             |> Option.map (fun (nf, etc2) ->
-                (UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns; Throws = nf.Throws }), etc2))
+                let result =
+                    UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns; Throws = nf.Throws })
+                ([result], etc2))
         | Lookahead 1 ([TypedefToken], line, etc) ->
             let actual, etc2 =
                 parseType etc
             match etc2 with
             | Lookahead 2 ([Identifier name; StatementEnd], _, etc3) ->
-                (UserType (name, TypeDef actual), etc3)
+                ([UserType (name, TypeDef actual)], etc3)
                 |> Some
             | _ ->
                 failwithf "expected typedef name at line %d" line
         | Lookahead 3 ([EnumToken; Identifier name; LeftBrace], line, etc) ->
             let values, etc2 =
                 parseEnumValues line etc
-            (UserType (name, EnumDef values), etc2)
+            ([UserType (name, EnumDef values)], etc2)
             |> Some
         | Lookahead 3 ([SumTypeToken; Identifier name; LeftBrace], line, etc) ->
             let values, etc2 =
                 parseSumTypeValues line etc
-            (UserType (name, SumTypeDef values), etc2)
+            ([UserType (name, SumTypeDef values)], etc2)
             |> Some
         | [] ->
             // end of file!
@@ -484,17 +508,18 @@ let parseModule (input: TokenAndLocation list) =
                 parseType etc
             match etc2 with
             | Lookahead 2 ([Identifier name; StatementEnd], _, etc3) ->
-                (Global (name, t1), etc3)
+                ([Global (name, t1)], etc3)
                 |> Some
             | Lookahead 2 ([Identifier _; LeftParen], _, _) ->
                 parseNamedFunction etc // note using 'etc' here (rewinding a bit because parseNamedFunction handles identifier etc too)
-                |> Option.map (fun (namedFunc, etc3) -> FunctionDef namedFunc, etc3)
+                |> Option.map (fun (namedFunc, etc3) -> [FunctionDef namedFunc], etc3)
                 // only way it returns 'None' is if its token list is empty, which we already know isn't the case
             | {Location = line; Token = token} :: _ ->
                 failwithf "unexpected token %A at line %d" token line
             | [] ->
                 failwith "unexpected end of file"
     List.unfold parseNext input
+    |> List.collect id
 
 let parseTokens (input: TokenAndLocation list) =
     match input with

@@ -4,6 +4,7 @@
 ni_InterfaceMethodRef windowDelegate_onDestroyed;
 ni_InterfaceMethodRef windowDelegate_onResized;
 ni_InterfaceMethodRef windowDelegate_onRepaint;
+ni_InterfaceMethodRef windowDelegate_onAction;
 
 
 
@@ -67,6 +68,11 @@ public:
     void onRepaint(CGContext context) override {
         ni_pushSizeT((size_t)context);
         invokeMethod(windowDelegate_onRepaint);
+    }
+    void onAction(int id, Action action) override {
+        ni_pushSizeT((size_t)action);
+        ni_pushInt(id);
+        invokeMethod(windowDelegate_onAction);
     }
 };
 
@@ -212,6 +218,13 @@ void WindowDelegate_onRepaint__wrapper(int serverID) {
     inst->onRepaint(context);
 }
 
+void WindowDelegate_onAction__wrapper(int serverID) {
+    auto inst = ServerWindowDelegate::getByID(serverID);
+    auto id = ni_popInt();
+    auto action = (Action)ni_popSizeT();
+    inst->onAction(id, action);
+}
+
 extern "C" int nativeLibraryInit() {
     auto m = ni_registerModule("TestLibrary");
     ni_registerModuleMethod(m, "createWindow", &createWindow__wrapper);
@@ -237,6 +250,7 @@ extern "C" int nativeLibraryInit() {
     windowDelegate_onDestroyed = ni_registerInterfaceMethod(windowDelegate, "onDestroyed", &WindowDelegate_onDestroyed__wrapper);
     windowDelegate_onResized = ni_registerInterfaceMethod(windowDelegate, "onResized", &WindowDelegate_onResized__wrapper);
     windowDelegate_onRepaint = ni_registerInterfaceMethod(windowDelegate, "onRepaint", &WindowDelegate_onRepaint__wrapper);
+    windowDelegate_onAction = ni_registerInterfaceMethod(windowDelegate, "onAction", &WindowDelegate_onAction__wrapper);
     return 0; // = OK
 }
 

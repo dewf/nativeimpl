@@ -6,7 +6,7 @@
 
 #define DLRECT(x) (*((dl_CGRect*)&x))
 
-int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData);
+static int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData);
 
 struct __Window {
     wl_WindowRef wlWindow;
@@ -139,7 +139,7 @@ dl_CGContextRef createContext(wl_PlatformContext* platformContext) {
     return context;
 }
 
-int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData) {
+static int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData) {
     auto privWindow = (Window)userData;
     event->handled = true;
     switch (event->eventType) {
@@ -149,6 +149,11 @@ int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData) {
     case wl_kEventTypeWindowResized:
         privWindow->del->onResized(event->resizeEvent.newWidth, event->resizeEvent.newHeight);
         break;
+    case wl_kEventTypeAction: {
+        __Action action{ event->actionEvent.action };
+        privWindow->del->onAction(event->actionEvent.id, &action);
+        break;
+    }
     case wl_kEventTypeWindowRepaint: {
         auto dlContext = createContext(&event->repaintEvent.platformContext);
         dl_CGContextSaveGState(dlContext);

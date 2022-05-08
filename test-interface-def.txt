@@ -4,6 +4,7 @@ interface WindowDelegate {
     void onDestroyed();
     void onResized(int newWidth, int newHeight);
     void onRepaint(CGContext context);
+    void onAction(int id, Action action);
 }
 
 opaque Window;

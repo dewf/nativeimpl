@@ -148,6 +148,7 @@ public:
     virtual void onDestroyed() = 0;
     virtual void onResized(int newWidth, int newHeight) = 0;
     virtual void onRepaint(CGContext context) = 0;
+    virtual void onAction(int id, Action action) = 0;
 };
 
 // inherit from this to create server instances of WindowDelegate

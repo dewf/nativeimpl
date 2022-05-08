@@ -35,6 +35,7 @@ namespace TestLibraryClient
         private static InterfaceMethodHandle _windowDelegate_onDestroyed;
         private static InterfaceMethodHandle _windowDelegate_onResized;
         private static InterfaceMethodHandle _windowDelegate_onRepaint;
+        private static InterfaceMethodHandle _windowDelegate_onAction;
 
         public struct Accelerator
         {
@@ -288,6 +289,7 @@ namespace TestLibraryClient
             void OnDestroyed();
             void OnResized(int newWidth, int newHeight);
             void OnRepaint(CGContext context);
+            void OnAction(int id, Action action);
         }
 
         private static WindowDelegate WindowDelegate__Pop()
@@ -312,6 +314,7 @@ namespace TestLibraryClient
             public abstract void OnDestroyed();
             public abstract void OnResized(int newWidth, int newHeight);
             public abstract void OnRepaint(CGContext context);
+            public abstract void OnAction(int id, Action action);
         }
 
         private class ServerWindowDelegate : ServerObject, WindowDelegate
@@ -336,6 +339,13 @@ namespace TestLibraryClient
             {
                 NativeImplClient.PushSizeT(context.NativeHandle);
                 NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onRepaint, Id);
+            }
+
+            public void OnAction(int id, Action action)
+            {
+                NativeImplClient.PushSizeT(action.NativeHandle);
+                NativeImplClient.PushInt(id);
+                NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onAction, Id);
             }
 
             public void Dispose()
@@ -506,6 +516,7 @@ namespace TestLibraryClient
             _windowDelegate_onDestroyed = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onDestroyed");
             _windowDelegate_onResized = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onResized");
             _windowDelegate_onRepaint = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onRepaint");
+            _windowDelegate_onAction = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onAction");
 
             NativeImplClient.SetClientMethodWrapper(_windowDelegate_onDestroyed, delegate(ClientObject obj)
             {
@@ -526,6 +537,14 @@ namespace TestLibraryClient
                 var inst = (ClientWindowDelegate) obj;
                 var context = new CGContext(NativeImplClient.PopSizeT());
                 inst.OnRepaint(context);
+            });
+
+            NativeImplClient.SetClientMethodWrapper(_windowDelegate_onAction, delegate(ClientObject obj)
+            {
+                var inst = (ClientWindowDelegate) obj;
+                var id = NativeImplClient.PopInt();
+                var action = new Action(NativeImplClient.PopSizeT());
+                inst.OnAction(id, action);
             });
             return ModuleInit();
         }

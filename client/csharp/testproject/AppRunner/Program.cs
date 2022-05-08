@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using TestLibraryClient;
 
 namespace AppRunner
@@ -13,10 +14,26 @@ namespace AppRunner
     }
     public class Action
     {
+        public delegate void ActionDelegate();
+        private static readonly Dictionary<int, Action> Lookup = new ();
+        private static int _nextId = 1;
+        //
         internal readonly TestLibrary.Action PrivAction;
-        public Action(int id, string label, Accelerator accel)
+        private readonly ActionDelegate _todo;
+        public Action(string label, Accelerator accel, ActionDelegate todo)
         {
+            var id = _nextId++;
             PrivAction = TestLibrary.CreateAction(id, label, accel.PrivAccel);
+            _todo = todo;
+            Lookup.Add(id, this);
+        }
+        public void Apply()
+        {
+            _todo();
+        }
+        public static Action GetById(int id)
+        {
+            return Lookup[id];
         }
     }
     public class Menu
@@ -163,6 +180,10 @@ namespace AppRunner
             c2.SetRGBFillColor(1, 0, 0, 1);
             c2.FillRect(new CGRect(100, 100, 100, 100));
         }
+        public override void OnAction(int id, TestLibrary.Action action)
+        {
+            Action.GetById(id).Apply();
+        }
         public override void Dispose()
         {
             // hmmm ?
@@ -181,7 +202,11 @@ namespace AppRunner
             
             var fileMenu = new Menu();
             var accel = new Accelerator(TestLibrary.KeyEnum.KeyE);
-            var action = new Action(101, "E&xit", accel);
+            var action = new Action("E&xit", accel, () =>
+            {
+                Console.WriteLine("Exit Action!!!");
+                TestLibrary.ExitRunloop();
+            });
             fileMenu.AddAction(action);
 
             var menuBar = new MenuBar();

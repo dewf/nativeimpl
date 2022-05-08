@@ -51,6 +51,73 @@ namespace AppRunner
             TestLibrary.MenuBarAddMenu(PrivMenuBar, label, menu.PrivMenu);
         }
     }
+    public struct CGPoint
+    {
+        public double X;
+        public double Y;
+        public CGPoint(double x, double y)
+        {
+            X = x;
+            Y = y;
+        }
+        internal TestLibrary.CGPoint ToNative()
+        {
+            return new TestLibrary.CGPoint(X, Y);
+        }
+    }
+    public struct CGSize
+    {
+        public double Width;
+        public double Height;
+        public CGSize(double width, double height)
+        {
+            Width = width;
+            Height = height;
+        }
+        internal TestLibrary.CGSize ToNative()
+        {
+            return new TestLibrary.CGSize(Width, Height);
+        }
+    }
+    public struct CGRect
+    {
+        public CGPoint Origin;
+        public CGSize Size;
+        public CGRect(CGPoint origin, CGSize size)
+        {
+            Origin = origin;
+            Size = size;
+        }
+        public CGRect(double x, double y, double width, double height)
+        {
+            Origin = new CGPoint(x, y);
+            Size = new CGSize(width, height);
+        }
+        public static CGRect OfSize(double width, double height)
+        {
+            return new CGRect(0, 0, width, height);
+        }
+        internal TestLibrary.CGRect ToNative()
+        {
+            return new TestLibrary.CGRect(Origin.ToNative(), Size.ToNative());
+        }
+    }
+    public class CGContext
+    {
+        private readonly TestLibrary.CGContext _dlContext;
+        public CGContext(TestLibrary.CGContext dlContext)
+        {
+            _dlContext = dlContext;
+        }
+        public void SetRGBFillColor(double red, double green, double blue, double alpha)
+        {
+            TestLibrary.CgContextSetRGBFillColor(_dlContext, red, green, blue, alpha);
+        }
+        public void FillRect(CGRect rect)
+        {
+            TestLibrary.CgContextFillRect(_dlContext, rect.ToNative());
+        }
+    }
     public class Window : TestLibrary.ClientWindowDelegate
     {
         private readonly bool _exitOnClose;
@@ -89,17 +156,12 @@ namespace AppRunner
         }
         public override void OnRepaint(TestLibrary.CGContext context)
         {
-            var origin = new TestLibrary.CGPoint(0, 0);
-            var size = new TestLibrary.CGSize(_width, _height);
-            var rect = new TestLibrary.CGRect(origin, size);
-            TestLibrary.CgContextSetRGBFillColor(context, 0, 0, 0, 1);
-            TestLibrary.CgContextFillRect(context, rect);
-            
-            var origin2 = new TestLibrary.CGPoint(100, 100);
-            var size2 = new TestLibrary.CGSize(100, 100);
-            var rect2 = new TestLibrary.CGRect(origin2, size2);
-            TestLibrary.CgContextSetRGBFillColor(context, 1, 0, 0, 1);
-            TestLibrary.CgContextFillRect(context, rect2);
+            var c2 = new CGContext(context);
+            c2.SetRGBFillColor(0, 0, 0, 1);
+            c2.FillRect(CGRect.OfSize(_width, _height));
+
+            c2.SetRGBFillColor(1, 0, 0, 1);
+            c2.FillRect(new CGRect(100, 100, 100, 100));
         }
         public override void Dispose()
         {

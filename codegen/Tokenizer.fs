@@ -40,10 +40,10 @@ let stringToToken (lineNumber: int) = function
     | "module" -> ModuleToken
     | "opaque" -> OpaqueToken
     | "struct" -> StructToken
-    | "array" -> ArrayToken
-    | "map" -> MapToken
-    | "tuple" -> TupleToken
-    | "set" -> SetToken
+    | "Array" -> ArrayToken
+    | "Map" -> MapToken
+    | "Tuple" -> TupleToken
+    | "Set" -> SetToken
     | "exception" -> ExceptionToken
     | "interface" -> InterfaceToken
     | "enum" -> EnumToken

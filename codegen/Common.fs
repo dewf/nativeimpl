@@ -1,5 +1,6 @@
 ﻿module Common
 
+open System.Collections.Generic
 open Parser
 
 let rec typeToInternalKey = function
@@ -36,6 +37,16 @@ type UserOrGeneric =
 let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
     let rec typeAndSubTypes (t: NIType) =
         let arrayOrSetHandling (niType: NIType) =
+            let tupleHandling (tupleOuter: NIType) =
+                match tupleOuter with
+                | TupleType tupleTypes ->
+                    let sub =
+                        tupleTypes
+                        |> List.collect (fun type_ -> typeAndSubTypes (ArrayType type_))
+                    // niType because a tuple is itself generic! (whereas above, with struct, the struct niType itself is NOT included)
+                    tupleOuter :: sub
+                | _ ->
+                    failwith "!!!"
             // special handling for array/set of struct/tuple (anything with fields): we render arrays of each field/subtype
             match niType with
             | StructType name ->
@@ -45,12 +56,16 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                     |> List.collect (fun field -> typeAndSubTypes (ArrayType field.Type_))
                 | _ ->
                     failwith "allGenericTypes/thingWithFieldsSubResults: some issue getting struct def for array of struct"
-            | TupleType tupleTypes ->
-                let sub =
-                    tupleTypes
-                    |> List.collect (fun type_ -> typeAndSubTypes (ArrayType type_))
-                // niType because a tuple is itself generic! (whereas above, with struct, the struct niType itself is NOT included)
-                niType :: sub
+            | TupleType _ ->
+                tupleHandling niType
+            | TypedefType name ->
+                // array of typedefs of tuple need to be flattened, otherwise we won't have the necessary synthetic array types in our lookup tables
+                match userTypeMap[name] with
+                | TypeDef (TupleType _ as tt) ->
+                    tupleHandling tt
+                | _ ->
+                    // any other typedef type, ignore (currently)
+                    []
             | _ ->
                 // any other array type, no special handling
                 typeAndSubTypes niType
@@ -378,7 +393,13 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
         if alreadyRendered.Contains(name) then
             alreadyRendered
         else
-            let content = typeMap[name]
+            let content =
+                try
+                    typeMap[name]
+                with
+                | :? KeyNotFoundException ->
+                    printfn "contents of typemap: %A" typeMap
+                    failwithf "key %s not found" name
             let subRendered =
                 match content with
                 | UserOrGeneric.FwdInterface ->

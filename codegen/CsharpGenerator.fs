@@ -261,6 +261,143 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | _ ->
         write level "// pushValue %A not yet supported" type_
 
+let renderArray (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (outerType: NIType) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    let blank () = write 0 ""
+    let elemType =
+        match outerType with
+        | ArrayType niType -> niType
+        | _ -> failwith "renderArray: used on wrong type"
+    let arrayCommon () =
+        // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
+        // PUSH ========
+        write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+        write 2 "{"
+        write 3 "foreach (var value in values.Reverse())"
+        write 3 "{"
+        pushValue writer 4 elemType "value" (Indirect "isReturn")
+        write 3 "}"
+        write 3 "NativeImplClient.PushSizeT((IntPtr)values.Length);"
+        write 2 "}"
+        // POP =========
+        blank()
+        write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+        write 2 "{"
+        write 3 "var count = (int)NativeImplClient.PopSizeT();"
+        write 3 "var ret = %s;" (newCsArray typeMap elemType "count")
+        write 3 "for (var i = 0; i < count; i++)"
+        write 3 "{"
+        popValue writer 4 elemType (ExistingVar "ret[i]")
+        write 3 "}"
+        write 3 "return ret;"
+        write 2 "}"
+    match elemType with
+    | TypedefType typeDefName ->
+        match typeMap[typeDefName] with
+        | UserOrGeneric.User (TypeDef (TupleType tupleTypes as tt)) ->
+            // new, flattened outer (minus the typedef middleman)
+            let newOuter =
+                ArrayType tt
+            // PUSH ====================
+            write 2 "private static void __%s__Push(%s things, bool isReturn)" (typeToName newOuter) (typeToCsString typeMap newOuter)
+            write 2 "{"
+            write 3 "var count = things.Length;"
+            for i, type_ in tupleTypes |> List.indexed do
+                write 3 "var _%dvalues = new %s[count];" i (typeToCsString typeMap type_)
+            write 3 "for (var i = 0; i < count; i++)"
+            write 3 "{"
+            for i, _ in tupleTypes |> List.indexed do
+                write 4 "_%dvalues[i] = things[i].Item%d;" i (i + 1)
+            write 3 "}"
+            for i, type_ in tupleTypes |> List.indexed |> List.rev do
+                pushValue writer 3 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
+            write 2 "}"
+            // POP =====================
+            blank()
+            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap newOuter) (typeToName newOuter)
+            write 2 "{"
+            for i, type_ in tupleTypes |> List.indexed do
+                popValue writer 3 (ArrayType type_) (NewVariable (sprintf "_%dvalues" i))
+            write 3 "var count = _0values.Length;"
+            write 3 "var ret = new %s[count];" (typeToCsString typeMap tt)
+            write 3 "for (var i = 0; i < count; i++)"
+            write 3 "{"
+            for i, _ in tupleTypes |> List.indexed do
+                write 4 "var _%d = _%dvalues[i];" i i
+            let joinedVars =
+                tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
+            write 4 "ret[i] = (%s);" joinedVars
+            write 3 "}"
+            write 3 "return ret;"
+            write 2 "}"
+        | _ ->
+            failwithf "array of typedef %A: TODO (basic array treatment)" typeDefName
+    | EnumType _ ->
+        // push
+        write 2 "private static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
+        write 2 "{"
+        write 3 "var intValues = items.Select(i => (int)i).ToArray();"
+        write 3 "NativeImplClient.PushIntArray(intValues);"
+        write 2 "}"
+        // pop
+        blank()
+        write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+        write 2 "{"
+        write 3 "var intValues = NativeImplClient.PopIntArray();"
+        write 3 "return intValues.Select(i => (%s)i).ToArray();" (typeToCsString typeMap elemType)
+        write 2 "}"
+    | StructType structName ->
+        // fetch the fields so we can make a struct-of-arrays
+        match typeMap[structName] with
+        | UserOrGeneric.User (StructDef namedFields) ->
+            // push
+            write 2 "private static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "{"
+            write 3 "var count = items.Length;"
+            for i, field in namedFields |> List.indexed do
+                write 3 "var f%dValues = %s;" i (newCsArray typeMap field.Type_ "count")
+            write 3 "for (var i = 0; i < count; i++)"
+            write 3 "{"
+            for i, field in namedFields |> List.indexed do
+                write 4 "f%dValues[i] = items[i].%s;" i (upperFirst field.Name)
+            write 3 "}"
+            // push in reverse order
+            for i, field in namedFields |> List.indexed |> List.rev do
+                pushValue writer 3 (ArrayType field.Type_) (sprintf "f%dValues" i) (Indirect "isReturn")
+            write 2 "}"
+            // pop
+            blank()
+            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "{"
+            for i, field in namedFields |> List.indexed do
+                popValue writer 3 (ArrayType field.Type_) (NewVariable (sprintf "f%dValues" i))
+            write 3 "var count = f0Values.Length;"
+            write 3 "var ret = new %s[count];" (typeToCsString typeMap elemType)
+            write 3 "for (var i = 0; i < count; i++)"
+            write 3 "{"
+            for i, _ in namedFields |> List.indexed do
+                write 4 "var f%d = f%dValues[i];" i i
+            let fieldVarsJoined =
+                namedFields |> List.indexed |> List.map (fun (i, _) -> sprintf "f%d" i) |> String.concat ", "
+            write 4 "ret[i] = new %s(%s);" (typeToCsString typeMap elemType) fieldVarsJoined
+            write 3 "}"
+            write 3 "return ret;"
+            write 2 "}"
+        | _ ->
+            failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+    | ArrayType _ ->
+        // array of array of ...
+        arrayCommon ()
+    | MapType _ ->
+        arrayCommon ()
+    // ignore built-ins below:
+    | Primitive _ ->
+        write 2 "// built-in array type: %s" (typeToCsString typeMap outerType)
+    | _ ->
+        write 2 "// TODO: push/pop for generic %s" (typeToCsString typeMap outerType)
+
 let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
@@ -307,134 +444,8 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                 tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
             write 3 "return (%s);" varsJoined
             write 2 "}"
-        | ArrayType arrayType ->
-            let arrayCommon (name: string) (elementType: NIType) =
-                // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
-                // PUSH ========
-                write 2 "private static void __%sArray__Push(%s[] values, bool isReturn)" (typeToName elementType) (typeToCsString typeMap elementType)
-                write 2 "{"
-                write 3 "foreach (var value in values.Reverse())"
-                write 3 "{"
-                pushValue writer 4 elementType "value" (Indirect "isReturn")
-                write 3 "}"
-                write 3 "NativeImplClient.PushSizeT((IntPtr)values.Length);"
-                write 2 "}"
-                // POP =========
-                blank()
-                write 2 "private static %s[] __%sArray__Pop()" (typeToCsString typeMap elementType) (typeToName elementType)
-                write 2 "{"
-                write 3 "var count = (int)NativeImplClient.PopSizeT();"
-                write 3 "var ret = %s;" (newCsArray typeMap elementType "count")
-                write 3 "for (var i = 0; i < count; i++)"
-                write 3 "{"
-                popValue writer 4 elementType (ExistingVar "ret[i]")
-                write 3 "}"
-                write 3 "return ret;"
-                write 2 "}"
-            match arrayType with
-            | TypedefType typeDefName ->
-                match typeMap[typeDefName] with
-                | UserOrGeneric.User (TypeDef (TupleType tupleTypes)) ->
-                    // array of typedef of tuple -> flatten to array of tuple
-                    let joinedTypes =
-                        tupleTypes |> List.map (typeToCsString typeMap) |> String.concat ", "
-                    // PUSH ====================
-                    write 2 "private static void __%sArray__Push((%s)[] things, bool isReturn)" typeDefName joinedTypes
-                    write 2 "{"
-                    write 3 "var count = things.Length;"
-                    for i, type_ in tupleTypes |> List.indexed do
-                        write 3 "var _%dvalues = new %s[count];" i (typeToCsString typeMap type_)
-                    write 3 "for (var i = 0; i < count; i++)"
-                    write 3 "{"
-                    for i, _ in tupleTypes |> List.indexed do
-                        write 4 "_%dvalues[i] = things[i].Item%d;" i (i + 1)
-                    write 3 "}"
-                    for i, type_ in tupleTypes |> List.indexed |> List.rev do
-                        pushValue writer 3 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
-                    write 2 "}"
-                    // POP =====================
-                    blank()
-                    write 2 "private static (%s)[] __%sArray__Pop()" joinedTypes typeDefName
-                    write 2 "{"
-                    for i, type_ in tupleTypes |> List.indexed do
-                        popValue writer 3 (ArrayType type_) (NewVariable (sprintf "_%dvalues" i))
-                    write 3 "var count = _0values.Length;"
-                    write 3 "var ret = new (%s)[count];" joinedTypes
-                    write 3 "for (var i = 0; i < count; i++)"
-                    write 3 "{"
-                    for i, _ in tupleTypes |> List.indexed do
-                        write 4 "var _%d = _%dvalues[i];" i i
-                    let joinedVars =
-                        tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
-                    write 4 "ret[i] = (%s);" joinedVars
-                    write 3 "}"
-                    write 3 "return ret;"
-                    write 2 "}"
-                | _ ->
-                    failwithf "array of typedef %A: TODO (basic array treatment)" typeDefName
-            | EnumType name ->
-                // push
-                write 2 "private static void %sArray__Push(IEnumerable<%s> items)" (upperFirst name) (upperFirst name)
-                write 2 "{"
-                write 3 "var intValues = items.Select(i => (int)i).ToArray();"
-                write 3 "NativeImplClient.PushIntArray(intValues);"
-                write 2 "}"
-                // pop
-                blank()
-                write 2 "private static %s[] %sArray__Pop()" (upperFirst name) (upperFirst name)
-                write 2 "{"
-                write 3 "var intValues = NativeImplClient.PopIntArray();"
-                write 3 "return intValues.Select(i => (%s)i).ToArray();" (upperFirst name)
-                write 2 "}"
-            | StructType structName ->
-                // fetch the fields so we can make a struct-of-arrays
-                match typeMap[structName] with
-                | UserOrGeneric.User (StructDef namedFields) ->
-                    // push
-                    write 2 "private static void __%sArray__Push(%s[] items, bool isReturn)" (upperFirst structName) (upperFirst structName)
-                    write 2 "{"
-                    write 3 "var count = items.Length;"
-                    for i, field in namedFields |> List.indexed do
-                        write 3 "var f%dValues = %s;" i (newCsArray typeMap field.Type_ "count")
-                    write 3 "for (var i = 0; i < count; i++)"
-                    write 3 "{"
-                    for i, field in namedFields |> List.indexed do
-                        write 4 "f%dValues[i] = items[i].%s;" i (upperFirst field.Name)
-                    write 3 "}"
-                    // push in reverse order
-                    for i, field in namedFields |> List.indexed |> List.rev do
-                        pushValue writer 3 (ArrayType field.Type_) (sprintf "f%dValues" i) (Indirect "isReturn")
-                    write 2 "}"
-                    // pop
-                    blank()
-                    write 2 "private static %s[] __%sArray__Pop()" (upperFirst structName) (upperFirst structName)
-                    write 2 "{"
-                    for i, field in namedFields |> List.indexed do
-                        popValue writer 3 (ArrayType field.Type_) (NewVariable (sprintf "f%dValues" i))
-                    write 3 "var count = f0Values.Length;"
-                    write 3 "var ret = new %s[count];" (upperFirst structName)
-                    write 3 "for (var i = 0; i < count; i++)"
-                    write 3 "{"
-                    for i, _ in namedFields |> List.indexed do
-                        write 4 "var f%d = f%dValues[i];" i i
-                    let fieldVarsJoined =
-                        namedFields |> List.indexed |> List.map (fun (i, _) -> sprintf "f%d" i) |> String.concat ", "
-                    write 4 "ret[i] = new %s(%s);" (upperFirst structName) fieldVarsJoined
-                    write 3 "}"
-                    write 3 "return ret;"
-                    write 2 "}"
-                | _ ->
-                    failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
-            | ArrayType _ ->
-                // array of array of ...
-                arrayCommon (typeToName arrayType) arrayType
-            | MapType _ ->
-                arrayCommon (typeToName arrayType) arrayType
-            // ignore built-ins below:
-            | Primitive _ ->
-                write 2 "// built-in array type: %s" (typeToCsString typeMap gType)
-            | _ ->
-                write 2 "// TODO: push/pop for generic %s" (typeToCsString typeMap gType)
+        | ArrayType elemType ->
+            renderArray writer typeMap gType
         | MapType (keyType, valueType) ->
             // push
             write 2 "static void __%s__Push(Dictionary<%s, %s> map, bool isReturn)" (typeToName gType) (typeToCsString typeMap keyType) (typeToCsString typeMap valueType)

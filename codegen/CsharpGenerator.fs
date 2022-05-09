@@ -403,17 +403,28 @@ let renderSet (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (outerT
         | SetType niType -> niType
         | _ -> failwith "renderSet: used on wrong type"
     let setCommon () =
-        // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
+        // use this for any element types with no particular specializations (typedefs, delegates, arrays -- everything but structs and tuples, basically)
         // PUSH ========
         write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
         write 2 "{"
-        write 3 "// ???"
+        write 3 "foreach (var value in values)"
+        write 3 "{"
+        pushValue writer 4 elemType "value" (Indirect "isReturn")
+        write 3 "}"
+        write 3 "NativeImplClient.PushSizeT((IntPtr)values.Count);"
         write 2 "}"
         // POP =========
         blank()
         write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
         write 2 "{"
-        write 3 "// ???"
+        write 3 "var count = (int)NativeImplClient.PopSizeT();"
+        write 3 "var __ret = new %s();" (typeToCsString typeMap outerType)
+        write 3 "for (var i = 0; i < count; i++)"
+        write 3 "{"
+        popValue writer 4 elemType (NewVariable "item")
+        write 4 "__ret.Add(item);"
+        write 3 "}"
+        write 3 "return __ret;"
         write 2 "}"
     match elemType with
     | TypedefType typeDefName ->

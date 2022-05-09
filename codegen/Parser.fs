@@ -71,6 +71,44 @@ let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([token
     else
         None
 
+type ContentUntilMatchingState = {
+    LastLoc: int
+    NestLevel: int
+    Remaining: TokenAndLocation list
+}
+
+let contentUntilMatching (line: int) (startToken: Token) (input: TokenAndLocation list) =
+    // return content, etc (excluding the end token)
+    let endToken =
+        match startToken with
+        | LeftParen -> RightParen
+        | LeftBracket -> RightBracket
+        | LeftBrace -> RightBrace
+        | _ -> failwith "contentUntilMatching: unknown opening token"
+    // find the first instance of endToken that's not balanced by another startToken
+    let content =
+        {LastLoc = line; NestLevel = 0; Remaining = input}
+        |> List.unfold (fun acc ->
+            match acc.Remaining with
+            | h :: etc ->
+                let nextLastLoc =
+                    h.Location
+                if h.Token = endToken then
+                    if acc.NestLevel = 0 then
+                        None
+                    else
+                        Some(h, { acc with LastLoc = nextLastLoc; NestLevel = acc.NestLevel - 1; Remaining = etc })
+                elif h.Token = startToken then
+                    Some(h, { acc with LastLoc = nextLastLoc; NestLevel = acc.NestLevel + 1; Remaining = etc })
+                else
+                    Some(h, { acc with LastLoc = nextLastLoc; Remaining = etc })
+            | [] ->
+                failwithf "failed to find matching %A at line %d" endToken acc.LastLoc)
+    let _, etc =
+        input
+        |> List.splitAt (content.Length + 1) // skip the closing <whatever>
+    content, etc
+
 let rec parseType (input: TokenAndLocation list) =
     match input with
     | Lookahead 1 ([Identifier name], line, etc) -> // opaque handle, struct, interface
@@ -130,35 +168,24 @@ let rec parseType (input: TokenAndLocation list) =
         | _ ->
             failwithf "expected closing ] at line %d" line
     | Lookahead 2 ([TupleToken; LeftBracket], line, etc) ->
-        let closeIndex =
-            etc |> List.tryFindIndex (fun tl -> tl.Token = RightBracket)
-        match closeIndex with
-        | Some index ->
-            let content, etc =
-                etc |> List.splitAt index
-            let typeList =
-                content
-                |> List.unfold (fun input ->
-                    if input.IsEmpty then
-                        None
-                    else
-                        let t1, etc =
-                            parseType input
-                        match etc with
-                        | [] -> // done
-                            Some (t1, [])
-                        | Lookahead 1 ([Comma], _, etc) -> // keep going
-                            Some (t1, etc)
-                        | _ ->
-                            failwithf "parsing tuple: unexpected input at line %d" line)
-            match etc with
-            | Lookahead 1 ([RightBracket], _, etc) ->
-                TupleType typeList, etc
-            | _ ->
-                // really shouldn't happen because we know the right bracket exists
-                failwithf "was expecting closing bracket ] of tuple at line %d" line
-        | None ->
-            failwithf "failed to find closing bracket of tuple at line %d" line
+        let content, etc =
+            contentUntilMatching line LeftBracket etc
+        let typeList =
+            content
+            |> List.unfold (fun input ->
+                if input.IsEmpty then
+                    None
+                else
+                    let t1, etc =
+                        parseType input
+                    match etc with
+                    | [] -> // done
+                        Some (t1, [])
+                    | Lookahead 1 ([Comma], _, etc) -> // keep going
+                        Some (t1, etc)
+                    | _ ->
+                        failwithf "parsing tuple: unexpected input at line %d" line)
+        TupleType typeList, etc
     | [] ->
         failwithf "parseType called on an empty list!"
     | {Location = line} :: _ ->
@@ -228,19 +255,11 @@ let parseOneField (input: TokenAndLocation list) =
                 failwithf "parseOneField: shouldn't happen"
 
 let parseFields (line: int) (input: TokenAndLocation list) =
-    let closeIndex =
-        input
-        |> List.tryFindIndex (fun tl -> tl.Token = RightBrace)
-    match closeIndex with
-    | Some index ->
-        let content, theRest =
-            input
-            |> List.splitAt index
-        let items =
-            List.unfold parseOneField content
-        items, theRest |> List.skip 1 // don't want the brace!
-    | None ->
-        failwithf "parseFields @ line %d: no closing } found" line
+    let content, etc =
+        contentUntilMatching line LeftBrace input
+    let items =
+        List.unfold parseOneField content
+    items, etc
 
 let parseArg (input: TokenAndLocation list) =
     if input.IsEmpty then
@@ -262,22 +281,11 @@ let parseArg (input: TokenAndLocation list) =
                 failwithf "parseArg ???"
 
 let parseArgsList (line: int) (input: TokenAndLocation list) =
-    // use this just after a left paren
-    let rightParenIndex =
-        input |> List.tryFindIndex (fun tl -> tl.Token = RightParen)
-    match rightParenIndex with
-    | Some index ->
-        let argTokens, etc =
-            input |> List.splitAt index
-        let args =
-            List.unfold parseArg argTokens
-        match etc with
-        | Lookahead 1 ([RightParen], _, etc2) ->
-            args, etc2
-        | _ ->
-            failwithf "parseArgsList: didn't find right paren at line %d ??" line
-    | None ->
-        failwithf "function at line %d missing closing )" line
+    let argTokens, etc =
+        contentUntilMatching line LeftParen input
+    let args =
+        List.unfold parseArg argTokens
+    args, etc
 
 let parseIdentifierList (line: int) (input: TokenAndLocation list) (endToken: Token) =
     let parseOneIdentifier (input': TokenAndLocation list) =
@@ -339,21 +347,11 @@ let parseNamedFunction (input: TokenAndLocation list) =
                 failwithf "parseNamedFunction: shouldn't happen"
 
 let parseFunctionList (line: int) (input: TokenAndLocation list) =
-    let rightBraceIndex =
-        input |> List.tryFindIndex (fun tl -> tl.Token = RightBrace)
-    match rightBraceIndex with
-    | Some index ->
-        let content, etc =
-            input |> List.splitAt index
-        let funcList =
-            List.unfold parseNamedFunction content
-        match etc with
-        | Lookahead 1 ([RightBrace], _, etc2) ->
-            funcList, etc2
-        | _ ->
-            failwithf "parseFunctionList - shouldn't ever see this"
-    | None ->
-        failwithf "error parsing function list at line %d - missing closing }" line
+    let content, etc =
+        contentUntilMatching line LeftBrace input
+    let funcList =
+        List.unfold parseNamedFunction content
+    funcList, etc
 
 let parseOneEnumValue (input: TokenAndLocation list) =
     match input with
@@ -367,21 +365,11 @@ let parseOneEnumValue (input: TokenAndLocation list) =
         None
 
 let parseEnumValues (line: int) (input: TokenAndLocation list) =
-    let rightBraceIndex =
-        input |> List.tryFindIndex (fun tl -> tl.Token = RightBrace)
-    match rightBraceIndex with
-    | Some index ->
-        let content, etc =
-            input |> List.splitAt index
-        let values =
-            List.unfold parseOneEnumValue content
-        match etc with
-        | Lookahead 1 ([RightBrace], _, etc2) ->
-            values, etc2
-        | _ ->
-            failwithf "parseEnumValues ???"
-    | None ->
-        failwithf "enum: failed to find closing brace at line %d" line
+    let content, etc =
+        contentUntilMatching line LeftBrace input
+    let values =
+        List.unfold parseOneEnumValue content
+    values, etc
 
 let parseOneSumTypeValue (input: TokenAndLocation list) =
     match input with
@@ -409,21 +397,11 @@ let parseOneSumTypeValue (input: TokenAndLocation list) =
         None
 
 let parseSumTypeValues (line: int) (input: TokenAndLocation list) =
-    let rightBraceIndex =
-        input |> List.tryFindIndex (fun tl -> tl.Token = RightBrace)
-    match rightBraceIndex with
-    | Some index ->
-        let content, etc =
-            input |> List.splitAt index
-        let values =
-            List.unfold parseOneSumTypeValue content
-        match etc with
-        | Lookahead 1 ([RightBrace], _, etc2) ->
-            values, etc2
-        | _ ->
-            failwithf "parseSumTypeValues ???"
-    | None ->
-        failwithf "sumtype: failed to find closing brace at line %d" line
+    let content, etc =
+        contentUntilMatching line LeftBrace input
+    let values =
+        List.unfold parseOneSumTypeValue content
+    values, etc
 
 let parseModule (input: TokenAndLocation list) =
     let parseNext (remaining: TokenAndLocation list) =

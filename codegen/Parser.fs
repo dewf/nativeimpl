@@ -37,11 +37,13 @@ type NIPrimitive =
 type NIType =
     | UnitType
     | Primitive of prim: NIPrimitive
-    | ArrayType of NIType
+    // maybe these should be Generic of ...
+    | ArrayType of elem: NIType
     | MapType of keyType: NIType * valueType: NIType
     | TupleType of tupleTypes: NIType list
+    | SetType of elem: NIType
     | BufferType of elemType: NIType
-    //
+    // Named of ...
     | Unresolved of name: string * line: int
     // these have to be resolved by checking a table, otherwise unresolved
     | OpaqueHandleType of name: string
@@ -119,6 +121,14 @@ let rec parseType (input: TokenAndLocation list) =
             BufferType elemType, etc
         | _ ->
             failwithf "failed to parse buffer type at line %d" line
+    | Lookahead 2 ([SetToken; LeftBracket], line, etc) ->
+        let elemType, etc =
+            parseType etc
+        match etc with
+        | Lookahead 1 ([RightBracket], _, etc) ->
+            SetType elemType, etc
+        | _ ->
+            failwithf "expected closing ] at line %d" line
     | Lookahead 2 ([TupleToken; LeftBracket], line, etc) ->
         let closeIndex =
             etc |> List.tryFindIndex (fun tl -> tl.Token = RightBracket)
@@ -534,6 +544,10 @@ let rec resolveType (userTypes: Map<string, UserType>) (type_: NIType) =
         ArrayType (resolveType userTypes niType)
     | MapType (keyType, valueType) ->
         MapType (resolveType userTypes keyType, resolveType userTypes valueType)
+    | TupleType tupleTypes ->
+        TupleType (tupleTypes |> List.map (resolveType userTypes))
+    | SetType niType ->
+        SetType (resolveType userTypes niType)
     | Unresolved (name, line) ->
         match userTypes.TryFind(name) with
         | Some value ->

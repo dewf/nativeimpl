@@ -10,6 +10,7 @@ type Token =
     | ArrayToken
     | MapToken
     | TupleToken
+    | SetToken
     | ExceptionToken
     | InterfaceToken
     | EnumToken
@@ -42,6 +43,7 @@ let stringToToken (lineNumber: int) = function
     | "array" -> ArrayToken
     | "map" -> MapToken
     | "tuple" -> TupleToken
+    | "set" -> SetToken
     | "exception" -> ExceptionToken
     | "interface" -> InterfaceToken
     | "enum" -> EnumToken

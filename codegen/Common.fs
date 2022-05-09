@@ -21,6 +21,7 @@ let rec typeToInternalKey = function
     | MapType (keyType, valueType) -> sprintf "map[%s,%s]" (typeToInternalKey keyType) (typeToInternalKey valueType)
     | BufferType niType -> sprintf "buffer[%s]" (typeToInternalKey niType)
     | TupleType niTypes -> sprintf "tuple[%s]" (niTypes |> List.map typeToInternalKey |> String.concat ",")
+    | SetType niType -> sprintf "set[%s]" (typeToInternalKey niType)
     | StructType name -> name
     | TypedefType name -> name
     | EnumType name -> name
@@ -34,9 +35,30 @@ type UserOrGeneric =
     
 let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
     let rec typeAndSubTypes (t: NIType) =
+        let arrayOrSetHandling (niType: NIType) =
+            // special handling for array/set of struct/tuple (anything with fields): we render arrays of each field/subtype
+            match niType with
+            | StructType name ->
+                match userTypeMap[name] with
+                | StructDef namedFields ->
+                    namedFields
+                    |> List.collect (fun field -> typeAndSubTypes (ArrayType field.Type_))
+                | _ ->
+                    failwith "allGenericTypes/thingWithFieldsSubResults: some issue getting struct def for array of struct"
+            | TupleType tupleTypes ->
+                let sub =
+                    tupleTypes
+                    |> List.collect (fun type_ -> typeAndSubTypes (ArrayType type_))
+                // niType because a tuple is itself generic! (whereas above, with struct, the struct niType itself is NOT included)
+                niType :: sub
+            | _ ->
+                // any other array type, no special handling
+                typeAndSubTypes niType
+        // ========================================================================
         match t with
         | MapType(keyType, valueType) ->
             // implies arrays of key/value, necessary for push/pop of maps
+            // wouldn't just the arrays (ks/vs) be sufficient?
             let k = typeAndSubTypes keyType
             let v = typeAndSubTypes valueType
             let ks = typeAndSubTypes (ArrayType keyType)
@@ -44,30 +66,17 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
             t :: k @ v @ ks @ vs
         | ArrayType niType ->
             let subResults =
-                // special handling for array-of-struct and array-of-tuple: we render arrays of each field/subtype
-                match niType with
-                | StructType name ->
-                    match userTypeMap[name] with
-                    | StructDef namedFields ->
-                        namedFields
-                        |> List.collect (fun field -> typeAndSubTypes (ArrayType field.Type_))
-                    | _ ->
-                        failwith "allGenericTypes: some issue getting struct def for array of struct"
-                | TupleType tupleTypes ->
-                    let sub =
-                        tupleTypes
-                        |> List.collect (fun type_ -> typeAndSubTypes (ArrayType type_))
-                    // niType because a tuple is itself generic! (whereas above, with struct, the struct niType itself is NOT included)
-                    niType :: sub
-                | _ ->
-                    // any other array type, no special handling
-                    typeAndSubTypes niType
+                arrayOrSetHandling niType
             t :: subResults
         | BufferType _ ->
             [t] // buffers only support primitive elements, no subresults
         | TupleType niTypes ->
             let subResults =
                 niTypes |> List.collect typeAndSubTypes
+            t :: subResults
+        | SetType niType ->
+            let subResults =
+                arrayOrSetHandling niType
             t :: subResults
         | _ -> []
     module_.Defs
@@ -172,6 +181,9 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
         | TupleType _ ->
             let name = (typeToInternalKey type_)
             processDeps name acc
+        | SetType _ ->
+            let name = (typeToInternalKey type_)
+            processDeps name acc
         | BufferType _ ->
             // buffers only contain primitives (so no processDeps), but are themselves reference types (that require clearing remote safety area when returned)
             let name = (typeToInternalKey type_)
@@ -208,6 +220,8 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                             subValues
                             |> List.exists id
                         result, nextAcc
+                    | SetType niType ->
+                        processType niType acc
                     | BufferType _ ->
                         // always
                         true, acc
@@ -352,6 +366,9 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
         | TupleType _ ->
             let name = (typeToInternalKey type_)
             renderDeps name alreadyRendered
+        | SetType _ ->
+            let name = (typeToInternalKey type_)
+            renderDeps name alreadyRendered
         | BufferType _ ->
             let name = (typeToInternalKey type_)
             renderDeps name alreadyRendered
@@ -367,8 +384,8 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                 | UserOrGeneric.FwdInterface ->
                     failwith "renderUserTypes: shouldn't see this"
                 | UserOrGeneric.Generic gType ->
-                    match gType with
-                    | ArrayType niType ->
+                    // common stuff for array/set
+                    let arrayOrSetHandling (niType: NIType) (alreadyRendered: Set<string>) =
                         // process each struct field as an array as well, since that's how we push/pop them
                         match niType with
                         | StructType structName ->
@@ -397,6 +414,10 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                             alreadyRendered
                         // and the type itself, of course ...
                         |> renderType niType
+                    // begin generic type switch ===================================================================
+                    match gType with
+                    | ArrayType niType ->
+                        arrayOrSetHandling niType alreadyRendered
                     | MapType (keyType, valueType) ->
                         // maps are pushed/popped as keys+values arrays
                         alreadyRendered
@@ -405,6 +426,8 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                     | TupleType tupleTypes ->
                         (alreadyRendered, tupleTypes)
                         ||> List.fold (fun already2 type_ -> renderType type_ already2)
+                    | SetType niType ->
+                        arrayOrSetHandling niType alreadyRendered
                     | BufferType elemType ->
                         // could probably omit this since it's always a primitive type ...
                         alreadyRendered

@@ -39,6 +39,7 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
     | ExceptionType name -> upperFirst name
     | DelegateType name -> upperFirst name
     | ArrayType niType -> sprintf "%s[]" (typeToCsString typeMap niType)
+    | SetType niType -> sprintf "HashSet<%s>" (typeToCsString typeMap niType)
     | BufferType elemType -> sprintf "INativeBuffer<%s>" (typeToCsString typeMap elemType)
     | TupleType tupleTypes ->
         let joined =
@@ -86,6 +87,8 @@ let rec typeToName = function
         sprintf "%sTuple" joined
     | ArrayType niType ->
         sprintf "%sArray" (typeToName niType)
+    | SetType niType ->
+        sprintf "%sSet" (typeToName niType)
     | MapType (keyType, valueType) ->
         sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
     | BufferType elemType ->
@@ -131,20 +134,13 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | _ -> failwith "tried to pop a Unit value in a non-Return context, why?"
     | Primitive prim ->
         match prim with
-        | SizeT ->
-            write level "%s NativeImplClient.PopSizeT();" contextPrefix
-        | Bool ->
-            write level "%s NativeImplClient.PopBool();" contextPrefix
-        | Int32 ->
-            write level "%s NativeImplClient.PopInt();" contextPrefix
-        | Float32 ->
-            write level "%s NativeImplClient.PopFloat();" contextPrefix
-        | Float64 ->
-            write level "%s NativeImplClient.PopDouble();" contextPrefix
-        | StringType ->
-            write level "%s NativeImplClient.PopString();" contextPrefix
-        | _ ->
-            write level "// popValue prim %A not yet supported" prim
+        | SizeT -> write level "%s NativeImplClient.PopSizeT();" contextPrefix
+        | Bool -> write level "%s NativeImplClient.PopBool();" contextPrefix
+        | Int32 -> write level "%s NativeImplClient.PopInt();" contextPrefix
+        | Float32 -> write level "%s NativeImplClient.PopFloat();" contextPrefix
+        | Float64 -> write level "%s NativeImplClient.PopDouble();" contextPrefix
+        | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
+        | _ -> write level "// popValue prim %A not yet supported" prim
     | OpaqueHandleType name ->
         write level "%s new %s(NativeImplClient.PopSizeT());" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
@@ -163,7 +159,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             | _ -> write level "// popValue not yet supported: array of prim %A" prim
         | EnumType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
         | StructType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
-        | ArrayType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType))
+        | ArrayType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType)) // sigh, normalize all these already - doing it so many different ways...
+        | SetType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType))
         | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
         | _ -> write level "// popValue not yet supported: array of %A" niType
     | MapType _ ->
@@ -171,6 +168,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     | StructType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | TupleType _ ->
+        write level "%s __%s__Pop();" contextPrefix (typeToName type_)
+    | SetType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | BufferType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
@@ -208,20 +207,13 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "%s;" content // content directly (method invocation etc)
     | Primitive prim ->
         match prim with
-        | SizeT ->
-            write level "NativeImplClient.PushSizeT(%s);" content
-        | Bool ->
-            write level "NativeImplClient.PushBool(%s);" content
-        | Int32 ->
-            write level "NativeImplClient.PushInt(%s);" content
-        | Float32 ->
-            write level "NativeImplClient.PushFloat(%s);" content
-        | Float64 ->
-            write level "NativeImplClient.PushDouble(%s);" content
-        | StringType ->
-            write level "NativeImplClient.PushString(%s);" content
-        | _ ->
-            write level "// pushValue prim %A not yet supported" prim
+        | SizeT -> write level "NativeImplClient.PushSizeT(%s);" content
+        | Bool -> write level "NativeImplClient.PushBool(%s);" content
+        | Int32 -> write level "NativeImplClient.PushInt(%s);" content
+        | Float32 -> write level "NativeImplClient.PushFloat(%s);" content
+        | Float64 -> write level "NativeImplClient.PushDouble(%s);" content
+        | StringType -> write level "NativeImplClient.PushString(%s);" content
+        | _ -> write level "// pushValue prim %A not yet supported" prim
     | OpaqueHandleType _ ->
         write level "NativeImplClient.PushSizeT(%s.NativeHandle);" content
     | InterfaceType _ ->
@@ -242,6 +234,7 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | StructType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
         | TypedefType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
         | ArrayType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
+        | SetType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
     | EnumType name ->
@@ -251,6 +244,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | StructType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | TupleType _ ->
+        write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
+    | SetType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | BufferType _ ->
         write level "((IPushable)%s).Push(%s);" content (isReturnString())
@@ -398,6 +393,99 @@ let renderArray (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (oute
     | _ ->
         write 2 "// TODO: push/pop for generic %s" (typeToCsString typeMap outerType)
 
+let renderSet (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (outerType: NIType) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    let blank () = write 0 ""
+    let elemType =
+        match outerType with
+        | SetType niType -> niType
+        | _ -> failwith "renderSet: used on wrong type"
+    let setCommon () =
+        // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
+        // PUSH ========
+        write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+        write 2 "{"
+        write 3 "// ???"
+        write 2 "}"
+        // POP =========
+        blank()
+        write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+        write 2 "{"
+        write 3 "// ???"
+        write 2 "}"
+    match elemType with
+    | TypedefType typeDefName ->
+        match typeMap[typeDefName] with
+        | UserOrGeneric.User (TypeDef (TupleType tupleTypes as tt)) ->
+            // new, flattened outer (minus the typedef middleman)
+            let newOuter =
+                ArrayType tt
+            // PUSH ====================
+            write 2 "private static void __%s__Push(%s things, bool isReturn)" (typeToName newOuter) (typeToCsString typeMap newOuter)
+            write 2 "{"
+            write 3 "// ???"
+            write 2 "}"
+            // POP =====================
+            blank()
+            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap newOuter) (typeToName newOuter)
+            write 2 "{"
+            write 3 "// ???"
+            write 2 "}"
+        | _ ->
+            failwithf "array of typedef %A: TODO (basic array treatment)" typeDefName
+    | EnumType _ ->
+        // push
+        write 2 "private static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+        write 2 "{"
+        pushValue writer 3 (ArrayType (Primitive Int32)) "items.Select(x => (int)x).ToArray()" (Indirect "isReturn")
+        write 2 "}"
+        // pop
+        blank()
+        write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+        write 2 "{"
+        popValue writer 3 (ArrayType (Primitive Int32)) (NewVariable "intArray")
+        write 3 "return intArray.Select(x => (Item)x).ToHashSet();"
+        write 2 "}"
+    | StructType structName ->
+        // fetch the fields so we can make a struct-of-arrays
+        match typeMap[structName] with
+        | UserOrGeneric.User (StructDef namedFields) ->
+            // PUSH ===================
+            write 2 "private static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "{"
+            write 3 "// ???"
+            write 2 "}"
+            // POP ====================
+            blank()
+            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "{"
+            write 3 "// ???"
+            write 2 "}"
+        | _ ->
+            failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+    | ArrayType _ ->
+        // array of array of ...
+        setCommon ()
+    | MapType _ ->
+        setCommon ()
+    | Primitive _ ->
+        // PUSH ==================
+        write 2 "private static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+        write 2 "{"
+        pushValue writer 3 (ArrayType elemType) "items.ToArray()" (Indirect "isReturn")
+        write 2 "}"
+        // POP ===================
+        blank()
+        write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+        write 2 "{"
+        popValue writer 3 (ArrayType elemType) (NewVariable "items")
+        write 3 "return items.ToHashSet();"
+        write 2 "}"
+    | _ ->
+        write 2 "// renderSet TODO: push/pop for %A" (typeToCsString typeMap outerType)
+
 let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
@@ -444,8 +532,10 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                 tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
             write 3 "return (%s);" varsJoined
             write 2 "}"
-        | ArrayType elemType ->
+        | ArrayType _ ->
             renderArray writer typeMap gType
+        | SetType _ ->
+            renderSet writer typeMap gType
         | MapType (keyType, valueType) ->
             // push
             write 2 "static void __%s__Push(Dictionary<%s, %s> map, bool isReturn)" (typeToName gType) (typeToCsString typeMap keyType) (typeToCsString typeMap valueType)
@@ -480,19 +570,6 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 4 "NativeHandle = nativeHandle;"
             write 3 "}"
             write 2 "}"
-//            // push
-//            blank()
-//            write 2 "private static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
-//            write 2 "{"
-//            pushValue writer 3 (Primitive SizeT) "value.NativeHandle" NotApplicable
-//            write 2 "}"
-//            // pop
-//            blank()
-//            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
-//            write 2 "{"
-//            popValue writer 3 (Primitive SizeT) (NewVariable "nativeHandle")
-//            write 3 "return new %s(nativeHandle);" (upperFirst name)
-//            write 2 "}"
         | StructDef namedFields ->
             write 2 "public struct %s {" name
             for field in namedFields do

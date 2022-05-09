@@ -603,13 +603,28 @@ let renderWrapperArrayOrSet (writer: TextWriter) (typeMap: Map<string, UserOrGen
         write 1 "}"
         write 1 "return __ret;"
         write 0 "}"
-    | SumType name ->
+    | SumType _ ->
         arrayCommon ()
     | MapType _ ->
         arrayCommon ()
-    // ignore built-ins below:
     | Primitive _ ->
-        write 0 "// built-in array type: %s" (typeToCppString outerType)
+        // primitve arrays are built in, but not sets!
+        match outerType with
+        | ArrayType _ ->
+            write 0 "// built-in array type: %s" (typeToCppString outerType)
+        | SetType niType ->
+            // push ==============
+            write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+            write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString (ArrayType niType))
+            pushValue writer 1 (ArrayType niType) "itemsArr" (Indirect "isReturn")
+            write 0 "}"
+            // pop ===============
+            blank()
+            write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+            popValue writer 1 (ArrayType niType) (Variable "itemsArr")
+            write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString outerType)
+            write 0 "}"
+        | _ -> failwith "!!!"
     | _ ->
         write 0 "// TODO: renderWrapperArray for generic %A" outerType
 

@@ -263,6 +263,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
             write level "__%s%sMapArray__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
         | TupleType _ ->
             write level "__%sArray__push(%s, %s);" (typeToName niType) content (isReturnString())
+        | SetType _ ->
+            write level "__%sArray__push(%s, %s);" (typeToName niType) content (isReturnString())
         | StructType name ->
             write level "__%sArray__push(%s, %s);" name content (isReturnString())
         | DelegateType name ->
@@ -574,6 +576,8 @@ let renderWrapperArrayOrSet (writer: TextWriter) (typeMap: Map<string, UserOrGen
         arrayCommon ()
     | ArrayType _ ->
         arrayCommon ()
+    | SetType _ ->
+        arrayCommon ()
     | EnumType name ->
         // PUSH ================
         write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
@@ -607,7 +611,7 @@ let renderWrapperArrayOrSet (writer: TextWriter) (typeMap: Map<string, UserOrGen
     | Primitive _ ->
         write 0 "// built-in array type: %s" (typeToCppString outerType)
     | _ ->
-        write 0 "// TODO: renderWrapperArray for generic %s" (typeToCppString outerType)
+        write 0 "// TODO: renderWrapperArray for generic %A" outerType
 
 let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,bool>) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =

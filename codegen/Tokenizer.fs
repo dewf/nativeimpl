@@ -29,8 +29,8 @@ type Token =
     | RightBrace
     | LeftParen
     | RightParen
-    | LeftBracket
-    | RightBracket
+    | LeftAngleBracket
+    | RightAngleBracket
     | StatementEnd
     | Comma
     | ThrowsToken
@@ -63,8 +63,8 @@ let stringToToken (lineNumber: int) = function
     | "}" -> RightBrace
     | "(" -> LeftParen
     | ")" -> RightParen
-    | "[" -> LeftBracket
-    | "]" -> RightBracket
+    | "<" -> LeftAngleBracket
+    | ">" -> RightAngleBracket
     | ";" -> StatementEnd
     | "," -> Comma
     | "throws" -> ThrowsToken
@@ -82,7 +82,7 @@ let tokenize (lines: (int * string) list) =
     |> List.map (fun (i, line) ->
         let noComments = Regex(@"//.*").Replace(line, "")
         let spacesCollapsed = Regex(@"\s+").Replace(noComments, " ")
-        let spaceAdded = Regex(@"[,\(\)\[\];{}]").Replace(spacesCollapsed, MatchEvaluator(fun m -> sprintf " %s " m.Value))
+        let spaceAdded = Regex(@"[,\(\)\[\];{}<>]").Replace(spacesCollapsed, MatchEvaluator(fun m -> sprintf " %s " m.Value))
         let items = spaceAdded.Split(' ')
         let nonEmpty =
             items

@@ -16,7 +16,7 @@ opaque Window {
 Window createWindow(string title, WindowDelegate del);
 
 opaque Accelerator;
-Accelerator createAccelerator(Key key, Set[Modifier] modifiers);
+Accelerator createAccelerator(Key key, Set<Modifier> modifiers);
 
 opaque Action;
 Action createAction(int id, string label, Accelerator acc); // special nullable/optional syntax?

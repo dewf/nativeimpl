@@ -82,7 +82,7 @@ let contentUntilMatching (line: int) (startToken: Token) (input: TokenAndLocatio
     let endToken =
         match startToken with
         | LeftParen -> RightParen
-        | LeftBracket -> RightBracket
+        | LeftAngleBracket -> RightAngleBracket
         | LeftBrace -> RightBrace
         | _ -> failwith "contentUntilMatching: unknown opening token"
     // find the first instance of endToken that's not balanced by another startToken
@@ -127,15 +127,15 @@ let rec parseType (input: TokenAndLocation list) =
         Primitive Float64, etc
     | Lookahead 1 ([StringToken], _, etc) ->
         Primitive StringType, etc
-    | Lookahead 2 ([ArrayToken; LeftBracket], line, etc1) ->
+    | Lookahead 2 ([ArrayToken; LeftAngleBracket], line, etc1) ->
         let arrayType, etc2 =
             parseType etc1
         match etc2 with
-        | Lookahead 1 ([RightBracket], _, etc3) ->
+        | Lookahead 1 ([RightAngleBracket], _, etc3) ->
             ArrayType arrayType, etc3
         | _ ->
             failwithf "failed to parse array type at line %d" line
-    | Lookahead 2 ([MapToken; LeftBracket], line, etc1) ->
+    | Lookahead 2 ([MapToken; LeftAngleBracket], line, etc1) ->
         let keyType, etc2 =
             parseType etc1
         match etc2 with
@@ -143,33 +143,33 @@ let rec parseType (input: TokenAndLocation list) =
             let valueType, etc4 =
                 parseType etc3
             match etc4 with
-            | Lookahead 1 ([RightBracket], _, etc5) ->
+            | Lookahead 1 ([RightAngleBracket], _, etc5) ->
                 MapType (keyType, valueType), etc5
             | _ ->
                 failwithf "missing ] for array type at line %d" line
         | _ ->
             failwithf "missing comma for array type at line %d" line
-    | Lookahead 2 ([BufferToken; LeftBracket], line, etc) ->
+    | Lookahead 2 ([BufferToken; LeftAngleBracket], line, etc) ->
         let elemType, etc =
             parseType etc
         if not (validBufferElementType elemType) then
             failwithf "incorrect buffer element type [%A] at line %d (must be primitive type)" elemType line
         match etc with
-        | Lookahead 1 ([RightBracket], _, etc) ->
+        | Lookahead 1 ([RightAngleBracket], _, etc) ->
             BufferType elemType, etc
         | _ ->
             failwithf "failed to parse buffer type at line %d" line
-    | Lookahead 2 ([SetToken; LeftBracket], line, etc) ->
+    | Lookahead 2 ([SetToken; LeftAngleBracket], line, etc) ->
         let elemType, etc =
             parseType etc
         match etc with
-        | Lookahead 1 ([RightBracket], _, etc) ->
+        | Lookahead 1 ([RightAngleBracket], _, etc) ->
             SetType elemType, etc
         | _ ->
             failwithf "expected closing ] at line %d" line
-    | Lookahead 2 ([TupleToken; LeftBracket], line, etc) ->
+    | Lookahead 2 ([TupleToken; LeftAngleBracket], line, etc) ->
         let content, etc =
-            contentUntilMatching line LeftBracket etc
+            contentUntilMatching line LeftAngleBracket etc
         let typeList =
             content
             |> List.unfold (fun input ->

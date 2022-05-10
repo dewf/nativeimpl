@@ -474,7 +474,7 @@ let renderSet (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (outerT
         write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
         write 2 "{"
         popValue writer 3 (ArrayType (Primitive Int32)) (NewVariable "intArray")
-        write 3 "return intArray.Select(x => (Item)x).ToHashSet();"
+        write 3 "return intArray.Select(x => (%s)x).ToHashSet();" (typeToName elemType)
         write 2 "}"
     | StructType structName ->
         // fetch the fields so we can make a struct-of-arrays

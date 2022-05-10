@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <tuple>
+#include <set>
 
 struct __Accelerator; typedef struct __Accelerator* Accelerator;
 
@@ -27,119 +28,126 @@ struct CGRect {
     CGSize size;
 };
 
-enum class KeyEnum {
-    KeyUnknown,
-    KeyEscape,
-    KeyTab,
-    KeyBackspace,
-    KeyReturn,
-    KeySpace,
-    KeyF1,
-    KeyF2,
-    KeyF3,
-    KeyF4,
-    KeyF5,
-    KeyF6,
-    KeyF7,
-    KeyF8,
-    KeyF9,
-    KeyF10,
-    KeyF11,
-    KeyF12,
-    KeyF13,
-    KeyF14,
-    KeyF15,
-    KeyF16,
-    KeyF17,
-    KeyF18,
-    KeyF19,
-    Key0,
-    Key1,
-    Key2,
-    Key3,
-    Key4,
-    Key5,
-    Key6,
-    Key7,
-    Key8,
-    Key9,
-    KeyA,
-    KeyB,
-    KeyC,
-    KeyD,
-    KeyE,
-    KeyF,
-    KeyG,
-    KeyH,
-    KeyI,
-    KeyJ,
-    KeyK,
-    KeyL,
-    KeyM,
-    KeyN,
-    KeyO,
-    KeyP,
-    KeyQ,
-    KeyR,
-    KeyS,
-    KeyT,
-    KeyU,
-    KeyV,
-    KeyW,
-    KeyX,
-    KeyY,
-    KeyZ,
-    KeyControl,
-    KeyShift,
-    KeyAltOption,
-    KeyWinCommand,
-    KeyFn,
-    KeyInsert,
-    KeyDelete,
-    KeyPageUp,
-    KeyPageDown,
-    KeyHome,
-    KeyEnd,
-    KeyLeftArrow,
-    KeyUpArrow,
-    KeyRightArrow,
-    KeyDownArrow,
-    KeyKP0,
-    KeyKP1,
-    KeyKP2,
-    KeyKP3,
-    KeyKP4,
-    KeyKP5,
-    KeyKP6,
-    KeyKP7,
-    KeyKP8,
-    KeyKP9,
-    KeyKPClear,
-    KeyKPEquals,
-    KeyKPDivide,
-    KeyKPMultiply,
-    KeyKPSubtract,
-    KeyKPAdd,
-    KeyKPEnter,
-    KeyKPDecimal,
-    KeyCapsLock,
-    KeyNumLock,
-    KeyScrollLock,
-    KeyPrintScreen,
-    KeyPause,
-    KeyCancel,
-    KeyMediaMute,
-    KeyMediaVolumeDown,
-    KeyMediaVolumeUp,
-    KeyMediaNext,
-    KeyMediaPrev,
-    KeyMediaStop,
-    KeyMediaPlayPause
+enum class Key {
+    Unknown,
+    Escape,
+    Tab,
+    Backspace,
+    Return,
+    Space,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    F13,
+    F14,
+    F15,
+    F16,
+    F17,
+    F18,
+    F19,
+    _0,
+    _1,
+    _2,
+    _3,
+    _4,
+    _5,
+    _6,
+    _7,
+    _8,
+    _9,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Control,
+    Shift,
+    AltOption,
+    WinCommand,
+    Fn,
+    Insert,
+    Delete,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    LeftArrow,
+    UpArrow,
+    RightArrow,
+    DownArrow,
+    KP0,
+    KP1,
+    KP2,
+    KP3,
+    KP4,
+    KP5,
+    KP6,
+    KP7,
+    KP8,
+    KP9,
+    KPClear,
+    KPEquals,
+    KPDivide,
+    KPMultiply,
+    KPSubtract,
+    KPAdd,
+    KPEnter,
+    KPDecimal,
+    CapsLock,
+    NumLock,
+    ScrollLock,
+    PrintScreen,
+    Pause,
+    Cancel,
+    MediaMute,
+    MediaVolumeDown,
+    MediaVolumeUp,
+    MediaNext,
+    MediaPrev,
+    MediaStop,
+    MediaPlayPause
 };
 
 struct __Menu; typedef struct __Menu* Menu;
 
 struct __MenuBar; typedef struct __MenuBar* MenuBar;
+
+enum class Modifier {
+    Shift,
+    Control,
+    Alt,
+    MacControl
+};
 
 struct __Window; typedef struct __Window* Window;
 
@@ -161,21 +169,23 @@ public:
     }
 };
 
+// std::set<Modifier>
+
+void windowShow(Window _this);
+void windowSetMenuBar(Window _this, MenuBar mb);
+void windowInvalidate(Window _this, int x, int y, int width, int height);
+void windowDestroy(Window _this);
 Window createWindow(std::string title, std::shared_ptr<WindowDelegate> del);
-void windowShow(Window w);
-void windowSetMenuBar(Window w, MenuBar mb);
-void windowInvalidate(Window w, int x, int y, int width, int height);
-void windowDestroy(Window w);
-Accelerator createAccelerator(KeyEnum key);
+Accelerator createAccelerator(Key key, std::set<Modifier> modifiers);
 Action createAction(int id, std::string label, Accelerator acc);
+void menuAddAction(Menu _this, Action action);
+void menuAddSubmenu(Menu _this, std::string label, Menu sub);
+void menuAddSeparator(Menu _this);
 Menu createMenu();
-void menuAddAction(Menu menu, Action action);
-void menuAddSubmenu(Menu menu, std::string label, Menu sub);
-void menuAddSeparator(Menu menu);
+void menuBarAddMenu(MenuBar _this, std::string label, Menu menu);
 MenuBar createMenuBar();
-void menuBarAddMenu(MenuBar mb, std::string label, Menu menu);
-void cgContextSetRGBFillColor(CGContext c, double red, double green, double blue, double alpha);
-void cgContextFillRect(CGContext c, CGRect rect);
+void cGContextSetRGBFillColor(CGContext _this, double red, double green, double blue, double alpha);
+void cGContextFillRect(CGContext _this, CGRect rect);
 int runloop();
 void exitRunloop();
 int moduleInit();

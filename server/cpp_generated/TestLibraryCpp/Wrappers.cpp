@@ -42,16 +42,25 @@ CGRect CGRect__pop() {
     return CGRect { origin, size };
 }
 
-inline void KeyEnum__push(KeyEnum value) {
+inline void Key__push(Key value) {
     ni_pushInt((int)value);
 }
 
-inline KeyEnum KeyEnum__pop() {
+inline Key Key__pop() {
     auto tag = ni_popInt();
-    return (KeyEnum)tag;
+    return (Key)tag;
 }
 
 
+
+inline void Modifier__push(Modifier value) {
+    ni_pushInt((int)value);
+}
+
+inline Modifier Modifier__pop() {
+    auto tag = ni_popInt();
+    return (Modifier)tag;
+}
 
 
 class ClientWindowDelegate : public ClientObject, public WindowDelegate {
@@ -93,40 +102,58 @@ std::shared_ptr<WindowDelegate> WindowDelegate__pop()
     }
 }
 
+void __ModifierSet__push(std::set<Modifier> values, bool isReturn) {
+    std::vector<int> intValues;
+    for (auto i = values.begin(); i != values.end(); i++) {
+        intValues.push_back((int)*i);
+    }
+    pushIntArrayInternal(intValues);
+}
+
+std::set<Modifier> __ModifierSet__pop() {
+    auto intValues = popIntArrayInternal();
+    std::set<Modifier> __ret;
+    for (auto i = intValues.begin(); i != intValues.end(); i++) {
+        __ret.insert((Modifier)*i);
+    }
+    return __ret;
+}
+
+void windowShow__wrapper() {
+    auto _this = (Window)ni_popSizeT();
+    windowShow(_this);
+}
+
+void windowSetMenuBar__wrapper() {
+    auto _this = (Window)ni_popSizeT();
+    auto mb = (MenuBar)ni_popSizeT();
+    windowSetMenuBar(_this, mb);
+}
+
+void windowInvalidate__wrapper() {
+    auto _this = (Window)ni_popSizeT();
+    auto x = ni_popInt();
+    auto y = ni_popInt();
+    auto width = ni_popInt();
+    auto height = ni_popInt();
+    windowInvalidate(_this, x, y, width, height);
+}
+
+void windowDestroy__wrapper() {
+    auto _this = (Window)ni_popSizeT();
+    windowDestroy(_this);
+}
+
 void createWindow__wrapper() {
     auto title = popStringInternal();
     auto del = WindowDelegate__pop();
     ni_pushSizeT((size_t)createWindow(title, del));
 }
 
-void windowShow__wrapper() {
-    auto w = (Window)ni_popSizeT();
-    windowShow(w);
-}
-
-void windowSetMenuBar__wrapper() {
-    auto w = (Window)ni_popSizeT();
-    auto mb = (MenuBar)ni_popSizeT();
-    windowSetMenuBar(w, mb);
-}
-
-void windowInvalidate__wrapper() {
-    auto w = (Window)ni_popSizeT();
-    auto x = ni_popInt();
-    auto y = ni_popInt();
-    auto width = ni_popInt();
-    auto height = ni_popInt();
-    windowInvalidate(w, x, y, width, height);
-}
-
-void windowDestroy__wrapper() {
-    auto w = (Window)ni_popSizeT();
-    windowDestroy(w);
-}
-
 void createAccelerator__wrapper() {
-    auto key = KeyEnum__pop();
-    ni_pushSizeT((size_t)createAccelerator(key));
+    auto key = Key__pop();
+    auto modifiers = __ModifierSet__pop();
+    ni_pushSizeT((size_t)createAccelerator(key, modifiers));
 }
 
 void createAction__wrapper() {
@@ -136,52 +163,52 @@ void createAction__wrapper() {
     ni_pushSizeT((size_t)createAction(id, label, acc));
 }
 
+void menuAddAction__wrapper() {
+    auto _this = (Menu)ni_popSizeT();
+    auto action = (Action)ni_popSizeT();
+    menuAddAction(_this, action);
+}
+
+void menuAddSubmenu__wrapper() {
+    auto _this = (Menu)ni_popSizeT();
+    auto label = popStringInternal();
+    auto sub = (Menu)ni_popSizeT();
+    menuAddSubmenu(_this, label, sub);
+}
+
+void menuAddSeparator__wrapper() {
+    auto _this = (Menu)ni_popSizeT();
+    menuAddSeparator(_this);
+}
+
 void createMenu__wrapper() {
     ni_pushSizeT((size_t)createMenu());
 }
 
-void menuAddAction__wrapper() {
-    auto menu = (Menu)ni_popSizeT();
-    auto action = (Action)ni_popSizeT();
-    menuAddAction(menu, action);
-}
-
-void menuAddSubmenu__wrapper() {
-    auto menu = (Menu)ni_popSizeT();
+void menuBarAddMenu__wrapper() {
+    auto _this = (MenuBar)ni_popSizeT();
     auto label = popStringInternal();
-    auto sub = (Menu)ni_popSizeT();
-    menuAddSubmenu(menu, label, sub);
-}
-
-void menuAddSeparator__wrapper() {
     auto menu = (Menu)ni_popSizeT();
-    menuAddSeparator(menu);
+    menuBarAddMenu(_this, label, menu);
 }
 
 void createMenuBar__wrapper() {
     ni_pushSizeT((size_t)createMenuBar());
 }
 
-void menuBarAddMenu__wrapper() {
-    auto mb = (MenuBar)ni_popSizeT();
-    auto label = popStringInternal();
-    auto menu = (Menu)ni_popSizeT();
-    menuBarAddMenu(mb, label, menu);
-}
-
-void cgContextSetRGBFillColor__wrapper() {
-    auto c = (CGContext)ni_popSizeT();
+void cGContextSetRGBFillColor__wrapper() {
+    auto _this = (CGContext)ni_popSizeT();
     auto red = ni_popDouble();
     auto green = ni_popDouble();
     auto blue = ni_popDouble();
     auto alpha = ni_popDouble();
-    cgContextSetRGBFillColor(c, red, green, blue, alpha);
+    cGContextSetRGBFillColor(_this, red, green, blue, alpha);
 }
 
-void cgContextFillRect__wrapper() {
-    auto c = (CGContext)ni_popSizeT();
+void cGContextFillRect__wrapper() {
+    auto _this = (CGContext)ni_popSizeT();
     auto rect = CGRect__pop();
-    cgContextFillRect(c, rect);
+    cGContextFillRect(_this, rect);
 }
 
 void runloop__wrapper() {
@@ -227,21 +254,21 @@ void WindowDelegate_onAction__wrapper(int serverID) {
 
 extern "C" int nativeLibraryInit() {
     auto m = ni_registerModule("TestLibrary");
-    ni_registerModuleMethod(m, "createWindow", &createWindow__wrapper);
     ni_registerModuleMethod(m, "windowShow", &windowShow__wrapper);
     ni_registerModuleMethod(m, "windowSetMenuBar", &windowSetMenuBar__wrapper);
     ni_registerModuleMethod(m, "windowInvalidate", &windowInvalidate__wrapper);
     ni_registerModuleMethod(m, "windowDestroy", &windowDestroy__wrapper);
+    ni_registerModuleMethod(m, "createWindow", &createWindow__wrapper);
     ni_registerModuleMethod(m, "createAccelerator", &createAccelerator__wrapper);
     ni_registerModuleMethod(m, "createAction", &createAction__wrapper);
-    ni_registerModuleMethod(m, "createMenu", &createMenu__wrapper);
     ni_registerModuleMethod(m, "menuAddAction", &menuAddAction__wrapper);
     ni_registerModuleMethod(m, "menuAddSubmenu", &menuAddSubmenu__wrapper);
     ni_registerModuleMethod(m, "menuAddSeparator", &menuAddSeparator__wrapper);
-    ni_registerModuleMethod(m, "createMenuBar", &createMenuBar__wrapper);
+    ni_registerModuleMethod(m, "createMenu", &createMenu__wrapper);
     ni_registerModuleMethod(m, "menuBarAddMenu", &menuBarAddMenu__wrapper);
-    ni_registerModuleMethod(m, "cgContextSetRGBFillColor", &cgContextSetRGBFillColor__wrapper);
-    ni_registerModuleMethod(m, "cgContextFillRect", &cgContextFillRect__wrapper);
+    ni_registerModuleMethod(m, "createMenuBar", &createMenuBar__wrapper);
+    ni_registerModuleMethod(m, "cGContextSetRGBFillColor", &cGContextSetRGBFillColor__wrapper);
+    ni_registerModuleMethod(m, "cGContextFillRect", &cGContextFillRect__wrapper);
     ni_registerModuleMethod(m, "runloop", &runloop__wrapper);
     ni_registerModuleMethod(m, "exitRunloop", &exitRunloop__wrapper);
     ni_registerModuleMethod(m, "moduleInit", &moduleInit__wrapper);

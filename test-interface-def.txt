@@ -8,49 +8,49 @@ interface WindowDelegate {
 }
 
 opaque Window {
-   void show();
-   void setMenuBar(MenuBar mb);
-   void invalidate(int x, int y, int width, int height); // or 0s for whole window
-   void destroy();
+    void show();
+    void setMenuBar(MenuBar mb);
+    void invalidate(int x, int y, int width, int height); // or 0s for whole window
+    void destroy();
 }
 Window createWindow(string title, WindowDelegate del);
 
 opaque Accelerator;
-Accelerator createAccelerator(Key key);                 // TODO: modifiers (bitmask / combinable set)
+Accelerator createAccelerator(Key key, Set[Modifier] modifiers);
 
 opaque Action;
 Action createAction(int id, string label, Accelerator acc); // special nullable/optional syntax?
 
 opaque Menu {
-   void addAction(Action action);
-   void addSubmenu(string label, Menu sub);
-   void addSeparator();
+    void addAction(Action action);
+    void addSubmenu(string label, Menu sub);
+    void addSeparator();
 }
 Menu createMenu();
 
 opaque MenuBar {
-   void addMenu(string label, Menu menu);
+    void addMenu(string label, Menu menu);
 }
 MenuBar createMenuBar();
 
 struct CGPoint {
-   double x;
-   double y;
+    double x;
+    double y;
 }
 
 struct CGSize {
-   double width;
-   double height;
+    double width;
+    double height;
 }
 
 struct CGRect {
-   CGPoint origin;
-   CGSize size;
+    CGPoint origin;
+    CGSize size;
 }
 
 opaque CGContext {
-   void setRGBFillColor(double red, double green, double blue, double alpha);
-   void fillRect(CGRect rect);
+    void setRGBFillColor(double red, double green, double blue, double alpha);
+    void fillRect(CGRect rect);
 }
 
 int runloop();
@@ -58,6 +58,13 @@ void exitRunloop();
 
 int moduleInit();
 void moduleShutdown();
+
+enum Modifier {
+    Shift,
+    Control,
+    Alt,
+    MacControl
+}
 
 enum Key {
     Unknown,

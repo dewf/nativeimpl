@@ -58,8 +58,29 @@ void windowDestroy(Window w) {
     delete w;
 }
 
-Accelerator createAccelerator(KeyEnum key) {
-    auto ret = wl_AccelCreate((wl_KeyEnum)key, wl_kModifierControl | wl_kModifierShift);
+static unsigned int modifiersToBits(std::set<Modifier> modifiers) {
+    unsigned int result = 0;
+    for (auto i = modifiers.begin(); i != modifiers.end(); i++) {
+        switch (*i) {
+        case Modifier::Shift:
+            result |= wl_kModifierShift;
+            break;
+        case Modifier::Control:
+            result |= wl_kModifierControl;
+            break;
+        case Modifier::Alt:
+            result |= wl_kModifierAlt;
+            break;
+        case Modifier::MacControl:
+            result |= wl_kModifierMacControl;
+            break;
+        }
+    }
+    return result;
+}
+
+Accelerator createAccelerator(Key key, std::set<Modifier> modifiers) {
+    auto ret = wl_AccelCreate((wl_KeyEnum)key, modifiersToBits(modifiers));
     return new __Accelerator{ ret };
 }
 
@@ -94,12 +115,12 @@ void menuBarAddMenu(MenuBar mb, std::string label, Menu menu) {
     wl_MenuBarAddMenu(mb->wlMenuBar, label.c_str(), menu->wlMenu);
 }
 
-void cgContextSetRGBFillColor(CGContext c, double red, double green, double blue, double alpha)
+void cGContextSetRGBFillColor(CGContext c, double red, double green, double blue, double alpha)
 {
     dl_CGContextSetRGBFillColor(c->dlContext, red, green, blue, alpha);
 }
 
-void cgContextFillRect(CGContext c, CGRect rect)
+void cGContextFillRect(CGContext c, CGRect rect)
 {
     dl_CGContextFillRect(c->dlContext, DLRECT(rect));
 }

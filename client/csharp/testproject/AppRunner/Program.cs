@@ -1,15 +1,25 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using TestLibraryClient;
 
 namespace AppRunner
 {
+    public enum Modifier
+    {
+        Shift,
+        Control,
+        Alt,
+        MacControl,
+    }
     public class Accelerator
     {
         internal readonly TestLibrary.Accelerator PrivAccel;
-        public Accelerator(TestLibrary.KeyEnum key)
+        public Accelerator(TestLibrary.Key key, IEnumerable<Modifier> modifiers)
         {
-            PrivAccel = TestLibrary.CreateAccelerator(key);
+            var nativeModifiers =
+                modifiers.Select(x => (TestLibrary.Modifier)x).ToHashSet();
+            PrivAccel = TestLibrary.CreateAccelerator(key, nativeModifiers);
         }
     }
     public class Action
@@ -128,11 +138,11 @@ namespace AppRunner
         }
         public void SetRGBFillColor(double red, double green, double blue, double alpha)
         {
-            TestLibrary.CgContextSetRGBFillColor(_dlContext, red, green, blue, alpha);
+            TestLibrary.CGContextSetRGBFillColor(_dlContext, red, green, blue, alpha);
         }
         public void FillRect(CGRect rect)
         {
-            TestLibrary.CgContextFillRect(_dlContext, rect.ToNative());
+            TestLibrary.CGContextFillRect(_dlContext, rect.ToNative());
         }
     }
     public class Window : TestLibrary.ClientWindowDelegate
@@ -201,7 +211,7 @@ namespace AppRunner
             var window = new Window("My title!!", true);
             
             var fileMenu = new Menu();
-            var accel = new Accelerator(TestLibrary.KeyEnum.KeyE);
+            var accel = new Accelerator(TestLibrary.Key.E, new[] { Modifier.Control, Modifier.Shift });
             var action = new Action("E&xit", accel, () =>
             {
                 Console.WriteLine("Exit Action!!!");

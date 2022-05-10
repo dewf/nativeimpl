@@ -36,17 +36,17 @@ type UserOrGeneric =
     
 let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
     let rec typeAndSubTypes (t: NIType) =
+        let tupleHandling (tupleOuter: NIType) =
+            match tupleOuter with
+            | TupleType tupleTypes ->
+                let sub =
+                    tupleTypes
+                    |> List.collect (fun type_ -> typeAndSubTypes (ArrayType type_))
+                // include the tuple itself!
+                tupleOuter :: sub
+            | _ ->
+                failwith "!!!"
         let arrayOrSetHandling (niType: NIType) =
-            let tupleHandling (tupleOuter: NIType) =
-                match tupleOuter with
-                | TupleType tupleTypes ->
-                    let sub =
-                        tupleTypes
-                        |> List.collect (fun type_ -> typeAndSubTypes (ArrayType type_))
-                    // niType because a tuple is itself generic! (whereas above, with struct, the struct niType itself is NOT included)
-                    tupleOuter :: sub
-                | _ ->
-                    failwith "!!!"
             // special handling for array/set of struct/tuple (anything with fields): we render arrays of each field/subtype
             match niType with
             | StructType name ->
@@ -62,7 +62,8 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                 // array of typedefs of tuple need to be flattened, otherwise we won't have the necessary synthetic array types in our lookup tables
                 match userTypeMap[name] with
                 | TypeDef (TupleType _ as tt) ->
-                    tupleHandling tt
+                    // need to also return the collapsed array type - the caller of arrayOrSetHandling will still have (ArrayType (TypeDef...))
+                    (ArrayType tt) :: tupleHandling tt
                 | _ ->
                     // any other typedef type, ignore (currently)
                     []
@@ -80,19 +81,13 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
             let vs = typeAndSubTypes (ArrayType valueType)
             t :: k @ v @ ks @ vs
         | ArrayType niType ->
-            let subResults =
-                arrayOrSetHandling niType
-            t :: subResults
+            t :: arrayOrSetHandling niType
         | BufferType _ ->
             [t] // buffers only support primitive elements, no subresults
         | TupleType niTypes ->
-            let subResults =
-                niTypes |> List.collect typeAndSubTypes
-            t :: subResults
+            t :: (niTypes |> List.collect typeAndSubTypes)
         | SetType niType ->
-            let subResults =
-                arrayOrSetHandling niType
-            t :: subResults
+            t :: arrayOrSetHandling niType
         | _ -> []
     module_.Defs
     |> List.collect (function
@@ -161,7 +156,10 @@ let userTypesAndGenerics (m: Module) =
     let m1 =
         (Map.empty, userTypes)
         ||> Map.fold (fun newMap name userType -> newMap.Add(name, UserOrGeneric.User userType))
-    (m1, allGenericTypes m userTypes)
+    let allGenerics =
+        allGenericTypes m userTypes
+//    printfn "all generics: %A" allGenerics
+    (m1, allGenerics)
     ||> List.fold (fun newMap type_ ->
         let name =
             (typeToInternalKey type_)
@@ -426,9 +424,11 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                             // (why penalize the user because they wanted a typedef?)
                             // (this just creates the dependency on the array-of-<tuplefield>s, so that the requisite array push/pop methods exist)
                             match typeMap[typeDefName] with
-                            | UserOrGeneric.User (TypeDef (TupleType tupleTypes)) ->
+                            | UserOrGeneric.User (TypeDef (TupleType tupleTypes as tt)) ->
                                 (alreadyRendered, tupleTypes)
                                 ||> List.fold (fun already2 type_ -> renderType (ArrayType type_) already2)
+                                // + the tuple type itself, sigh
+                                |> renderType (ArrayType tt)
                             | _ ->
                                 alreadyRendered
                         | _ ->

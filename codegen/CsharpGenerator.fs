@@ -162,6 +162,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | ArrayType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType)) // sigh, normalize all these already - doing it so many different ways...
         | SetType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType))
         | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
+        | TupleType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
         | _ -> write level "// popValue not yet supported: array of %A" niType
     | MapType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
@@ -236,6 +237,7 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | ArrayType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | SetType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
+        | TupleType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
     | EnumType name ->
         write level "%s__Push(%s);" name content
@@ -265,7 +267,7 @@ let renderArray (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (oute
         match outerType with
         | ArrayType niType -> niType
         | _ -> failwith "renderArray: used on wrong type"
-    let arrayCommon () =
+    let arrayDefault () =
         // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
         // PUSH ========
         write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
@@ -291,41 +293,23 @@ let renderArray (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (oute
     match elemType with
     | TypedefType typeDefName ->
         match typeMap[typeDefName] with
-        | UserOrGeneric.User (TypeDef (TupleType tupleTypes as tt)) ->
+        | UserOrGeneric.User (TypeDef (TupleType _ as tt)) ->
             // new, flattened outer (minus the typedef middleman)
-            let newOuter =
-                ArrayType tt
-            // PUSH ====================
-            write 2 "private static void __%s__Push(%s things, bool isReturn)" (typeToName newOuter) (typeToCsString typeMap newOuter)
+//            // render the actual tuple type
+//            renderArray writer typeMap (ArrayType tt)
+            // then the thin (inlined) wrappers around it
+            // push ==================
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+            write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
-            write 3 "var count = things.Length;"
-            for i, type_ in tupleTypes |> List.indexed do
-                write 3 "var _%dvalues = new %s[count];" i (typeToCsString typeMap type_)
-            write 3 "for (var i = 0; i < count; i++)"
-            write 3 "{"
-            for i, _ in tupleTypes |> List.indexed do
-                write 4 "_%dvalues[i] = things[i].Item%d;" i (i + 1)
-            write 3 "}"
-            for i, type_ in tupleTypes |> List.indexed |> List.rev do
-                pushValue writer 3 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
+            pushValue writer 3 (ArrayType tt) "values" (Indirect "isReturn")
             write 2 "}"
-            // POP =====================
+            // pop ===================
             blank()
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap newOuter) (typeToName newOuter)
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
-            for i, type_ in tupleTypes |> List.indexed do
-                popValue writer 3 (ArrayType type_) (NewVariable (sprintf "_%dvalues" i))
-            write 3 "var count = _0values.Length;"
-            write 3 "var ret = new %s[count];" (typeToCsString typeMap tt)
-            write 3 "for (var i = 0; i < count; i++)"
-            write 3 "{"
-            for i, _ in tupleTypes |> List.indexed do
-                write 4 "var _%d = _%dvalues[i];" i i
-            let joinedVars =
-                tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
-            write 4 "ret[i] = (%s);" joinedVars
-            write 3 "}"
-            write 3 "return ret;"
+            popValue writer 3 (ArrayType tt) Return
             write 2 "}"
         | _ ->
             failwithf "array of typedef %A: TODO (basic array treatment)" typeDefName
@@ -382,11 +366,44 @@ let renderArray (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (oute
             write 2 "}"
         | _ ->
             failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+    | TupleType tupleTypes ->
+        // PUSH ====================
+        write 2 "private static void __%s__Push(%s things, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+        write 2 "{"
+        write 3 "var count = things.Length;"
+        for i, type_ in tupleTypes |> List.indexed do
+            write 3 "var _%dvalues = new %s[count];" i (typeToCsString typeMap type_)
+        write 3 "for (var i = 0; i < count; i++)"
+        write 3 "{"
+        for i, _ in tupleTypes |> List.indexed do
+            write 4 "_%dvalues[i] = things[i].Item%d;" i (i + 1)
+        write 3 "}"
+        for i, type_ in tupleTypes |> List.indexed |> List.rev do
+            pushValue writer 3 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
+        write 2 "}"
+        // POP =====================
+        blank()
+        write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+        write 2 "{"
+        for i, type_ in tupleTypes |> List.indexed do
+            popValue writer 3 (ArrayType type_) (NewVariable (sprintf "_%dvalues" i))
+        write 3 "var count = _0values.Length;"
+        write 3 "var ret = new %s[count];" (typeToCsString typeMap elemType)
+        write 3 "for (var i = 0; i < count; i++)"
+        write 3 "{"
+        for i, _ in tupleTypes |> List.indexed do
+            write 4 "var _%d = _%dvalues[i];" i i
+        let joinedVars =
+            tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
+        write 4 "ret[i] = (%s);" joinedVars
+        write 3 "}"
+        write 3 "return ret;"
+        write 2 "}"
     | ArrayType _ ->
         // array of array of ...
-        arrayCommon ()
+        arrayDefault ()
     | MapType _ ->
-        arrayCommon ()
+        arrayDefault ()
     // ignore built-ins below:
     | Primitive _ ->
         write 2 "// built-in array type: %s" (typeToCsString typeMap outerType)

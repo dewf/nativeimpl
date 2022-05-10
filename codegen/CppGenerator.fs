@@ -485,8 +485,9 @@ let renderWrapperArrayOrSet (writer: TextWriter) (typeMap: Map<string, UserOrGen
         write 1 "}"
         write 1 "return __ret;"
         write 0 "}"
-    // tuple behavior extracted because used in multiple places (one, to flatten typedefs)
-    let tupleArray (tupleTypes: NIType list) =
+    // begin ==================================================================
+    match elemType with
+    | TupleType tupleTypes ->
         // PUSH ========
         write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
         for i, type_ in tupleTypes |> List.indexed do
@@ -518,10 +519,6 @@ let renderWrapperArrayOrSet (writer: TextWriter) (typeMap: Map<string, UserOrGen
         write 1 "}"
         write 1 "return __ret;"
         write 0 "}"
-    // begin ==================================================================
-    match elemType with
-    | TupleType tupleTypes ->
-        tupleArray tupleTypes
     | StructType structName ->
         // fetch the fields so we can make a struct-of-arrays
         match typeMap[structName] with
@@ -565,8 +562,16 @@ let renderWrapperArrayOrSet (writer: TextWriter) (typeMap: Map<string, UserOrGen
         match typeMap.TryFind(name) with
         | Some uog ->
             match uog with
-            | UserOrGeneric.User (TypeDef (TupleType tupleTypes)) ->
-                tupleArray tupleTypes
+            | UserOrGeneric.User (TypeDef (TupleType _ as tt)) ->
+                // push
+                write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+                pushValue writer 1 (ArrayType tt) "values" (Indirect "isReturn")
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "inline %s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+                popValue writer 1 (ArrayType tt) Return
+                write 0 "}"
             | _ ->
                 // any other typedef in an array context
                 arrayCommon ()

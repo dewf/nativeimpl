@@ -243,6 +243,11 @@ void pushInstance(int id, bool isClientId, bool inSafetyArea)
     ni_pushInstance(id, isClientId, inSafetyArea);
 }
 
+void pushNullInstance()
+{
+    ni_pushNullInstance();
+}
+
 int popInstance(bool* isClientID, bool* inSafetyArea)
 {
     return ni_popInstance(isClientID, inSafetyArea);

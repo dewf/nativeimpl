@@ -299,6 +299,11 @@ namespace TestLibraryClient.Support
             return NativeMethods.popServerFunc();
         }
 
+        public static void PushNullInstance()
+        {
+            NativeMethods.pushNullInstance();
+        }
+
         public static void PopInstanceId(out int id, out bool isClientId)
         {
             id = NativeMethods.popInstance(out isClientId, out var inSafetyArea); // do something with 'inSafetyArea' ?

@@ -176,6 +176,9 @@ namespace TestLibraryClient.Support
         internal static extern void pushInstance(int id, bool isClientId, bool inSafetyArea);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushNullInstance();
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int popInstance(out bool isClientId, out bool inSafetyArea);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]

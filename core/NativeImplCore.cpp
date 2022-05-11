@@ -742,6 +742,11 @@ void ni_pushInstance(int id, bool isClientId, bool inSafetyArea)
 	vstack.push(new InstanceItem(id, isClientId, inSafetyArea));
 }
 
+void ni_pushNullInstance()
+{
+	vstack.push(new InstanceItem(0, false, false));
+}
+
 int ni_popInstance(bool* isClientID, bool* inSafetyArea) {
 	auto item = vstack.top();
 	auto id = item->instanceId(isClientID, inSafetyArea);

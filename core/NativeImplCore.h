@@ -129,6 +129,7 @@ extern "C" {
 	// but I think all the ifs and checking (conditional setting of 'remotesafetyareadirty' or whatever) will end up
 	// being equivalent to simply clearing the remote safety area unconditionally at the end of every invocation returning (something containing) an interface reference
 	void ni_pushInstance(int id, bool isClientId, bool inSafetyArea);
+	void ni_pushNullInstance();
 	int ni_popInstance(bool* isClientID, bool* inSafetyArea);
 
 	// safety area functions: the act of pushing remote interfaces can destroy the local proxy (if no other local proxies exist),

@@ -12,6 +12,9 @@ namespace TestLibraryClient
         void OnResize(int width, int height)
         {
         }
+        void OnCloseRequest(ref bool cancelClose)
+        {
+        }
         void OnDestroyed()
         {
         }
@@ -109,6 +112,13 @@ namespace TestLibraryClient
         public void Invalidate(int x, int y, int width, int height)
         {
             TestLibrary.WindowInvalidate(_privWindow, x, y, width, height);
+        }
+        public override TestLibrary.CloseRequestReply OnCloseRequest()
+        {
+            TestLibrary.CloseRequestReply reply;
+            reply.CancelClose = false;
+            _windowDelegate.OnCloseRequest(ref reply.CancelClose);
+            return reply;
         }
         public override void OnDestroyed()
         {

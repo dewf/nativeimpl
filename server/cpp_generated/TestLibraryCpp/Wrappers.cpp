@@ -1,6 +1,7 @@
 #include "NativeImplServer.h"
 #include "Implementation.h"
 
+ni_InterfaceMethodRef windowDelegate_onCloseRequest;
 ni_InterfaceMethodRef windowDelegate_onDestroyed;
 ni_InterfaceMethodRef windowDelegate_onResized;
 ni_InterfaceMethodRef windowDelegate_onRepaint;
@@ -42,6 +43,15 @@ CGRect CGRect__pop() {
     return CGRect { origin, size };
 }
 
+void CloseRequestReply__push(CloseRequestReply value, bool isReturn) {
+    ni_pushBool(value.cancelClose);
+}
+
+CloseRequestReply CloseRequestReply__pop() {
+    auto cancelClose = ni_popBool();
+    return CloseRequestReply { cancelClose };
+}
+
 inline void Key__push(Key value) {
     ni_pushInt((int)value);
 }
@@ -66,6 +76,10 @@ inline Modifier Modifier__pop() {
 class ClientWindowDelegate : public ClientObject, public WindowDelegate {
 public:
     ClientWindowDelegate(int id) : ClientObject(id) {}
+    CloseRequestReply onCloseRequest() override {
+        invokeMethod(windowDelegate_onCloseRequest);
+        return CloseRequestReply__pop();
+    }
     void onDestroyed() override {
         invokeMethod(windowDelegate_onDestroyed);
     }
@@ -227,6 +241,11 @@ void moduleShutdown__wrapper() {
     moduleShutdown();
 }
 
+void WindowDelegate_onCloseRequest__wrapper(int serverID) {
+    auto inst = ServerWindowDelegate::getByID(serverID);
+    CloseRequestReply__push(inst->onCloseRequest(), true);
+}
+
 void WindowDelegate_onDestroyed__wrapper(int serverID) {
     auto inst = ServerWindowDelegate::getByID(serverID);
     inst->onDestroyed();
@@ -274,6 +293,7 @@ extern "C" int nativeLibraryInit() {
     ni_registerModuleMethod(m, "moduleInit", &moduleInit__wrapper);
     ni_registerModuleMethod(m, "moduleShutdown", &moduleShutdown__wrapper);
     auto windowDelegate = ni_registerInterface(m, "WindowDelegate");
+    windowDelegate_onCloseRequest = ni_registerInterfaceMethod(windowDelegate, "onCloseRequest", &WindowDelegate_onCloseRequest__wrapper);
     windowDelegate_onDestroyed = ni_registerInterfaceMethod(windowDelegate, "onDestroyed", &WindowDelegate_onDestroyed__wrapper);
     windowDelegate_onResized = ni_registerInterfaceMethod(windowDelegate, "onResized", &WindowDelegate_onResized__wrapper);
     windowDelegate_onRepaint = ni_registerInterfaceMethod(windowDelegate, "onRepaint", &WindowDelegate_onRepaint__wrapper);

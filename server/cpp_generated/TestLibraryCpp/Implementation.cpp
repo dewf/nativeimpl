@@ -164,6 +164,11 @@ static int myCallback(wl_WindowRef window, struct wl_Event* event, void* userDat
     auto privWindow = (Window)userData;
     event->handled = true;
     switch (event->eventType) {
+    case wl_kEventTypeWindowCloseRequest: {
+        auto reply = privWindow->del->onCloseRequest();
+        event->closeRequestEvent.cancelClose = reply.cancelClose;
+        break;
+    }
     case wl_kEventTypeWindowDestroyed:
         privWindow->del->onDestroyed();
         break;

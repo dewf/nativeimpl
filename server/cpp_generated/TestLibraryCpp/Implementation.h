@@ -28,6 +28,10 @@ struct CGRect {
     CGSize size;
 };
 
+struct CloseRequestReply {
+    bool cancelClose;
+};
+
 enum class Key {
     Unknown,
     Escape,
@@ -153,6 +157,7 @@ struct __Window; typedef struct __Window* Window;
 
 class WindowDelegate {
 public:
+    virtual CloseRequestReply onCloseRequest() = 0;
     virtual void onDestroyed() = 0;
     virtual void onResized(int newWidth, int newHeight) = 0;
     virtual void onRepaint(CGContext context) = 0;

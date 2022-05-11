@@ -32,6 +32,7 @@ namespace TestLibraryClient
         private static ModuleMethodHandle _moduleInit;
         private static ModuleMethodHandle _moduleShutdown;
         private static InterfaceHandle _windowDelegate;
+        private static InterfaceMethodHandle _windowDelegate_onCloseRequest;
         private static InterfaceMethodHandle _windowDelegate_onDestroyed;
         private static InterfaceMethodHandle _windowDelegate_onResized;
         private static InterfaceMethodHandle _windowDelegate_onRepaint;
@@ -131,6 +132,25 @@ namespace TestLibraryClient
             var origin = CGPoint__Pop();
             var size = CGSize__Pop();
             return new CGRect(origin, size);
+        }
+
+        public struct CloseRequestReply {
+            public bool CancelClose;
+            public CloseRequestReply(bool cancelClose)
+            {
+                this.CancelClose = cancelClose;
+            }
+        }
+
+        private static void CloseRequestReply__Push(CloseRequestReply value, bool isReturn)
+        {
+            NativeImplClient.PushBool(value.CancelClose);
+        }
+
+        private static CloseRequestReply CloseRequestReply__Pop()
+        {
+            var cancelClose = NativeImplClient.PopBool();
+            return new CloseRequestReply(cancelClose);
         }
 
         public enum Key
@@ -306,6 +326,7 @@ namespace TestLibraryClient
 
         public interface WindowDelegate : IDisposable
         {
+            CloseRequestReply OnCloseRequest();
             void OnDestroyed();
             void OnResized(int newWidth, int newHeight);
             void OnRepaint(CGContext context);
@@ -331,6 +352,7 @@ namespace TestLibraryClient
             {
                 // override if necessary
             }
+            public abstract CloseRequestReply OnCloseRequest();
             public abstract void OnDestroyed();
             public abstract void OnResized(int newWidth, int newHeight);
             public abstract void OnRepaint(CGContext context);
@@ -341,6 +363,12 @@ namespace TestLibraryClient
         {
             public ServerWindowDelegate(int id) : base(id)
             {
+            }
+
+            public CloseRequestReply OnCloseRequest()
+            {
+                NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onCloseRequest, Id);
+                return CloseRequestReply__Pop();
             }
 
             public void OnDestroyed()
@@ -545,10 +573,17 @@ namespace TestLibraryClient
             _moduleShutdown = NativeImplClient.GetModuleMethod(_module, "moduleShutdown");
 
             _windowDelegate = NativeImplClient.GetInterface(_module, "WindowDelegate");
+            _windowDelegate_onCloseRequest = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onCloseRequest");
             _windowDelegate_onDestroyed = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onDestroyed");
             _windowDelegate_onResized = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onResized");
             _windowDelegate_onRepaint = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onRepaint");
             _windowDelegate_onAction = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onAction");
+
+            NativeImplClient.SetClientMethodWrapper(_windowDelegate_onCloseRequest, delegate(ClientObject obj)
+            {
+                var inst = (ClientWindowDelegate) obj;
+                CloseRequestReply__Push(inst.OnCloseRequest(), true);
+            });
 
             NativeImplClient.SetClientMethodWrapper(_windowDelegate_onDestroyed, delegate(ClientObject obj)
             {

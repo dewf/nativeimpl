@@ -1,6 +1,11 @@
 module TestLibrary;
 
+struct CloseRequestReply {
+    bool cancelClose;
+}
+
 interface WindowDelegate {
+    CloseRequestReply onCloseRequest();
     void onDestroyed();
     void onResized(int newWidth, int newHeight);
     void onRepaint(CGContext context);

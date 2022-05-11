@@ -60,6 +60,26 @@ ni_ExceptionRef invokeModuleMethodWithExceptions(ni_ModuleMethodRef method)
     return ni_invokeModuleMethodWithExceptions(method);
 }
 
+void pushPtr(void* value)
+{
+    ni_pushPtr(value);
+}
+
+void* popPtr()
+{
+    return ni_popPtr();
+}
+
+void pushPtrArray(void** values, size_t count)
+{
+    ni_pushPtrArray(values, count);
+}
+
+void popPtrArray(void*** values, size_t* count)
+{
+    ni_popPtrArray(values, count);
+}
+
 void pushSizeT(size_t value)
 {
     ni_pushSizeT(value);

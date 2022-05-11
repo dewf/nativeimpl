@@ -67,6 +67,11 @@ extern "C" {
 	void ni_invokeModuleMethod(ni_ModuleMethodRef method);
 	ni_ExceptionRef ni_invokeModuleMethodWithExceptions(ni_ModuleMethodRef method);
 
+	void ni_pushPtr(void* value);
+	void* ni_popPtr();
+	void ni_pushPtrArray(void** values, size_t count);
+	void ni_popPtrArray(void*** values, size_t* count);
+
 	void ni_pushSizeT(size_t value);
 	size_t ni_popSizeT();
 	void ni_pushSizeTArray(size_t* values, size_t count);

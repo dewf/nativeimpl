@@ -53,6 +53,9 @@ class WrongTypeException : public std::exception {
 // stack types =======================
 class StackItem {
 public:
+	virtual void* ptrValue() { throw WrongTypeException(); }
+	virtual std::vector<void*> ptrArray() { throw WrongTypeException(); }
+
 	virtual size_t sizeTValue() { throw WrongTypeException(); }
 	virtual std::vector<size_t> sizeTArray() { throw WrongTypeException(); }
 
@@ -76,6 +79,26 @@ public:
 	virtual int instanceId(bool* isClientId, bool* inSafetyArea) { throw WrongTypeException(); }
 
 	virtual void buffer(int *id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor) { throw WrongTypeException(); }
+};
+
+class PtrItem : public StackItem {
+public:
+	void* value;
+	PtrItem(void* value) : value(value) {}
+	void* ptrValue() override {
+		return value;
+	}
+};
+
+class PtrArray : public StackItem {
+public:
+	std::vector<void*> values;
+	PtrArray(void** ptr, size_t count) {
+		values.assign(ptr, ptr + count);
+	}
+	std::vector<void*> ptrArray() override {
+		return values;
+	}
 };
 
 class SizeTItem : public StackItem {
@@ -449,6 +472,37 @@ ni_ExceptionRef ni_invokeModuleMethodWithExceptions(ni_ModuleMethodRef method) {
 	auto ret = ni_currentException;
 	ni_currentException = nullptr;
 	return ret;
+}
+
+void ni_pushPtr(void* value)
+{
+	vstack.push(new PtrItem(value));
+}
+
+void* ni_popPtr()
+{
+	auto item = vstack.top();
+	auto v = item->ptrValue();
+	vstack.pop();
+	delete item;
+	return v;
+}
+
+void ni_pushPtrArray(void** values, size_t count)
+{
+	vstack.push(new PtrArray(values, count));
+}
+
+static std::vector<void*> lastPtrArray;
+
+void ni_popPtrArray(void*** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastPtrArray = item->ptrArray();
+	vstack.pop();
+	delete item;
+	*values = lastPtrArray.data();
+	*count = lastPtrArray.size();
 }
 
 void ni_pushSizeT(size_t value) {

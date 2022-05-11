@@ -55,6 +55,18 @@ namespace TestLibraryClient.Support
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr invokeModuleMethodWithExceptions(IntPtr method);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushPtr(IntPtr value);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr popPtr();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushPtrArray(IntPtr[] values, IntPtr count);
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popPtrArray(out IntPtr valuesPtr, out IntPtr count); // void***, size_t*
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushSizeT(IntPtr value);

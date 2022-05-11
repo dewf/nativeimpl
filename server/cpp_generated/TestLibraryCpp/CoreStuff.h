@@ -37,6 +37,11 @@ extern "C" {
 	extern ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const char* name, InterfaceFunc ifunc);
 	extern ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char* name, ExceptionBuilder builder);
 
+	extern void ni_pushPtr(void* value);
+	extern void* ni_popPtr();
+	extern void ni_pushPtrArray(void** values, size_t count);
+	extern void ni_popPtrArray(void*** values, size_t* count);
+
 	extern void ni_pushSizeT(size_t value);
 	extern size_t ni_popSizeT();
 	extern void ni_pushSizeTArray(size_t* values, size_t count);

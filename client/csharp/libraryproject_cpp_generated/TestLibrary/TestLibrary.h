@@ -25,6 +25,11 @@ extern "C" {
 	TESTLIBRARY_API void invokeModuleMethod(ni_ModuleMethodRef method);
 	TESTLIBRARY_API ni_ExceptionRef invokeModuleMethodWithExceptions(ni_ModuleMethodRef method);
 
+	TESTLIBRARY_API void pushPtr(void* value);
+	TESTLIBRARY_API void* popPtr();
+	TESTLIBRARY_API void pushPtrArray(void** values, size_t count);
+	TESTLIBRARY_API void popPtrArray(void*** values, size_t* count);
+
 	TESTLIBRARY_API void pushSizeT(size_t value);
 	TESTLIBRARY_API size_t popSizeT();
 	TESTLIBRARY_API void pushSizeTArray(size_t* values, size_t count);

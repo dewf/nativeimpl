@@ -105,6 +105,29 @@ namespace TestLibraryClient.Support
             }
         }
 
+        public static void PushPtr(IntPtr value)
+        {
+            NativeMethods.pushPtr(value);
+        }
+        
+        public static IntPtr PopPtr()
+        {
+            return NativeMethods.popPtr();
+        }
+        
+        public static void PushPtrArray(IntPtr[] values)
+        {
+            NativeMethods.pushPtrArray(values, (IntPtr)values.Length);
+        }
+        
+        public static IntPtr[] PopPtrArray()
+        {
+            NativeMethods.popPtrArray(out var valuesPtr, out var count);
+            var ret = new IntPtr[(int)count];
+            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            return ret;
+        }
+        
         public static void PushSizeT(IntPtr value)
         {
             NativeMethods.pushSizeT(value);

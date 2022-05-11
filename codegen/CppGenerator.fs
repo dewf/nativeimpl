@@ -11,16 +11,26 @@ let PopTemplate = "std::shared_ptr<%%IFACE%%> %%IFACE%%__pop()
 {
     bool isClientID, inSafetyArea;
     auto id = ni_popInstance(&isClientID, &inSafetyArea);
-    if (isClientID) {
-        return std::shared_ptr<%%IFACE%%>(new Client%%IFACE%%(id));
+    if (id != 0) {
+        if (isClientID) {
+            return std::shared_ptr<%%IFACE%%>(new Client%%IFACE%%(id));
+        }
+        else {
+            return Server%%IFACE%%::getByID(id);
+        }
     }
     else {
-        return Server%%IFACE%%::getByID(id);
+        return std::shared_ptr<%%IFACE%%>();
     }
 }"
 let PushTemplate = "inline void %%IFACE%%__push(std::shared_ptr<%%IFACE%%> inst, bool isReturn) {
-    auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-    pushable->push(pushable, isReturn);
+    if (inst != nullptr) {
+        auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
+        pushable->push(pushable, isReturn);
+    }
+    else {
+        ni_pushNullInstance();
+    }
 }"
 let ServerWrapperTemplate = "// inherit from this to create server instances of %%IFACE%%
 class Server%%IFACE%% : public %%IFACE%%, public ServerObject {
@@ -160,7 +170,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | StringType -> write level "%s popStringInternal();" contextPrefix
         | _ -> write level "// (pop not yet implemented: prim %A)" prim
     | OpaqueHandleType name ->
-        write level "%s (%s)ni_popSizeT();" contextPrefix (upperFirst name)
+        write level "%s (%s)ni_popPtr();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
         write level "%s %s__pop();" contextPrefix ifaceName
     | DelegateType delegateName ->
@@ -242,7 +252,7 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | _ ->
             write level "// (pushValue not supported yet: prim %A)" prim
     | OpaqueHandleType _ ->
-        write level "ni_pushSizeT((size_t)%s);" content
+        write level "ni_pushPtr(%s);" content
     | InterfaceType name ->
         write level "%s__push(%s, %s);" name content (isReturnString())
     | DelegateType name ->

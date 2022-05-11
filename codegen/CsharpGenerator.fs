@@ -7,16 +7,34 @@ open Parser
 open Util
 open Common
 
-let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
+let interfacePushTemplate = "        private static void %%IFACE%%__Push(%%IFACE%% thing, bool isReturn)
         {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId);
-            if (!isClientId)
+            if (thing != null)
             {
-                return new Server%%IFACE%%(id);
+                ((IPushable)thing).Push(isReturn);
             }
             else
             {
-                return (%%IFACE%%) ClientObject.GetById(id);
+                NativeImplClient.PushNullInstance();
+            }
+        }"
+let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
+        {
+            NativeImplClient.PopInstanceId(out var id, out var isClientId);
+            if (id != 0)
+            {
+                if (!isClientId)
+                {
+                    return new Server%%IFACE%%(id);
+                }
+                else
+                {
+                    return (%%IFACE%%) ClientObject.GetById(id);
+                }
+            }
+            else
+            {
+                return null;
             }
         }"
 
@@ -142,7 +160,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
         | _ -> write level "// popValue prim %A not yet supported" prim
     | OpaqueHandleType name ->
-        write level "%s new %s(NativeImplClient.PopSizeT());" contextPrefix (upperFirst name)
+        write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
         write level "%s %s__Pop();" contextPrefix (upperFirst ifaceName)
     | DelegateType name ->
@@ -215,10 +233,10 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | Float64 -> write level "NativeImplClient.PushDouble(%s);" content
         | StringType -> write level "NativeImplClient.PushString(%s);" content
         | _ -> write level "// pushValue prim %A not yet supported" prim
-    | OpaqueHandleType _ ->
-        write level "NativeImplClient.PushSizeT(%s.NativeHandle);" content
-    | InterfaceType _ ->
-        write level "((IPushable)%s).Push(%s);" content (isReturnString())
+    | OpaqueHandleType name ->
+        write level "%s__Push(%s);" (upperFirst name) content
+    | InterfaceType name ->
+        write level "%s__Push(%s, %s);" (upperFirst name) content (isReturnString())
     | DelegateType name ->
         write level "%s__Push(%s);" (upperFirst name) content
     | ArrayType niType ->
@@ -590,13 +608,26 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
         match userType with
         | OpaqueHandleDef ->
             // definition
-            write 2 "public struct %s" (upperFirst name)
+            write 2 "public class %s" (upperFirst name)
             write 2 "{"
             write 3 "internal readonly IntPtr NativeHandle;"
             write 3 "internal %s(IntPtr nativeHandle)" (upperFirst name)
             write 3 "{"
             write 4 "NativeHandle = nativeHandle;"
             write 3 "}"
+            write 2 "}"
+            // push
+            blank()
+            write 2 "private static void %s__Push(%s thing)" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);"
+            write 2 "}"
+            // pop
+            blank()
+            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "var ptr = NativeImplClient.PopPtr();"
+            write 3 "return ptr != IntPtr.Zero ? new %s(ptr) : null;" (upperFirst name)
             write 2 "}"
         | StructDef namedFields ->
             write 2 "public struct %s {" name
@@ -734,6 +765,9 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                         sprintf " // throws %s" joined
                 write 3 "%s %s(%s);%s" (typeToCsString typeMap method.Returns) (upperFirst method.Name) (argsJoined typeMap method.Args) throwsComment
             write 2 "}"
+            // push template
+            blank()
+            writer.WriteLine(Regex(@"%%IFACE%%").Replace(interfacePushTemplate, name))
             // pop template
             blank()
             writer.WriteLine(Regex(@"%%IFACE%%").Replace(interfacePopTemplate, name))

@@ -92,6 +92,8 @@ namespace TestLibraryClient
             TestLibrary.MenuBarAddMenu(PrivMenuBar, label, menu.PrivMenu);
         }
     }
+    // WLWindow: immediate wrapper around native WL methods / immediate callback delegate
+    // still want another layer around this (IWindowDelegate) to shield user from raw CG context etc
     public class WLWindow : TestLibrary.ClientWindowDelegate
     {
         private readonly TestLibrary.Window _privWindow;

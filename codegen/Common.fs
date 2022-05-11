@@ -511,3 +511,44 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
     (Set.empty, keys)
     ||> List.fold (fun alreadyRendered k -> renderDeps k alreadyRendered)
     |> ignore
+
+type IArrayLikeRenderer =
+    abstract TypedefTuple: NIType -> unit
+    abstract EnumType: name: string -> unit
+    abstract StructType: name: string -> NamedField list -> unit
+    abstract TupleType: NIType list -> unit
+    abstract ArrayType: unit -> unit
+    abstract MapType: unit -> unit
+    abstract DelegateType: unit -> unit
+    abstract SetType: unit -> unit
+    abstract SumType: unit -> unit
+    abstract Primitive: NIPrimitive -> unit
+    abstract Other: NIType -> unit
+
+let renderArrayLike (typeMap: Map<string, UserOrGeneric>) (elemType: NIType) (renderer: IArrayLikeRenderer) =
+    match elemType with
+    | TypedefType typeDefName ->
+        match typeMap[typeDefName] with
+        | UserOrGeneric.User (TypeDef (TupleType _ as tt)) ->
+            renderer.TypedefTuple tt
+        | _ ->
+            failwithf "array of typedef %A: TODO (basic array treatment)" typeDefName
+    | EnumType name ->
+        renderer.EnumType name
+    | StructType structName ->
+        // fetch the fields so we can make a struct-of-arrays
+        match typeMap[structName] with
+        | UserOrGeneric.User (StructDef namedFields) ->
+            renderer.StructType structName namedFields
+        | _ ->
+            failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+    | TupleType tupleTypes ->
+        renderer.TupleType tupleTypes
+    | ArrayType _ ->
+        renderer.ArrayType ()
+    | MapType _ ->
+        renderer.MapType ()
+    | Primitive prim ->
+        renderer.Primitive prim
+    | other ->
+        renderer.Other other

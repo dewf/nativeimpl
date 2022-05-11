@@ -459,18 +459,13 @@ let renderWrapperSumType (writer: TextWriter) (sumTypeName: string) (values: Sum
     write 1 "}"
     write 0 "}"
 
-let renderWrapperArrayOrSet (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (outerType: NIType) =
-    let elemType =
-        match outerType with
-        | ArrayType niType -> niType
-        | SetType niType -> niType
-        | _ -> failwith "renderWrapperArray: outertype must be array or set"
+type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, outerType: NIType, elemType: NIType) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
     let blank () = write 0 ""
     // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
-    let arrayCommon () =
+    let arrayDefault () =
         // PUSH ========
         write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
         write 1 "for (auto v = values.rbegin(); v != values.rend(); v++) {" // in reverse (for arrays - for sets, order doesn't matter)
@@ -495,44 +490,43 @@ let renderWrapperArrayOrSet (writer: TextWriter) (typeMap: Map<string, UserOrGen
         write 1 "}"
         write 1 "return __ret;"
         write 0 "}"
-    // begin ==================================================================
-    match elemType with
-    | TupleType tupleTypes ->
-        // PUSH ========
-        write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
-        for i, type_ in tupleTypes |> List.indexed do
-            write 1 "std::vector<%s> _%dvalues;" (typeToCppString type_) i
-        write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
-        for i, _ in tupleTypes |> List.indexed do
-            write 2 "_%dvalues.push_back(std::get<%d>(*i));" i i
-        write 1 "}"
-        // push in reverse field order
-        for i, type_ in tupleTypes |> List.indexed |> List.rev do
-            pushValue writer 1 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
-        write 0 "}"
-        // POP =========
-        blank()
-        write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
-        for i, type_ in tupleTypes |> List.indexed do
-            popValue writer 1 (ArrayType type_) (Variable (sprintf "_%dvalues" i))
-        write 1 "%s __ret;" (typeToCppString outerType)
-        write 1 "for (auto i = 0; i < _0values.size(); i++) {"
-        let joined =
-            tupleTypes |> List.indexed |> List.map fst |> List.map (sprintf "_%dvalues[i]") |> String.concat ", "
-        match outerType with
-        | ArrayType _ ->
-            write 2 "__ret.push_back({ %s });" joined
-        | SetType _ ->
-            write 2 "__ret.insert({ %s });" joined
-        | _ ->
-            failwith "!!!"
-        write 1 "}"
-        write 1 "return __ret;"
-        write 0 "}"
-    | StructType structName ->
-        // fetch the fields so we can make a struct-of-arrays
-        match typeMap[structName] with
-        | UserOrGeneric.User (StructDef namedFields) ->
+    interface IArrayLikeRenderer with
+        member this.TypedefTuple (tt: NIType) =
+            // push
+            write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+            pushValue writer 1 (ArrayType tt) "values" (Indirect "isReturn")
+            write 0 "}"
+            // pop
+            blank()
+            write 0 "inline %s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+            popValue writer 1 (ArrayType tt) Return
+            write 0 "}"
+        member this.EnumType (name: string) =
+            // PUSH ================
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+            write 1 "std::vector<int> intValues;"
+            write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
+            write 2 "intValues.push_back((int)*i);"
+            write 1 "}"
+            write 1 "pushIntArrayInternal(intValues);"
+            write 0 "}"
+            // POP ==================
+            blank()
+            write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+            write 1 "auto intValues = popIntArrayInternal();"
+            write 1 "%s __ret;" (typeToCppString outerType)
+            write 1 "for (auto i = intValues.begin(); i != intValues.end(); i++) {"
+            match outerType with
+            | ArrayType _ ->
+                write 2 "__ret.push_back((%s)*i);" name
+            | SetType _ ->
+                write 2 "__ret.insert((%s)*i);" name
+            | _ ->
+                failwith "!!!"
+            write 1 "}"
+            write 1 "return __ret;"
+            write 0 "}"
+        member this.StructType (structName: string) (namedFields: NamedField list) =
             // PUSH ===========
             write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
             for field in namedFields |> List.rev do
@@ -565,83 +559,68 @@ let renderWrapperArrayOrSet (writer: TextWriter) (typeMap: Map<string, UserOrGen
             write 1 "}"
             write 1 "return __ret;"
             write 0 "}"
-        | _ ->
-            failwithf "renderWrapperArray: failed to find struct in typemap"
-    | TypedefType name ->
-        // flatten array of typedef of tuple, to array of tuple
-        match typeMap.TryFind(name) with
-        | Some uog ->
-            match uog with
-            | UserOrGeneric.User (TypeDef (TupleType _ as tt)) ->
-                // push
-                write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
-                pushValue writer 1 (ArrayType tt) "values" (Indirect "isReturn")
-                write 0 "}"
-                // pop
-                blank()
-                write 0 "inline %s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
-                popValue writer 1 (ArrayType tt) Return
-                write 0 "}"
-            | _ ->
-                // any other typedef in an array context
-                arrayCommon ()
-        | None ->
-            failwith "renderWrapperUserTypes: array of typedef: didn't find typedef name in map??"
-    | DelegateType name ->
-        arrayCommon ()
-    | ArrayType _ ->
-        arrayCommon ()
-    | SetType _ ->
-        arrayCommon ()
-    | EnumType name ->
-        // PUSH ================
-        write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
-        write 1 "std::vector<int> intValues;"
-        write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
-        write 2 "intValues.push_back((int)*i);"
-        write 1 "}"
-        write 1 "pushIntArrayInternal(intValues);"
-        write 0 "}"
-        // POP ==================
-        blank()
-        write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
-        write 1 "auto intValues = popIntArrayInternal();"
-        write 1 "%s __ret;" (typeToCppString outerType)
-        write 1 "for (auto i = intValues.begin(); i != intValues.end(); i++) {"
-        match outerType with
-        | ArrayType _ ->
-            write 2 "__ret.push_back((%s)*i);" name
-        | SetType _ ->
-            write 2 "__ret.insert((%s)*i);" name
-        | _ ->
-            failwith "!!!"
-        write 1 "}"
-        write 1 "return __ret;"
-        write 0 "}"
-    | SumType _ ->
-        arrayCommon ()
-    | MapType _ ->
-        arrayCommon ()
-    | Primitive _ ->
-        // primitve arrays are built in, but not sets!
-        match outerType with
-        | ArrayType _ ->
-            write 0 "// built-in array type: %s" (typeToCppString outerType)
-        | SetType niType ->
-            // push ==============
-            write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
-            write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString (ArrayType niType))
-            pushValue writer 1 (ArrayType niType) "itemsArr" (Indirect "isReturn")
+        member this.TupleType (tupleTypes: NIType list) =
+            // PUSH ========
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+            for i, type_ in tupleTypes |> List.indexed do
+                write 1 "std::vector<%s> _%dvalues;" (typeToCppString type_) i
+            write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
+            for i, _ in tupleTypes |> List.indexed do
+                write 2 "_%dvalues.push_back(std::get<%d>(*i));" i i
+            write 1 "}"
+            // push in reverse field order
+            for i, type_ in tupleTypes |> List.indexed |> List.rev do
+                pushValue writer 1 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
             write 0 "}"
-            // pop ===============
+            // POP =========
             blank()
             write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
-            popValue writer 1 (ArrayType niType) (Variable "itemsArr")
-            write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString outerType)
+            for i, type_ in tupleTypes |> List.indexed do
+                popValue writer 1 (ArrayType type_) (Variable (sprintf "_%dvalues" i))
+            write 1 "%s __ret;" (typeToCppString outerType)
+            write 1 "for (auto i = 0; i < _0values.size(); i++) {"
+            let joined =
+                tupleTypes |> List.indexed |> List.map fst |> List.map (sprintf "_%dvalues[i]") |> String.concat ", "
+            match outerType with
+            | ArrayType _ ->
+                write 2 "__ret.push_back({ %s });" joined
+            | SetType _ ->
+                write 2 "__ret.insert({ %s });" joined
+            | _ ->
+                failwith "!!!"
+            write 1 "}"
+            write 1 "return __ret;"
             write 0 "}"
-        | _ -> failwith "!!!"
-    | _ ->
-        write 0 "// TODO: renderWrapperArray for generic %A" outerType
+        member this.ArrayType () =
+            arrayDefault()
+        member this.MapType () =
+            arrayDefault()
+        member this.DelegateType () =
+            arrayDefault()
+        member this.SetType () =
+            arrayDefault()
+        member this.SumType () =
+            arrayDefault()
+        member this.Primitive (prim: NIPrimitive) =
+            // primitve arrays are built in, but not sets!
+            match outerType with
+            | ArrayType _ ->
+                write 0 "// built-in array type: %s" (typeToCppString outerType)
+            | SetType niType ->
+                // push ==============
+                write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+                write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString (ArrayType niType))
+                pushValue writer 1 (ArrayType niType) "itemsArr" (Indirect "isReturn")
+                write 0 "}"
+                // pop ===============
+                blank()
+                write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+                popValue writer 1 (ArrayType niType) (Variable "itemsArr")
+                write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString outerType)
+                write 0 "}"
+            | _ -> failwith "!!!"
+        member this.Other (t: NIType) =
+            write 2 "// TODO: push/pop for array-like of %s" (typeToCppString outerType)
 
 let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,bool>) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -720,10 +699,14 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             write 1 "}"
             write 1 "return __ret;"
             write 0 "}"
-        | ArrayType _ ->
-            renderWrapperArrayOrSet writer typeMap gType
-        | SetType _ ->
-            renderWrapperArrayOrSet writer typeMap gType
+        | ArrayType niType ->
+            let renderer =
+                ArrayOrSetRenderer(writer, typeMap, gType, niType)
+            renderArrayLike typeMap niType renderer
+        | SetType niType ->
+            let renderer =
+                ArrayOrSetRenderer(writer, typeMap, gType, niType)
+            renderArrayLike typeMap niType renderer
         | _ ->
             write 0 "// push/pop for generic %s" (typeToCppString gType)
     | UserOrGeneric.User userType ->

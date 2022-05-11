@@ -24,7 +24,7 @@ opaque Accelerator;
 Accelerator createAccelerator(Key key, Set<Modifier> modifiers);
 
 opaque Action;
-Action createAction(int id, string label, Accelerator acc); // special nullable/optional syntax?
+Action createAction(int id, string label, Accelerator acc);
 
 opaque Menu {
     void addAction(Action action);

@@ -40,14 +40,20 @@ namespace AppRunner
             var window = new MainWindow("window title!!!");
             
             var fileMenu = new Menu();
+            fileMenu.AddAction(new Action("lolwut", null, () =>
+            {
+                Console.WriteLine("you clicked 'lolwut'");
+            }));
+            
+            fileMenu.AddSeparator();
+            
             var accel = new Accelerator(TestLibrary.Key.E, new[] { Modifier.Control, Modifier.Shift });
-            var action = new Action("E&xit", accel, () =>
+            fileMenu.AddAction(new Action("E&xit", accel, () =>
             {
                 Console.WriteLine("Exit Action!!!");
                 TestLibrary.ExitRunloop();
-            });
-            fileMenu.AddAction(action);
-
+            }));
+            
             var menuBar = new MenuBar();
             menuBar.AddMenu("&File", fileMenu);
             window.SetMenuBar(menuBar);

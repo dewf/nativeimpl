@@ -47,7 +47,7 @@ namespace TestLibraryClient
         public Action(string label, Accelerator accel, ActionDelegate todo)
         {
             var id = _nextId++;
-            PrivAction = TestLibrary.CreateAction(id, label, accel.PrivAccel);
+            PrivAction = TestLibrary.CreateAction(id, label, accel?.PrivAccel);
             _todo = todo;
             Lookup.Add(id, this);
         }

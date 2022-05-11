@@ -38,7 +38,7 @@ namespace TestLibraryClient
         private static InterfaceMethodHandle _windowDelegate_onRepaint;
         private static InterfaceMethodHandle _windowDelegate_onAction;
 
-        public struct Accelerator
+        public class Accelerator
         {
             internal readonly IntPtr NativeHandle;
             internal Accelerator(IntPtr nativeHandle)
@@ -47,7 +47,18 @@ namespace TestLibraryClient
             }
         }
 
-        public struct Action
+        private static void Accelerator__Push(Accelerator thing)
+        {
+            NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
+        }
+
+        private static Accelerator Accelerator__Pop()
+        {
+            var ptr = NativeImplClient.PopPtr();
+            return ptr != IntPtr.Zero ? new Accelerator(ptr) : null;
+        }
+
+        public class Action
         {
             internal readonly IntPtr NativeHandle;
             internal Action(IntPtr nativeHandle)
@@ -56,13 +67,35 @@ namespace TestLibraryClient
             }
         }
 
-        public struct CGContext
+        private static void Action__Push(Action thing)
+        {
+            NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
+        }
+
+        private static Action Action__Pop()
+        {
+            var ptr = NativeImplClient.PopPtr();
+            return ptr != IntPtr.Zero ? new Action(ptr) : null;
+        }
+
+        public class CGContext
         {
             internal readonly IntPtr NativeHandle;
             internal CGContext(IntPtr nativeHandle)
             {
                 NativeHandle = nativeHandle;
             }
+        }
+
+        private static void CGContext__Push(CGContext thing)
+        {
+            NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
+        }
+
+        private static CGContext CGContext__Pop()
+        {
+            var ptr = NativeImplClient.PopPtr();
+            return ptr != IntPtr.Zero ? new CGContext(ptr) : null;
         }
 
         public struct CGPoint {
@@ -276,7 +309,7 @@ namespace TestLibraryClient
             return (Key)NativeImplClient.PopInt();
         }
 
-        public struct Menu
+        public class Menu
         {
             internal readonly IntPtr NativeHandle;
             internal Menu(IntPtr nativeHandle)
@@ -285,13 +318,35 @@ namespace TestLibraryClient
             }
         }
 
-        public struct MenuBar
+        private static void Menu__Push(Menu thing)
+        {
+            NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
+        }
+
+        private static Menu Menu__Pop()
+        {
+            var ptr = NativeImplClient.PopPtr();
+            return ptr != IntPtr.Zero ? new Menu(ptr) : null;
+        }
+
+        public class MenuBar
         {
             internal readonly IntPtr NativeHandle;
             internal MenuBar(IntPtr nativeHandle)
             {
                 NativeHandle = nativeHandle;
             }
+        }
+
+        private static void MenuBar__Push(MenuBar thing)
+        {
+            NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
+        }
+
+        private static MenuBar MenuBar__Pop()
+        {
+            var ptr = NativeImplClient.PopPtr();
+            return ptr != IntPtr.Zero ? new MenuBar(ptr) : null;
         }
 
         public enum Modifier
@@ -314,13 +369,24 @@ namespace TestLibraryClient
             return (Modifier)NativeImplClient.PopInt();
         }
 
-        public struct Window
+        public class Window
         {
             internal readonly IntPtr NativeHandle;
             internal Window(IntPtr nativeHandle)
             {
                 NativeHandle = nativeHandle;
             }
+        }
+
+        private static void Window__Push(Window thing)
+        {
+            NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
+        }
+
+        private static Window Window__Pop()
+        {
+            var ptr = NativeImplClient.PopPtr();
+            return ptr != IntPtr.Zero ? new Window(ptr) : null;
         }
 
 
@@ -333,16 +399,35 @@ namespace TestLibraryClient
             void OnAction(int id, Action action);
         }
 
-        private static WindowDelegate WindowDelegate__Pop()
+        private static void WindowDelegate__Push(WindowDelegate thing, bool isReturn)
         {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId);
-            if (!isClientId)
+            if (thing != null)
             {
-                return new ServerWindowDelegate(id);
+                ((IPushable)thing).Push(isReturn);
             }
             else
             {
-                return (WindowDelegate) ClientObject.GetById(id);
+                NativeImplClient.PushNullInstance();
+            }
+        }
+
+        private static WindowDelegate WindowDelegate__Pop()
+        {
+            NativeImplClient.PopInstanceId(out var id, out var isClientId);
+            if (id != 0)
+            {
+                if (!isClientId)
+                {
+                    return new ServerWindowDelegate(id);
+                }
+                else
+                {
+                    return (WindowDelegate) ClientObject.GetById(id);
+                }
+            }
+            else
+            {
+                return null;
             }
         }
 
@@ -385,13 +470,13 @@ namespace TestLibraryClient
 
             public void OnRepaint(CGContext context)
             {
-                NativeImplClient.PushSizeT(context.NativeHandle);
+                CGContext__Push(context);
                 NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onRepaint, Id);
             }
 
             public void OnAction(int id, Action action)
             {
-                NativeImplClient.PushSizeT(action.NativeHandle);
+                Action__Push(action);
                 NativeImplClient.PushInt(id);
                 NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onAction, Id);
             }
@@ -415,14 +500,14 @@ namespace TestLibraryClient
 
         public static void WindowShow(Window _this)
         {
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            Window__Push(_this);
             NativeImplClient.InvokeModuleMethod(_windowShow);
         }
 
         public static void WindowSetMenuBar(Window _this, MenuBar mb)
         {
-            NativeImplClient.PushSizeT(mb.NativeHandle);
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            MenuBar__Push(mb);
+            Window__Push(_this);
             NativeImplClient.InvokeModuleMethod(_windowSetMenuBar);
         }
 
@@ -432,22 +517,22 @@ namespace TestLibraryClient
             NativeImplClient.PushInt(width);
             NativeImplClient.PushInt(y);
             NativeImplClient.PushInt(x);
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            Window__Push(_this);
             NativeImplClient.InvokeModuleMethod(_windowInvalidate);
         }
 
         public static void WindowDestroy(Window _this)
         {
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            Window__Push(_this);
             NativeImplClient.InvokeModuleMethod(_windowDestroy);
         }
 
         public static Window CreateWindow(string title, WindowDelegate del)
         {
-            ((IPushable)del).Push(false);
+            WindowDelegate__Push(del, false);
             NativeImplClient.PushString(title);
             NativeImplClient.InvokeModuleMethod(_createWindow);
-            return new Window(NativeImplClient.PopSizeT());
+            return Window__Pop();
         }
 
         public static Accelerator CreateAccelerator(Key key, HashSet<Modifier> modifiers)
@@ -455,57 +540,57 @@ namespace TestLibraryClient
             __ModifierSet__Push(modifiers, false);
             Key__Push(key);
             NativeImplClient.InvokeModuleMethod(_createAccelerator);
-            return new Accelerator(NativeImplClient.PopSizeT());
+            return Accelerator__Pop();
         }
 
         public static Action CreateAction(int id, string label, Accelerator acc)
         {
-            NativeImplClient.PushSizeT(acc.NativeHandle);
+            Accelerator__Push(acc);
             NativeImplClient.PushString(label);
             NativeImplClient.PushInt(id);
             NativeImplClient.InvokeModuleMethod(_createAction);
-            return new Action(NativeImplClient.PopSizeT());
+            return Action__Pop();
         }
 
         public static void MenuAddAction(Menu _this, Action action)
         {
-            NativeImplClient.PushSizeT(action.NativeHandle);
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            Action__Push(action);
+            Menu__Push(_this);
             NativeImplClient.InvokeModuleMethod(_menuAddAction);
         }
 
         public static void MenuAddSubmenu(Menu _this, string label, Menu sub)
         {
-            NativeImplClient.PushSizeT(sub.NativeHandle);
+            Menu__Push(sub);
             NativeImplClient.PushString(label);
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            Menu__Push(_this);
             NativeImplClient.InvokeModuleMethod(_menuAddSubmenu);
         }
 
         public static void MenuAddSeparator(Menu _this)
         {
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            Menu__Push(_this);
             NativeImplClient.InvokeModuleMethod(_menuAddSeparator);
         }
 
         public static Menu CreateMenu()
         {
             NativeImplClient.InvokeModuleMethod(_createMenu);
-            return new Menu(NativeImplClient.PopSizeT());
+            return Menu__Pop();
         }
 
         public static void MenuBarAddMenu(MenuBar _this, string label, Menu menu)
         {
-            NativeImplClient.PushSizeT(menu.NativeHandle);
+            Menu__Push(menu);
             NativeImplClient.PushString(label);
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            MenuBar__Push(_this);
             NativeImplClient.InvokeModuleMethod(_menuBarAddMenu);
         }
 
         public static MenuBar CreateMenuBar()
         {
             NativeImplClient.InvokeModuleMethod(_createMenuBar);
-            return new MenuBar(NativeImplClient.PopSizeT());
+            return MenuBar__Pop();
         }
 
         public static void CGContextSetRGBFillColor(CGContext _this, double red, double green, double blue, double alpha)
@@ -514,14 +599,14 @@ namespace TestLibraryClient
             NativeImplClient.PushDouble(blue);
             NativeImplClient.PushDouble(green);
             NativeImplClient.PushDouble(red);
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            CGContext__Push(_this);
             NativeImplClient.InvokeModuleMethod(_cGContextSetRGBFillColor);
         }
 
         public static void CGContextFillRect(CGContext _this, CGRect rect)
         {
             CGRect__Push(rect, false);
-            NativeImplClient.PushSizeT(_this.NativeHandle);
+            CGContext__Push(_this);
             NativeImplClient.InvokeModuleMethod(_cGContextFillRect);
         }
 
@@ -602,7 +687,7 @@ namespace TestLibraryClient
             NativeImplClient.SetClientMethodWrapper(_windowDelegate_onRepaint, delegate(ClientObject obj)
             {
                 var inst = (ClientWindowDelegate) obj;
-                var context = new CGContext(NativeImplClient.PopSizeT());
+                var context = CGContext__Pop();
                 inst.OnRepaint(context);
             });
 
@@ -610,7 +695,7 @@ namespace TestLibraryClient
             {
                 var inst = (ClientWindowDelegate) obj;
                 var id = NativeImplClient.PopInt();
-                var action = new Action(NativeImplClient.PopSizeT());
+                var action = Action__Pop();
                 inst.OnAction(id, action);
             });
             return ModuleInit();

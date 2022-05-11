@@ -85,7 +85,7 @@ Accelerator createAccelerator(Key key, std::set<Modifier> modifiers) {
 }
 
 Action createAction(int id, std::string label, Accelerator acc) {
-    auto ret = wl_ActionCreate(id, label.c_str(), nullptr, acc->wlAccel);
+    auto ret = wl_ActionCreate(id, label.c_str(), nullptr, acc ? acc->wlAccel : nullptr);
     return new __Action{ ret };
 }
 

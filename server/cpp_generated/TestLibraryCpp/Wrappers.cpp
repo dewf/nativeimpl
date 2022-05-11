@@ -89,30 +89,40 @@ public:
         invokeMethod(windowDelegate_onResized);
     }
     void onRepaint(CGContext context) override {
-        ni_pushSizeT((size_t)context);
+        ni_pushPtr(context);
         invokeMethod(windowDelegate_onRepaint);
     }
     void onAction(int id, Action action) override {
-        ni_pushSizeT((size_t)action);
+        ni_pushPtr(action);
         ni_pushInt(id);
         invokeMethod(windowDelegate_onAction);
     }
 };
 
 inline void WindowDelegate__push(std::shared_ptr<WindowDelegate> inst, bool isReturn) {
-    auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-    pushable->push(pushable, isReturn);
+    if (inst != nullptr) {
+        auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
+        pushable->push(pushable, isReturn);
+    }
+    else {
+        ni_pushNullInstance();
+    }
 }
 
 std::shared_ptr<WindowDelegate> WindowDelegate__pop()
 {
     bool isClientID, inSafetyArea;
     auto id = ni_popInstance(&isClientID, &inSafetyArea);
-    if (isClientID) {
-        return std::shared_ptr<WindowDelegate>(new ClientWindowDelegate(id));
+    if (id != 0) {
+        if (isClientID) {
+            return std::shared_ptr<WindowDelegate>(new ClientWindowDelegate(id));
+        }
+        else {
+            return ServerWindowDelegate::getByID(id);
+        }
     }
     else {
-        return ServerWindowDelegate::getByID(id);
+        return std::shared_ptr<WindowDelegate>();
     }
 }
 
@@ -134,18 +144,18 @@ std::set<Modifier> __ModifierSet__pop() {
 }
 
 void windowShow__wrapper() {
-    auto _this = (Window)ni_popSizeT();
+    auto _this = (Window)ni_popPtr();
     windowShow(_this);
 }
 
 void windowSetMenuBar__wrapper() {
-    auto _this = (Window)ni_popSizeT();
-    auto mb = (MenuBar)ni_popSizeT();
+    auto _this = (Window)ni_popPtr();
+    auto mb = (MenuBar)ni_popPtr();
     windowSetMenuBar(_this, mb);
 }
 
 void windowInvalidate__wrapper() {
-    auto _this = (Window)ni_popSizeT();
+    auto _this = (Window)ni_popPtr();
     auto x = ni_popInt();
     auto y = ni_popInt();
     auto width = ni_popInt();
@@ -154,64 +164,64 @@ void windowInvalidate__wrapper() {
 }
 
 void windowDestroy__wrapper() {
-    auto _this = (Window)ni_popSizeT();
+    auto _this = (Window)ni_popPtr();
     windowDestroy(_this);
 }
 
 void createWindow__wrapper() {
     auto title = popStringInternal();
     auto del = WindowDelegate__pop();
-    ni_pushSizeT((size_t)createWindow(title, del));
+    ni_pushPtr(createWindow(title, del));
 }
 
 void createAccelerator__wrapper() {
     auto key = Key__pop();
     auto modifiers = __ModifierSet__pop();
-    ni_pushSizeT((size_t)createAccelerator(key, modifiers));
+    ni_pushPtr(createAccelerator(key, modifiers));
 }
 
 void createAction__wrapper() {
     auto id = ni_popInt();
     auto label = popStringInternal();
-    auto acc = (Accelerator)ni_popSizeT();
-    ni_pushSizeT((size_t)createAction(id, label, acc));
+    auto acc = (Accelerator)ni_popPtr();
+    ni_pushPtr(createAction(id, label, acc));
 }
 
 void menuAddAction__wrapper() {
-    auto _this = (Menu)ni_popSizeT();
-    auto action = (Action)ni_popSizeT();
+    auto _this = (Menu)ni_popPtr();
+    auto action = (Action)ni_popPtr();
     menuAddAction(_this, action);
 }
 
 void menuAddSubmenu__wrapper() {
-    auto _this = (Menu)ni_popSizeT();
+    auto _this = (Menu)ni_popPtr();
     auto label = popStringInternal();
-    auto sub = (Menu)ni_popSizeT();
+    auto sub = (Menu)ni_popPtr();
     menuAddSubmenu(_this, label, sub);
 }
 
 void menuAddSeparator__wrapper() {
-    auto _this = (Menu)ni_popSizeT();
+    auto _this = (Menu)ni_popPtr();
     menuAddSeparator(_this);
 }
 
 void createMenu__wrapper() {
-    ni_pushSizeT((size_t)createMenu());
+    ni_pushPtr(createMenu());
 }
 
 void menuBarAddMenu__wrapper() {
-    auto _this = (MenuBar)ni_popSizeT();
+    auto _this = (MenuBar)ni_popPtr();
     auto label = popStringInternal();
-    auto menu = (Menu)ni_popSizeT();
+    auto menu = (Menu)ni_popPtr();
     menuBarAddMenu(_this, label, menu);
 }
 
 void createMenuBar__wrapper() {
-    ni_pushSizeT((size_t)createMenuBar());
+    ni_pushPtr(createMenuBar());
 }
 
 void cGContextSetRGBFillColor__wrapper() {
-    auto _this = (CGContext)ni_popSizeT();
+    auto _this = (CGContext)ni_popPtr();
     auto red = ni_popDouble();
     auto green = ni_popDouble();
     auto blue = ni_popDouble();
@@ -220,7 +230,7 @@ void cGContextSetRGBFillColor__wrapper() {
 }
 
 void cGContextFillRect__wrapper() {
-    auto _this = (CGContext)ni_popSizeT();
+    auto _this = (CGContext)ni_popPtr();
     auto rect = CGRect__pop();
     cGContextFillRect(_this, rect);
 }
@@ -260,14 +270,14 @@ void WindowDelegate_onResized__wrapper(int serverID) {
 
 void WindowDelegate_onRepaint__wrapper(int serverID) {
     auto inst = ServerWindowDelegate::getByID(serverID);
-    auto context = (CGContext)ni_popSizeT();
+    auto context = (CGContext)ni_popPtr();
     inst->onRepaint(context);
 }
 
 void WindowDelegate_onAction__wrapper(int serverID) {
     auto inst = ServerWindowDelegate::getByID(serverID);
     auto id = ni_popInt();
-    auto action = (Action)ni_popSizeT();
+    auto action = (Action)ni_popPtr();
     inst->onAction(id, action);
 }
 

@@ -1,7 +1,22 @@
 module TestLibrary;
 
+int moduleInit();
+void moduleShutdown();
+
+// OPENWL ======================================================================================
+
 struct CloseRequestReply {
     bool cancelClose;
+}
+
+struct MouseEvent {
+    MouseEventType eventType;
+    int x;
+    int y;
+    int wheelDelta;
+    MouseWheelAxis wheelAxis;
+    MouseButton button;
+    Set<Modifier> modifiers;
 }
 
 interface WindowDelegate {
@@ -10,6 +25,7 @@ interface WindowDelegate {
     void onResized(int newWidth, int newHeight);
     void onRepaint(CGContext context);
     void onAction(int id, Action action);
+    void onMouseEvent(MouseEvent mouseEvent);
 }
 
 opaque Window {
@@ -38,6 +54,11 @@ opaque MenuBar {
 }
 MenuBar createMenuBar();
 
+int runloop();
+void exitRunloop();
+
+// OPENDL ======================================================================================
+
 struct CGPoint {
     double x;
     double y;
@@ -58,17 +79,36 @@ opaque CGContext {
     void fillRect(CGRect rect);
 }
 
-int runloop();
-void exitRunloop();
-
-int moduleInit();
-void moduleShutdown();
+// blah =====================================================================================
 
 enum Modifier {
     Shift,
     Control,
     Alt,
     MacControl
+}
+
+enum MouseEventType {
+    Down,
+    Up,
+    Move,
+    Enter,
+    Leave,
+    Wheel
+}
+
+enum MouseButton {
+    None,
+    Left,
+    Middle,
+    Right,
+    Other
+}
+
+enum MouseWheelAxis {
+    None,
+    Vertical,
+    Horizontal
 }
 
 enum Key {

@@ -1,46 +1,10 @@
 ﻿module CppGenerator
 
 open System.IO
-open System.Text.RegularExpressions
 open Parser
 
 open Util
 open Common
-
-let PopTemplate = "std::shared_ptr<%%IFACE%%> %%IFACE%%__pop()
-{
-    bool isClientID, inSafetyArea;
-    auto id = ni_popInstance(&isClientID, &inSafetyArea);
-    if (id != 0) {
-        if (isClientID) {
-            return std::shared_ptr<%%IFACE%%>(new Client%%IFACE%%(id));
-        }
-        else {
-            return Server%%IFACE%%::getByID(id);
-        }
-    }
-    else {
-        return std::shared_ptr<%%IFACE%%>();
-    }
-}"
-let PushTemplate = "inline void %%IFACE%%__push(std::shared_ptr<%%IFACE%%> inst, bool isReturn) {
-    if (inst != nullptr) {
-        auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-        pushable->push(pushable, isReturn);
-    }
-    else {
-        ni_pushNull();
-    }
-}"
-let ServerWrapperTemplate = "// inherit from this to create server instances of %%IFACE%%
-class Server%%IFACE%% : public %%IFACE%%, public ServerObject {
-public:
-    virtual ~Server%%IFACE%%() {}
-    static std::shared_ptr<Server%%IFACE%%> getByID(int id) {
-        auto obj = ServerObject::getByID(id);
-        return std::static_pointer_cast<Server%%IFACE%%>(obj);
-    }
-};"
 
 let rec typeToName = function
     | UnitType -> "Unit"
@@ -423,12 +387,37 @@ let renderWrapperInterface (writer: TextWriter) (typeMap: Map<string, UserOrGene
         write 1 "}"
     // end
     write 0 "};"
+    // PUSH ===================================
+    let outerType =
+        InterfaceType name
     blank()
-    // push/pop
-    let nameRegex = Regex(@"%%IFACE%%")
-    writer.WriteLine(nameRegex.Replace(PushTemplate, name))
-    writer.WriteLine()
-    writer.WriteLine(nameRegex.Replace(PopTemplate, name))
+    write 0 "void %s__push(%s inst, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
+    write 1 "if (inst != nullptr) {"
+    write 2 "auto pushable = std::dynamic_pointer_cast<Pushable>(inst);"
+    write 2 "pushable->push(pushable, isReturn);"
+    write 1 "}"
+    write 1 "else {"
+    write 2 "ni_pushNull();"
+    write 1 "}"
+    write 0 "}"
+    // POP ====================================
+    blank()
+    write 0 "%s %s__pop()" (typeToCppString typeMap outerType) (typeToName outerType)
+    write 0 "{"
+    write 1 "bool isClientID, inSafetyArea;"
+    write 1 "auto id = ni_popInstance(&isClientID, &inSafetyArea);"
+    write 1 "if (id != 0) {"
+    write 2 "if (isClientID) {"
+    write 3 "return %s(new Client%s(id));" (typeToCppString typeMap outerType) (typeToName outerType)
+    write 2 "}"
+    write 2 "else {"
+    write 3 "return Server%s::getByID(id);" (typeToName outerType)
+    write 2 "}"
+    write 1 "}"
+    write 1 "else {"
+    write 2 "return %s();" (typeToCppString typeMap outerType)
+    write 1 "}"
+    write 0 "}"
 
 let renderWrapperException (writer: TextWriter) (name: string) (exFields: NamedField list) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -984,6 +973,8 @@ let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFun
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
+    let blank() =
+        write 0 ""
     write 0 "class %s {" name
     write 0 "public:"
     for namedFunc in methods do
@@ -998,10 +989,19 @@ let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFun
                 sprintf " // throws %s" joined
         write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
     write 0 "};"
-    write 0 ""
-    // server wrapper
-    let nameRegex = Regex(@"%%IFACE%%")
-    writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
+    // server wrapper template
+    let outerType =
+        InterfaceType name
+    blank()
+    write 0 "// inherit from this to create server instances of %s" name
+    write 0 "class Server%s : public %s, public ServerObject {" (typeToName outerType) name
+    write 0 "public:"
+    write 1 "virtual ~Server%s() {}" (typeToName outerType)
+    write 1 "static std::shared_ptr<Server%s> getByID(int id) {" (typeToName outerType)
+    write 2 "auto obj = ServerObject::getByID(id);"
+    write 2 "return std::static_pointer_cast<Server%s>(obj);" (typeToName outerType)
+    write 1 "}"
+    write 0 "};"
 
 let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumTypeValue list) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =

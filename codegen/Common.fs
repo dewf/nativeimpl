@@ -7,12 +7,21 @@ let rec typeToInternalKey = function
     | UnitType -> "void"
     | Primitive prim ->
         match prim with
+        | SizeT -> "size_t"
         | Bool -> "bool"
-        | Int32 -> "int32"
+        | Int(signed, width) ->
+            match signed, width with
+            | true, Width8 -> "int8"
+            | false, Width8 -> "uint8"
+            | true, Width16 -> "int16"
+            | false, Width16 -> "uint16"
+            | true, Width32 -> "int32"
+            | false, Width32 -> "uint32"
+            | true, Width64 -> "int64"
+            | false, Width64 -> "uint64"
         | Float32 -> "float32"
         | Float64 -> "float64"
         | StringType -> "string"
-        | x -> sprintf "(typeToInternalKey: primitive not done yet [%A])" x
     | Unresolved _ -> failwith "typeToInternalKey: Unresolved??"
     | OpaqueHandleType name -> name
     | InterfaceType name -> name

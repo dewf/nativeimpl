@@ -62,8 +62,29 @@ public:
 	virtual bool boolValue() { throw WrongTypeException(); }
 	virtual std::vector<uint8_t> boolArray() { throw WrongTypeException(); } // using 'bool' doesn't allow .data access
 
-	virtual int intValue() { throw WrongTypeException(); }
-	virtual std::vector<int> intArray() { throw WrongTypeException(); }
+	virtual int8_t int8Value() { throw WrongTypeException(); }
+	virtual std::vector<int8_t> int8Array() { throw WrongTypeException(); }
+
+	virtual uint8_t uint8Value() { throw WrongTypeException(); }
+	virtual std::vector<uint8_t> uint8Array() { throw WrongTypeException(); }
+
+	virtual int16_t int16Value() { throw WrongTypeException(); }
+	virtual std::vector<int16_t> int16Array() { throw WrongTypeException(); }
+
+	virtual uint16_t uint16Value() { throw WrongTypeException(); }
+	virtual std::vector<uint16_t> uint16Array() { throw WrongTypeException(); }
+
+	virtual int32_t int32Value() { throw WrongTypeException(); }
+	virtual std::vector<int32_t> int32Array() { throw WrongTypeException(); }
+
+	virtual uint32_t uint32Value() { throw WrongTypeException(); }
+	virtual std::vector<uint32_t> uint32Array() { throw WrongTypeException(); }
+
+	virtual int64_t int64Value() { throw WrongTypeException(); }
+	virtual std::vector<int64_t> int64Array() { throw WrongTypeException(); }
+
+	virtual uint64_t uint64Value() { throw WrongTypeException(); }
+	virtual std::vector<uint64_t> uint64Array() { throw WrongTypeException(); }
 
 	virtual float floatValue() { throw WrongTypeException(); }
 	virtual std::vector<float> floatArray() { throw WrongTypeException(); }
@@ -141,22 +162,186 @@ public:
 	}
 };
 
-class IntItem : public StackItem {
+// INT8 ====
+
+class Int8Item : public StackItem {
 public:
-	int x;
-	IntItem(int x) : x(x) {}
-	int intValue() override {
+	int8_t x;
+	Int8Item(int8_t x) : x(x) {}
+	int8_t int8Value() override {
 		return x;
 	}
 };
 
-class IntArrayItem : public StackItem {
+class UInt8Item : public StackItem {
 public:
-	std::vector<int> values;
-	IntArrayItem(int* ptr, size_t count) {
-		values.assign(ptr, ptr + count);
+	uint8_t x;
+	UInt8Item(uint8_t x) : x(x) {}
+	uint8_t uint8Value() override {
+		return x;
 	}
-	std::vector<int> intArray() override {
+};
+
+class Int8ArrayItem : public StackItem {
+public:
+	std::vector<int8_t> values;
+	Int8ArrayItem(int8_t* ptr, size_t count) {
+		if (count > 0) {
+			values.assign(ptr, ptr + count);
+		}
+	}
+	std::vector<int8_t> int8Array() override {
+		return values;
+	}
+};
+
+class UInt8ArrayItem : public StackItem {
+public:
+	std::vector<uint8_t> values;
+	UInt8ArrayItem(uint8_t* ptr, size_t count) {
+		if (count > 0) {
+			values.assign(ptr, ptr + count);
+		}
+	}
+	std::vector<uint8_t> uint8Array() override {
+		return values;
+	}
+};
+
+// INT16 ====
+
+class Int16Item : public StackItem {
+public:
+	int16_t x;
+	Int16Item(int16_t x) : x(x) {}
+	int16_t int16Value() override {
+		return x;
+	}
+};
+
+class UInt16Item : public StackItem {
+public:
+	uint16_t x;
+	UInt16Item(uint16_t x) : x(x) {}
+	uint16_t uint16Value() override {
+		return x;
+	}
+};
+
+class Int16ArrayItem : public StackItem {
+public:
+	std::vector<int16_t> values;
+	Int16ArrayItem(int16_t* ptr, size_t count) {
+		if (count > 0) {
+			values.assign(ptr, ptr + count);
+		}
+	}
+	std::vector<int16_t> int16Array() override {
+		return values;
+	}
+};
+
+class UInt16ArrayItem : public StackItem {
+public:
+	std::vector<uint16_t> values;
+	UInt16ArrayItem(uint16_t* ptr, size_t count) {
+		if (count > 0) {
+			values.assign(ptr, ptr + count);
+		}
+	}
+	std::vector<uint16_t> uint16Array() override {
+		return values;
+	}
+};
+
+// INT32 ====
+
+class Int32Item : public StackItem {
+public:
+	int32_t x;
+	Int32Item(int32_t x) : x(x) {}
+	int32_t int32Value() override {
+		return x;
+	}
+};
+
+class UInt32Item : public StackItem {
+public:
+	uint32_t x;
+	UInt32Item(uint32_t x) : x(x) {}
+	uint32_t uint32Value() override {
+		return x;
+	}
+};
+
+class Int32ArrayItem : public StackItem {
+public:
+	std::vector<int32_t> values;
+	Int32ArrayItem(int32_t* ptr, size_t count) {
+		if (count > 0) {
+			values.assign(ptr, ptr + count);
+		}
+	}
+	std::vector<int32_t> int32Array() override {
+		return values;
+	}
+};
+
+class UInt32ArrayItem : public StackItem {
+public:
+	std::vector<uint32_t> values;
+	UInt32ArrayItem(uint32_t* ptr, size_t count) {
+		if (count > 0) {
+			values.assign(ptr, ptr + count);
+		}
+	}
+	std::vector<uint32_t> uint32Array() override {
+		return values;
+	}
+};
+
+// INT64 ====
+
+class Int64Item : public StackItem {
+public:
+	int64_t x;
+	Int64Item(int64_t x) : x(x) {}
+	int64_t int64Value() override {
+		return x;
+	}
+};
+
+class UInt64Item : public StackItem {
+public:
+	uint64_t x;
+	UInt64Item(uint64_t x) : x(x) {}
+	uint64_t uint64Value() override {
+		return x;
+	}
+};
+
+class Int64ArrayItem : public StackItem {
+public:
+	std::vector<int64_t> values;
+	Int64ArrayItem(int64_t* ptr, size_t count) {
+		if (count > 0) {
+			values.assign(ptr, ptr + count);
+		}
+	}
+	std::vector<int64_t> int64Array() override {
+		return values;
+	}
+};
+
+class UInt64ArrayItem : public StackItem {
+public:
+	std::vector<uint64_t> values;
+	UInt64ArrayItem(uint64_t* ptr, size_t count) {
+		if (count > 0) {
+			values.assign(ptr, ptr + count);
+		}
+	}
+	std::vector<uint64_t> uint64Array() override {
 		return values;
 	}
 };
@@ -561,33 +746,263 @@ void ni_popBoolArray(bool** values, size_t* count)
 	*count = lastBoolArray.size();
 }
 
-void ni_pushInt(int x) {
-	vstack.push(new IntItem(x));
+// INT8 stuff ===============================
+
+void ni_pushInt8(int8_t x)
+{
+	vstack.push(new Int8Item(x));
 }
 
-int ni_popInt() {
+int8_t ni_popInt8()
+{
 	auto item = vstack.top();
-	auto x = item->intValue();
+	auto x = item->int8Value();
 	vstack.pop();
 	delete item;
 	return x;
 }
 
-void ni_pushIntArray(int* values, size_t count)
+void ni_pushInt8Array(int8_t* values, size_t count)
 {
-	vstack.push(new IntArrayItem(values, count));
+	vstack.push(new Int8ArrayItem(values, count));
 }
 
-static std::vector<int> lastIntArray;
+static std::vector<int8_t> lastInt8Array;
 
-void ni_popIntArray(int** values, size_t* count) {
+void ni_popInt8Array(int8_t** values, size_t* count)
+{
 	auto item = vstack.top();
-	lastIntArray = item->intArray();
+	lastInt8Array = item->int8Array();
 	vstack.pop();
 	delete item;
-	*values = lastIntArray.data();
-	*count = lastIntArray.size();
+	*values = lastInt8Array.data();
+	*count = lastInt8Array.size();
 }
+
+void ni_pushUInt8(uint8_t x)
+{
+	vstack.push(new UInt8Item(x));
+}
+
+uint8_t ni_popUInt8()
+{
+	auto item = vstack.top();
+	auto x = item->uint8Value();
+	vstack.pop();
+	delete item;
+	return x;
+}
+
+void ni_pushUInt8Array(uint8_t* values, size_t count)
+{
+	vstack.push(new UInt8ArrayItem(values, count));
+}
+
+static std::vector<uint8_t> lastUInt8Array;
+
+void ni_popUInt8Array(uint8_t** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastUInt8Array = item->uint8Array();
+	vstack.pop();
+	delete item;
+	*values = lastUInt8Array.data();
+	*count = lastUInt8Array.size();
+}
+
+// INT16 stuff ===============================
+
+void ni_pushInt16(int16_t x)
+{
+	vstack.push(new Int16Item(x));
+}
+
+int16_t ni_popInt16()
+{
+	auto item = vstack.top();
+	auto x = item->int16Value();
+	vstack.pop();
+	delete item;
+	return x;
+}
+
+void ni_pushInt16Array(int16_t* values, size_t count)
+{
+	vstack.push(new Int16ArrayItem(values, count));
+}
+
+static std::vector<int16_t> lastInt16Array;
+
+void ni_popInt16Array(int16_t** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastInt16Array = item->int16Array();
+	vstack.pop();
+	delete item;
+	*values = lastInt16Array.data();
+	*count = lastInt16Array.size();
+}
+
+void ni_pushUInt16(uint16_t x)
+{
+	vstack.push(new UInt16Item(x));
+}
+
+uint16_t ni_popUInt16()
+{
+	auto item = vstack.top();
+	auto x = item->uint16Value();
+	vstack.pop();
+	delete item;
+	return x;
+}
+
+void ni_pushUInt16Array(uint16_t* values, size_t count)
+{
+	vstack.push(new UInt16ArrayItem(values, count));
+}
+
+static std::vector<uint16_t> lastUInt16Array;
+
+void ni_popUInt16Array(uint16_t** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastUInt16Array = item->uint16Array();
+	vstack.pop();
+	delete item;
+	*values = lastUInt16Array.data();
+	*count = lastUInt16Array.size();
+}
+
+// INT32 stuff ===============================
+
+void ni_pushInt32(int32_t x)
+{
+	vstack.push(new Int32Item(x));
+}
+
+int32_t ni_popInt32()
+{
+	auto item = vstack.top();
+	auto x = item->int32Value();
+	vstack.pop();
+	delete item;
+	return x;
+}
+
+void ni_pushInt32Array(int32_t* values, size_t count)
+{
+	vstack.push(new Int32ArrayItem(values, count));
+}
+
+static std::vector<int32_t> lastInt32Array;
+
+void ni_popInt32Array(int32_t** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastInt32Array = item->int32Array();
+	vstack.pop();
+	delete item;
+	*values = lastInt32Array.data();
+	*count = lastInt32Array.size();
+}
+
+void ni_pushUInt32(uint32_t x)
+{
+	vstack.push(new UInt32Item(x));
+}
+
+uint32_t ni_popUInt32()
+{
+	auto item = vstack.top();
+	auto x = item->uint32Value();
+	vstack.pop();
+	delete item;
+	return x;
+}
+
+void ni_pushUInt32Array(uint32_t* values, size_t count)
+{
+	vstack.push(new UInt32ArrayItem(values, count));
+}
+
+static std::vector<uint32_t> lastUInt32Array;
+
+void ni_popUInt32Array(uint32_t** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastUInt32Array = item->uint32Array();
+	vstack.pop();
+	delete item;
+	*values = lastUInt32Array.data();
+	*count = lastUInt32Array.size();
+}
+
+// INT64 stuff ===============================
+
+void ni_pushInt64(int64_t x)
+{
+	vstack.push(new Int64Item(x));
+}
+
+int64_t ni_popInt64()
+{
+	auto item = vstack.top();
+	auto x = item->int64Value();
+	vstack.pop();
+	delete item;
+	return x;
+}
+
+void ni_pushInt64Array(int64_t* values, size_t count)
+{
+	vstack.push(new Int64ArrayItem(values, count));
+}
+
+static std::vector<int64_t> lastInt64Array;
+
+void ni_popInt64Array(int64_t** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastInt64Array = item->int64Array();
+	vstack.pop();
+	delete item;
+	*values = lastInt64Array.data();
+	*count = lastInt64Array.size();
+}
+
+void ni_pushUInt64(uint64_t x)
+{
+	vstack.push(new UInt64Item(x));
+}
+
+uint64_t ni_popUInt64()
+{
+	auto item = vstack.top();
+	auto x = item->uint64Value();
+	vstack.pop();
+	delete item;
+	return x;
+}
+
+void ni_pushUInt64Array(uint64_t* values, size_t count)
+{
+	vstack.push(new UInt64ArrayItem(values, count));
+}
+
+static std::vector<uint64_t> lastUInt64Array;
+
+void ni_popUInt64Array(uint64_t** values, size_t* count)
+{
+	auto item = vstack.top();
+	lastUInt64Array = item->uint64Array();
+	vstack.pop();
+	delete item;
+	*values = lastUInt64Array.data();
+	*count = lastUInt64Array.size();
+}
+
+// ==== end ints, sigh =======================================
 
 void ni_pushFloat(float x)
 {

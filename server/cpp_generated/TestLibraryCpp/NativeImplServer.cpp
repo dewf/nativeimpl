@@ -64,20 +64,147 @@ std::vector<bool> popBoolArrayInternal()
 	return result;
 }
 
-void pushIntArrayInternal(std::vector<int> values)
+// INT8 =====
+
+void pushInt8ArrayInternal(std::vector<int8_t> values)
 {
-	ni_pushIntArray(values.data(), values.size());
+	ni_pushInt8Array(values.data(), values.size());
 }
 
-std::vector<int> popIntArrayInternal()
+std::vector<int8_t> popInt8ArrayInternal()
 {
-	std::vector<int> ret;
-	int* values;
+	std::vector<int8_t> ret;
+	int8_t* values;
 	size_t count;
-	ni_popIntArray(&values, &count);
-	ret.assign(values, values + count);
+	ni_popInt8Array(&values, &count);
+	if (count > 0) {
+		ret.assign(values, values + count);
+	}
 	return ret;
 }
+
+void pushUInt8ArrayInternal(std::vector<uint8_t> values)
+{
+	ni_pushUInt8Array(values.data(), values.size());
+}
+
+std::vector<uint8_t> popUInt8ArrayInternal() {
+	std::vector<uint8_t> ret;
+	uint8_t* values;
+	size_t count;
+	ni_popUInt8Array(&values, &count);
+	if (count > 0) {
+		ret.assign(values, values + count);
+	}
+	return ret;
+}
+
+// INT16 =====
+
+void pushInt16ArrayInternal(std::vector<int16_t> values)
+{
+	ni_pushInt16Array(values.data(), values.size());
+}
+
+std::vector<int16_t> popInt16ArrayInternal()
+{
+	std::vector<int16_t> ret;
+	int16_t* values;
+	size_t count;
+	ni_popInt16Array(&values, &count);
+	if (count > 0) {
+		ret.assign(values, values + count);
+	}
+	return ret;
+}
+
+void pushUInt16ArrayInternal(std::vector<uint16_t> values)
+{
+	ni_pushUInt16Array(values.data(), values.size());
+}
+
+std::vector<uint16_t> popUInt16ArrayInternal() {
+	std::vector<uint16_t> ret;
+	uint16_t* values;
+	size_t count;
+	ni_popUInt16Array(&values, &count);
+	if (count > 0) {
+		ret.assign(values, values + count);
+	}
+	return ret;
+}
+
+// INT32 =====
+
+void pushInt32ArrayInternal(std::vector<int32_t> values)
+{
+	ni_pushInt32Array(values.data(), values.size());
+}
+
+std::vector<int32_t> popInt32ArrayInternal()
+{
+	std::vector<int32_t> ret;
+	int32_t* values;
+	size_t count;
+	ni_popInt32Array(&values, &count);
+	if (count > 0) {
+		ret.assign(values, values + count);
+	}
+	return ret;
+}
+
+void pushUInt32ArrayInternal(std::vector<uint32_t> values)
+{
+	ni_pushUInt32Array(values.data(), values.size());
+}
+
+std::vector<uint32_t> popUInt32ArrayInternal() {
+	std::vector<uint32_t> ret;
+	uint32_t* values;
+	size_t count;
+	ni_popUInt32Array(&values, &count);
+	if (count > 0) {
+		ret.assign(values, values + count);
+	}
+	return ret;
+}
+
+// INT64 =====
+
+void pushInt64ArrayInternal(std::vector<int64_t> values)
+{
+	ni_pushInt64Array(values.data(), values.size());
+}
+
+std::vector<int64_t> popInt64ArrayInternal()
+{
+	std::vector<int64_t> ret;
+	int64_t* values;
+	size_t count;
+	ni_popInt64Array(&values, &count);
+	if (count > 0) {
+		ret.assign(values, values + count);
+	}
+	return ret;
+}
+
+void pushUInt64ArrayInternal(std::vector<uint64_t> values)
+{
+	ni_pushUInt64Array(values.data(), values.size());
+}
+
+std::vector<uint64_t> popUInt64ArrayInternal() {
+	std::vector<uint64_t> ret;
+	uint64_t* values;
+	size_t count;
+	ni_popUInt64Array(&values, &count);
+	if (count > 0) {
+		ret.assign(values, values + count);
+	}
+	return ret;
+}
+
+// end ints =====
 
 void pushStringArrayInternal(std::vector<std::string> values)
 {

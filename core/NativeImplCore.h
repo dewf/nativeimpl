@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #define NIHANDLE(x) struct ni_##x; typedef struct ni_##x* ni_##x##Ref
 
 NIHANDLE(Module);
@@ -82,10 +84,45 @@ extern "C" {
 	void ni_pushBoolArray(bool* values, size_t count);
 	void ni_popBoolArray(bool** values, size_t* count);
 
-	void ni_pushInt(int x);
-	int ni_popInt();
-	void ni_pushIntArray(int* values, size_t count);
-	void ni_popIntArray(int** values, size_t* count);
+	void ni_pushInt8(int8_t x);
+	int8_t ni_popInt8();
+	void ni_pushInt8Array(int8_t* values, size_t count);
+	void ni_popInt8Array(int8_t** values, size_t* count);
+
+	void ni_pushUInt8(uint8_t x);
+	uint8_t ni_popUInt8();
+	void ni_pushUInt8Array(uint8_t* values, size_t count);
+	void ni_popUInt8Array(uint8_t** values, size_t* count);
+
+	void ni_pushInt16(int16_t x);
+	int16_t ni_popInt16();
+	void ni_pushInt16Array(int16_t* values, size_t count);
+	void ni_popInt16Array(int16_t** values, size_t* count);
+
+	void ni_pushUInt16(uint16_t x);
+	uint16_t ni_popUInt16();
+	void ni_pushUInt16Array(uint16_t* values, size_t count);
+	void ni_popUInt16Array(uint16_t** values, size_t* count);
+
+	void ni_pushInt32(int32_t x);
+	int32_t ni_popInt32();
+	void ni_pushInt32Array(int32_t* values, size_t count);
+	void ni_popInt32Array(int32_t** values, size_t* count);
+
+	void ni_pushUInt32(uint32_t x);
+	uint32_t ni_popUInt32();
+	void ni_pushUInt32Array(uint32_t* values, size_t count);
+	void ni_popUInt32Array(uint32_t** values, size_t* count);
+
+	void ni_pushInt64(int64_t x);
+	int64_t ni_popInt64();
+	void ni_pushInt64Array(int64_t* values, size_t count);
+	void ni_popInt64Array(int64_t** values, size_t* count);
+
+	void ni_pushUInt64(uint64_t x);
+	uint64_t ni_popUInt64();
+	void ni_pushUInt64Array(uint64_t* values, size_t count);
+	void ni_popUInt64Array(uint64_t** values, size_t* count);
 
 	void ni_pushFloat(float x);
 	float ni_popFloat();

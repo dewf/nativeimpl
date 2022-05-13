@@ -27,10 +27,22 @@ module List =
                 (List.rev revFront), current
         takeMore count xs []
 
+type IntWidth =
+    | Width8
+    | Width16
+    | Width32
+    | Width64
+
+let widthToInt = function
+    | Width8 -> 8
+    | Width16 -> 16
+    | Width32 -> 32
+    | Width64 -> 64
+    
 type NIPrimitive =
     | SizeT
     | Bool
-    | Int8 | Int16 | Int32 | Int64
+    | Int of signed: bool * width: IntWidth
     | Float32 | Float64
     | StringType
 
@@ -119,9 +131,18 @@ let rec parseType (input: TokenAndLocation list) =
         Primitive SizeT, etc
     | Lookahead 1 ([BoolToken], _, etc) ->
         Primitive Bool, etc
-    | Lookahead 1 ([IntToken], _, etc) ->
-        Primitive Int32, etc
-    | Lookahead 1 ([FloatToken], _, etc) ->
+    | Lookahead 1 ([IntToken(signed, width)], _, etc) ->
+        let inner =
+            let w2 =
+                match width with
+                | 8 -> Width8
+                | 16 -> Width16
+                | 32 -> Width32
+                | 64 -> Width64
+                | _ -> failwith "parseType intwidth??"
+            Int(signed, w2)
+        Primitive inner, etc
+    | Lookahead 1 ([Float32Token], _, etc) ->
         Primitive Float32, etc
     | Lookahead 1 ([Float64Token], _, etc) ->
         Primitive Float64, etc
@@ -222,7 +243,7 @@ type EnumInfo = {
 
 let isValidEnumWidth (t: NIType) =
     match t with
-    | Primitive (Int8 | Int16 | Int32 | Int64) -> true
+    | Primitive (Int _) -> true
     | _ -> false
 
 type UserType =

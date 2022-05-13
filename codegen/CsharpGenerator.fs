@@ -44,11 +44,19 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
         match prim with
         | SizeT -> "IntPtr"
         | Bool -> "bool"
-        | Int32 -> "int"
+        | Int(signed, intWidth) ->
+            match signed, intWidth with
+            | true, Width8 -> "sbyte"
+            | false, Width8 -> "byte"
+            | true, Width16 -> "short"
+            | false, Width16 -> "ushort"
+            | true, Width32 -> "int"
+            | false, Width32 -> "uint"
+            | true, Width64 -> "long"
+            | false, Width64 -> "ulong"
         | Float32 -> "float"
         | Float64 -> "double"
         | StringType -> "string"
-        | _ -> sprintf "(typeToCsString: prim not yet supported: %A)" prim
     | OpaqueHandleType name -> upperFirst name
     | EnumType name -> upperFirst name
     | SumType name -> upperFirst name
@@ -89,11 +97,19 @@ let rec typeToName = function
         match prim with
         | SizeT -> "SizeT"
         | Bool -> "Bool"
-        | Int32 -> "Int"
+        | Int(signed, width) ->
+            match signed, width with
+            | true, Width8 -> "SByte"
+            | false, Width8 -> "Byte"
+            | true, Width16 -> "Short"
+            | false, Width16 -> "UShort"
+            | true, Width32 -> "Int"
+            | false, Width32 -> "UInt"
+            | true, Width64 -> "Long"
+            | false, Width64 -> "ULong"
         | Float32 -> "Float"
         | Float64 -> "Double"
         | StringType -> "String"
-        | _ -> sprintf "(typeToName: not yet supported: prim %A)" prim
     | StructType name -> upperFirst name
     | EnumType name -> upperFirst name
     | TypedefType name -> upperFirst name
@@ -154,11 +170,11 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         match prim with
         | SizeT -> write level "%s NativeImplClient.PopSizeT();" contextPrefix
         | Bool -> write level "%s NativeImplClient.PopBool();" contextPrefix
-        | Int32 -> write level "%s NativeImplClient.PopInt();" contextPrefix
+        | Int(signed, width) ->
+            write level "%s NativeImplClient.Pop%sInt%d();" contextPrefix (if signed then "" else "U") (widthToInt width)
         | Float32 -> write level "%s NativeImplClient.PopFloat();" contextPrefix
         | Float64 -> write level "%s NativeImplClient.PopDouble();" contextPrefix
         | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
-        | _ -> write level "// popValue prim %A not yet supported" prim
     | OpaqueHandleType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
@@ -170,7 +186,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         | Primitive prim ->
             match prim with
             | Bool -> write level "%s NativeImplClient.PopBoolArray();" contextPrefix
-            | Int32 -> write level "%s NativeImplClient.PopIntArray();" contextPrefix
+            | Int(signed, width) ->
+                write level "%s NativeImplClient.Pop%sInt%dArray();" contextPrefix (if signed then "" else "U") (widthToInt width)
             | Float32 -> write level "%s NativeImplClient.PopFloatArray();" contextPrefix
             | Float64 -> write level "%s NativeImplClient.PopDoubleArray();" contextPrefix
             | StringType -> write level "%s NativeImplClient.PopStringArray();" contextPrefix
@@ -228,11 +245,11 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         match prim with
         | SizeT -> write level "NativeImplClient.PushSizeT(%s);" content
         | Bool -> write level "NativeImplClient.PushBool(%s);" content
-        | Int32 -> write level "NativeImplClient.PushInt(%s);" content
+        | Int(signed, width) ->
+            write level "NativeImplClient.Push%sInt%d(%s);" (if signed then "" else "U") (widthToInt width) content
         | Float32 -> write level "NativeImplClient.PushFloat(%s);" content
         | Float64 -> write level "NativeImplClient.PushDouble(%s);" content
         | StringType -> write level "NativeImplClient.PushString(%s);" content
-        | _ -> write level "// pushValue prim %A not yet supported" prim
     | OpaqueHandleType name ->
         write level "%s__Push(%s);" (upperFirst name) content
     | InterfaceType name ->
@@ -244,7 +261,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         | Primitive prim ->
             match prim with
             | Bool -> write level "NativeImplClient.PushBoolArray(%s);" content
-            | Int32 -> write level "NativeImplClient.PushIntArray(%s);" content
+            | Int(signed, width) ->
+                write level "NativeImplClient.Push%sInt%dArray(%s);" (if signed then "" else "U") (widthToInt width) content
             | Float32 -> write level "NativeImplClient.PushFloatArray(%s);" content
             | Float64 -> write level "NativeImplClient.PushDoubleArray(%s);" content
             | StringType -> write level "NativeImplClient.PushStringArray(%s);" content
@@ -466,13 +484,13 @@ type SetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, outerT
             // push
             write 2 "private static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
-            pushValue writer 3 (ArrayType (Primitive Int32)) "items.Select(x => (int)x).ToArray()" (Indirect "isReturn")
+            pushValue writer 3 (ArrayType (Primitive(Int(true,Width32)))) "items.Select(x => (int)x).ToArray()" (Indirect "isReturn")
             write 2 "}"
             // pop
             blank()
             write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
-            popValue writer 3 (ArrayType (Primitive Int32)) (NewVariable "intArray")
+            popValue writer 3 (ArrayType (Primitive(Int(true,Width32)))) (NewVariable "intArray")
             write 3 "return intArray.Select(x => (%s)x).ToHashSet();" (typeToName elemType)
             write 2 "}"
         member this.StructType (structName: string) (namedFields: NamedField list) =

@@ -168,8 +168,29 @@ std::string popStringInternal();
 void pushBoolArrayInternal(std::vector<bool> values);
 std::vector<bool> popBoolArrayInternal();
 
-void pushIntArrayInternal(std::vector<int> values);
-std::vector<int> popIntArrayInternal();
+void pushInt8ArrayInternal(std::vector<int8_t> values);
+std::vector<int8_t> popInt8ArrayInternal();
+
+void pushUInt8ArrayInternal(std::vector<uint8_t> values);
+std::vector<uint8_t> popUInt8ArrayInternal();
+
+void pushInt16ArrayInternal(std::vector<int16_t> values);
+std::vector<int16_t> popInt16ArrayInternal();
+
+void pushUInt16ArrayInternal(std::vector<uint16_t> values);
+std::vector<uint16_t> popUInt16ArrayInternal();
+
+void pushInt32ArrayInternal(std::vector<int32_t> values);
+std::vector<int32_t> popInt32ArrayInternal();
+
+void pushUInt32ArrayInternal(std::vector<uint32_t> values);
+std::vector<uint32_t> popUInt32ArrayInternal();
+
+void pushInt64ArrayInternal(std::vector<int64_t> values);
+std::vector<int64_t> popInt64ArrayInternal();
+
+void pushUInt64ArrayInternal(std::vector<uint64_t> values);
+std::vector<uint64_t> popUInt64ArrayInternal();
 
 void pushFloatArrayInternal(std::vector<float> values);
 std::vector<float> popFloatArrayInternal();

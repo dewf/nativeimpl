@@ -1,4 +1,5 @@
 #include "../../../../core/NativeImplCore.h"
+#include <cstdint>
 
 #ifdef TESTLIBRARY_EXPORTS
 #define TESTLIBRARY_API __declspec(dllexport)
@@ -40,10 +41,45 @@ extern "C" {
 	TESTLIBRARY_API void pushBoolArray(bool* values, size_t count);
 	TESTLIBRARY_API void popBoolArray(bool** values, size_t* count);
 
-	TESTLIBRARY_API void pushInt(int x);
-	TESTLIBRARY_API int popInt();
-	TESTLIBRARY_API void pushIntArray(int* values, size_t count);
-	TESTLIBRARY_API void popIntArray(int** values, size_t* count);
+	TESTLIBRARY_API void pushInt8(int8_t x);
+	TESTLIBRARY_API int8_t popInt8();
+	TESTLIBRARY_API void pushInt8Array(int8_t* values, size_t count);
+	TESTLIBRARY_API void popInt8Array(int8_t** values, size_t* count);
+
+	TESTLIBRARY_API void pushUInt8(uint8_t x);
+	TESTLIBRARY_API uint8_t popUInt8();
+	TESTLIBRARY_API void pushUInt8Array(uint8_t* values, size_t count);
+	TESTLIBRARY_API void popUInt8Array(uint8_t** values, size_t* count);
+
+	TESTLIBRARY_API void pushInt16(int16_t x);
+	TESTLIBRARY_API int16_t popInt16();
+	TESTLIBRARY_API void pushInt16Array(int16_t* values, size_t count);
+	TESTLIBRARY_API void popInt16Array(int16_t** values, size_t* count);
+
+	TESTLIBRARY_API void pushUInt16(uint16_t x);
+	TESTLIBRARY_API uint16_t popUInt16();
+	TESTLIBRARY_API void pushUInt16Array(uint16_t* values, size_t count);
+	TESTLIBRARY_API void popUInt16Array(uint16_t** values, size_t* count);
+
+	TESTLIBRARY_API void pushInt32(int32_t x);
+	TESTLIBRARY_API int32_t popInt32();
+	TESTLIBRARY_API void pushInt32Array(int32_t* values, size_t count);
+	TESTLIBRARY_API void popInt32Array(int32_t** values, size_t* count);
+
+	TESTLIBRARY_API void pushUInt32(uint32_t x);
+	TESTLIBRARY_API uint32_t popUInt32();
+	TESTLIBRARY_API void pushUInt32Array(uint32_t* values, size_t count);
+	TESTLIBRARY_API void popUInt32Array(uint32_t** values, size_t* count);
+
+	TESTLIBRARY_API void pushInt64(int64_t x);
+	TESTLIBRARY_API int64_t popInt64();
+	TESTLIBRARY_API void pushInt64Array(int64_t* values, size_t count);
+	TESTLIBRARY_API void popInt64Array(int64_t** values, size_t* count);
+
+	TESTLIBRARY_API void pushUInt64(uint64_t x);
+	TESTLIBRARY_API uint64_t popUInt64();
+	TESTLIBRARY_API void pushUInt64Array(uint64_t* values, size_t count);
+	TESTLIBRARY_API void popUInt64Array(uint64_t** values, size_t* count);
 
 	TESTLIBRARY_API void pushFloat(float x);
 	TESTLIBRARY_API float popFloat();

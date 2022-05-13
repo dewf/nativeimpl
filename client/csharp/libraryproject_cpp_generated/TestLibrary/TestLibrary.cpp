@@ -120,24 +120,164 @@ void popBoolArray(bool** values, size_t* count)
     ni_popBoolArray(values, count);
 }
 
-void pushInt(int x)
+void pushInt8(int8_t x)
 {
-    ni_pushInt(x);
+    ni_pushInt8(x);
 }
 
-int popInt()
+int8_t popInt8()
 {
-    return ni_popInt();
+    return ni_popInt8();
 }
 
-void pushIntArray(int* values, size_t count)
+void pushInt8Array(int8_t* values, size_t count)
 {
-    ni_pushIntArray(values, count);
+    ni_pushInt8Array(values, count);
 }
 
-void popIntArray(int** values, size_t* count)
+void popInt8Array(int8_t** values, size_t* count)
 {
-    ni_popIntArray(values, count);
+    ni_popInt8Array(values, count);
+}
+
+void pushUInt8(uint8_t x)
+{
+    ni_pushUInt8(x);
+}
+
+uint8_t popUInt8()
+{
+    return ni_popUInt8();
+}
+
+void pushUInt8Array(uint8_t* values, size_t count)
+{
+    ni_pushUInt8Array(values, count);
+}
+
+void popUInt8Array(uint8_t** values, size_t* count)
+{
+    ni_popUInt8Array(values, count);
+}
+
+void pushInt16(int16_t x)
+{
+    ni_pushInt16(x);
+}
+
+int16_t popInt16()
+{
+    return ni_popInt16();
+}
+
+void pushInt16Array(int16_t* values, size_t count)
+{
+    ni_pushInt16Array(values, count);
+}
+
+void popInt16Array(int16_t** values, size_t* count)
+{
+    ni_popInt16Array(values, count);
+}
+
+void pushUInt16(uint16_t x)
+{
+    ni_pushUInt16(x);
+}
+
+uint16_t popUInt16()
+{
+    return ni_popUInt16();
+}
+
+void pushUInt16Array(uint16_t* values, size_t count)
+{
+    ni_pushUInt16Array(values, count);
+}
+
+void popUInt16Array(uint16_t** values, size_t* count)
+{
+    ni_popUInt16Array(values, count);
+}
+
+void pushInt32(int32_t x)
+{
+    ni_pushInt32(x);
+}
+
+int32_t popInt32()
+{
+    return ni_popInt32();
+}
+
+void pushInt32Array(int32_t* values, size_t count)
+{
+    ni_pushInt32Array(values, count);
+}
+
+void popInt32Array(int32_t** values, size_t* count)
+{
+    ni_popInt32Array(values, count);
+}
+
+void pushUInt32(uint32_t x)
+{
+    ni_pushUInt32(x);
+}
+
+uint32_t popUInt32()
+{
+    return ni_popUInt32();
+}
+
+void pushUInt32Array(uint32_t* values, size_t count)
+{
+    ni_pushUInt32Array(values, count);
+}
+
+void popUInt32Array(uint32_t** values, size_t* count)
+{
+    ni_popUInt32Array(values, count);
+}
+
+void pushInt64(int64_t x)
+{
+    ni_pushInt64(x);
+}
+
+int64_t popInt64()
+{
+    return ni_popInt64();
+}
+
+void pushInt64Array(int64_t* values, size_t count)
+{
+    ni_pushInt64Array(values, count);
+}
+
+void popInt64Array(int64_t** values, size_t* count)
+{
+    ni_popInt64Array(values, count);
+}
+
+void pushUInt64(uint64_t x)
+{
+    ni_pushUInt64(x);
+}
+
+uint64_t popUInt64()
+{
+    return ni_popUInt64();
+}
+
+void pushUInt64Array(uint64_t* values, size_t count)
+{
+    ni_pushUInt64Array(values, count);
+}
+
+void popUInt64Array(uint64_t** values, size_t* count)
+{
+    ni_popUInt64Array(values, count);
 }
 
 void pushFloat(float x)

@@ -124,7 +124,10 @@ namespace TestLibraryClient.Support
         {
             NativeMethods.popPtrArray(out var valuesPtr, out var count);
             var ret = new IntPtr[(int)count];
-            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            if (count != IntPtr.Zero)
+            {
+                Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            }
             return ret;
         }
         
@@ -147,7 +150,10 @@ namespace TestLibraryClient.Support
         {
             NativeMethods.popSizeTArray(out var valuesPtr, out var count);
             var ret = new IntPtr[(int)count];
-            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            if (count != IntPtr.Zero)
+            {
+                Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            }
             return ret;
         }
 
@@ -171,33 +177,235 @@ namespace TestLibraryClient.Support
         {
             NativeMethods.popBoolArray(out var valuesPtr, out var count);
             var ret = new byte[(int)count]; // bool[] won't work for the Copy below
-            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            if (count != IntPtr.Zero)
+            {
+                Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            }
             return ret.Select(v => v != 0).ToArray();
         }
-
-        public static void PushInt(int x)
+        
+        // INT8 =========================================
+        public static void PushInt8(sbyte x)
         {
-            NativeMethods.pushInt(x);
+            NativeMethods.pushInt8(x);
         }
 
-        public static int PopInt()
+        public static sbyte PopInt8()
         {
-            return NativeMethods.popInt();
+            return NativeMethods.popInt8();
         }
 
-        public static void PushIntArray(int[] values)
+        public static void PushInt8Array(sbyte[] values)
         {
-            NativeMethods.pushIntArray(values, (IntPtr)values.Length);
+            NativeMethods.pushInt8Array(values, (IntPtr)values.Length);
         }
 
-        public static int[] PopIntArray()
+        public static sbyte[] PopInt8Array()
         {
-            NativeMethods.popIntArray(out var valuesPtr, out var count);
-            var ret = new int[(int)count];
-            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            NativeMethods.popInt8Array(out var valuesPtr, out var count);
+            var ret = new sbyte[(int)count];
+            if (count != IntPtr.Zero)
+            {
+                var temp = new byte[(int)count];
+                Marshal.Copy(valuesPtr, temp, 0, (int)count);
+                Buffer.BlockCopy(temp, 0, ret, 0, (int)count);
+            }
             return ret;
         }
+        
+        public static void PushUInt8(byte x)
+        {
+            NativeMethods.pushUInt8(x);
+        }
 
+        public static byte PopUInt8()
+        {
+            return NativeMethods.popUInt8();
+        }
+
+        public static void PushUInt8Array(byte[] values)
+        {
+            NativeMethods.pushUInt8Array(values, (IntPtr)values.Length);
+        }
+
+        public static byte[] PopUInt8Array()
+        {
+            NativeMethods.popUInt8Array(out var valuesPtr, out var count);
+            var ret = new byte[(int)count];
+            if (count != IntPtr.Zero)
+            {
+                Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            }
+            return ret;
+        }
+        
+        // INT16 =========================================
+        public static void PushInt16(short x)
+        {
+            NativeMethods.pushInt16(x);
+        }
+
+        public static short PopInt16()
+        {
+            return NativeMethods.popInt16();
+        }
+
+        public static void PushInt16Array(short[] values)
+        {
+            NativeMethods.pushInt16Array(values, (IntPtr)values.Length);
+        }
+
+        public static short[] PopInt16Array()
+        {
+            NativeMethods.popInt16Array(out var valuesPtr, out var count);
+            var ret = new short[(int)count];
+            if (count != IntPtr.Zero)
+            {
+                Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            }
+            return ret;
+        }
+        
+        public static void PushUInt16(ushort x)
+        {
+            NativeMethods.pushUInt16(x);
+        }
+
+        public static ushort PopUInt16()
+        {
+            return NativeMethods.popUInt16();
+        }
+
+        public static void PushUInt16Array(ushort[] values)
+        {
+            NativeMethods.pushUInt16Array(values, (IntPtr)values.Length);
+        }
+
+        public static ushort[] PopUInt16Array()
+        {
+            NativeMethods.popUInt16Array(out var valuesPtr, out var count);
+            var ret = new ushort[(int)count];
+            if (count != IntPtr.Zero)
+            {
+                var temp = new short[(int)count];
+                Marshal.Copy(valuesPtr, temp, 0, (int)count);
+                Buffer.BlockCopy(temp, 0, ret, 0, (int)count);
+            }
+            return ret;
+        }
+        
+        // INT32 =========================================
+        public static void PushInt32(int x)
+        {
+            NativeMethods.pushInt32(x);
+        }
+
+        public static int PopInt32()
+        {
+            return NativeMethods.popInt32();
+        }
+
+        public static void PushInt32Array(int[] values)
+        {
+            NativeMethods.pushInt32Array(values, (IntPtr)values.Length);
+        }
+
+        public static int[] PopInt32Array()
+        {
+            NativeMethods.popInt32Array(out var valuesPtr, out var count);
+            var ret = new int[(int)count];
+            if (count != IntPtr.Zero)
+            {
+                Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            }
+            return ret;
+        }
+        
+        public static void PushUInt32(uint x)
+        {
+            NativeMethods.pushUInt32(x);
+        }
+
+        public static uint PopUInt32()
+        {
+            return NativeMethods.popUInt32();
+        }
+
+        public static void PushUInt32Array(uint[] values)
+        {
+            NativeMethods.pushUInt32Array(values, (IntPtr)values.Length);
+        }
+
+        public static uint[] PopUInt32Array()
+        {
+            NativeMethods.popUInt32Array(out var valuesPtr, out var count);
+            var ret = new uint[(int)count];
+            if (count != IntPtr.Zero)
+            {
+                var temp = new int[(int)count];
+                Marshal.Copy(valuesPtr, temp, 0, (int)count);
+                Buffer.BlockCopy(temp, 0, ret, 0, (int)count);
+            }
+            return ret;
+        }
+        
+        // INT64 =========================================
+        public static void PushInt64(long x)
+        {
+            NativeMethods.pushInt64(x);
+        }
+
+        public static long PopInt64()
+        {
+            return NativeMethods.popInt64();
+        }
+
+        public static void PushInt64Array(long[] values)
+        {
+            NativeMethods.pushInt64Array(values, (IntPtr)values.Length);
+        }
+
+        public static long[] PopInt64Array()
+        {
+            NativeMethods.popInt64Array(out var valuesPtr, out var count);
+            var ret = new long[(int)count];
+            if (count != IntPtr.Zero)
+            {
+                Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            }
+            return ret;
+        }
+        
+        public static void PushUInt64(ulong x)
+        {
+            NativeMethods.pushUInt64(x);
+        }
+
+        public static ulong PopUInt64()
+        {
+            return NativeMethods.popUInt64();
+        }
+
+        public static void PushUInt64Array(ulong[] values)
+        {
+            NativeMethods.pushUInt64Array(values, (IntPtr)values.Length);
+        }
+
+        public static ulong[] PopUInt64Array()
+        {
+            NativeMethods.popUInt64Array(out var valuesPtr, out var count);
+            var ret = new ulong[(int)count];
+            if (count != IntPtr.Zero)
+            {
+                var temp = new long[(int)count];
+                Marshal.Copy(valuesPtr, temp, 0, (int)count);
+                Buffer.BlockCopy(temp, 0, ret, 0, (int)count);
+            }
+            return ret;
+        }
+        
+        // ===========================
+        
         public static void PushFloat(float x)
         {
             NativeMethods.pushFloat(x);
@@ -217,7 +425,10 @@ namespace TestLibraryClient.Support
         {
             NativeMethods.popFloatArray(out var valuesPtr, out var count);
             var ret = new float[(int)count];
-            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            if (count != IntPtr.Zero)
+            {
+                Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            }
             return ret;
         }
         
@@ -240,7 +451,10 @@ namespace TestLibraryClient.Support
         {
             NativeMethods.popDoubleArray(out var valuesPtr, out var count);
             var ret = new double[(int)count];
-            Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            if (count != IntPtr.Zero)
+            {
+                Marshal.Copy(valuesPtr, ret, 0, (int)count);
+            }
             return ret;
         }
 

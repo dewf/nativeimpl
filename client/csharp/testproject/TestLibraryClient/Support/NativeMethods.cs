@@ -91,18 +91,102 @@ namespace TestLibraryClient.Support
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void popBoolArray(out IntPtr valuesPtr, out IntPtr count); // bool**, size_t*
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushInt8(sbyte x);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern sbyte popInt8();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushInt8Array(sbyte[] values, IntPtr count); // size_t count
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popInt8Array(out IntPtr values, out IntPtr count); // both args are pointers
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushUInt8(byte x);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern byte popUInt8();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushUInt8Array(byte[] values, IntPtr count); // size_t count
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popUInt8Array(out IntPtr values, out IntPtr count); // both args are pointers
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushInt16(short x);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern short popInt16();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushInt16Array(short[] values, IntPtr count); // size_t count
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popInt16Array(out IntPtr values, out IntPtr count); // both args are pointers
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushUInt16(ushort x);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern ushort popUInt16();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushUInt16Array(ushort[] values, IntPtr count); // size_t count
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushInt(int x);
+        internal static extern void popUInt16Array(out IntPtr values, out IntPtr count); // both args are pointers
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushInt32(int x);
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int popInt();
+        internal static extern int popInt32();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushInt32Array(int[] values, IntPtr count); // size_t count
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popInt32Array(out IntPtr values, out IntPtr count); // both args are pointers
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushUInt32(uint x);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint popUInt32();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushUInt32Array(uint[] values, IntPtr count); // size_t count
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void pushIntArray(int[] values, IntPtr count); // size_t count
+        internal static extern void popUInt32Array(out IntPtr values, out IntPtr count); // both args are pointers
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushInt64(long x);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern long popInt64();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushInt64Array(long[] values, IntPtr count); // size_t count
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void popIntArray(out IntPtr values, out IntPtr count); // both args are pointers
+        internal static extern void popInt64Array(out IntPtr values, out IntPtr count); // both args are pointers
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushUInt64(ulong x);
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern ulong popUInt64();
+        
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void pushUInt64Array(ulong[] values, IntPtr count); // size_t count
+
+        [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void popUInt64Array(out IntPtr values, out IntPtr count); // both args are pointers
 
         [DllImport("TestLibrary.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void pushFloat(float x);

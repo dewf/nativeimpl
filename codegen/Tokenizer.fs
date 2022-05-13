@@ -5,6 +5,14 @@ open System.Text.RegularExpressions
 type Token =
     | Identifier of string
     | Digits of string
+    // primitives
+    | SizeTToken
+    | BoolToken
+    | IntToken of signed:bool * width:int
+    | Float32Token
+    | Float64Token
+    | StringToken
+    // etc
     | ModuleToken
     | OpaqueToken
     | StructToken
@@ -16,12 +24,6 @@ type Token =
     | InterfaceToken
     | EnumToken | FlagsToken
     | SumTypeToken
-    | SizeTToken
-    | BoolToken
-    | IntToken
-    | FloatToken
-    | Float64Token
-    | StringToken
     | UnitToken
     | DelegateToken
     | TypedefToken
@@ -54,8 +56,17 @@ let stringToToken (lineNumber: int) = function
     | "sumtype" -> SumTypeToken
     | "size_t" -> SizeTToken
     | "bool" -> BoolToken
-    | "int" | "int32" -> IntToken
-    | "float" | "float32" -> FloatToken
+    //
+    | "sbyte" | "char" | "int8" -> IntToken (true, 8)
+    | "byte" | "uchar" | "uint8" -> IntToken (false, 8)
+    | "short" | "int16" -> IntToken (true, 16)
+    | "ushort" | "uint16" -> IntToken (false, 16)
+    | "int" | "int32" -> IntToken (true, 32)
+    | "uint" | "uint32" -> IntToken (false, 32)
+    | "long" | "int64" -> IntToken (true, 64)
+    | "ulong" | "uint64" -> IntToken (false, 64)
+    //
+    | "float" | "float32" -> Float32Token
     | "double" | "float64" -> Float64Token
     | "string" -> StringToken
     | "void" -> UnitToken

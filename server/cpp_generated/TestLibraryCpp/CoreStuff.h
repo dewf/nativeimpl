@@ -52,10 +52,45 @@ extern "C" {
 	extern void ni_pushBoolArray(bool* values, size_t count);
 	extern void ni_popBoolArray(bool** values, size_t* count);
 
-	extern void ni_pushInt(int x);
-	extern int ni_popInt();
-	extern void ni_pushIntArray(int* values, size_t count);
-	extern void ni_popIntArray(int** values, size_t* count);
+	extern void ni_pushInt8(int8_t x);
+	extern int8_t ni_popInt8();
+	extern void ni_pushInt8Array(int8_t* values, size_t count);
+	extern void ni_popInt8Array(int8_t** values, size_t* count);
+
+	extern void ni_pushUInt8(uint8_t x);
+	extern uint8_t ni_popUInt8();
+	extern void ni_pushUInt8Array(uint8_t* values, size_t count);
+	extern void ni_popUInt8Array(uint8_t** values, size_t* count);
+
+	extern void ni_pushInt16(int16_t x);
+	extern int16_t ni_popInt16();
+	extern void ni_pushInt16Array(int16_t* values, size_t count);
+	extern void ni_popInt16Array(int16_t** values, size_t* count);
+
+	extern void ni_pushUInt16(uint16_t x);
+	extern uint16_t ni_popUInt16();
+	extern void ni_pushUInt16Array(uint16_t* values, size_t count);
+	extern void ni_popUInt16Array(uint16_t** values, size_t* count);
+
+	extern void ni_pushInt32(int32_t x);
+	extern int32_t ni_popInt32();
+	extern void ni_pushInt32Array(int32_t* values, size_t count);
+	extern void ni_popInt32Array(int32_t** values, size_t* count);
+
+	extern void ni_pushUInt32(uint32_t x);
+	extern uint32_t ni_popUInt32();
+	extern void ni_pushUInt32Array(uint32_t* values, size_t count);
+	extern void ni_popUInt32Array(uint32_t** values, size_t* count);
+
+	extern void ni_pushInt64(int64_t x);
+	extern int64_t ni_popInt64();
+	extern void ni_pushInt64Array(int64_t* values, size_t count);
+	extern void ni_popInt64Array(int64_t** values, size_t* count);
+
+	extern void ni_pushUInt64(uint64_t x);
+	extern uint64_t ni_popUInt64();
+	extern void ni_pushUInt64Array(uint64_t* values, size_t count);
+	extern void ni_popUInt64Array(uint64_t** values, size_t* count);
 
 	extern void ni_pushFloat(float x);
 	extern float ni_popFloat();

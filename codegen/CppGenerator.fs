@@ -48,11 +48,19 @@ let rec typeToName = function
         match prim with
         | SizeT -> "SizeT"
         | Bool -> "Bool"
-        | Int32 -> "Int"
+        | Int(signed, width) ->
+            match signed, width with
+            | true, Width8 -> "Int8"
+            | false, Width8 -> "UInt8"
+            | true, Width16 -> "Int16"
+            | false, Width16 -> "UInt16"
+            | true, Width32 -> "Int32"
+            | false, Width32 -> "UInt32"
+            | true, Width64 -> "Int64"
+            | false, Width64 -> "UInt64"
         | Float32 -> "Float"
         | Float64 -> "Double"
         | StringType -> "String"
-        | x -> sprintf "(typeToName: primitive not done yet [%A]" x
     | OpaqueHandleType name -> upperFirst name
     | InterfaceType name -> upperFirst name
     | ExceptionType name -> upperFirst name
@@ -74,11 +82,19 @@ let rec typeToCppString (typeMap: Map<string, UserOrGeneric>) = function
         match prim with
         | SizeT -> "size_t"
         | Bool -> "bool"
-        | Int32 -> "int"
+        | Int(signed, intWidth) ->
+            match signed, intWidth with
+            | true, Width8 -> "int8_t"
+            | false, Width8 -> "uint8_t"
+            | true, Width16 -> "int16_t"
+            | false, Width16 -> "uint16_t"
+            | true, Width32 -> "int32_t"
+            | false, Width32 -> "uint32_t"
+            | true, Width64 -> "int64_t"
+            | false, Width64 -> "uint64_t"
         | Float32 -> "float"
         | Float64 -> "double"
         | StringType -> "std::string"
-        | x -> sprintf "(typeToCppString: primitive not done yet [%A])" x
     | OpaqueHandleType name -> name
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
     | ExceptionType name -> name
@@ -96,7 +112,7 @@ let rec typeToCppString (typeMap: Map<string, UserOrGeneric>) = function
             if enumInfo.FlagsMode then
                 let widthType =
                     enumInfo.MaybeWidth
-                    |> Option.defaultValue (Primitive Int32)
+                    |> Option.defaultValue (Primitive(Int(true, Width32)))
                 typeToCppString typeMap widthType
             else
                 name
@@ -128,12 +144,10 @@ let rec defaultValueForType (typeMap: Map<string, UserOrGeneric>) = function
         match prim with
         | SizeT -> "0"
         | Bool -> "false"
-        | Int32 -> "0"
+        | Int _ -> "0"
         | Float32 -> "0.0f"
         | Float64 -> "0.0"
         | StringType -> "\"default\""
-        | _ ->
-            "(defaultValueForType: not yet supported)"
     | OpaqueHandleType name -> sprintf "new __%s()" (upperFirst name)
     | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
     | DelegateType name -> sprintf "std::function<%s>()" name
@@ -175,11 +189,11 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         match prim with
         | SizeT -> write level "%s ni_popSizeT();" contextPrefix
         | Bool -> write level "%s ni_popBool();" contextPrefix
-        | Int32 -> write level "%s ni_popInt();" contextPrefix
+        | Int(signed, width) ->
+            write level "%s ni_pop%sInt%d();" contextPrefix (if signed then "" else "U") (widthToInt width)
         | Float32 -> write level "%s ni_popFloat();" contextPrefix
         | Float64 -> write level "%s ni_popDouble();" contextPrefix
         | StringType -> write level "%s popStringInternal();" contextPrefix
-        | _ -> write level "// (pop not yet implemented: prim %A)" prim
     | OpaqueHandleType name ->
         write level "%s (%s)ni_popPtr();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
@@ -191,12 +205,13 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
             match niType with
             | Primitive prim ->
                 match prim with
+                | SizeT -> "popSizeTArrayInternal"
                 | Bool -> "popBoolArrayInternal"
-                | Int32 -> "popIntArrayInternal"
+                | Int(signed, width) ->
+                    sprintf "pop%sInt%dArrayInternal" (if signed then "" else "U") (widthToInt width)
                 | Float32 -> "popFloatArrayInternal"
                 | Float64 -> "popDoubleArrayInternal"
                 | StringType -> "popStringArrayInternal"
-                | _ -> sprintf "// (pop not yet supported: prim %A)" prim
             | StructType name -> sprintf "__%sArray__pop" name
             | TypedefType name -> sprintf "__%sArray__pop" name
             | DelegateType name -> sprintf "__%sArray__pop" name
@@ -256,12 +271,11 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         match prim with
         | SizeT -> write level "ni_pushSizeT(%s);" content
         | Bool -> write level "ni_pushBool(%s);" content
-        | Int32 -> write level "ni_pushInt(%s);" content
+        | Int(signed, width) ->
+            write level "ni_push%sInt%d(%s);" (if signed then "" else "U") (widthToInt width) content
         | Float32 -> write level "ni_pushFloat(%s);" content
         | Float64 -> write level "ni_pushDouble(%s);" content
         | StringType -> write level "pushStringInternal(%s);" content
-        | _ ->
-            write level "// (pushValue not supported yet: prim %A)" prim
     | OpaqueHandleType _ ->
         write level "ni_pushPtr(%s);" content
     | InterfaceType name ->
@@ -272,12 +286,13 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         match niType with
         | Primitive prim ->
             match prim with
+            | SizeT -> write level "pushSizeTArrayInternal(%s);" content
             | Bool -> write level "pushBoolArrayInternal(%s);" content
-            | Int32 -> write level "pushIntArrayInternal(%s);" content
+            | Int(signed, intWidth) ->
+                write level "push%sInt%dArrayInternal(%s);" (if signed then "" else "U") (widthToInt intWidth) content
             | Float32 -> write level "pushFloatArrayInternal(%s);" content
             | Float64 -> write level "pushDoubleArrayInternal(%s);" content
             | StringType -> write level "pushStringArrayInternal(%s);" content
-            | _ -> write level "// (push not yet supported: array of prim %A)" prim
         | ArrayType niType ->
             write level "__%sArrayArray__push(%s, %s);" (typeToName niType) content (isReturnString())
         | MapType (keyType, valueType) ->
@@ -453,12 +468,12 @@ let renderWrapperSumType (writer: TextWriter) (sumTypeName: string) (values: Sum
             pushValue writer 2 argType content (Indirect "isReturn")
         write 2 "break;"
     write 1 "}"
-    pushValue writer 1 (Primitive Int32) "(int)value.tag" (Indirect "isReturn")
+    pushValue writer 1 (Primitive(Int(true,Width32))) "(int)value.tag" (Indirect "isReturn")
     write 0 "}"
     // pop
     blank()
     write 0 "%s %s__pop() {" sumTypeName sumTypeName
-    popValue writer 1 (Primitive Int32) (Variable "which")
+    popValue writer 1 (Primitive(Int(true,Width32))) (Variable "which")
     write 1 "switch ((%s::Tag)which) {" sumTypeName
     for value in values do
         write 1 "case %s::Tag::%s: {" sumTypeName (upperFirst value.Name)
@@ -754,7 +769,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             let widthType =
                 match info.MaybeWidth with
                 | Some widthType -> widthType
-                | None -> Primitive Int32
+                | None -> Primitive(Int(true,Width32))
             if info.FlagsMode then
                 write 0 "inline void %s__push(%s value) {" name (typeToCppString typeMap widthType)
                 pushValue writer 1 widthType "value" NotApplicable

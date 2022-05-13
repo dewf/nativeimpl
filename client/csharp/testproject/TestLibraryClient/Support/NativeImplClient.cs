@@ -513,9 +513,9 @@ namespace TestLibraryClient.Support
             return NativeMethods.popServerFunc();
         }
 
-        public static void PushNullInstance()
+        public static void PushNull()
         {
-            NativeMethods.pushNullInstance();
+            NativeMethods.pushNull();
         }
 
         public static void PopInstanceId(out int id, out bool isClientId)

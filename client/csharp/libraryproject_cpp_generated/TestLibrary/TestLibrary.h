@@ -109,8 +109,9 @@ extern "C" {
 	TESTLIBRARY_API ni_ExceptionRef invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID);
 
 	TESTLIBRARY_API void pushInstance(int id, bool isClientId, bool inSafetyArea);
-	TESTLIBRARY_API void pushNullInstance();
 	TESTLIBRARY_API int popInstance(bool* isClientId, bool* inSafetyArea);
+
+	TESTLIBRARY_API void pushNull();
 
 	TESTLIBRARY_API void releaseServerResource(int id);
 

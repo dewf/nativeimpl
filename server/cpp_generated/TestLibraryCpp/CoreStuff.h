@@ -121,8 +121,9 @@ extern "C" {
 	extern void ni_pushServerFunc(int id);
 
 	extern void ni_pushInstance(int id, bool isClientId, bool inSafetyArea);
-	extern void ni_pushNullInstance();
 	extern int ni_popInstance(bool* isClientId, bool* inSafetyArea);
+
+	extern void ni_pushNull();
 
 	extern void ni_setException(ni_ExceptionRef e);
 	extern void ni_buildAndthrow(ni_ExceptionRef e);

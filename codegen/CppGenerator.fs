@@ -29,7 +29,7 @@ let PushTemplate = "inline void %%IFACE%%__push(std::shared_ptr<%%IFACE%%> inst,
         pushable->push(pushable, isReturn);
     }
     else {
-        ni_pushNullInstance();
+        ni_pushNull();
     }
 }"
 let ServerWrapperTemplate = "// inherit from this to create server instances of %%IFACE%%
@@ -675,8 +675,13 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
         | BufferType elemType ->
             // PUSH =====
             write 0 "inline void __%s__push(%s buf, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
-            write 1 "auto pushable = std::dynamic_pointer_cast<Pushable>(buf);"
-            write 1 "pushable->push(pushable, isReturn);"
+            write 1 "if (buf != nullptr) {"
+            write 2 "auto pushable = std::dynamic_pointer_cast<Pushable>(buf);"
+            write 2 "pushable->push(pushable, isReturn);"
+            write 1 "}"
+            write 1 "else {"
+            write 2 "ni_pushNull();"
+            write 1 "}"
             write 0 "}"
             // POP ======
             blank()
@@ -685,12 +690,17 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             write 1 "bool isClientId, inSafetyArea;"
             write 1 "ni_BufferDescriptor descriptor;"
             write 1 "ni_popBuffer(&id, &isClientId, &inSafetyArea, &descriptor);"
-            write 1 "if (isClientId) {"
-            write 2 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString typeMap elemType)
-            write 2 "return %s(buf);" (typeToCppString typeMap gType)
+            write 1 "if (id != 0) {"
+            write 2 "if (isClientId) {"
+            write 3 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString typeMap elemType)
+            write 3 "return %s(buf);" (typeToCppString typeMap gType)
+            write 2 "}"
+            write 2 "else {"
+            write 3 "return ServerBuffer<%s>::getByID(id);" (typeToCppString typeMap elemType)
+            write 2 "}"
             write 1 "}"
             write 1 "else {"
-            write 2 "return ServerBuffer<%s>::getByID(id);" (typeToCppString typeMap elemType)
+            write 2 "return %s();" (typeToCppString typeMap gType)
             write 1 "}"
             write 0 "}"
         | TupleType tupleTypes ->

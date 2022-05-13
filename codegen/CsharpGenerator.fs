@@ -15,7 +15,7 @@ let interfacePushTemplate = "        private static void %%IFACE%%__Push(%%IFACE
             }
             else
             {
-                NativeImplClient.PushNullInstance();
+                NativeImplClient.PushNull();
             }
         }"
 let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
@@ -286,7 +286,7 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | SetType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | BufferType _ ->
-        write level "((IPushable)%s).Push(%s);" content (isReturnString())
+        write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | TypedefType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | MapType _ ->
@@ -552,18 +552,36 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
     | UserOrGeneric.Generic gType ->
         match gType with
         | BufferType elemType ->
-            // push is simple, doesn't require a separate function
-            // POP ==============
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap gType) (typeToName gType)
+            write 2 "private static void __%s__Push(%s buf, bool isReturn)" (typeToName gType) (typeToCsString typeMap gType)
             write 2 "{"
-            write 3 "NativeMethods.popBuffer(out var id, out var isClientId, out var inSafetyArea, out var bufferDescriptor);"
-            write 3 "if (isClientId)"
+            write 3 "if (buf != null)"
             write 3 "{"
-            write 4 "return ClientBuffer<%s>.GetById(id);" (typeToCsString typeMap elemType)
+            write 4 "((IPushable)buf).Push(isReturn);"
             write 3 "}"
             write 3 "else"
             write 3 "{"
-            write 4 "return new ServerBuffer<%s>(id, bufferDescriptor);" (typeToCsString typeMap elemType)
+            write 4 "NativeImplClient.PushNull();"
+            write 3 "}"
+            write 2 "}"
+            // POP ==============
+            blank()
+            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap gType) (typeToName gType)
+            write 2 "{"
+            write 3 "NativeMethods.popBuffer(out var id, out var isClientId, out var inSafetyArea, out var bufferDescriptor);"
+            write 3 "if (id != 0)"
+            write 3 "{"
+            write 4 "if (isClientId)"
+            write 4 "{"
+            write 5 "return ClientBuffer<%s>.GetById(id);" (typeToCsString typeMap elemType)
+            write 4 "}"
+            write 4 "else"
+            write 4 "{"
+            write 5 "return new ServerBuffer<%s>(id, bufferDescriptor);" (typeToCsString typeMap elemType)
+            write 4 "}"
+            write 3 "}"
+            write 3 "else"
+            write 3 "{"
+            write 4 "return null;"
             write 3 "}"
             write 2 "}"
         | TupleType tupleTypes ->

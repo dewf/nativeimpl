@@ -102,6 +102,26 @@ public:
 	virtual void buffer(int *id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor) { throw WrongTypeException(); }
 };
 
+class NullItem : public StackItem {
+public:
+	NullItem() {}
+	// should work for any reference type:
+	void* ptrValue() override {
+		return nullptr;
+	}
+	int instanceId(bool* isClientId, bool* inSafetyArea) override {
+		*isClientId = false;
+		*inSafetyArea = false;
+		return 0;
+	}
+	void buffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor) override {
+		*id = 0;
+		*isClientId = false;
+		*inSafetyArea = false;
+		descriptor->start = nullptr;
+	}
+};
+
 class PtrItem : public StackItem {
 public:
 	void* value;
@@ -1157,17 +1177,17 @@ void ni_pushInstance(int id, bool isClientId, bool inSafetyArea)
 	vstack.push(new InstanceItem(id, isClientId, inSafetyArea));
 }
 
-void ni_pushNullInstance()
-{
-	vstack.push(new InstanceItem(0, false, false));
-}
-
 int ni_popInstance(bool* isClientID, bool* inSafetyArea) {
 	auto item = vstack.top();
 	auto id = item->instanceId(isClientID, inSafetyArea);
 	vstack.pop();
 	delete item;
 	return id;
+}
+
+void ni_pushNull()
+{
+	vstack.push(new NullItem());
 }
 
 void ni_setException(ni_ExceptionRef e) {

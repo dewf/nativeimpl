@@ -45,10 +45,13 @@ let stringToToken (lineNumber: int) = function
     | "module" -> ModuleToken
     | "opaque" -> OpaqueToken
     | "struct" -> StructToken
+    // generic types (need specialization)
     | "Array" -> ArrayToken
     | "Map" -> MapToken
     | "Tuple" -> TupleToken
     | "Set" -> SetToken
+    | "Buffer" -> BufferToken
+    //
     | "exception" -> ExceptionToken
     | "interface" -> InterfaceToken
     | "enum" -> EnumToken
@@ -69,11 +72,11 @@ let stringToToken (lineNumber: int) = function
     | "float" | "float32" -> Float32Token
     | "double" | "float64" -> Float64Token
     | "string" -> StringToken
+    //
     | "void" -> UnitToken
     | "unit" -> UnitToken
     | "delegate" -> DelegateToken
     | "typedef" -> TypedefToken
-    | "buffer" -> BufferToken
     | "{" -> LeftBrace
     | "}" -> RightBrace
     | "(" -> LeftParen

@@ -12,6 +12,8 @@ namespace TestLibraryClient
     public static class TestLibrary
     {
         private static ModuleHandle _module;
+        private static ModuleMethodHandle _moduleInit;
+        private static ModuleMethodHandle _moduleShutdown;
         private static ModuleMethodHandle _windowShow;
         private static ModuleMethodHandle _windowSetMenuBar;
         private static ModuleMethodHandle _windowInvalidate;
@@ -25,18 +27,17 @@ namespace TestLibraryClient
         private static ModuleMethodHandle _createMenu;
         private static ModuleMethodHandle _menuBarAddMenu;
         private static ModuleMethodHandle _createMenuBar;
-        private static ModuleMethodHandle _cGContextSetRGBFillColor;
-        private static ModuleMethodHandle _cGContextFillRect;
         private static ModuleMethodHandle _runloop;
         private static ModuleMethodHandle _exitRunloop;
-        private static ModuleMethodHandle _moduleInit;
-        private static ModuleMethodHandle _moduleShutdown;
+        private static ModuleMethodHandle _cGContextSetRGBFillColor;
+        private static ModuleMethodHandle _cGContextFillRect;
         private static InterfaceHandle _windowDelegate;
         private static InterfaceMethodHandle _windowDelegate_onCloseRequest;
         private static InterfaceMethodHandle _windowDelegate_onDestroyed;
         private static InterfaceMethodHandle _windowDelegate_onResized;
         private static InterfaceMethodHandle _windowDelegate_onRepaint;
         private static InterfaceMethodHandle _windowDelegate_onAction;
+        private static InterfaceMethodHandle _windowDelegate_onMouseEvent;
 
         public class Accelerator
         {
@@ -349,24 +350,130 @@ namespace TestLibraryClient
             return ptr != IntPtr.Zero ? new MenuBar(ptr) : null;
         }
 
-        public enum Modifier
+        [Flags]
+        public enum Modifiers
         {
-            Shift,
-            Control,
-            Alt,
-            MacControl
+            Shift = 1,
+            Control = 2,
+            Alt = 4,
+            MacControl = 8
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void Modifier__Push(Modifier value)
+        private static void Modifiers__Push(Modifiers value)
         {
             NativeImplClient.PushInt((int)value);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static Modifier Modifier__Pop()
+        private static Modifiers Modifiers__Pop()
         {
-            return (Modifier)NativeImplClient.PopInt();
+            return (Modifiers)NativeImplClient.PopInt();
+        }
+
+        public enum MouseButton
+        {
+            None,
+            Left,
+            Middle,
+            Right,
+            Other
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void MouseButton__Push(MouseButton value)
+        {
+            NativeImplClient.PushInt((int)value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static MouseButton MouseButton__Pop()
+        {
+            return (MouseButton)NativeImplClient.PopInt();
+        }
+
+        public enum MouseEventType
+        {
+            Down,
+            Up,
+            Move,
+            Enter,
+            Leave,
+            Wheel
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void MouseEventType__Push(MouseEventType value)
+        {
+            NativeImplClient.PushInt((int)value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static MouseEventType MouseEventType__Pop()
+        {
+            return (MouseEventType)NativeImplClient.PopInt();
+        }
+
+        public enum MouseWheelAxis
+        {
+            None,
+            Vertical,
+            Horizontal
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void MouseWheelAxis__Push(MouseWheelAxis value)
+        {
+            NativeImplClient.PushInt((int)value);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static MouseWheelAxis MouseWheelAxis__Pop()
+        {
+            return (MouseWheelAxis)NativeImplClient.PopInt();
+        }
+
+        public struct MouseEvent {
+            public MouseEventType EventType;
+            public int X;
+            public int Y;
+            public int WheelDelta;
+            public MouseWheelAxis WheelAxis;
+            public MouseButton Button;
+            public Modifiers Modifiers;
+            public MouseEvent(MouseEventType eventType, int x, int y, int wheelDelta, MouseWheelAxis wheelAxis, MouseButton button, Modifiers modifiers)
+            {
+                this.EventType = eventType;
+                this.X = x;
+                this.Y = y;
+                this.WheelDelta = wheelDelta;
+                this.WheelAxis = wheelAxis;
+                this.Button = button;
+                this.Modifiers = modifiers;
+            }
+        }
+
+        private static void MouseEvent__Push(MouseEvent value, bool isReturn)
+        {
+            Modifiers__Push(value.Modifiers);
+            MouseButton__Push(value.Button);
+            MouseWheelAxis__Push(value.WheelAxis);
+            NativeImplClient.PushInt(value.WheelDelta);
+            NativeImplClient.PushInt(value.Y);
+            NativeImplClient.PushInt(value.X);
+            MouseEventType__Push(value.EventType);
+        }
+
+        private static MouseEvent MouseEvent__Pop()
+        {
+            var eventType = MouseEventType__Pop();
+            var x = NativeImplClient.PopInt();
+            var y = NativeImplClient.PopInt();
+            var wheelDelta = NativeImplClient.PopInt();
+            var wheelAxis = MouseWheelAxis__Pop();
+            var button = MouseButton__Pop();
+            var modifiers = Modifiers__Pop();
+            return new MouseEvent(eventType, x, y, wheelDelta, wheelAxis, button, modifiers);
         }
 
         public class Window
@@ -397,6 +504,7 @@ namespace TestLibraryClient
             void OnResized(int newWidth, int newHeight);
             void OnRepaint(CGContext context);
             void OnAction(int id, Action action);
+            void OnMouseEvent(MouseEvent mouseEvent);
         }
 
         private static void WindowDelegate__Push(WindowDelegate thing, bool isReturn)
@@ -442,6 +550,7 @@ namespace TestLibraryClient
             public abstract void OnResized(int newWidth, int newHeight);
             public abstract void OnRepaint(CGContext context);
             public abstract void OnAction(int id, Action action);
+            public abstract void OnMouseEvent(MouseEvent mouseEvent);
         }
 
         private class ServerWindowDelegate : ServerObject, WindowDelegate
@@ -481,21 +590,27 @@ namespace TestLibraryClient
                 NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onAction, Id);
             }
 
+            public void OnMouseEvent(MouseEvent mouseEvent)
+            {
+                MouseEvent__Push(mouseEvent, false);
+                NativeImplClient.InvokeInterfaceMethod(_windowDelegate_onMouseEvent, Id);
+            }
+
             public void Dispose()
             {
                 ServerDispose();
             }
         }
 
-        private static void __ModifierSet__Push(HashSet<Modifier> items, bool isReturn)
+        public static int ModuleInit()
         {
-            NativeImplClient.PushIntArray(items.Select(x => (int)x).ToArray());
+            NativeImplClient.InvokeModuleMethod(_moduleInit);
+            return NativeImplClient.PopInt();
         }
 
-        private static HashSet<Modifier> __ModifierSet__Pop()
+        public static void ModuleShutdown()
         {
-            var intArray = NativeImplClient.PopIntArray();
-            return intArray.Select(x => (Modifier)x).ToHashSet();
+            NativeImplClient.InvokeModuleMethod(_moduleShutdown);
         }
 
         public static void WindowShow(Window _this)
@@ -535,9 +650,9 @@ namespace TestLibraryClient
             return Window__Pop();
         }
 
-        public static Accelerator CreateAccelerator(Key key, HashSet<Modifier> modifiers)
+        public static Accelerator CreateAccelerator(Key key, Modifiers modifiers)
         {
-            __ModifierSet__Push(modifiers, false);
+            Modifiers__Push(modifiers);
             Key__Push(key);
             NativeImplClient.InvokeModuleMethod(_createAccelerator);
             return Accelerator__Pop();
@@ -593,6 +708,17 @@ namespace TestLibraryClient
             return MenuBar__Pop();
         }
 
+        public static int Runloop()
+        {
+            NativeImplClient.InvokeModuleMethod(_runloop);
+            return NativeImplClient.PopInt();
+        }
+
+        public static void ExitRunloop()
+        {
+            NativeImplClient.InvokeModuleMethod(_exitRunloop);
+        }
+
         public static void CGContextSetRGBFillColor(CGContext _this, double red, double green, double blue, double alpha)
         {
             NativeImplClient.PushDouble(alpha);
@@ -610,33 +736,13 @@ namespace TestLibraryClient
             NativeImplClient.InvokeModuleMethod(_cGContextFillRect);
         }
 
-        public static int Runloop()
-        {
-            NativeImplClient.InvokeModuleMethod(_runloop);
-            return NativeImplClient.PopInt();
-        }
-
-        public static void ExitRunloop()
-        {
-            NativeImplClient.InvokeModuleMethod(_exitRunloop);
-        }
-
-        public static int ModuleInit()
-        {
-            NativeImplClient.InvokeModuleMethod(_moduleInit);
-            return NativeImplClient.PopInt();
-        }
-
-        public static void ModuleShutdown()
-        {
-            NativeImplClient.InvokeModuleMethod(_moduleShutdown);
-        }
-
         public static int Init()
         {
             Debug.Assert(NativeImplClient.Init() == 0);
             _module = NativeImplClient.GetModule("TestLibrary");
 
+            _moduleInit = NativeImplClient.GetModuleMethod(_module, "moduleInit");
+            _moduleShutdown = NativeImplClient.GetModuleMethod(_module, "moduleShutdown");
             _windowShow = NativeImplClient.GetModuleMethod(_module, "windowShow");
             _windowSetMenuBar = NativeImplClient.GetModuleMethod(_module, "windowSetMenuBar");
             _windowInvalidate = NativeImplClient.GetModuleMethod(_module, "windowInvalidate");
@@ -650,12 +756,10 @@ namespace TestLibraryClient
             _createMenu = NativeImplClient.GetModuleMethod(_module, "createMenu");
             _menuBarAddMenu = NativeImplClient.GetModuleMethod(_module, "menuBarAddMenu");
             _createMenuBar = NativeImplClient.GetModuleMethod(_module, "createMenuBar");
-            _cGContextSetRGBFillColor = NativeImplClient.GetModuleMethod(_module, "cGContextSetRGBFillColor");
-            _cGContextFillRect = NativeImplClient.GetModuleMethod(_module, "cGContextFillRect");
             _runloop = NativeImplClient.GetModuleMethod(_module, "runloop");
             _exitRunloop = NativeImplClient.GetModuleMethod(_module, "exitRunloop");
-            _moduleInit = NativeImplClient.GetModuleMethod(_module, "moduleInit");
-            _moduleShutdown = NativeImplClient.GetModuleMethod(_module, "moduleShutdown");
+            _cGContextSetRGBFillColor = NativeImplClient.GetModuleMethod(_module, "cGContextSetRGBFillColor");
+            _cGContextFillRect = NativeImplClient.GetModuleMethod(_module, "cGContextFillRect");
 
             _windowDelegate = NativeImplClient.GetInterface(_module, "WindowDelegate");
             _windowDelegate_onCloseRequest = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onCloseRequest");
@@ -663,6 +767,7 @@ namespace TestLibraryClient
             _windowDelegate_onResized = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onResized");
             _windowDelegate_onRepaint = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onRepaint");
             _windowDelegate_onAction = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onAction");
+            _windowDelegate_onMouseEvent = NativeImplClient.GetInterfaceMethod(_windowDelegate, "onMouseEvent");
 
             NativeImplClient.SetClientMethodWrapper(_windowDelegate_onCloseRequest, delegate(ClientObject obj)
             {
@@ -697,6 +802,13 @@ namespace TestLibraryClient
                 var id = NativeImplClient.PopInt();
                 var action = Action__Pop();
                 inst.OnAction(id, action);
+            });
+
+            NativeImplClient.SetClientMethodWrapper(_windowDelegate_onMouseEvent, delegate(ClientObject obj)
+            {
+                var inst = (ClientWindowDelegate) obj;
+                var mouseEvent = MouseEvent__Pop();
+                inst.OnMouseEvent(mouseEvent);
             });
             return ModuleInit();
         }

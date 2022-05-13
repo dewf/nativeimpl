@@ -6,6 +6,7 @@ ni_InterfaceMethodRef windowDelegate_onDestroyed;
 ni_InterfaceMethodRef windowDelegate_onResized;
 ni_InterfaceMethodRef windowDelegate_onRepaint;
 ni_InterfaceMethodRef windowDelegate_onAction;
+ni_InterfaceMethodRef windowDelegate_onMouseEvent;
 
 
 
@@ -63,13 +64,60 @@ inline Key Key__pop() {
 
 
 
-inline void Modifier__push(Modifier value) {
+inline void Modifiers__push(int value) {
+    ni_pushInt(value);
+}
+
+inline int Modifiers__pop() {
+    return ni_popInt();
+}
+
+inline void MouseButton__push(MouseButton value) {
     ni_pushInt((int)value);
 }
 
-inline Modifier Modifier__pop() {
+inline MouseButton MouseButton__pop() {
     auto tag = ni_popInt();
-    return (Modifier)tag;
+    return (MouseButton)tag;
+}
+
+inline void MouseEventType__push(MouseEventType value) {
+    ni_pushInt((int)value);
+}
+
+inline MouseEventType MouseEventType__pop() {
+    auto tag = ni_popInt();
+    return (MouseEventType)tag;
+}
+
+inline void MouseWheelAxis__push(MouseWheelAxis value) {
+    ni_pushInt((int)value);
+}
+
+inline MouseWheelAxis MouseWheelAxis__pop() {
+    auto tag = ni_popInt();
+    return (MouseWheelAxis)tag;
+}
+
+void MouseEvent__push(MouseEvent value, bool isReturn) {
+    Modifiers__push(value.modifiers);
+    MouseButton__push(value.button);
+    MouseWheelAxis__push(value.wheelAxis);
+    ni_pushInt(value.wheelDelta);
+    ni_pushInt(value.y);
+    ni_pushInt(value.x);
+    MouseEventType__push(value.eventType);
+}
+
+MouseEvent MouseEvent__pop() {
+    auto eventType = MouseEventType__pop();
+    auto x = ni_popInt();
+    auto y = ni_popInt();
+    auto wheelDelta = ni_popInt();
+    auto wheelAxis = MouseWheelAxis__pop();
+    auto button = MouseButton__pop();
+    auto modifiers = Modifiers__pop();
+    return MouseEvent { eventType, x, y, wheelDelta, wheelAxis, button, modifiers };
 }
 
 
@@ -96,6 +144,10 @@ public:
         ni_pushPtr(action);
         ni_pushInt(id);
         invokeMethod(windowDelegate_onAction);
+    }
+    void onMouseEvent(MouseEvent mouseEvent) override {
+        MouseEvent__push(mouseEvent, false);
+        invokeMethod(windowDelegate_onMouseEvent);
     }
 };
 
@@ -126,21 +178,12 @@ std::shared_ptr<WindowDelegate> WindowDelegate__pop()
     }
 }
 
-void __ModifierSet__push(std::set<Modifier> values, bool isReturn) {
-    std::vector<int> intValues;
-    for (auto i = values.begin(); i != values.end(); i++) {
-        intValues.push_back((int)*i);
-    }
-    pushIntArrayInternal(intValues);
+void moduleInit__wrapper() {
+    ni_pushInt(moduleInit());
 }
 
-std::set<Modifier> __ModifierSet__pop() {
-    auto intValues = popIntArrayInternal();
-    std::set<Modifier> __ret;
-    for (auto i = intValues.begin(); i != intValues.end(); i++) {
-        __ret.insert((Modifier)*i);
-    }
-    return __ret;
+void moduleShutdown__wrapper() {
+    moduleShutdown();
 }
 
 void windowShow__wrapper() {
@@ -176,7 +219,7 @@ void createWindow__wrapper() {
 
 void createAccelerator__wrapper() {
     auto key = Key__pop();
-    auto modifiers = __ModifierSet__pop();
+    auto modifiers = Modifiers__pop();
     ni_pushPtr(createAccelerator(key, modifiers));
 }
 
@@ -220,6 +263,14 @@ void createMenuBar__wrapper() {
     ni_pushPtr(createMenuBar());
 }
 
+void runloop__wrapper() {
+    ni_pushInt(runloop());
+}
+
+void exitRunloop__wrapper() {
+    exitRunloop();
+}
+
 void cGContextSetRGBFillColor__wrapper() {
     auto _this = (CGContext)ni_popPtr();
     auto red = ni_popDouble();
@@ -233,22 +284,6 @@ void cGContextFillRect__wrapper() {
     auto _this = (CGContext)ni_popPtr();
     auto rect = CGRect__pop();
     cGContextFillRect(_this, rect);
-}
-
-void runloop__wrapper() {
-    ni_pushInt(runloop());
-}
-
-void exitRunloop__wrapper() {
-    exitRunloop();
-}
-
-void moduleInit__wrapper() {
-    ni_pushInt(moduleInit());
-}
-
-void moduleShutdown__wrapper() {
-    moduleShutdown();
 }
 
 void WindowDelegate_onCloseRequest__wrapper(int serverID) {
@@ -281,8 +316,16 @@ void WindowDelegate_onAction__wrapper(int serverID) {
     inst->onAction(id, action);
 }
 
+void WindowDelegate_onMouseEvent__wrapper(int serverID) {
+    auto inst = ServerWindowDelegate::getByID(serverID);
+    auto mouseEvent = MouseEvent__pop();
+    inst->onMouseEvent(mouseEvent);
+}
+
 extern "C" int nativeLibraryInit() {
     auto m = ni_registerModule("TestLibrary");
+    ni_registerModuleMethod(m, "moduleInit", &moduleInit__wrapper);
+    ni_registerModuleMethod(m, "moduleShutdown", &moduleShutdown__wrapper);
     ni_registerModuleMethod(m, "windowShow", &windowShow__wrapper);
     ni_registerModuleMethod(m, "windowSetMenuBar", &windowSetMenuBar__wrapper);
     ni_registerModuleMethod(m, "windowInvalidate", &windowInvalidate__wrapper);
@@ -296,18 +339,17 @@ extern "C" int nativeLibraryInit() {
     ni_registerModuleMethod(m, "createMenu", &createMenu__wrapper);
     ni_registerModuleMethod(m, "menuBarAddMenu", &menuBarAddMenu__wrapper);
     ni_registerModuleMethod(m, "createMenuBar", &createMenuBar__wrapper);
-    ni_registerModuleMethod(m, "cGContextSetRGBFillColor", &cGContextSetRGBFillColor__wrapper);
-    ni_registerModuleMethod(m, "cGContextFillRect", &cGContextFillRect__wrapper);
     ni_registerModuleMethod(m, "runloop", &runloop__wrapper);
     ni_registerModuleMethod(m, "exitRunloop", &exitRunloop__wrapper);
-    ni_registerModuleMethod(m, "moduleInit", &moduleInit__wrapper);
-    ni_registerModuleMethod(m, "moduleShutdown", &moduleShutdown__wrapper);
+    ni_registerModuleMethod(m, "cGContextSetRGBFillColor", &cGContextSetRGBFillColor__wrapper);
+    ni_registerModuleMethod(m, "cGContextFillRect", &cGContextFillRect__wrapper);
     auto windowDelegate = ni_registerInterface(m, "WindowDelegate");
     windowDelegate_onCloseRequest = ni_registerInterfaceMethod(windowDelegate, "onCloseRequest", &WindowDelegate_onCloseRequest__wrapper);
     windowDelegate_onDestroyed = ni_registerInterfaceMethod(windowDelegate, "onDestroyed", &WindowDelegate_onDestroyed__wrapper);
     windowDelegate_onResized = ni_registerInterfaceMethod(windowDelegate, "onResized", &WindowDelegate_onResized__wrapper);
     windowDelegate_onRepaint = ni_registerInterfaceMethod(windowDelegate, "onRepaint", &WindowDelegate_onRepaint__wrapper);
     windowDelegate_onAction = ni_registerInterfaceMethod(windowDelegate, "onAction", &WindowDelegate_onAction__wrapper);
+    windowDelegate_onMouseEvent = ni_registerInterfaceMethod(windowDelegate, "onMouseEvent", &WindowDelegate_onMouseEvent__wrapper);
     return 0; // = OK
 }
 

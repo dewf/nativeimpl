@@ -58,29 +58,8 @@ void windowDestroy(Window w) {
     delete w;
 }
 
-static unsigned int modifiersToBits(std::set<Modifier> modifiers) {
-    unsigned int result = 0;
-    for (auto i = modifiers.begin(); i != modifiers.end(); i++) {
-        switch (*i) {
-        case Modifier::Shift:
-            result |= wl_kModifierShift;
-            break;
-        case Modifier::Control:
-            result |= wl_kModifierControl;
-            break;
-        case Modifier::Alt:
-            result |= wl_kModifierAlt;
-            break;
-        case Modifier::MacControl:
-            result |= wl_kModifierMacControl;
-            break;
-        }
-    }
-    return result;
-}
-
-Accelerator createAccelerator(Key key, std::set<Modifier> modifiers) {
-    auto ret = wl_AccelCreate((wl_KeyEnum)key, modifiersToBits(modifiers));
+Accelerator createAccelerator(Key key, int modifiers) {
+    auto ret = wl_AccelCreate((wl_KeyEnum)key, modifiers);
     return new __Accelerator{ ret };
 }
 
@@ -160,6 +139,18 @@ dl_CGContextRef createContext(wl_PlatformContext* platformContext) {
     return context;
 }
 
+static MouseEvent decodeMouseEvent(wl_MouseEvent& event) {
+    MouseEvent ret;
+    ret.eventType = (MouseEventType)event.eventType;
+    ret.x = event.x;
+    ret.y = event.y;
+    ret.wheelDelta = event.wheelDelta;
+    ret.wheelAxis = (MouseWheelAxis)event.wheelAxis;
+    ret.button = (MouseButton)event.button;
+    ret.modifiers = (int)event.modifiers; // should be unsigned to match, but too few values to be an issue
+    return ret;
+}
+
 static int myCallback(wl_WindowRef window, struct wl_Event* event, void* userData) {
     auto privWindow = (Window)userData;
     event->handled = true;
@@ -180,6 +171,9 @@ static int myCallback(wl_WindowRef window, struct wl_Event* event, void* userDat
         privWindow->del->onAction(event->actionEvent.id, &action);
         break;
     }
+    case wl_kEventTypeMouse:
+        privWindow->del->onMouseEvent(decodeMouseEvent(event->mouseEvent));
+        break;
     case wl_kEventTypeWindowRepaint: {
         auto dlContext = createContext(&event->repaintEvent.platformContext);
         dl_CGContextSaveGState(dlContext);

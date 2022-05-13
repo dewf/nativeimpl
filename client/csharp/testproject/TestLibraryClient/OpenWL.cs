@@ -6,34 +6,25 @@ namespace TestLibraryClient
 {
     public interface IWindowDelegate
     {
-        void OnRepaint(CGContext context)
-        {
-        }
-        void OnResize(int width, int height)
-        {
-        }
-        void OnCloseRequest(ref bool cancelClose)
-        {
-        }
-        void OnDestroyed()
-        {
-        }
+        void OnRepaint(CGContext context);
+        void OnResize(int width, int height);
+        void OnCloseRequest(ref bool cancelClose);
+        void OnDestroyed();
     }
-    public enum Modifier
+    [Flags]
+    public enum Modifiers
     {
-        Shift,
-        Control,
-        Alt,
-        MacControl,
+        Shift = 1,
+        Control = 2,
+        Alt = 4,
+        MacControl = 8,
     }
     public class Accelerator
     {
         internal readonly TestLibrary.Accelerator PrivAccel;
-        public Accelerator(TestLibrary.Key key, IEnumerable<Modifier> modifiers)
+        public Accelerator(TestLibrary.Key key, Modifiers modifiers)
         {
-            var nativeModifiers =
-                modifiers.Select(x => (TestLibrary.Modifier)x).ToHashSet();
-            PrivAccel = TestLibrary.CreateAccelerator(key, nativeModifiers);
+            PrivAccel = TestLibrary.CreateAccelerator(key, (TestLibrary.Modifiers)modifiers);
         }
     }
     public class Action
@@ -138,6 +129,10 @@ namespace TestLibraryClient
         public override void OnAction(int id, TestLibrary.Action action)
         {
             Action.GetById(id).Apply();
+        }
+        public override void OnMouseEvent(TestLibrary.MouseEvent mouseEvent)
+        {
+            //Console.WriteLine("WLWindow OnMouseEvent (not yet forwarded to IWindowDelegate)");
         }
         public override void Dispose()
         {

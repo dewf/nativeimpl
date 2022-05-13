@@ -5,6 +5,36 @@ void moduleShutdown();
 
 // OPENWL ======================================================================================
 
+flags Modifiers {
+    Shift = 1,
+    Control = 2,
+    Alt = 4,
+    MacControl = 8
+}
+
+enum MouseEventType {
+    Down,
+    Up,
+    Move,
+    Enter,
+    Leave,
+    Wheel
+}
+
+enum MouseButton {
+    None,
+    Left,
+    Middle,
+    Right,
+    Other
+}
+
+enum MouseWheelAxis {
+    None,
+    Vertical,
+    Horizontal
+}
+
 struct CloseRequestReply {
     bool cancelClose;
 }
@@ -16,7 +46,7 @@ struct MouseEvent {
     int wheelDelta;
     MouseWheelAxis wheelAxis;
     MouseButton button;
-    Set<Modifier> modifiers;
+    Modifiers modifiers;
 }
 
 interface WindowDelegate {
@@ -37,7 +67,7 @@ opaque Window {
 Window createWindow(string title, WindowDelegate del);
 
 opaque Accelerator;
-Accelerator createAccelerator(Key key, Set<Modifier> modifiers);
+Accelerator createAccelerator(Key key, Modifiers modifiers);
 
 opaque Action;
 Action createAction(int id, string label, Accelerator acc);
@@ -79,37 +109,7 @@ opaque CGContext {
     void fillRect(CGRect rect);
 }
 
-// blah =====================================================================================
-
-enum Modifier {
-    Shift,
-    Control,
-    Alt,
-    MacControl
-}
-
-enum MouseEventType {
-    Down,
-    Up,
-    Move,
-    Enter,
-    Leave,
-    Wheel
-}
-
-enum MouseButton {
-    None,
-    Left,
-    Middle,
-    Right,
-    Other
-}
-
-enum MouseWheelAxis {
-    None,
-    Vertical,
-    Horizontal
-}
+// keys =====================================================================================
 
 enum Key {
     Unknown,

@@ -47,7 +47,7 @@ namespace AppRunner
             
             fileMenu.AddSeparator();
             
-            var accel = new Accelerator(TestLibrary.Key.E, new[] { Modifier.Control, Modifier.Shift });
+            var accel = new Accelerator(TestLibrary.Key.E, Modifiers.Control | Modifiers.Shift);
             fileMenu.AddAction(new Action("E&xit", accel, () =>
             {
                 Console.WriteLine("Exit Action!!!");

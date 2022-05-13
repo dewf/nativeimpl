@@ -146,11 +146,44 @@ struct __Menu; typedef struct __Menu* Menu;
 
 struct __MenuBar; typedef struct __MenuBar* MenuBar;
 
-enum class Modifier {
-    Shift,
-    Control,
-    Alt,
-    MacControl
+enum class Modifiers {
+    Shift = 1,
+    Control = 2,
+    Alt = 4,
+    MacControl = 8
+};
+
+enum class MouseButton {
+    None,
+    Left,
+    Middle,
+    Right,
+    Other
+};
+
+enum class MouseEventType {
+    Down,
+    Up,
+    Move,
+    Enter,
+    Leave,
+    Wheel
+};
+
+enum class MouseWheelAxis {
+    None,
+    Vertical,
+    Horizontal
+};
+
+struct MouseEvent {
+    MouseEventType eventType;
+    int x;
+    int y;
+    int wheelDelta;
+    MouseWheelAxis wheelAxis;
+    MouseButton button;
+    int modifiers;
 };
 
 struct __Window; typedef struct __Window* Window;
@@ -162,6 +195,7 @@ public:
     virtual void onResized(int newWidth, int newHeight) = 0;
     virtual void onRepaint(CGContext context) = 0;
     virtual void onAction(int id, Action action) = 0;
+    virtual void onMouseEvent(MouseEvent mouseEvent) = 0;
 };
 
 // inherit from this to create server instances of WindowDelegate
@@ -174,14 +208,14 @@ public:
     }
 };
 
-// std::set<Modifier>
-
+int moduleInit();
+void moduleShutdown();
 void windowShow(Window _this);
 void windowSetMenuBar(Window _this, MenuBar mb);
 void windowInvalidate(Window _this, int x, int y, int width, int height);
 void windowDestroy(Window _this);
 Window createWindow(std::string title, std::shared_ptr<WindowDelegate> del);
-Accelerator createAccelerator(Key key, std::set<Modifier> modifiers);
+Accelerator createAccelerator(Key key, int modifiers);
 Action createAction(int id, std::string label, Accelerator acc);
 void menuAddAction(Menu _this, Action action);
 void menuAddSubmenu(Menu _this, std::string label, Menu sub);
@@ -189,9 +223,7 @@ void menuAddSeparator(Menu _this);
 Menu createMenu();
 void menuBarAddMenu(MenuBar _this, std::string label, Menu menu);
 MenuBar createMenuBar();
-void cGContextSetRGBFillColor(CGContext _this, double red, double green, double blue, double alpha);
-void cGContextFillRect(CGContext _this, CGRect rect);
 int runloop();
 void exitRunloop();
-int moduleInit();
-void moduleShutdown();
+void cGContextSetRGBFillColor(CGContext _this, double red, double green, double blue, double alpha);
+void cGContextFillRect(CGContext _this, CGRect rect);

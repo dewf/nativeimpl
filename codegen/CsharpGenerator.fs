@@ -722,6 +722,8 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             for value, maybeComma in sumTypeValues |> withTrailingCommas do
                 write 3 "%s%s" value.Name maybeComma
             write 2 "}"
+            let tagType =
+                Primitive(Int(true,Width32))
             // PUSH
             blank()
             write 2 "private static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
@@ -738,14 +740,14 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 4 "default:"
             write 5 "throw new ArgumentOutOfRangeException(nameof(thing));"
             write 3 "}"
-            write 3 "NativeImplClient.PushInt((int)which);"
+            pushValue writer 3 tagType "(int)which" NotApplicable
             write 2 "}"
             // POP
             blank()
             write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
-            write 3 "var which = (%s__Tag)NativeImplClient.PopInt();" (upperFirst name)
-            write 3 "switch (which)"
+            popValue writer 3 tagType (NewVariable "which")
+            write 3 "switch ((%s__Tag)which)" (upperFirst name)
             write 3 "{"
             for value in sumTypeValues do
                 write 4 "case %s__Tag.%s:" (upperFirst name) (upperFirst value.Name)

@@ -457,6 +457,8 @@ let renderWrapperSumType (writer: TextWriter) (sumTypeName: string) (values: Sum
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
     let blank () = write 0 ""
+    let tagType =
+        Primitive(Int(true,Width32))
     // push
     write 0 "void %s__push(%s value, bool isReturn) {" sumTypeName sumTypeName
     write 1 "switch (value.tag) {"
@@ -468,12 +470,12 @@ let renderWrapperSumType (writer: TextWriter) (sumTypeName: string) (values: Sum
             pushValue writer 2 argType content (Indirect "isReturn")
         write 2 "break;"
     write 1 "}"
-    pushValue writer 1 (Primitive(Int(true,Width32))) "(int)value.tag" (Indirect "isReturn")
+    pushValue writer 1 tagType "(int32_t)value.tag" (Indirect "isReturn")
     write 0 "}"
     // pop
     blank()
     write 0 "%s %s__pop() {" sumTypeName sumTypeName
-    popValue writer 1 (Primitive(Int(true,Width32))) (Variable "which")
+    popValue writer 1 tagType (Variable "which")
     write 1 "switch ((%s::Tag)which) {" sumTypeName
     for value in values do
         write 1 "case %s::Tag::%s: {" sumTypeName (upperFirst value.Name)

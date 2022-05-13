@@ -340,17 +340,23 @@ type ArrayRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, oute
             popValue writer 3 (ArrayType tt) Return
             write 2 "}"
         member this.EnumType (name: string) =
+            let widthType =
+                match typeMap[name] with
+                | UserOrGeneric.User (EnumDef info) ->
+                        info.MaybeWidth
+                        |> Option.defaultValue (Primitive(Int(true,Width32)))
+                | _ -> failwith "ArrayRenderer this.EnumType trouble!!!"
             // push
             write 2 "private static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
-            write 3 "var intValues = items.Select(i => (int)i).ToArray();"
-            write 3 "NativeImplClient.PushIntArray(intValues);"
+            write 3 "var intValues = items.Select(i => (%s)i).ToArray();" (typeToCsString typeMap widthType)
+            pushValue writer 3 (ArrayType widthType) "intValues" NotApplicable
             write 2 "}"
             // pop
             blank()
             write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
-            write 3 "var intValues = NativeImplClient.PopIntArray();"
+            popValue writer 3 (ArrayType widthType) (NewVariable "intValues")
             write 3 "return intValues.Select(i => (%s)i).ToArray();" (typeToCsString typeMap elemType)
             write 2 "}"
         member this.StructType (structName: string) (namedFields: NamedField list) =
@@ -661,15 +667,15 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 3 "return new %s(%s);" name (fieldNamesJoined namedFields)
             write 2 "}"
         | EnumDef info ->
-            let maybeWidth =
+            let widthType, widthStr =
                 match info.MaybeWidth with
                 | Some widthType ->
-                    sprintf " : %s" (typeToCsString typeMap widthType)
+                    widthType, sprintf " : %s" (typeToCsString typeMap widthType)
                 | None ->
-                    ""
+                    Primitive(Int(true,Width32)), ""
             if info.FlagsMode then
                 write 2 "[Flags]"
-            write 2 "public enum %s%s" name maybeWidth
+            write 2 "public enum %s%s" name widthStr
             write 2 "{"
             for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
                 match maybeSpecifiedValue with
@@ -682,13 +688,16 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
             write 2 "private static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
             write 2 "{"
-            write 3 "NativeImplClient.PushInt((int)value);"
+            let content =
+                sprintf "(%s)value" (typeToCsString typeMap widthType)
+            pushValue writer 3 widthType content NotApplicable
             write 2 "}"
             blank()
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
             write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
-            write 3 "return (%s)NativeImplClient.PopInt();" (upperFirst name)
+            popValue writer 3 widthType (NewVariable "ret")
+            write 3 "return (%s)ret;" (upperFirst name)
             write 2 "}"
         | SumTypeDef sumTypeValues ->
             // definition

@@ -528,18 +528,25 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
             popValue writer 1 (ArrayType tt) Return
             write 0 "}"
         member this.EnumType (name: string) =
+            let widthType =
+                match typeMap[name] with
+                | UserOrGeneric.User (EnumDef info) ->
+                        info.MaybeWidth
+                        |> Option.defaultValue (Primitive(Int(true,Width8)))
+                | _ ->
+                    failwith "C++ ArrayOrSetRenderer: weirdness in this.EnumType"
             // PUSH ================
             write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
-            write 1 "std::vector<int> intValues;"
+            write 1 "std::vector<%s> intValues;" (typeToCppString typeMap widthType)
             write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
-            write 2 "intValues.push_back((int)*i);"
+            write 2 "intValues.push_back((%s)*i);" (typeToCppString typeMap widthType)
             write 1 "}"
-            write 1 "pushIntArrayInternal(intValues);"
+            pushValue writer 1 (ArrayType widthType) "intValues" (Indirect "isReturn")
             write 0 "}"
             // POP ==================
             blank()
             write 0 "%s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
-            write 1 "auto intValues = popIntArrayInternal();"
+            popValue writer 1 (ArrayType widthType) (Variable "intValues")
             write 1 "%s __ret;" (typeToCppString typeMap outerType)
             write 1 "for (auto i = intValues.begin(); i != intValues.end(); i++) {"
             match outerType with

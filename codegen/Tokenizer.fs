@@ -4,6 +4,7 @@ open System.Text.RegularExpressions
 
 type Token =
     | Identifier of string
+    | Digits of string
     | ModuleToken
     | OpaqueToken
     | StructToken
@@ -13,7 +14,7 @@ type Token =
     | SetToken
     | ExceptionToken
     | InterfaceToken
-    | EnumToken
+    | EnumToken | FlagsToken
     | SumTypeToken
     | SizeTToken
     | BoolToken
@@ -33,6 +34,8 @@ type Token =
     | RightAngleBracket
     | StatementEnd
     | Comma
+    | Colon
+    | EqualsToken
     | ThrowsToken
     | Error of line: int * text: string
 
@@ -47,6 +50,7 @@ let stringToToken (lineNumber: int) = function
     | "exception" -> ExceptionToken
     | "interface" -> InterfaceToken
     | "enum" -> EnumToken
+    | "flags" -> FlagsToken
     | "sumtype" -> SumTypeToken
     | "size_t" -> SizeTToken
     | "bool" -> BoolToken
@@ -67,8 +71,11 @@ let stringToToken (lineNumber: int) = function
     | ">" -> RightAngleBracket
     | ";" -> StatementEnd
     | "," -> Comma
+    | ":" -> Colon
+    | "=" -> EqualsToken
     | "throws" -> ThrowsToken
     | text when Regex(@"[_a-zA-Z][_a-zA-Z0-9]*").IsMatch(text) -> Identifier text
+    | text when Regex(@"[0-9]+").IsMatch(text) -> Digits text
     | text -> Error (lineNumber, text)
 
 type TokenAndLocation = {
@@ -82,7 +89,7 @@ let tokenize (lines: (int * string) list) =
     |> List.map (fun (i, line) ->
         let noComments = Regex(@"//.*").Replace(line, "")
         let spacesCollapsed = Regex(@"\s+").Replace(noComments, " ")
-        let spaceAdded = Regex(@"[,\(\)\[\];{}<>]").Replace(spacesCollapsed, MatchEvaluator(fun m -> sprintf " %s " m.Value))
+        let spaceAdded = Regex(@"[,\(\)\[\];{}<>:=]").Replace(spacesCollapsed, MatchEvaluator(fun m -> sprintf " %s " m.Value))
         let items = spaceAdded.Split(' ')
         let nonEmpty =
             items

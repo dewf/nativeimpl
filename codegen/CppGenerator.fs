@@ -68,7 +68,7 @@ let rec typeToName = function
     | SumType name -> upperFirst name
     | x -> sprintf "(typeToName: not done yet [%A]" x
 
-let rec typeToCppString = function
+let rec typeToCppString (typeMap: Map<string, UserOrGeneric>) = function
     | UnitType -> "void"
     | Primitive prim ->
         match prim with
@@ -83,27 +83,38 @@ let rec typeToCppString = function
     | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
     | ExceptionType name -> name
     | DelegateType name -> sprintf "std::function<%s>" name
-    | ArrayType niType -> sprintf "std::vector<%s>" (typeToCppString niType)
-    | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (typeToCppString keyType) (typeToCppString valueType)
-    | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map typeToCppString |> String.concat ",")
-    | SetType niType -> sprintf "std::set<%s>" (typeToCppString niType)
-    | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (typeToCppString elemType)
+    | ArrayType niType -> sprintf "std::vector<%s>" (typeToCppString typeMap niType)
+    | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (typeToCppString typeMap keyType) (typeToCppString typeMap valueType)
+    | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map (typeToCppString typeMap) |> String.concat ",")
+    | SetType niType -> sprintf "std::set<%s>" (typeToCppString typeMap niType)
+    | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (typeToCppString typeMap elemType)
     | StructType name -> name
     | TypedefType name -> name
-    | EnumType name -> name
+    | EnumType name ->
+        match typeMap[name] with
+        | UserOrGeneric.User (EnumDef enumInfo) ->
+            if enumInfo.FlagsMode then
+                let widthType =
+                    enumInfo.MaybeWidth
+                    |> Option.defaultValue (Primitive Int32)
+                typeToCppString typeMap widthType
+            else
+                name
+        | _ ->
+            failwithf "typeToCppString: failed to find enum type %s in type map" name
     | SumType name -> name
     | x -> sprintf "(typeToCppString: not done yet [%A])" x
 
-let joinedFields (fields: NamedField list) =
-    [for field in fields -> sprintf "%s %s" (typeToCppString field.Type_) field.Name]
+let joinedFields (typeMap: Map<string, UserOrGeneric>) (fields: NamedField list) =
+    [for field in fields -> sprintf "%s %s" (typeToCppString typeMap field.Type_) field.Name]
     |> String.concat ", "
 
 let joinedFieldNames (fields: NamedField list) =
     [for field in fields -> field.Name]
     |> String.concat ", "
 
-let joinedArgs (args: (string * NIType) list) =
-    [for name, type_ in args -> sprintf "%s %s" (typeToCppString type_) name]
+let joinedArgs (typeMap: Map<string, UserOrGeneric>) (args: (string * NIType) list) =
+    [for name, type_ in args -> sprintf "%s %s" (typeToCppString typeMap type_) name]
     |> String.concat ", "
 
 let joinedArgNames (args: (string * NIType) list) =
@@ -111,7 +122,7 @@ let joinedArgNames (args: (string * NIType) list) =
     |> List.map fst
     |> String.concat ", "
 
-let rec defaultValueForType = function
+let rec defaultValueForType (typeMap: Map<string, UserOrGeneric>) = function
     | UnitType -> failwith "defaultValueForType called on UnitType"
     | Primitive prim ->
         match prim with
@@ -126,16 +137,16 @@ let rec defaultValueForType = function
     | OpaqueHandleType name -> sprintf "new __%s()" (upperFirst name)
     | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
     | DelegateType name -> sprintf "std::function<%s>()" name
-    | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString niType)
-    | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToCppString keyType) (typeToCppString valueType)
+    | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString typeMap niType)
+    | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToCppString typeMap keyType) (typeToCppString typeMap valueType)
     | TupleType tupleTypes ->
         let typesJoined =
-            tupleTypes |> List.map typeToCppString |> String.concat ","
+            tupleTypes |> List.map (typeToCppString typeMap) |> String.concat ","
         let defaultsJoined =
-            tupleTypes |> List.map defaultValueForType |> String.concat ", "
+            tupleTypes |> List.map (defaultValueForType typeMap) |> String.concat ", "
         sprintf "std::tuple<%s>{ %s }" typesJoined defaultsJoined
-    | SetType niType -> sprintf "std::set<%s>()" (typeToCppString niType)
-    | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>()" (typeToCppString elemType)
+    | SetType niType -> sprintf "std::set<%s>()" (typeToCppString typeMap niType)
+    | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>()" (typeToCppString typeMap elemType)
     | _ ->
         "(defaultValueForType: not yet supported)"
 
@@ -310,7 +321,7 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "// (pushValue not supported yet: %A)" type_
 
 
-let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInfo) (typeContainsRefs: NIType -> bool) =
+let renderWrapperDelegate (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (info: DelegateInfo) (typeContainsRefs: NIType -> bool) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -338,7 +349,7 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
         for exc in info.Throws do
             match exc with
             | ExceptionType exceptionName ->
-                write 2 "catch (const %s& e) {" (typeToCppString exc)
+                write 2 "catch (const %s& e) {" (typeToCppString typeMap exc)
                 write 3 "ni_setException(%s);" (lowerFirst exceptionName)
                 pushValue writer 3 exc "e" (Direct true)
                 write 2 "}"
@@ -352,7 +363,7 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
     write 0 "std::function<%s> %s__pop() {" name name
     write 1 "auto id = ni_popClientFunc();"
     write 1 "auto cf = std::shared_ptr<ClientFuncVal>(new ClientFuncVal(id));"
-    write 1 "auto wrapper = [cf](%s) {" (joinedArgs info.Args)
+    write 1 "auto wrapper = [cf](%s) {" (joinedArgs typeMap info.Args)
     for argName, argType in info.Args |> List.rev do
         pushValue writer 2 argType argName (Direct false)
     if info.Throws.IsEmpty then
@@ -367,7 +378,7 @@ let renderWrapperDelegate (writer: TextWriter) (name: string) (info: DelegateInf
     write 1 "return wrapper;"
     write 0 "}"
 
-let renderWrapperInterface (writer: TextWriter) (name: string) (methods: NamedFunction list) (typeContainsRefs: NIType -> bool) =
+let renderWrapperInterface (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (methods: NamedFunction list) (typeContainsRefs: NIType -> bool) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -378,7 +389,7 @@ let renderWrapperInterface (writer: TextWriter) (name: string) (methods: NamedFu
     write 1 "Client%s(int id) : ClientObject(id) {}" name
     // methods
     for namedFunc in methods do
-        write 1 "%s %s(%s) override {" (typeToCppString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args)
+        write 1 "%s %s(%s) override {" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args)
         // push args (reverse order)
         for argName, argType in namedFunc.Args |> List.rev do
             pushValue writer 2 argType argName (Direct false)
@@ -467,7 +478,7 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
     // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
     let arrayDefault () =
         // PUSH ========
-        write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+        write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
         write 1 "for (auto v = values.rbegin(); v != values.rend(); v++) {" // in reverse (for arrays - for sets, order doesn't matter)
         pushValue writer 2 elemType "*v" (Indirect "isReturn")
         write 1 "}"
@@ -475,8 +486,8 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
         write 0 "}"
         // POP =========
         blank()
-        write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
-        write 1 "%s __ret;" (typeToCppString outerType)
+        write 0 "%s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
+        write 1 "%s __ret;" (typeToCppString typeMap outerType)
         write 1 "auto count = ni_popSizeT();"
         write 1 "for (auto i = 0; i < count; i++) {"
         popValue writer 2 elemType (Variable "value")
@@ -493,17 +504,17 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
     interface IArrayLikeRenderer with
         member this.TypedefTuple (tt: NIType) =
             // push
-            write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+            write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
             pushValue writer 1 (ArrayType tt) "values" (Indirect "isReturn")
             write 0 "}"
             // pop
             blank()
-            write 0 "inline %s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+            write 0 "inline %s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
             popValue writer 1 (ArrayType tt) Return
             write 0 "}"
         member this.EnumType (name: string) =
             // PUSH ================
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
             write 1 "std::vector<int> intValues;"
             write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
             write 2 "intValues.push_back((int)*i);"
@@ -512,9 +523,9 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
             write 0 "}"
             // POP ==================
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+            write 0 "%s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
             write 1 "auto intValues = popIntArrayInternal();"
-            write 1 "%s __ret;" (typeToCppString outerType)
+            write 1 "%s __ret;" (typeToCppString typeMap outerType)
             write 1 "for (auto i = intValues.begin(); i != intValues.end(); i++) {"
             match outerType with
             | ArrayType _ ->
@@ -528,9 +539,9 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
             write 0 "}"
         member this.StructType (structName: string) (namedFields: NamedField list) =
             // PUSH ===========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
             for field in namedFields |> List.rev do
-                write 1 "std::vector<%s> %s_values;" (typeToCppString field.Type_) field.Name
+                write 1 "std::vector<%s> %s_values;" (typeToCppString typeMap field.Type_) field.Name
             write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
             for field in namedFields |> List.rev do
                 write 2 "%s_values.push_back(v->%s);" field.Name field.Name
@@ -540,10 +551,10 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
             write 0 "}"
             // POP ============
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+            write 0 "%s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
             for field in namedFields do
                 popValue writer 1 (ArrayType field.Type_) (Variable (sprintf "%s_values" field.Name))
-            write 1 "%s __ret;" (typeToCppString outerType)
+            write 1 "%s __ret;" (typeToCppString typeMap outerType)
             // use first field to iterate
             write 1 "for (auto i = 0; i < %s_values.size(); i++) {" namedFields.Head.Name
             write 2 "%s __value;" structName
@@ -561,9 +572,9 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
             write 0 "}"
         member this.TupleType (tupleTypes: NIType list) =
             // PUSH ========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
             for i, type_ in tupleTypes |> List.indexed do
-                write 1 "std::vector<%s> _%dvalues;" (typeToCppString type_) i
+                write 1 "std::vector<%s> _%dvalues;" (typeToCppString typeMap type_) i
             write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
             for i, _ in tupleTypes |> List.indexed do
                 write 2 "_%dvalues.push_back(std::get<%d>(*i));" i i
@@ -574,10 +585,10 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
             write 0 "}"
             // POP =========
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+            write 0 "%s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
             for i, type_ in tupleTypes |> List.indexed do
                 popValue writer 1 (ArrayType type_) (Variable (sprintf "_%dvalues" i))
-            write 1 "%s __ret;" (typeToCppString outerType)
+            write 1 "%s __ret;" (typeToCppString typeMap outerType)
             write 1 "for (auto i = 0; i < _0values.size(); i++) {"
             let joined =
                 tupleTypes |> List.indexed |> List.map fst |> List.map (sprintf "_%dvalues[i]") |> String.concat ", "
@@ -605,22 +616,22 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
             // primitve arrays are built in, but not sets!
             match outerType with
             | ArrayType _ ->
-                write 0 "// built-in array type: %s" (typeToCppString outerType)
+                write 0 "// built-in array type: %s" (typeToCppString typeMap outerType)
             | SetType niType ->
                 // push ==============
-                write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName outerType) (typeToCppString outerType)
-                write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString (ArrayType niType))
+                write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
+                write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString typeMap (ArrayType niType))
                 pushValue writer 1 (ArrayType niType) "itemsArr" (Indirect "isReturn")
                 write 0 "}"
                 // pop ===============
                 blank()
-                write 0 "%s __%s__pop() {" (typeToCppString outerType) (typeToName outerType)
+                write 0 "%s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
                 popValue writer 1 (ArrayType niType) (Variable "itemsArr")
-                write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString outerType)
+                write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString typeMap outerType)
                 write 0 "}"
             | _ -> failwith "!!!"
         member this.Other (t: NIType) =
-            write 2 "// TODO: push/pop for array-like of %s" (typeToCppString outerType)
+            write 2 "// TODO: push/pop for array-like of %s" (typeToCppString typeMap outerType)
 
 let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,bool>) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
@@ -639,34 +650,34 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
         match gType with
         | BufferType elemType ->
             // PUSH =====
-            write 0 "inline void __%s__push(%s buf, bool isReturn) {" (typeToName gType) (typeToCppString gType)
+            write 0 "inline void __%s__push(%s buf, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
             write 1 "auto pushable = std::dynamic_pointer_cast<Pushable>(buf);"
             write 1 "pushable->push(pushable, isReturn);"
             write 0 "}"
             // POP ======
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString gType) (typeToName gType)
+            write 0 "%s __%s__pop() {" (typeToCppString typeMap gType) (typeToName gType)
             write 1 "int id;"
             write 1 "bool isClientId, inSafetyArea;"
             write 1 "ni_BufferDescriptor descriptor;"
             write 1 "ni_popBuffer(&id, &isClientId, &inSafetyArea, &descriptor);"
             write 1 "if (isClientId) {"
-            write 2 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString elemType)
-            write 2 "return %s(buf);" (typeToCppString gType)
+            write 2 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString typeMap elemType)
+            write 2 "return %s(buf);" (typeToCppString typeMap gType)
             write 1 "}"
             write 1 "else {"
-            write 2 "return ServerBuffer<%s>::getByID(id);" (typeToCppString elemType)
+            write 2 "return ServerBuffer<%s>::getByID(id);" (typeToCppString typeMap elemType)
             write 1 "}"
             write 0 "}"
         | TupleType tupleTypes ->
             // PUSH =====
-            write 0 "void __%s__push(%s value, bool isReturn) {" (typeToName gType) (typeToCppString gType)
+            write 0 "void __%s__push(%s value, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
             for i, type_ in tupleTypes |> List.indexed |> List.rev do
                 pushValue writer 1 type_ (sprintf "std::get<%d>(value)" i) (Indirect "isReturn")
             write 0 "}"
             // POP ======
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString gType) (typeToName gType)
+            write 0 "%s __%s__pop() {" (typeToCppString typeMap gType) (typeToName gType)
             for i, type_ in tupleTypes |> List.indexed do
                 popValue writer 1 type_ (Variable (sprintf "_%d" i))
             let itemsJoined =
@@ -674,13 +685,13 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 |> List.indexed
                 |> List.map (fun (i, _) -> sprintf "_%d" i)
                 |> String.concat ", "
-            write 1 "return %s{ %s };" (typeToCppString gType) itemsJoined
+            write 1 "return %s{ %s };" (typeToCppString typeMap gType) itemsJoined
             write 0 "}"
         | MapType (keyType, valueType) ->
             // PUSH =====
-            write 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName gType) (typeToCppString gType)
-            write 1 "std::vector<%s> keys;" (typeToCppString keyType)
-            write 1 "std::vector<%s> values;" (typeToCppString valueType)
+            write 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
+            write 1 "std::vector<%s> keys;" (typeToCppString typeMap keyType)
+            write 1 "std::vector<%s> values;" (typeToCppString typeMap valueType)
             write 1 "for (auto i = _map.begin(); i != _map.end(); i++) {"
             write 2 "keys.push_back(i->first);"
             write 2 "values.push_back(i->second);"
@@ -690,8 +701,8 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             write 0 "}"
             // POP =====
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString gType) (typeToName gType)
-            write 1 "%s __ret;" (typeToCppString gType)
+            write 0 "%s __%s__pop() {" (typeToCppString typeMap gType) (typeToName gType)
+            write 1 "%s __ret;" (typeToCppString typeMap gType)
             popValue writer 1 (ArrayType keyType) (Variable "keys")
             popValue writer 1 (ArrayType valueType) (Variable "values")
             write 1 "for (auto i = 0; i < keys.size(); i++) {"
@@ -708,7 +719,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
                 ArrayOrSetRenderer(writer, typeMap, gType, niType)
             renderArrayLike typeMap niType renderer
         | _ ->
-            write 0 "// push/pop for generic %s" (typeToCppString gType)
+            write 0 "// push/pop for generic %s" (typeToCppString typeMap gType)
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueHandleDef ->
@@ -727,9 +738,9 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
         | ExceptionDef namedFields ->
             renderWrapperException writer name namedFields
         | InterfaceDef methods ->
-            renderWrapperInterface writer name methods typeContainsRefs
+            renderWrapperInterface writer typeMap name methods typeContainsRefs
         | DelegateDef info ->
-            renderWrapperDelegate writer name info typeContainsRefs
+            renderWrapperDelegate writer typeMap name info typeContainsRefs
         | TypeDef niType ->
             // ghetto, but for now instead of flattening, just write an inline wrapper
             write 0 "inline %s %s__pop() {" name name
@@ -739,15 +750,30 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             write 0 "inline void %s__push(%s value, bool isReturn) {" name name
             pushValue writer 1 niType "value" (Indirect "isReturn")
             write 0 "}"
-        | EnumDef _ ->
-            write 0 "inline void %s__push(%s value) {" name name
-            pushValue writer 1 (Primitive Int32) "(int)value" NotApplicable
-            write 0 "}"
-            blank()
-            write 0 "inline %s %s__pop() {" name name
-            popValue writer 1 (Primitive Int32) (Variable "tag")
-            write 1 "return (%s)tag;" name
-            write 0 "}"
+        | EnumDef info ->
+            let widthType =
+                match info.MaybeWidth with
+                | Some widthType -> widthType
+                | None -> Primitive Int32
+            if info.FlagsMode then
+                write 0 "inline void %s__push(%s value) {" name (typeToCppString typeMap widthType)
+                pushValue writer 1 widthType "value" NotApplicable
+                write 0 "}"
+                blank()
+                write 0 "inline %s %s__pop() {" (typeToCppString typeMap widthType) name
+                popValue writer 1 widthType Return
+                write 0 "}"
+            else
+                write 0 "inline void %s__push(%s value) {" name name
+                let content =
+                    sprintf "(%s)value" (typeToCppString typeMap widthType)
+                pushValue writer 1 widthType content NotApplicable
+                write 0 "}"
+                blank()
+                write 0 "inline %s %s__pop() {" name name
+                popValue writer 1 widthType (Variable "tag")
+                write 1 "return (%s)tag;" name
+                write 0 "}"
         | SumTypeDef values ->
             renderWrapperSumType writer name values
 
@@ -902,25 +928,25 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
     // nothing for C++
     write 0 "}"
 
-let renderHeaderException (writer: TextWriter) (exName: string) (exFields: NamedField list) =
+let renderHeaderException (writer: TextWriter) (exName: string) (exFields: NamedField list) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
     write 0 "class %s {" exName
     write 0 "public:"
     for namedField in exFields do
-        write 1 "%s %s;" (typeToCppString namedField.Type_) namedField.Name
+        write 1 "%s %s;" (typeToCppString typeMap namedField.Type_) namedField.Name
     if exFields.IsEmpty then
         write 1 "%s() {}" exName
     else
         let joinedInitializers =
             [for nf in exFields -> sprintf "%s(%s)" nf.Name nf.Name]
             |> String.concat ", "
-        write 1 "%s(%s)" exName (joinedFields exFields)
+        write 1 "%s(%s)" exName (joinedFields typeMap exFields)
         write 2 ": %s {}" joinedInitializers
     write 0 "};"
 
-let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFunction list) =
+let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFunction list) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -933,17 +959,17 @@ let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFun
             else
                 let joined =
                     namedFunc.Throws
-                    |> List.map typeToCppString
+                    |> List.map (typeToCppString typeMap)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
-        write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
+        write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
     write 0 "};"
     write 0 ""
     // server wrapper
     let nameRegex = Regex(@"%%IFACE%%")
     writer.WriteLine(nameRegex.Replace(ServerWrapperTemplate, name))
 
-let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumTypeValue list) =
+let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumTypeValue list) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -957,8 +983,8 @@ let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumT
     for value in values do
         write 1 "struct %s {" value.Name
         for argName, argType in value.Args do
-            write 2 "const %s %s;" (typeToCppString argType) argName;
-        write 2 "static %s make(%s) {" sumTypeName (joinedArgs value.Args)
+            write 2 "const %s %s;" (typeToCppString typeMap argType) argName;
+        write 2 "static %s make(%s) {" sumTypeName (joinedArgs typeMap value.Args)
         write 3 "%s ret{ Tag::%s };" sumTypeName value.Name
         write 3 "ret.%s = std::shared_ptr<%s>(new %s{ %s });" (lowerFirst value.Name) value.Name value.Name (joinedArgNames value.Args)
         write 3 "return ret;"
@@ -968,7 +994,7 @@ let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumT
         write 1 "std::shared_ptr<%s> %s;" value.Name (lowerFirst value.Name)
     write 0 "};"
 
-let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGeneric) (_typeMap: Map<string, UserOrGeneric>) =
+let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -980,15 +1006,15 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
     | UserOrGeneric.Generic gType ->
         match gType with
         | ArrayType _ ->
-            write 0 "// %s" (typeToCppString gType) // remove this eventually
+            write 0 "// %s" (typeToCppString typeMap gType) // remove this eventually
         | MapType _ ->
-            write 0 "// %s" (typeToCppString gType) // likewise
+            write 0 "// %s" (typeToCppString typeMap gType) // likewise
         | TupleType _ ->
-            write 0 "// %s" (typeToCppString gType) // !
+            write 0 "// %s" (typeToCppString typeMap gType) // !
         | BufferType _ ->
-            write 0 "// %s" (typeToCppString gType)
+            write 0 "// %s" (typeToCppString typeMap gType)
         | SetType _ ->
-            write 0 "// %s" (typeToCppString gType)
+            write 0 "// %s" (typeToCppString typeMap gType)
         | _ ->
             failwithf "renderUserTypes: unsupported generic type %A" gType
     | UserOrGeneric.User userType ->
@@ -998,12 +1024,12 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
         | StructDef namedFields ->
             write 0 "struct %s {" name
             for field in namedFields do
-                write 1 "%s %s;" (typeToCppString field.Type_) field.Name
+                write 1 "%s %s;" (typeToCppString typeMap field.Type_) field.Name
             write 0 "};"
         | ExceptionDef namedFields ->
-            renderHeaderException writer name namedFields
+            renderHeaderException writer name namedFields typeMap
         | InterfaceDef namedFunctions ->
-            renderHeaderInterface writer name namedFunctions
+            renderHeaderInterface writer name namedFunctions typeMap
         | DelegateDef info ->
             let maybeThrows =
                 if info.Throws.IsEmpty then
@@ -1011,21 +1037,31 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
                 else
                     let joined =
                         info.Throws
-                        |> List.map typeToCppString
+                        |> List.map (typeToCppString typeMap)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
-            write 0 "typedef %s %s(%s);%s" (typeToCppString info.Returns) name (joinedArgs info.Args) maybeThrows
+            write 0 "typedef %s %s(%s);%s" (typeToCppString typeMap info.Returns) name (joinedArgs typeMap info.Args) maybeThrows
         | TypeDef actual ->
-            write 0 "typedef %s %s;" (typeToCppString actual) name
-        | EnumDef values ->
-            write 0 "enum class %s {" name
-            for value, maybeComma in values |> withTrailingCommas do
-                write 1 "%s%s" value maybeComma
+            write 0 "typedef %s %s;" (typeToCppString typeMap actual) name
+        | EnumDef info ->
+            let maybeWidth =
+                match info.MaybeWidth with
+                | Some widthType ->
+                    sprintf " : %s" (typeToCppString typeMap widthType)
+                | None ->
+                    ""
+            write 0 "enum class %s%s {" name maybeWidth
+            for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
+                match maybeSpecifiedValue with
+                | Some specValue ->
+                    write 1 "%s = %d%s" value specValue maybeComma
+                | None ->
+                    write 1 "%s%s" value maybeComma
             write 0 "};"
         | SumTypeDef enumValues ->
-            renderHeaderSumType writer name enumValues
+            renderHeaderSumType writer name enumValues typeMap 
 
-let generateImplementationH (m: Module) (writer: TextWriter) =
+let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -1051,13 +1087,13 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
     write 0 "#include <set>"
 
     // all user types in dependency order
-    renderUserTypes (userTypesAndGenerics m) (renderHeaderUserTypes writer)
+    renderUserTypes typeMap (renderHeaderUserTypes writer)
 
     // global externs
     if globals.Length > 0 then
         blank()
         for globalName, globalType in globals do
-            write 0 "extern const %s %s;" (typeToCppString globalType) globalName
+            write 0 "extern const %s %s;" (typeToCppString typeMap globalType) globalName
 
     // function prototypes
     blank()
@@ -1068,12 +1104,12 @@ let generateImplementationH (m: Module) (writer: TextWriter) =
             else
                 let joined =
                     namedFunc.Throws
-                    |> List.map typeToCppString
+                    |> List.map (typeToCppString typeMap)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
-        write 0 "%s %s(%s);%s" (typeToCppString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
+        write 0 "%s %s(%s);%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
 
-let generateImplementationCpp (m: Module) (writer: TextWriter) =
+let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
         fprintfn writer fmt
@@ -1095,11 +1131,12 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
             | _ -> None)
     // begin output: ===============================================
     write 0 "#include \"Implementation.h\""
+
     // globals
     if globals.Length > 0 then
         blank()
         for globalName, globalType in globals do
-            write 0 "const %s %s = %s;" (typeToCppString globalType) globalName (defaultValueForType globalType)
+            write 0 "const %s %s = %s;" (typeToCppString typeMap globalType) globalName (defaultValueForType typeMap globalType)
     // opaque handles
     if opaqueHandles.Length > 0 then
         blank()
@@ -1116,23 +1153,26 @@ let generateImplementationCpp (m: Module) (writer: TextWriter) =
             else
                 let joined =
                     namedFunc.Throws
-                    |> List.map typeToCppString
+                    |> List.map (typeToCppString typeMap)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
-        write 0 "%s %s(%s) {%s" (typeToCppString namedFunc.Returns) namedFunc.Name (joinedArgs namedFunc.Args) throwsComment
+        write 0 "%s %s(%s) {%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
         if namedFunc.Returns <> UnitType then
-            write 1 "return %s;" (defaultValueForType namedFunc.Returns)
+            write 1 "return %s;" (defaultValueForType typeMap namedFunc.Returns)
         write 0 "}"
 
 let generate (m: Module) =
+    let typeMap =
+        userTypesAndGenerics m
+        
     printfn "C++ writing Wrappers.cpp"
     use wrappersCpp = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp\Wrappers.cpp")
     generateWrappersCpp m wrappersCpp
 
     printfn "C++ writing Implementation.h"
     use implementationH = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp\Implementation.h")
-    generateImplementationH m implementationH
+    generateImplementationH m typeMap implementationH
 
     printfn "C++ writing Implementation.cpp"
     use implementationCpp = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp\Implementation.cpp")
-    generateImplementationCpp m implementationCpp
+    generateImplementationCpp m typeMap implementationCpp

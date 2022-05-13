@@ -24,3 +24,8 @@ let withTrailingCommas (things: 'a list) =
     | _ ->
         failwithf "withCommas: things had no elements"
     |> List.rev
+
+let tryParseInt64 (str: string) =
+    match Int64.TryParse(str) with
+    | true, value -> Some value
+    | _ -> None

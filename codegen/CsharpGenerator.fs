@@ -642,11 +642,23 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                 popValue writer 3 field.Type_ (NewVariable field.Name)
             write 3 "return new %s(%s);" name (fieldNamesJoined namedFields)
             write 2 "}"
-        | EnumDef values ->
-            write 2 "public enum %s" name
+        | EnumDef info ->
+            let maybeWidth =
+                match info.MaybeWidth with
+                | Some widthType ->
+                    sprintf " : %s" (typeToCsString typeMap widthType)
+                | None ->
+                    ""
+            if info.FlagsMode then
+                write 2 "[Flags]"
+            write 2 "public enum %s%s" name maybeWidth
             write 2 "{"
-            for value, maybeComma in values |> withTrailingCommas do
-                write 3 "%s%s" (upperFirst value) maybeComma
+            for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
+                match maybeSpecifiedValue with
+                | Some specValue ->
+                    write 3 "%s = %d%s" (upperFirst value) specValue maybeComma
+                | None ->
+                    write 3 "%s%s" (upperFirst value) maybeComma
             write 2 "}"
             blank()
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"

@@ -214,6 +214,17 @@ type DelegateInfo = {
     Throws: NIType list
 }
 
+type EnumInfo = {
+    Values: (string * int64 option) list // name, specified value
+    MaybeWidth: NIType option
+    FlagsMode: bool
+}
+
+let isValidEnumWidth (t: NIType) =
+    match t with
+    | Primitive (Int8 | Int16 | Int32 | Int64) -> true
+    | _ -> false
+
 type UserType =
     | OpaqueHandleDef
     | StructDef of fields: NamedField list
@@ -221,7 +232,7 @@ type UserType =
     | InterfaceDef of methods: NamedFunction list
     | DelegateDef of info: DelegateInfo
     | TypeDef of actual: NIType
-    | EnumDef of values: string list
+    | EnumDef of info: EnumInfo
     | SumTypeDef of values: SumTypeValue list
 
 type ModuleDefinition =
@@ -355,14 +366,31 @@ let parseFunctionList (line: int) (input: TokenAndLocation list) =
 
 let parseOneEnumValue (input: TokenAndLocation list) =
     match input with
-    | Lookahead 2 ([Identifier name; Comma], _, etc) ->
-        Some (name, etc)
-    | [{ Token = Identifier name }] -> // last one
-        Some (name, [])
-    | { Location = line } :: _ ->
-        failwithf "problem parsing enum value: unexpected content on line %d" line
     | [] ->
+        // done
         None
+    | Lookahead 1 ([Identifier name], line, etc) ->
+        // optional user-specified numeric value?
+        let value, etc =
+            match etc with
+            | Lookahead 2 ([EqualsToken; Digits digits], line, etc) ->
+                (name, int64 digits |> Some), etc
+            | _ ->
+                (name, None), etc
+        // comma -> more expected?
+        match etc with
+        | [] ->
+            // nothing left, return this final value (next will return None and terminate)
+            Some (value, [])
+        | Lookahead 1 ([Comma], line, etc) ->
+            // more expected
+            Some (value, etc)
+        | _ ->
+            failwithf "parsing enum value: unexpected token at line %d" line
+    | { Location = line } :: _ ->
+        failwithf "parsing enum value: expected identifier at line %d" line
+    | _ ->
+        failwithf "parsing enum value: ran out of tokens!"
 
 let parseEnumValues (line: int) (input: TokenAndLocation list) =
     let content, etc =
@@ -477,10 +505,26 @@ let parseModule (input: TokenAndLocation list) =
                 |> Some
             | _ ->
                 failwithf "expected typedef name at line %d" line
-        | Lookahead 3 ([EnumToken; Identifier name; LeftBrace], line, etc) ->
-            let values, etc2 =
+        | Lookahead 2 ([EnumToken | FlagsToken as which; Identifier name], line, etc) ->
+            let maybeWidthType, etc =
+                match etc with
+                | Lookahead 1 ([Colon], line, etc) ->
+                    let widthType, etc =
+                        parseType etc
+                    if not (isValidEnumWidth widthType) then
+                        failwithf "enum/flags: invalid width type (must be integral type) on line %d" line
+                    match etc with
+                    | Lookahead 1 ([LeftBrace], line, etc) ->
+                        Some widthType, etc
+                    | _ ->
+                        failwithf "enum/flags: expecting left brace { on line %d" line
+                | Lookahead 1 ([LeftBrace], line, etc) ->
+                    None, etc
+                | _ ->
+                    failwithf "enum/flags: expecting int width or opening { on line %d" line
+            let values, etc =
                 parseEnumValues line etc
-            ([UserType (name, EnumDef values)], etc2)
+            ([UserType (name, EnumDef {Values = values; MaybeWidth = maybeWidthType; FlagsMode = (which = FlagsToken)})], etc)
             |> Some
         | Lookahead 3 ([SumTypeToken; Identifier name; LeftBrace], line, etc) ->
             let values, etc2 =

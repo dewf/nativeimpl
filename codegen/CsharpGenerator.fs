@@ -753,14 +753,14 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
             write 2 "private static void %s__Push(%s value, bool isReturn)" name (typeToCsString typeMap niType)
             write 2 "{"
-            write 3 "__%s__Push(value, isReturn);" (typeToName niType)
+            pushValue writer 3 niType "value" (Indirect "isReturn")
             write 2 "}"
             // POP
             blank()
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
             write 2 "private static %s %s__Pop()" (typeToCsString typeMap niType) name
             write 2 "{"
-            write 3 "return __%s__Pop();" (typeToName niType)
+            popValue writer 3 niType Return
             write 2 "}"
         | InterfaceDef namedFunctions ->
             blank()

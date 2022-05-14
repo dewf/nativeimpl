@@ -1,42 +1,10 @@
 ﻿module CsharpGenerator
 
 open System.IO
-open System.Text.RegularExpressions
 open Parser
 
 open Util
 open Common
-
-let interfacePushTemplate = "        private static void %%IFACE%%__Push(%%IFACE%% thing, bool isReturn)
-        {
-            if (thing != null)
-            {
-                ((IPushable)thing).Push(isReturn);
-            }
-            else
-            {
-                NativeImplClient.PushNull();
-            }
-        }"
-let interfacePopTemplate = "        private static %%IFACE%% %%IFACE%%__Pop()
-        {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId);
-            if (id != 0)
-            {
-                if (!isClientId)
-                {
-                    return new Server%%IFACE%%(id);
-                }
-                else
-                {
-                    return (%%IFACE%%) ClientObject.GetById(id);
-                }
-            }
-            else
-            {
-                return null;
-            }
-        }"
 
 let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
     | UnitType -> "void"
@@ -811,12 +779,40 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                         sprintf " // throws %s" joined
                 write 3 "%s %s(%s);%s" (typeToCsString typeMap method.Returns) (upperFirst method.Name) (argsJoined typeMap method.Args) throwsComment
             write 2 "}"
-            // push template
+            // push
             blank()
-            writer.WriteLine(Regex(@"%%IFACE%%").Replace(interfacePushTemplate, name))
-            // pop template
+            write 2 "private static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "if (thing != null)"
+            write 3 "{"
+            write 4 "((IPushable)thing).Push(isReturn);"
+            write 3 "}"
+            write 3 "else"
+            write 3 "{"
+            write 4 "NativeImplClient.PushNull();"
+            write 3 "}"
+            write 2 "}"
+            // pop
             blank()
-            writer.WriteLine(Regex(@"%%IFACE%%").Replace(interfacePopTemplate, name))
+            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "NativeImplClient.PopInstanceId(out var id, out var isClientId);"
+            write 3 "if (id != 0)"
+            write 3 "{"
+            write 4 "if (!isClientId)"
+            write 4 "{"
+            write 5 "return new Server%s(id);" (upperFirst name)
+            write 4 "}"
+            write 4 "else"
+            write 4 "{"
+            write 5 "return (%s) ClientObject.GetById(id);" (upperFirst name)
+            write 4 "}"
+            write 3 "}"
+            write 3 "else"
+            write 3 "{"
+            write 4 "return null;"
+            write 3 "}"
+            write 2 "}"
             // client base class
             blank()
             write 2 "public abstract class Client%s : ClientObject, %s" (upperFirst name) (upperFirst name)

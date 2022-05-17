@@ -6,7 +6,9 @@ open System.Text.RegularExpressions
 type Location = {
     Line: int
     Column: int
-}
+} with
+    override this.ToString() =
+        sprintf "Line: %d, Column: %d" this.Line this.Column
 
 type Token =
     | Identifier of string
@@ -103,26 +105,12 @@ let stringToToken (loc: Location) = function
     | text when Regex(@"[_a-zA-Z][_a-zA-Z0-9]*").IsMatch(text) -> Identifier text
     | text when Regex(@"[0-9]+").IsMatch(text) -> Digits text
     | text ->
-        failwithf "failed to parse string '%s' at line: %d, col: %d" text loc.Line loc.Column
+        failwithf "failed to parse string '%s' at %s" text (loc.ToString())
 
 type TokenAndLocation = {
     Token: Token
-    Location: int
+    Location: Location
 }
-
-//let tokenize (lines: (int * string) list) =
-//    lines
-//    |> List.filter (fun (_, line) -> line <> "")
-//    |> List.map (fun (i, line) ->
-//        let noComments = Regex(@"//.*").Replace(line, "")
-//        let spacesCollapsed = Regex(@"\s+").Replace(noComments, " ")
-//        let spaceAdded = Regex(@"[,\(\)\[\];{}<>:=]").Replace(spacesCollapsed, MatchEvaluator(fun m -> sprintf " %s " m.Value))
-//        let items = spaceAdded.Split(' ')
-//        let nonEmpty =
-//            items
-//            |> Array.filter (fun s -> s.Length > 0)
-//        i, nonEmpty |> List.ofArray)
-//    |> List.collect (fun (i, items) -> [for item in items -> { Token = stringToToken i item; Location = i } ])
 
 let charsWhile (pred: char -> bool) (input: char[]) =
     let front =
@@ -146,15 +134,6 @@ let inline matchesAgainstInput (against: char[]) (input: char[]) =
 
 let (|Matches|_|) (against: char[]) (input: char[]) =
     matchesAgainstInput against input
-//    if input.Length >= against.Length then
-//        let input' =
-//            Array.sub input 0 against.Length
-//        if against = input' then
-//            Some (against.Length, input |> Array.skip against.Length)
-//        else
-//            None
-//    else
-//        None
         
 let (|AnyOf|_|) (items: string list) (input: char[]) =
     items
@@ -191,33 +170,14 @@ let (|Comment|_|) (input: char[]) = // returns (+cols, +lines, etc)
     else
         None
         
-//let (|WhileMatchInit|_|) (initPred: char -> bool) (pred: char -> bool) (input: char[]) =
-//    if input.Length >= 1 && initPred input[0] then
-//        let front, etc =
-//            charsWhile pred (input |> Array.skip 1)
-//        let front' =
-//            seq { [|input[0]|]; front }
-//            |> Array.concat
-//        Some (front', front'.Length, etc)
-//    else
-//        None
-
 let isWhitespace = function
-    | ' ' | '\t' -> true
+    | ' ' | '\t' | '\r' -> true
     | _ -> false
-//let isDigitInit ch =
-//    ch >= '1' && ch <= '9'
-//let isDigit ch =
-//    ch >= '0' && ch <= '9'
-//let isAlphaNumericInit ch =
-//    (ch >= 'a' && ch <= 'z') ||
-//    (ch >= 'A' && ch <= 'A')
 let isAlphaNumeric ch =
     (ch >= 'a' && ch <= 'z') ||
     (ch >= 'A' && ch <= 'Z') ||
     (ch >= '0' && ch <= '9') ||
     ch = '_'
-    
 let allowedSymbols =
     ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "->"]
     
@@ -248,23 +208,14 @@ let nextToken (loc: Location) (input: char[]) =
         Some token, etc, cols, 0
     | WhileMatch isAlphaNumeric (_match, cols, etc) ->
         // number, identifier, reserved word
+        // either a token or a failure!
         let token =
             stringToToken loc (String(_match))
         Some token, etc, cols, 0
-//        let str =
-//            String(_match)
-//        let token =
-//            stringToToken loc str
-//        if Regex(@"^[_a-zA-Z][_a-zA-Z0-9]*$").IsMatch(str) then
-//            Some (Identifier str), etc, cols, 0
-//        elif Regex(@"^[0-9]+$").IsMatch(str) then
-//            Some (Digits str), etc, cols, 0
-//        else
-//            failwithf "invalid number '%s' at line %d, col %d" str loc.Line loc.Column
     | [||] ->
         None, [||], 0, 0
     | _ ->
-        failwithf "unrecognized character '%c'... at location (line: %d, col: %d)" input[0] loc.Line loc.Column
+        failwithf "unrecognized character '%s'... at location %s" (input[0].ToString()) (loc.ToString())
         
 type TokenizerState = {
     Loc: Location
@@ -276,7 +227,7 @@ type TokenAndLocation2 = {
     Loc: Location
 }
 
-let tokenize2 (input: string) =
+let tokenize (input: string) =
     let initState =
         { Loc = { Line = 1; Column = 1; }; Remaining = input.ToCharArray() }
     initState
@@ -294,6 +245,6 @@ let tokenize2 (input: string) =
                 { Loc = nextLoc; Remaining = etc }
             let value =
                 maybeToken
-                |> Option.map (fun token -> token, state.Loc)
+                |> Option.map (fun token -> { Token = token; Location = state.Loc })
             Some (value, nextState))
     |> List.choose id

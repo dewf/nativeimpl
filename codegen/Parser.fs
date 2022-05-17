@@ -56,7 +56,7 @@ type NIType =
     | SetType of elem: NIType
     | BufferType of elemType: NIType
     // Named of ...
-    | Unresolved of name: string * line: int
+    | Unresolved of name: string * loc: Location
     // these have to be resolved by checking a table, otherwise unresolved
     | OpaqueHandleType of name: string
     | StructType of name: string
@@ -73,7 +73,7 @@ let validBufferElementType = function
     | _ ->
         false
 
-let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], line, etc)
+let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
     let front, etc =
         List.safeSplit n input
     if front.Length = n then
@@ -84,12 +84,12 @@ let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([token
         None
 
 type ContentUntilMatchingState = {
-    LastLoc: int
+    LastLoc: Location
     NestLevel: int
     Remaining: TokenAndLocation list
 }
 
-let contentUntilMatching (line: int) (startToken: Token) (input: TokenAndLocation list) =
+let contentUntilMatching (loc: Location) (startToken: Token) (input: TokenAndLocation list) =
     // return content, etc (excluding the end token)
     let endToken =
         match startToken with
@@ -99,7 +99,7 @@ let contentUntilMatching (line: int) (startToken: Token) (input: TokenAndLocatio
         | _ -> failwith "contentUntilMatching: unknown opening token"
     // find the first instance of endToken that's not balanced by another startToken
     let content =
-        {LastLoc = line; NestLevel = 0; Remaining = input}
+        {LastLoc = loc; NestLevel = 0; Remaining = input}
         |> List.unfold (fun acc ->
             match acc.Remaining with
             | h :: etc ->
@@ -115,7 +115,7 @@ let contentUntilMatching (line: int) (startToken: Token) (input: TokenAndLocatio
                 else
                     Some(h, { acc with LastLoc = nextLastLoc; Remaining = etc })
             | [] ->
-                failwithf "failed to find matching %A at line %d" endToken acc.LastLoc)
+                failwithf "failed to find matching %A at %s" endToken (acc.LastLoc.ToString()))
     let _, etc =
         input
         |> List.splitAt (content.Length + 1) // skip the closing <whatever>
@@ -123,8 +123,8 @@ let contentUntilMatching (line: int) (startToken: Token) (input: TokenAndLocatio
 
 let rec parseType (input: TokenAndLocation list) =
     match input with
-    | Lookahead 1 ([Identifier name], line, etc) -> // opaque handle, struct, interface
-        Unresolved (name, line), etc
+    | Lookahead 1 ([Identifier name], loc, etc) -> // opaque handle, struct, interface
+        Unresolved (name, loc), etc
     | Lookahead 1 ([UnitToken], _, etc) ->
         UnitType, etc
     | Lookahead 1 ([SizeTToken], _, etc) ->
@@ -148,49 +148,49 @@ let rec parseType (input: TokenAndLocation list) =
         Primitive Float64, etc
     | Lookahead 1 ([StringToken], _, etc) ->
         Primitive StringType, etc
-    | Lookahead 2 ([ArrayToken; LeftAngleBracket], line, etc1) ->
+    | Lookahead 2 ([ArrayToken; LeftAngleBracket], loc, etc1) ->
         let arrayType, etc2 =
             parseType etc1
         match etc2 with
         | Lookahead 1 ([RightAngleBracket], _, etc3) ->
             ArrayType arrayType, etc3
         | _ ->
-            failwithf "failed to parse array type at line %d" line
-    | Lookahead 2 ([MapToken; LeftAngleBracket], line, etc1) ->
+            failwithf "failed to parse array type at %s" (loc.ToString())
+    | Lookahead 2 ([MapToken; LeftAngleBracket], loc, etc1) ->
         let keyType, etc2 =
             parseType etc1
         match etc2 with
-        | Lookahead 1 ([Comma], line, etc3) ->
+        | Lookahead 1 ([Comma], loc, etc3) ->
             let valueType, etc4 =
                 parseType etc3
             match etc4 with
             | Lookahead 1 ([RightAngleBracket], _, etc5) ->
                 MapType (keyType, valueType), etc5
             | _ ->
-                failwithf "missing ] for array type at line %d" line
+                failwithf "missing ] for array type at %s" (loc.ToString())
         | _ ->
-            failwithf "missing comma for array type at line %d" line
-    | Lookahead 2 ([BufferToken; LeftAngleBracket], line, etc) ->
+            failwithf "missing comma for array type at %s" (loc.ToString())
+    | Lookahead 2 ([BufferToken; LeftAngleBracket], loc, etc) ->
         let elemType, etc =
             parseType etc
         if not (validBufferElementType elemType) then
-            failwithf "incorrect buffer element type [%A] at line %d (must be primitive type)" elemType line
+            failwithf "incorrect buffer element type [%A] at %s (must be primitive type)" elemType (loc.ToString())
         match etc with
         | Lookahead 1 ([RightAngleBracket], _, etc) ->
             BufferType elemType, etc
         | _ ->
-            failwithf "failed to parse buffer type at line %d" line
-    | Lookahead 2 ([SetToken; LeftAngleBracket], line, etc) ->
+            failwithf "failed to parse buffer type at %s" (loc.ToString())
+    | Lookahead 2 ([SetToken; LeftAngleBracket], loc, etc) ->
         let elemType, etc =
             parseType etc
         match etc with
         | Lookahead 1 ([RightAngleBracket], _, etc) ->
             SetType elemType, etc
         | _ ->
-            failwithf "expected closing ] at line %d" line
-    | Lookahead 2 ([TupleToken; LeftAngleBracket], line, etc) ->
+            failwithf "expected closing > at %s" (loc.ToString())
+    | Lookahead 2 ([TupleToken; LeftAngleBracket], loc, etc) ->
         let content, etc =
-            contentUntilMatching line LeftAngleBracket etc
+            contentUntilMatching loc LeftAngleBracket etc
         let typeList =
             content
             |> List.unfold (fun input ->
@@ -205,12 +205,12 @@ let rec parseType (input: TokenAndLocation list) =
                     | Lookahead 1 ([Comma], _, etc) -> // keep going
                         Some (t1, etc)
                     | _ ->
-                        failwithf "parsing tuple: unexpected input at line %d" line)
+                        failwithf "parsing tuple: unexpected input at %s" (loc.ToString()))
         TupleType typeList, etc
     | [] ->
         failwithf "parseType called on an empty list!"
-    | {Location = line} :: _ ->
-        failwithf "error parsing type at line %d" line
+    | {Location = loc; Token = token} :: _ ->
+        failwithf "unexpected token %A at %s" token (loc.ToString())
 
 type NamedFunction = {
     Name: string
@@ -273,22 +273,22 @@ let parseOneField (input: TokenAndLocation list) =
         let niType, etc =
             parseType input
         match etc with
-        | Lookahead 2 ([Identifier name; StatementEnd], _, etc2) ->
+        | Lookahead 2 ([Identifier name; Semicolon], _, etc2) ->
             ({ Name = name; Type_ = niType }, etc2)
             |> Some
-        | {Location = line} :: _ ->
-            failwithf "missing expected identifier at line %d" line
+        | {Location = loc} :: _ ->
+            failwithf "missing expected identifier at %s" (loc.ToString())
         | [] ->
-            // grab line from the start of input, which had at least 1 token
+            // grab location from the start of input, which had at least 1 token
             match input with
-            | {Location = line} :: _ ->
-                failwithf "missing expected identifier at line %d" line
+            | {Location = loc} :: _ ->
+                failwithf "missing expected identifier at %s" (loc.ToString())
             | _ ->
                 failwithf "parseOneField: shouldn't happen"
 
-let parseFields (line: int) (input: TokenAndLocation list) =
+let parseFields (loc: Location) (input: TokenAndLocation list) =
     let content, etc =
-        contentUntilMatching line LeftBrace input
+        contentUntilMatching loc LeftBrace input
     let items =
         List.unfold parseOneField content
     items, etc
@@ -307,19 +307,19 @@ let parseArg (input: TokenAndLocation list) =
         | _ ->
             // 'rewind' to first element of input, since we know it parsed a type successfully
             match input with
-            | { Location = line } :: _ ->
-                failwithf "error parsing function arg at line %d: expected identifier" line
+            | { Location = loc } :: _ ->
+                failwithf "error parsing function arg at %s: expected identifier" (loc.ToString())
             | _ ->
                 failwithf "parseArg ???"
 
-let parseArgsList (line: int) (input: TokenAndLocation list) =
+let parseArgsList (loc: Location) (input: TokenAndLocation list) =
     let argTokens, etc =
-        contentUntilMatching line LeftParen input
+        contentUntilMatching loc LeftParen input
     let args =
         List.unfold parseArg argTokens
     args, etc
 
-let parseIdentifierList (line: int) (input: TokenAndLocation list) (endToken: Token) =
+let parseIdentifierList (loc: Location) (input: TokenAndLocation list) (endToken: Token) =
     let parseOneIdentifier (input': TokenAndLocation list) =
         if input'.IsEmpty then
             None
@@ -330,7 +330,7 @@ let parseIdentifierList (line: int) (input: TokenAndLocation list) (endToken: To
             | [{Location = _; Token = Identifier name}] ->
                 Some (name, List.empty)
             | _ ->
-                failwithf "parseIdentifierList: expected identifier at line %d (%A)" line input'
+                failwithf "parseIdentifierList: expected identifier at %s (%A)" (loc.ToString()) input'
     let maybeEndIndex =
         input |> List.tryFindIndex (fun tl -> tl.Token = endToken)
     match maybeEndIndex with
@@ -343,9 +343,9 @@ let parseIdentifierList (line: int) (input: TokenAndLocation list) (endToken: To
         | Lookahead 1 ([token], _, etc) when token = endToken ->
             identifiers, etc
         | _ ->
-            failwithf "expected end of identifiers on line %d" line
+            failwithf "expected end of identifiers at %s" (loc.ToString())
     | None ->
-        failwithf "expected end of identifiers on line %d" line
+        failwithf "expected end of identifiers at %s" (loc.ToString())
 
 let parseNamedFunction (input: TokenAndLocation list) =
     if input.IsEmpty then
@@ -354,33 +354,33 @@ let parseNamedFunction (input: TokenAndLocation list) =
         let returnType, etc =
             parseType input
         match etc with
-        | Lookahead 2 ([Identifier funcName; LeftParen], line, etc) ->
+        | Lookahead 2 ([Identifier funcName; LeftParen], loc, etc) ->
             let args, etc =
-                parseArgsList line etc
+                parseArgsList loc etc
             match etc with
-            | Lookahead 1 ([StatementEnd], _, etc) ->
+            | Lookahead 1 ([Semicolon], _, etc) ->
                 Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty }, etc)
-            | Lookahead 1 ([ThrowsToken], line, etc) ->
+            | Lookahead 1 ([ThrowsToken], loc, etc) ->
                 let identifiers, etc =
-                    parseIdentifierList line etc StatementEnd
+                    parseIdentifierList loc etc Semicolon
                 let throwsList =
-                    identifiers |> List.map (fun name -> (Unresolved (name, line)))
+                    identifiers |> List.map (fun name -> (Unresolved (name, loc)))
                 Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList }, etc)
             | _ ->
-                failwithf "failed to parse function at line %d" line
-        | { Location = line } :: _ ->
-            failwithf "was expecting identifier at line %d" line
+                failwithf "failed to parse function at %s" (loc.ToString())
+        | { Location = loc } :: _ ->
+            failwithf "was expecting identifier at %s" (loc.ToString())
         | _ ->
-            // grab line from the start of input, which had at least 1 token (or it would have failed already)
+            // grab location from the start of input, which had at least 1 token (or it would have failed already)
             match input with
-            | {Location = line} :: _ ->
-                failwithf "missing expected identifier at line %d" line
+            | {Location = loc} :: _ ->
+                failwithf "missing expected identifier at %s" (loc.ToString())
             | _ ->
                 failwithf "parseNamedFunction: shouldn't happen"
 
-let parseFunctionList (line: int) (input: TokenAndLocation list) =
+let parseFunctionList (loc: Location) (input: TokenAndLocation list) =
     let content, etc =
-        contentUntilMatching line LeftBrace input
+        contentUntilMatching loc LeftBrace input
     let funcList =
         List.unfold parseNamedFunction content
     funcList, etc
@@ -390,11 +390,11 @@ let parseOneEnumValue (input: TokenAndLocation list) =
     | [] ->
         // done
         None
-    | Lookahead 1 ([Identifier name], line, etc) ->
+    | Lookahead 1 ([Identifier name], loc, etc) ->
         // optional user-specified numeric value?
         let value, etc =
             match etc with
-            | Lookahead 2 ([EqualsToken; Digits digits], line, etc) ->
+            | Lookahead 2 ([EqualsToken; Digits digits], _, etc) ->
                 (name, int64 digits |> Some), etc
             | _ ->
                 (name, None), etc
@@ -403,19 +403,19 @@ let parseOneEnumValue (input: TokenAndLocation list) =
         | [] ->
             // nothing left, return this final value (next will return None and terminate)
             Some (value, [])
-        | Lookahead 1 ([Comma], line, etc) ->
+        | Lookahead 1 ([Comma], _, etc) ->
             // more expected
             Some (value, etc)
         | _ ->
-            failwithf "parsing enum value: unexpected token at line %d" line
-    | { Location = line } :: _ ->
-        failwithf "parsing enum value: expected identifier at line %d" line
+            failwithf "parsing enum value: unexpected token at %s" (loc.ToString())
+    | { Location = loc } :: _ ->
+        failwithf "parsing enum value: expected identifier at %s" (loc.ToString())
     | _ ->
         failwithf "parsing enum value: ran out of tokens!"
 
-let parseEnumValues (line: int) (input: TokenAndLocation list) =
+let parseEnumValues (loc: Location) (input: TokenAndLocation list) =
     let content, etc =
-        contentUntilMatching line LeftBrace input
+        contentUntilMatching loc LeftBrace input
     let values =
         List.unfold parseOneEnumValue content
     values, etc
@@ -426,8 +426,8 @@ let parseOneSumTypeValue (input: TokenAndLocation list) =
         // does it have args?
         let args, etc2 =
             match etc with
-            | Lookahead 1 ([LeftParen], line, etc2) ->
-                parseArgsList line etc2
+            | Lookahead 1 ([LeftParen], loc, etc2) ->
+                parseArgsList loc etc2
             | _ ->
                 [], etc
         // will there be more?
@@ -437,17 +437,17 @@ let parseOneSumTypeValue (input: TokenAndLocation list) =
         | [] ->
             // we're done, no more tokens
             Some ({ Name = name; Args = args }, []) // no etc, unfold will stop
-        | { Location = line } :: _ ->
+        | { Location = loc } :: _ ->
             // anything else
-            failwithf "parsing sum type value: missing comma before content on line %d" line
-    | { Location = line } :: _ ->
-        failwithf "expecting enum identifier at line %d" line
+            failwithf "parsing sum type value: missing comma before content at %s" (loc.ToString())
+    | { Location = loc } :: _ ->
+        failwithf "expecting enum identifier at %s" (loc.ToString())
     | [] ->
         None
 
-let parseSumTypeValues (line: int) (input: TokenAndLocation list) =
+let parseSumTypeValues (loc: Location) (input: TokenAndLocation list) =
     let content, etc =
-        contentUntilMatching line LeftBrace input
+        contentUntilMatching loc LeftBrace input
     let values =
         List.unfold parseOneSumTypeValue content
     values, etc
@@ -455,15 +455,15 @@ let parseSumTypeValues (line: int) (input: TokenAndLocation list) =
 let parseModule (input: TokenAndLocation list) =
     let parseNext (remaining: TokenAndLocation list) =
         match remaining with
-        | Lookahead 2 ([OpaqueToken; Identifier opaqueName], line, etc) ->
+        | Lookahead 2 ([OpaqueToken; Identifier opaqueName], loc, etc) ->
             match etc with
-            | Lookahead 1 ([StatementEnd], _, etc) ->
+            | Lookahead 1 ([Semicolon], _, etc) ->
                 ([UserType (opaqueName, OpaqueHandleDef)], etc)
                 |> Some
-            | Lookahead 1 ([LeftBrace], line, etc) ->
+            | Lookahead 1 ([LeftBrace], loc, etc) ->
                 // opaque with "methods" (expand to OOP-esque functions)
                 let methods, etc =
-                    parseFunctionList line etc
+                    parseFunctionList loc etc
                 let thisName =
                     "_this" //(upperOnly opaqueName).ToLowerInvariant()
                 let functions =
@@ -473,42 +473,42 @@ let parseModule (input: TokenAndLocation list) =
                         let nextName =
                             sprintf "%s%s" (lowerFirst opaqueName) (upperFirst nf.Name)
                         let nextArgs =
-                            (thisName, Unresolved (opaqueName, line)) :: nf.Args
+                            (thisName, Unresolved (opaqueName, loc)) :: nf.Args
                         FunctionDef { nf with Name = nextName; Args = nextArgs })
                 let results =
                     UserType (opaqueName, OpaqueHandleDef) :: functions
                 (results, etc)
                 |> Some
             | _ ->
-                failwithf "error parsing opaque token on line %d" line
-        | Lookahead 3 ([StructToken; Identifier name; LeftBrace], line, etc) ->
+                failwithf "error parsing opaque token at %s" (loc.ToString())
+        | Lookahead 3 ([StructToken; Identifier name; LeftBrace], loc, etc) ->
             let fields, etc2 =
-                parseFields line etc
+                parseFields loc etc
             ([UserType (name, StructDef fields)], etc2)
             |> Some
         | Lookahead 2 ([ExceptionToken; Identifier name], _, etc) ->
             // does it have arguments? (these become fields)
             let args, etc =
                 match etc with
-                | Lookahead 1 ([StatementEnd], _, etc) -> // nope
+                | Lookahead 1 ([Semicolon], _, etc) -> // nope
                     [], etc
-                | Lookahead 1 ([LeftParen], line, etc) ->
+                | Lookahead 1 ([LeftParen], loc, etc) ->
                     let args, etc =
-                        parseArgsList line etc
+                        parseArgsList loc etc
                     match etc with
-                    | Lookahead 1 ([StatementEnd], _, etc) ->
+                    | Lookahead 1 ([Semicolon], _, etc) ->
                         args, etc
                     | _ ->
-                        failwithf "expected statement end at line %d" line
+                        failwithf "expected statement end at %s" (loc.ToString())
                 | _ ->
                     failwith "error parsing exception: expecting statement end or arguments list"
             let fields =
                 args |> List.map (fun (name, type_) -> { Name = name; Type_ = type_ })
             ([UserType (name, ExceptionDef fields)], etc)
             |> Some
-        | Lookahead 3 ([InterfaceToken; Identifier name; LeftBrace], line, etc) ->
+        | Lookahead 3 ([InterfaceToken; Identifier name; LeftBrace], loc, etc) ->
             let methods, etc2 =
-                parseFunctionList line etc
+                parseFunctionList loc etc
             ([UserType (name, InterfaceDef methods)], etc2)
             |> Some
         | Lookahead 1 ([DelegateToken], _, etc) ->
@@ -517,39 +517,39 @@ let parseModule (input: TokenAndLocation list) =
                 let result =
                     UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns; Throws = nf.Throws })
                 ([result], etc2))
-        | Lookahead 1 ([TypedefToken], line, etc) ->
+        | Lookahead 1 ([TypedefToken], loc, etc) ->
             let actual, etc2 =
                 parseType etc
             match etc2 with
-            | Lookahead 2 ([Identifier name; StatementEnd], _, etc3) ->
+            | Lookahead 2 ([Identifier name; Semicolon], _, etc3) ->
                 ([UserType (name, TypeDef actual)], etc3)
                 |> Some
             | _ ->
-                failwithf "expected typedef name at line %d" line
-        | Lookahead 2 ([EnumToken | FlagsToken as which; Identifier name], line, etc) ->
+                failwithf "expected typedef name at %s" (loc.ToString())
+        | Lookahead 2 ([EnumToken | FlagsToken as which; Identifier name], loc, etc) ->
             let maybeWidthType, etc =
                 match etc with
-                | Lookahead 1 ([Colon], line, etc) ->
+                | Lookahead 1 ([Colon], loc, etc) ->
                     let widthType, etc =
                         parseType etc
                     if not (isValidEnumWidth widthType) then
-                        failwithf "enum/flags: invalid width type (must be integral type) on line %d" line
+                        failwithf "enum/flags: invalid width type (must be integral type) at %s" (loc.ToString())
                     match etc with
-                    | Lookahead 1 ([LeftBrace], line, etc) ->
+                    | Lookahead 1 ([LeftBrace], _, etc) ->
                         Some widthType, etc
                     | _ ->
-                        failwithf "enum/flags: expecting left brace { on line %d" line
-                | Lookahead 1 ([LeftBrace], line, etc) ->
+                        failwithf "enum/flags: expecting left brace { at %s" (loc.ToString())
+                | Lookahead 1 ([LeftBrace], _, etc) ->
                     None, etc
                 | _ ->
-                    failwithf "enum/flags: expecting int width or opening { on line %d" line
+                    failwithf "enum/flags: expecting int width or opening { at %s" (loc.ToString())
             let values, etc =
-                parseEnumValues line etc
+                parseEnumValues loc etc
             ([UserType (name, EnumDef {Values = values; MaybeWidth = maybeWidthType; FlagsMode = (which = FlagsToken)})], etc)
             |> Some
-        | Lookahead 3 ([SumTypeToken; Identifier name; LeftBrace], line, etc) ->
+        | Lookahead 3 ([SumTypeToken; Identifier name; LeftBrace], loc, etc) ->
             let values, etc2 =
-                parseSumTypeValues line etc
+                parseSumTypeValues loc etc
             ([UserType (name, SumTypeDef values)], etc2)
             |> Some
         | [] ->
@@ -560,15 +560,15 @@ let parseModule (input: TokenAndLocation list) =
             let t1, etc2 =
                 parseType etc
             match etc2 with
-            | Lookahead 2 ([Identifier name; StatementEnd], _, etc3) ->
+            | Lookahead 2 ([Identifier name; Semicolon], _, etc3) ->
                 ([Global (name, t1)], etc3)
                 |> Some
             | Lookahead 2 ([Identifier _; LeftParen], _, _) ->
                 parseNamedFunction etc // note using 'etc' here (rewinding a bit because parseNamedFunction handles identifier etc too)
                 |> Option.map (fun (namedFunc, etc3) -> [FunctionDef namedFunc], etc3)
                 // only way it returns 'None' is if its token list is empty, which we already know isn't the case
-            | {Location = line; Token = token} :: _ ->
-                failwithf "unexpected token %A at line %d" token line
+            | {Location = loc; Token = token} :: _ ->
+                failwithf "unexpected token %A at %s" token (loc.ToString())
             | [] ->
                 failwith "unexpected end of file"
     List.unfold parseNext input
@@ -576,7 +576,7 @@ let parseModule (input: TokenAndLocation list) =
 
 let parseTokens (input: TokenAndLocation list) =
     match input with
-    | Lookahead 3 ([ModuleToken; Identifier name; StatementEnd], _, etc) ->
+    | Lookahead 3 ([ModuleToken; Identifier name; Semicolon], _, etc) ->
         { Name = name; Defs = parseModule etc }
     | _ ->
         failwith "createSyntaxTree: didn't find module definition"
@@ -591,7 +591,7 @@ let rec resolveType (userTypes: Map<string, UserType>) (type_: NIType) =
         TupleType (tupleTypes |> List.map (resolveType userTypes))
     | SetType niType ->
         SetType (resolveType userTypes niType)
-    | Unresolved (name, line) ->
+    | Unresolved (name, loc) ->
         match userTypes.TryFind(name) with
         | Some value ->
             match value with
@@ -606,7 +606,7 @@ let rec resolveType (userTypes: Map<string, UserType>) (type_: NIType) =
                 // how do we enforce that this is only allowed in a "throws" context?
                 ExceptionType name
         | None ->
-            failwithf "failed to find symbol '%s' at line %d" name line
+            failwithf "failed to find symbol '%s' at %s" name (loc.ToString())
     | _ ->
         type_
 

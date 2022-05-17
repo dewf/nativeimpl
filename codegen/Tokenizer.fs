@@ -3,13 +3,6 @@
 open System
 open System.Text.RegularExpressions
 
-type Location = {
-    Line: int
-    Column: int
-} with
-    override this.ToString() =
-        sprintf "Line: %d, Column: %d" this.Line this.Column
-
 type Token =
     | Identifier of string
     | Digits of string
@@ -49,64 +42,14 @@ type Token =
     | Colon
     | EqualsToken
     | LeftShiftToken
-    | FunctionArrow    // not currently used, just for testing
-//    | Error of loc: Location * text: string
     
-let stringToToken (loc: Location) = function
-    | "module" -> ModuleToken
-    | "opaque" -> OpaqueToken
-    | "struct" -> StructToken
-    // generic types (need specialization)
-    | "Array" -> ArrayToken
-    | "Map" -> MapToken
-    | "Tuple" -> TupleToken
-    | "Set" -> SetToken
-    | "Buffer" -> BufferToken
-    //
-    | "exception" -> ExceptionToken
-    | "interface" -> InterfaceToken
-    | "enum" -> EnumToken
-    | "flags" -> FlagsToken
-    | "sumtype" -> SumTypeToken
-    | "size_t" -> SizeTToken
-    | "bool" -> BoolToken
-    //
-    | "sbyte" | "char" | "int8" -> IntToken (true, 8)
-    | "byte" | "uchar" | "uint8" -> IntToken (false, 8)
-    | "short" | "int16" -> IntToken (true, 16)
-    | "ushort" | "uint16" -> IntToken (false, 16)
-    | "int" | "int32" -> IntToken (true, 32)
-    | "uint" | "uint32" -> IntToken (false, 32)
-    | "long" | "int64" -> IntToken (true, 64)
-    | "ulong" | "uint64" -> IntToken (false, 64)
-    //
-    | "float" | "float32" -> Float32Token
-    | "double" | "float64" -> Float64Token
-    | "string" -> StringToken
-    //
-    | "void" -> UnitToken
-    | "unit" -> UnitToken
-    | "delegate" -> DelegateToken
-    | "typedef" -> TypedefToken
-    // symbols handled separately
-//    | "{" -> LeftBrace
-//    | "}" -> RightBrace
-//    | "(" -> LeftParen
-//    | ")" -> RightParen
-//    | "<" -> LeftAngleBracket
-//    | ">" -> RightAngleBracket
-//    | ";" -> StatementEnd
-//    | "," -> Comma
-//    | ":" -> Colon
-//    | "=" -> EqualsToken
-//    | "<<" -> LeftShiftToken
-//    | "->" -> FunctionArrow
-    | "throws" -> ThrowsToken
-    | text when Regex(@"[_a-zA-Z][_a-zA-Z0-9]*").IsMatch(text) -> Identifier text
-    | text when Regex(@"[0-9]+").IsMatch(text) -> Digits text
-    | text ->
-        failwithf "failed to parse string '%s' at %s" text (loc.ToString())
-
+type Location = {
+    Line: int
+    Column: int
+} with
+    override this.ToString() =
+        sprintf "Line: %d, Column: %d" this.Line this.Column
+    
 type TokenAndLocation = {
     Token: Token
     Location: Location
@@ -203,14 +146,50 @@ let nextToken (loc: Location) (input: char[]) =
             | "," -> Comma
             | ":" -> Colon
             | ";" -> Semicolon
-            | "->" -> FunctionArrow
             | _ -> failwithf "unrecognized symbol: %s at line %d, col %d" _match loc.Line loc.Column
         Some token, etc, cols, 0
     | WhileMatch isAlphaNumeric (_match, cols, etc) ->
         // number, identifier, reserved word
         // either a token or a failure!
         let token =
-            stringToToken loc (String(_match))
+            match String(_match) with
+            | "module" -> ModuleToken
+            | "opaque" -> OpaqueToken
+            | "struct" -> StructToken
+            | "exception" -> ExceptionToken
+            | "interface" -> InterfaceToken
+            | "enum" -> EnumToken
+            | "flags" -> FlagsToken
+            | "sumtype" -> SumTypeToken
+            | "delegate" -> DelegateToken
+            | "typedef" -> TypedefToken
+            | "throws" -> ThrowsToken
+            // generic types (need specialization)
+            | "Array" -> ArrayToken
+            | "Map" -> MapToken
+            | "Tuple" -> TupleToken
+            | "Set" -> SetToken
+            | "Buffer" -> BufferToken
+            //
+            | "void" -> UnitToken
+            | "unit" -> UnitToken
+            | "size_t" -> SizeTToken
+            | "bool" -> BoolToken
+            | "sbyte" | "char" | "int8" -> IntToken (true, 8)
+            | "byte" | "uchar" | "uint8" -> IntToken (false, 8)
+            | "short" | "int16" -> IntToken (true, 16)
+            | "ushort" | "uint16" -> IntToken (false, 16)
+            | "int" | "int32" -> IntToken (true, 32)
+            | "uint" | "uint32" -> IntToken (false, 32)
+            | "long" | "int64" -> IntToken (true, 64)
+            | "ulong" | "uint64" -> IntToken (false, 64)
+            | "float" | "float32" -> Float32Token
+            | "double" | "float64" -> Float64Token
+            | "string" -> StringToken
+            | text when Regex(@"[_a-zA-Z][_a-zA-Z0-9]*").IsMatch(text) -> Identifier text
+            | text when Regex(@"[0-9]+").IsMatch(text) -> Digits text
+            | text ->
+                failwithf "failed to parse string '%s' at %s" text (loc.ToString())
         Some token, etc, cols, 0
     | [||] ->
         None, [||], 0, 0

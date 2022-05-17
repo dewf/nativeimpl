@@ -34,22 +34,23 @@ type Token =
     | DelegateToken
     | TypedefToken
     | BufferToken
+    | ThrowsToken
+    // symbols:
     | LeftBrace
     | RightBrace
     | LeftParen
     | RightParen
     | LeftAngleBracket
     | RightAngleBracket
-    | StatementEnd
+    | Semicolon
     | Comma
     | Colon
     | EqualsToken
     | LeftShiftToken
     | FunctionArrow    // not currently used, just for testing
-    | ThrowsToken
-    | Error of line: int * text: string
-
-let stringToToken (lineNumber: int) = function
+//    | Error of loc: Location * text: string
+    
+let stringToToken (loc: Location) = function
     | "module" -> ModuleToken
     | "opaque" -> OpaqueToken
     | "struct" -> StructToken
@@ -85,41 +86,43 @@ let stringToToken (lineNumber: int) = function
     | "unit" -> UnitToken
     | "delegate" -> DelegateToken
     | "typedef" -> TypedefToken
-    | "{" -> LeftBrace
-    | "}" -> RightBrace
-    | "(" -> LeftParen
-    | ")" -> RightParen
-    | "<" -> LeftAngleBracket
-    | ">" -> RightAngleBracket
-    | ";" -> StatementEnd
-    | "," -> Comma
-    | ":" -> Colon
-    | "=" -> EqualsToken
-    | "<<" -> LeftShiftToken
-    | "->" -> FunctionArrow
+    // symbols handled separately
+//    | "{" -> LeftBrace
+//    | "}" -> RightBrace
+//    | "(" -> LeftParen
+//    | ")" -> RightParen
+//    | "<" -> LeftAngleBracket
+//    | ">" -> RightAngleBracket
+//    | ";" -> StatementEnd
+//    | "," -> Comma
+//    | ":" -> Colon
+//    | "=" -> EqualsToken
+//    | "<<" -> LeftShiftToken
+//    | "->" -> FunctionArrow
     | "throws" -> ThrowsToken
     | text when Regex(@"[_a-zA-Z][_a-zA-Z0-9]*").IsMatch(text) -> Identifier text
     | text when Regex(@"[0-9]+").IsMatch(text) -> Digits text
-    | text -> Error (lineNumber, text)
+    | text ->
+        failwithf "failed to parse string '%s' at line: %d, col: %d" text loc.Line loc.Column
 
 type TokenAndLocation = {
     Token: Token
     Location: int
 }
 
-let tokenize (lines: (int * string) list) =
-    lines
-    |> List.filter (fun (_, line) -> line <> "")
-    |> List.map (fun (i, line) ->
-        let noComments = Regex(@"//.*").Replace(line, "")
-        let spacesCollapsed = Regex(@"\s+").Replace(noComments, " ")
-        let spaceAdded = Regex(@"[,\(\)\[\];{}<>:=]").Replace(spacesCollapsed, MatchEvaluator(fun m -> sprintf " %s " m.Value))
-        let items = spaceAdded.Split(' ')
-        let nonEmpty =
-            items
-            |> Array.filter (fun s -> s.Length > 0)
-        i, nonEmpty |> List.ofArray)
-    |> List.collect (fun (i, items) -> [for item in items -> { Token = stringToToken i item; Location = i } ])
+//let tokenize (lines: (int * string) list) =
+//    lines
+//    |> List.filter (fun (_, line) -> line <> "")
+//    |> List.map (fun (i, line) ->
+//        let noComments = Regex(@"//.*").Replace(line, "")
+//        let spacesCollapsed = Regex(@"\s+").Replace(noComments, " ")
+//        let spaceAdded = Regex(@"[,\(\)\[\];{}<>:=]").Replace(spacesCollapsed, MatchEvaluator(fun m -> sprintf " %s " m.Value))
+//        let items = spaceAdded.Split(' ')
+//        let nonEmpty =
+//            items
+//            |> Array.filter (fun s -> s.Length > 0)
+//        i, nonEmpty |> List.ofArray)
+//    |> List.collect (fun (i, items) -> [for item in items -> { Token = stringToToken i item; Location = i } ])
 
 let charsWhile (pred: char -> bool) (input: char[]) =
     let front =
@@ -216,7 +219,7 @@ let isAlphaNumeric ch =
     ch = '_'
     
 let allowedSymbols =
-    ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ";"; "->"]
+    ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "->"]
     
 let nextToken (loc: Location) (input: char[]) =
     match input with
@@ -237,19 +240,27 @@ let nextToken (loc: Location) (input: char[]) =
             | "<" -> LeftAngleBracket
             | ">" -> RightAngleBracket
             | "=" -> EqualsToken
-            | ";" -> StatementEnd
+            | "," -> Comma
+            | ":" -> Colon
+            | ";" -> Semicolon
             | "->" -> FunctionArrow
             | _ -> failwithf "unrecognized symbol: %s at line %d, col %d" _match loc.Line loc.Column
         Some token, etc, cols, 0
     | WhileMatch isAlphaNumeric (_match, cols, etc) ->
-        let str =
-            String(_match)
-        if Regex(@"^[_a-zA-Z][_a-zA-Z0-9]*$").IsMatch(str) then
-            Some (Identifier str), etc, cols, 0
-        elif Regex(@"^[0-9]+$").IsMatch(str) then
-            Some (Digits str), etc, cols, 0
-        else
-            failwithf "invalid number '%s' at line %d, col %d" str loc.Line loc.Column
+        // number, identifier, reserved word
+        let token =
+            stringToToken loc (String(_match))
+        Some token, etc, cols, 0
+//        let str =
+//            String(_match)
+//        let token =
+//            stringToToken loc str
+//        if Regex(@"^[_a-zA-Z][_a-zA-Z0-9]*$").IsMatch(str) then
+//            Some (Identifier str), etc, cols, 0
+//        elif Regex(@"^[0-9]+$").IsMatch(str) then
+//            Some (Digits str), etc, cols, 0
+//        else
+//            failwithf "invalid number '%s' at line %d, col %d" str loc.Line loc.Column
     | [||] ->
         None, [||], 0, 0
     | _ ->

@@ -107,27 +107,34 @@ let (|Comment|_|) (input: char[]) = // returns (+cols, +lines, etc)
             | None ->
                 // no newline, goodbye rest of input!
                 Some (2 + etc.Length, 0, [||])
-        // todo: C-style comments
+//        | [|'/'; '*'|] ->
+//            // inline comment, potentially multi-line
         | _ ->
             None
     else
         None
         
-let isWhitespace = function
-    | ' ' | '\t' | '\r' -> true
+let isNewLine = function
+    | '\n' | '\r' -> true
     | _ -> false
+    
+let isWhitespace = function
+    | ' ' | '\t' -> true
+    | _ -> false
+    
 let isAlphaNumeric ch =
     (ch >= 'a' && ch <= 'z') ||
     (ch >= 'A' && ch <= 'Z') ||
     (ch >= '0' && ch <= '9') ||
     ch = '_'
+    
 let allowedSymbols =
     ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "->"]
     
 let nextToken (loc: Location) (input: char[]) =
     match input with
-    | Matches [|'\n'|] (_, etc) ->
-        None, etc, -loc.Column, 1
+    | WhileMatch isNewLine (_match, _, etc) ->
+        None, etc, -loc.Column + 1, 1                   // reset column (to 1), advance line
     | WhileMatch isWhitespace (_match, cols, etc) ->
         None, etc, cols, 0
     | Comment (cols, lines, etc) ->

@@ -100,7 +100,7 @@ let (|Comment|_|) (input: char[]) = // returns (+cols, +lines, etc)
             input |> Array.splitAt 2
         match first with
         | [|'/';'/'|] ->
-            // go until end of line (or end of input)
+            // go until end of line (or end of input!)
             match etc |> Array.tryFindIndex (fun ch -> ch = '\n') with
             | Some i ->
                 Some (2 + i, 0, etc |> Array.skip i)

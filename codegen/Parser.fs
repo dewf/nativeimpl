@@ -394,8 +394,16 @@ let parseOneEnumValue (input: TokenAndLocation list) =
         // optional user-specified numeric value?
         let value, etc =
             match etc with
-            | Lookahead 2 ([EqualsToken; Digits digits], _, etc) ->
-                (name, int64 digits |> Some), etc
+            | Lookahead 2 ([EqualsToken; Digits valueDigits], _, etc) ->
+                let value = int64 valueDigits
+                match etc with
+                | Lookahead 2 ([LeftShiftToken; Digits shiftDigits], _, etc) ->
+                    // shifted value
+                    let shift = int32 shiftDigits
+                    (name, (value <<< shift) |> Some), etc
+                | _ ->
+                    // unshifted direct value
+                    (name, value |> Some), etc
             | _ ->
                 (name, None), etc
         // comma -> more expected?

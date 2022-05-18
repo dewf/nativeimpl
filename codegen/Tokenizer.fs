@@ -208,14 +208,11 @@ type TokenizerState = {
     Remaining: char[]
 }
 
-type TokenAndLocation2 = {
-    Tok: Token
-    Loc: Location
-}
-
 let tokenize (input: string) =
     let initState =
-        { Loc = { Line = 1; Column = 1; }; Remaining = input.ToCharArray() }
+        let initLoc =
+            { Line = 1; Column = 1; }
+        { Loc = initLoc; Remaining = input.ToCharArray() }
     initState
     |> List.unfold (fun state ->
         if state.Remaining = [||] then

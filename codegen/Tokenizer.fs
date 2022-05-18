@@ -47,9 +47,13 @@ type Location = {
     Line: int
     Column: int
 } with
+    member this.PlusCol(n: int) =
+        { this with Column = this.Column + n }
+    member this.PlusLine(n: int) =
+        { this with Line = this.Line + n }
     override this.ToString() =
         sprintf "Line: %d, Column: %d" this.Line this.Column
-    
+
 type TokenAndLocation = {
     Token: Token
     Location: Location
@@ -94,7 +98,47 @@ let (|WhileMatch|_|) (pred: char -> bool) (input: char[]) =
     else
         None
         
-let (|Comment|_|) (input: char[]) = // returns (+cols, +lines, etc)
+let (|SingleChar|_|) (input: char[]) =
+    if input.Length >= 1 then
+        Some (input[0], Array.skip 1 input)
+    else
+        None
+
+type CommentState = {
+    Complete: bool
+    Depth: int
+    Loc: Location
+    Remaining: char[]
+}
+
+let unfoldComment (state: CommentState) =
+    if state.Complete then
+        None
+    else
+        match state.Remaining with
+        | Matches [|'/';'*'|] (len, etc) ->
+            Some { state with Depth = state.Depth + 1; Loc = state.Loc.PlusCol(len); Remaining = etc }
+        | Matches [|'*';'/'|] (len, etc) ->
+            if state.Depth = 1 then
+                // finished
+                Some { Complete = true; Depth = 0; Loc = state.Loc.PlusCol(len); Remaining = etc }
+            else
+                Some { state with Depth = state.Depth - 1; Loc = state.Loc.PlusCol(len); Remaining = etc }
+        | Matches [|'\r'|] (_, etc) ->
+            // just ignore, don't allow SingleChar default to handle it (location can't change)
+            Some { state with Remaining = etc }
+        | Matches [|'\n'|] (_, etc) ->
+            let nextLoc =
+                { Column = 1; Line = state.Loc.Line + 1 }
+            Some { state with Loc = nextLoc; Remaining = etc }
+        | SingleChar (_, etc) ->
+            Some { state with Loc = state.Loc.PlusCol(1); Remaining = etc }
+        | [||] ->
+            Some { state with Complete = true }
+        | _ ->
+            failwith "nextComment: shouldn't see this"
+        
+let (|Comment|_|) (loc: Location) (input: char[]) = // returns (+cols, +lines, etc)
     if input.Length >= 2 then
         let first, etc =
             input |> Array.splitAt 2
@@ -103,21 +147,24 @@ let (|Comment|_|) (input: char[]) = // returns (+cols, +lines, etc)
             // go until end of line (or end of input!)
             match etc |> Array.tryFindIndex (fun ch -> ch = '\n') with
             | Some i ->
-                Some (2 + i, 0, etc |> Array.skip i)
+                let nextLoc =
+                    { loc with Column = loc.Column + 2 + i }
+                Some (nextLoc, etc |> Array.skip i)
             | None ->
-                // no newline, goodbye rest of input!
-                Some (2 + etc.Length, 0, [||])
-//        | [|'/'; '*'|] ->
-//            // inline comment, potentially multi-line
+                // no newline found, goodbye rest of input!
+                let nextLoc =
+                    { loc with Column = loc.Column + 2 + etc.Length }
+                Some (nextLoc, [||])
+        | [|'/'; '*'|] ->
+            let res =
+                { Complete = false; Depth = 1; Loc = loc; Remaining = etc }
+                |> Util.unfoldState unfoldComment
+            Some (res.Loc, res.Remaining)
         | _ ->
             None
     else
         None
         
-let isNewLine = function
-    | '\n' | '\r' -> true
-    | _ -> false
-    
 let isWhitespace = function
     | ' ' | '\t' -> true
     | _ -> false
@@ -133,12 +180,15 @@ let allowedSymbols =
     
 let nextToken (loc: Location) (input: char[]) =
     match input with
-    | WhileMatch isNewLine (_match, _, etc) ->
-        None, etc, -loc.Column + 1, 1                   // reset column (to 1), advance line
+    | Matches [|'\r'|] (_match, etc) ->
+        // inert
+        None, etc, loc
+    | Matches [|'\n'|] (_match, etc) ->
+        None, etc, { Column = 1; Line = loc.Line + 1 }
     | WhileMatch isWhitespace (_match, cols, etc) ->
-        None, etc, cols, 0
-    | Comment (cols, lines, etc) ->
-        None, etc, cols, lines
+        None, etc, loc.PlusCol(cols)
+    | Comment loc (nextLoc, etc) ->
+        None, etc, nextLoc
     | AnyOf allowedSymbols (_match, cols, etc) ->
         let token =
             match _match with
@@ -154,7 +204,7 @@ let nextToken (loc: Location) (input: char[]) =
             | ":" -> Colon
             | ";" -> Semicolon
             | _ -> failwithf "unrecognized symbol: %s at line %d, col %d" _match loc.Line loc.Column
-        Some token, etc, cols, 0
+        Some token, etc, loc.PlusCol(cols)
     | WhileMatch isAlphaNumeric (_match, cols, etc) ->
         // number, identifier, reserved word
         // either a token or a failure!
@@ -197,9 +247,9 @@ let nextToken (loc: Location) (input: char[]) =
             | text when Regex(@"[0-9]+").IsMatch(text) -> Digits text
             | text ->
                 failwithf "failed to parse string '%s' at %s" text (loc.ToString())
-        Some token, etc, cols, 0
+        Some token, etc, loc.PlusCol(cols)
     | [||] ->
-        None, [||], 0, 0
+        None, [||], loc
     | _ ->
         failwithf "unrecognized character '%s'... at location %s" (input[0].ToString()) (loc.ToString())
         
@@ -218,13 +268,9 @@ let tokenize (input: string) =
         if state.Remaining = [||] then
             None
         else
-            let maybeToken, etc, colAdvance, lineAdvance =
+            let maybeToken, etc, nextLoc =
                 nextToken state.Loc state.Remaining
             let nextState =
-                let nextLoc =
-                    { state.Loc with
-                        Line = state.Loc.Line + lineAdvance
-                        Column = state.Loc.Column + colAdvance }
                 { Loc = nextLoc; Remaining = etc }
             let value =
                 maybeToken

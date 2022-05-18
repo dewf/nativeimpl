@@ -29,3 +29,10 @@ let tryParseInt64 (str: string) =
     match Int64.TryParse(str) with
     | true, value -> Some value
     | _ -> None
+    
+let unfoldState (f: 'state -> 'state option) (init: 'state): 'state =
+    let rec recInner (current: 'state) =
+        match f current with
+        | None -> current
+        | Some next -> recInner next
+    recInner init

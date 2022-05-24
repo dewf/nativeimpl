@@ -1,7 +1,3 @@
 module TestLibrary;
 
-interface CoolThing {
-    int method1(string x);
-}
-
-int doSomething(int x, string y);
+int sumValues(Array<int> values, string threadId);

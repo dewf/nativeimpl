@@ -12,81 +12,15 @@ namespace TestLibraryClient
     public static class TestLibrary
     {
         private static ModuleHandle _module;
-        private static ModuleMethodHandle _doSomething;
-        private static InterfaceHandle _coolThing;
-        private static InterfaceMethodHandle _coolThing_method1;
+        private static ModuleMethodHandle _sumValues;
 
+        // built-in array type: int[]
 
-        public interface CoolThing : IDisposable
+        public static int SumValues(int[] values, string threadId)
         {
-            int Method1(string x);
-        }
-
-        private static void CoolThing__Push(CoolThing thing, bool isReturn)
-        {
-            if (thing != null)
-            {
-                ((IPushable)thing).Push(isReturn);
-            }
-            else
-            {
-                NativeImplClient.PushNull();
-            }
-        }
-
-        private static CoolThing CoolThing__Pop()
-        {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId);
-            if (id != 0)
-            {
-                if (!isClientId)
-                {
-                    return new ServerCoolThing(id);
-                }
-                else
-                {
-                    return (CoolThing) ClientObject.GetById(id);
-                }
-            }
-            else
-            {
-                return null;
-            }
-        }
-
-        public abstract class ClientCoolThing : ClientObject, CoolThing
-        {
-            public virtual void Dispose()
-            {
-                // override if necessary
-            }
-            public abstract int Method1(string x);
-        }
-
-        private class ServerCoolThing : ServerObject, CoolThing
-        {
-            public ServerCoolThing(int id) : base(id)
-            {
-            }
-
-            public int Method1(string x)
-            {
-                NativeImplClient.PushString(x);
-                NativeImplClient.InvokeInterfaceMethod(_coolThing_method1, Id);
-                return NativeImplClient.PopInt32();
-            }
-
-            public void Dispose()
-            {
-                ServerDispose();
-            }
-        }
-
-        public static int DoSomething(int x, string y)
-        {
-            NativeImplClient.PushString(y);
-            NativeImplClient.PushInt32(x);
-            NativeImplClient.InvokeModuleMethod(_doSomething);
+            NativeImplClient.PushString(threadId);
+            NativeImplClient.PushInt32Array(values);
+            NativeImplClient.InvokeModuleMethod(_sumValues);
             return NativeImplClient.PopInt32();
         }
 
@@ -95,17 +29,7 @@ namespace TestLibraryClient
             Debug.Assert(NativeImplClient.Init() == 0);
             _module = NativeImplClient.GetModule("TestLibrary");
 
-            _doSomething = NativeImplClient.GetModuleMethod(_module, "doSomething");
-
-            _coolThing = NativeImplClient.GetInterface(_module, "CoolThing");
-            _coolThing_method1 = NativeImplClient.GetInterfaceMethod(_coolThing, "method1");
-
-            NativeImplClient.SetClientMethodWrapper(_coolThing_method1, delegate(ClientObject obj)
-            {
-                var inst = (ClientCoolThing) obj;
-                var x = NativeImplClient.PopString();
-                NativeImplClient.PushInt32(inst.Method1(x));
-            });
+            _sumValues = NativeImplClient.GetModuleMethod(_module, "sumValues");
         }
 
         public static void Shutdown()

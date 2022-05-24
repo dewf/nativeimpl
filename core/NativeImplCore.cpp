@@ -511,10 +511,40 @@ niClientMethodExec ni_clientMethodExec;
 niClientResourceRelease ni_clientResourceRelease;
 niClientClearSafetyArea ni_clientClearSafetyArea;
 
-// todo: thread-local
-static std::vector<StackItem*> vstack;
-static int vstackPtr = 0;
-static ni_ExceptionRef ni_currentException = nullptr;
+struct ThreadLocal {
+	std::stack<std::unique_ptr<StackItem>> vstack;
+	ni_ExceptionRef currentException = nullptr;
+
+	std::vector<void*> lastPtrArray;
+	std::vector<size_t> lastSizeTArray;
+	std::vector<uint8_t> lastBoolArray;
+	std::vector<int8_t> lastInt8Array;
+	std::vector<uint8_t> lastUInt8Array;
+	std::vector<int16_t> lastInt16Array;
+	std::vector<uint16_t> lastUInt16Array;
+	std::vector<int32_t> lastInt32Array;
+	std::vector<uint32_t> lastUInt32Array;
+	std::vector<int64_t> lastInt64Array;
+	std::vector<uint64_t> lastUInt64Array;
+	std::vector<float> lastFloatArray;
+	std::vector<double> lastDoubleArray;
+	std::string lastPoppedString; // pointers gotta point to something ...
+	std::vector<std::string> lastPoppedStringArray;
+	const char** lastPoppedStrs = nullptr;
+	size_t* lastPoppedStrLengths = nullptr;
+
+	inline void push(StackItem* item) {
+		vstack.push(std::unique_ptr<StackItem>(item));
+	}
+
+	inline std::unique_ptr<StackItem> pop() {
+		auto ret = std::move(vstack.top());
+		vstack.pop();
+		return ret;
+	}
+};
+// todo: require formal threadInit() and allocate manually? is that more efficient?
+static thread_local ThreadLocal thlocal;
 
 ni_ModuleRef ni_registerModule(const char *name)
 {
@@ -583,11 +613,6 @@ ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char *name, Exception
 	auto exception = new ni_Exception{ m, name, buildAndThrow };
 	m->exceptions[name] = exception;
 	return exception;
-}
-
-void ni_pushServerFunc(int id)
-{
-	vstack.push_back(new ServerFuncItem(id));
 }
 
 // client methods (some used by server as well) ===============================
@@ -670,467 +695,407 @@ void ni_pushModuleConstants(ni_ModuleRef m) {
 
 void ni_invokeModuleMethod(ni_ModuleMethodRef method) {
 	method->func();
-	assert(ni_currentException == nullptr); // this should never be used for methods potentially throwing exceptions!
+	assert(thlocal.currentException == nullptr); // this should never be used for methods potentially throwing exceptions!
 }
 
 ni_ExceptionRef ni_invokeModuleMethodWithExceptions(ni_ModuleMethodRef method) {
-	assert(ni_currentException == nullptr);
+	assert(thlocal.currentException == nullptr);
 	method->func();
-	auto ret = ni_currentException;
-	ni_currentException = nullptr;
+	auto ret = thlocal.currentException;
+	thlocal.currentException = nullptr;
 	return ret;
 }
 
 void ni_pushPtr(void* value)
 {
-	vstack.push_back(new PtrItem(value));
+	thlocal.push(new PtrItem(value));
 }
 
 void* ni_popPtr()
 {
-	auto item = vstack[vstackPtr++];
-	return item->ptrValue();
+	return thlocal.pop()->ptrValue();
 }
 
 void ni_pushPtrArray(void** values, size_t count)
 {
-	vstack.push_back(new PtrArray(values, count));
+	thlocal.push(new PtrArray(values, count));
 }
-
-static std::vector<void*> lastPtrArray;
 
 void ni_popPtrArray(void*** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastPtrArray = item->ptrArray();
-	*values = lastPtrArray.data();
-	*count = lastPtrArray.size();
+	thlocal.lastPtrArray = thlocal.pop()->ptrArray();
+	*values = thlocal.lastPtrArray.data();
+	*count = thlocal.lastPtrArray.size();
 }
 
 void ni_pushSizeT(size_t value) {
-	vstack.push_back(new SizeTItem(value));
+	thlocal.push(new SizeTItem(value));
 }
 
 size_t ni_popSizeT() {
-	auto item = vstack[vstackPtr++];
-	return item->sizeTValue();
+	return thlocal.pop()->sizeTValue();
 }
 
 void ni_pushSizeTArray(size_t* values, size_t count) {
-	vstack.push_back(new SizeTArray(values, count));
+	thlocal.push(new SizeTArray(values, count));
 }
 
-static std::vector<size_t> lastSizeTArray;
-
 void ni_popSizeTArray(size_t** values, size_t* count) {
-	auto item = vstack[vstackPtr++];
-	lastSizeTArray = item->sizeTArray();
-	*values = lastSizeTArray.data();
-	*count = lastSizeTArray.size();
+	thlocal.lastSizeTArray = thlocal.pop()->sizeTArray();
+	*values = thlocal.lastSizeTArray.data();
+	*count = thlocal.lastSizeTArray.size();
 }
 
 void ni_pushBool(bool value) {
-	vstack.push_back(new BoolItem(value));
+	thlocal.push(new BoolItem(value));
 }
 
 bool ni_popBool() {
-	auto item = vstack[vstackPtr++];
-	return item->boolValue();
+	return thlocal.pop()->boolValue();
 }
 
 void ni_pushBoolArray(bool* values, size_t count)
 {
-	vstack.push_back(new BoolArrayItem(values, count));
+	thlocal.push(new BoolArrayItem(values, count));
 }
-
-static std::vector<uint8_t> lastBoolArray;
 
 void ni_popBoolArray(bool** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastBoolArray = item->boolArray();
-	*((uint8_t**)values) = lastBoolArray.data();
-	*count = lastBoolArray.size();
+	thlocal.lastBoolArray = thlocal.pop()->boolArray();
+	*((uint8_t**)values) = thlocal.lastBoolArray.data();
+	*count = thlocal.lastBoolArray.size();
 }
 
 // INT8 stuff ===============================
 
 void ni_pushInt8(int8_t x)
 {
-	vstack.push_back(new Int8Item(x));
+	thlocal.push(new Int8Item(x));
 }
 
 int8_t ni_popInt8()
 {
-	auto item = vstack[vstackPtr++];
-	return item->int8Value();
+	return thlocal.pop()->int8Value();
 }
 
 void ni_pushInt8Array(int8_t* values, size_t count)
 {
-	vstack.push_back(new Int8ArrayItem(values, count));
+	thlocal.push(new Int8ArrayItem(values, count));
 }
-
-static std::vector<int8_t> lastInt8Array;
 
 void ni_popInt8Array(int8_t** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastInt8Array = item->int8Array();
-	*values = lastInt8Array.data();
-	*count = lastInt8Array.size();
+	thlocal.lastInt8Array = thlocal.pop()->int8Array();
+	*values = thlocal.lastInt8Array.data();
+	*count = thlocal.lastInt8Array.size();
 }
 
 void ni_pushUInt8(uint8_t x)
 {
-	vstack.push_back(new UInt8Item(x));
+	thlocal.push(new UInt8Item(x));
 }
 
 uint8_t ni_popUInt8()
 {
-	auto item = vstack[vstackPtr++];
-	return item->uint8Value();
+	return thlocal.pop()->uint8Value();
 }
 
 void ni_pushUInt8Array(uint8_t* values, size_t count)
 {
-	vstack.push_back(new UInt8ArrayItem(values, count));
+	thlocal.push(new UInt8ArrayItem(values, count));
 }
-
-static std::vector<uint8_t> lastUInt8Array;
 
 void ni_popUInt8Array(uint8_t** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastUInt8Array = item->uint8Array();
-	*values = lastUInt8Array.data();
-	*count = lastUInt8Array.size();
+	thlocal.lastUInt8Array = thlocal.pop()->uint8Array();
+	*values = thlocal.lastUInt8Array.data();
+	*count = thlocal.lastUInt8Array.size();
 }
 
 // INT16 stuff ===============================
 
 void ni_pushInt16(int16_t x)
 {
-	vstack.push_back(new Int16Item(x));
+	thlocal.push(new Int16Item(x));
 }
 
 int16_t ni_popInt16()
 {
-	auto item = vstack[vstackPtr++];
-	return item->int16Value();
+	return thlocal.pop()->int16Value();
 }
 
 void ni_pushInt16Array(int16_t* values, size_t count)
 {
-	vstack.push_back(new Int16ArrayItem(values, count));
+	thlocal.push(new Int16ArrayItem(values, count));
 }
-
-static std::vector<int16_t> lastInt16Array;
 
 void ni_popInt16Array(int16_t** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastInt16Array = item->int16Array();
-	*values = lastInt16Array.data();
-	*count = lastInt16Array.size();
+	thlocal.lastInt16Array = thlocal.pop()->int16Array();
+	*values = thlocal.lastInt16Array.data();
+	*count = thlocal.lastInt16Array.size();
 }
 
 void ni_pushUInt16(uint16_t x)
 {
-	vstack.push_back(new UInt16Item(x));
+	thlocal.push(new UInt16Item(x));
 }
 
 uint16_t ni_popUInt16()
 {
-	auto item = vstack[vstackPtr++];
-	return item->uint16Value();
+	return thlocal.pop()->uint16Value();
 }
 
 void ni_pushUInt16Array(uint16_t* values, size_t count)
 {
-	vstack.push_back(new UInt16ArrayItem(values, count));
+	thlocal.push(new UInt16ArrayItem(values, count));
 }
-
-static std::vector<uint16_t> lastUInt16Array;
 
 void ni_popUInt16Array(uint16_t** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastUInt16Array = item->uint16Array();
-	*values = lastUInt16Array.data();
-	*count = lastUInt16Array.size();
+	thlocal.lastUInt16Array = thlocal.pop()->uint16Array();
+	*values = thlocal.lastUInt16Array.data();
+	*count = thlocal.lastUInt16Array.size();
 }
 
 // INT32 stuff ===============================
 
 void ni_pushInt32(int32_t x)
 {
-	vstack.push_back(new Int32Item(x));
+	thlocal.push(new Int32Item(x));
 }
 
 int32_t ni_popInt32()
 {
-	auto item = vstack[vstackPtr++];
-	return item->int32Value();
+	return thlocal.pop()->int32Value();
 }
 
 void ni_pushInt32Array(int32_t* values, size_t count)
 {
-	vstack.push_back(new Int32ArrayItem(values, count));
+	thlocal.push(new Int32ArrayItem(values, count));
 }
-
-static std::vector<int32_t> lastInt32Array;
 
 void ni_popInt32Array(int32_t** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastInt32Array = item->int32Array();
-	*values = lastInt32Array.data();
-	*count = lastInt32Array.size();
+	thlocal.lastInt32Array = thlocal.pop()->int32Array();
+	*values = thlocal.lastInt32Array.data();
+	*count = thlocal.lastInt32Array.size();
 }
 
 void ni_pushUInt32(uint32_t x)
 {
-	vstack.push_back(new UInt32Item(x));
+	thlocal.push(new UInt32Item(x));
 }
 
 uint32_t ni_popUInt32()
 {
-	auto item = vstack[vstackPtr++];
-	return item->uint32Value();
+	return thlocal.pop()->uint32Value();
 }
 
 void ni_pushUInt32Array(uint32_t* values, size_t count)
 {
-	vstack.push_back(new UInt32ArrayItem(values, count));
+	thlocal.push(new UInt32ArrayItem(values, count));
 }
-
-static std::vector<uint32_t> lastUInt32Array;
 
 void ni_popUInt32Array(uint32_t** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastUInt32Array = item->uint32Array();
-	*values = lastUInt32Array.data();
-	*count = lastUInt32Array.size();
+	thlocal.lastUInt32Array = thlocal .pop()->uint32Array();
+	*values = thlocal.lastUInt32Array.data();
+	*count = thlocal.lastUInt32Array.size();
 }
 
 // INT64 stuff ===============================
 
 void ni_pushInt64(int64_t x)
 {
-	vstack.push_back(new Int64Item(x));
+	thlocal.push(new Int64Item(x));
 }
 
 int64_t ni_popInt64()
 {
-	auto item = vstack[vstackPtr++];
-	return item->int64Value();
+	return thlocal.pop()->int64Value();
 }
 
 void ni_pushInt64Array(int64_t* values, size_t count)
 {
-	vstack.push_back(new Int64ArrayItem(values, count));
+	thlocal.push(new Int64ArrayItem(values, count));
 }
-
-static std::vector<int64_t> lastInt64Array;
 
 void ni_popInt64Array(int64_t** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastInt64Array = item->int64Array();
-	*values = lastInt64Array.data();
-	*count = lastInt64Array.size();
+	thlocal.lastInt64Array = thlocal.pop()->int64Array();
+	*values = thlocal.lastInt64Array.data();
+	*count = thlocal.lastInt64Array.size();
 }
 
 void ni_pushUInt64(uint64_t x)
 {
-	vstack.push_back(new UInt64Item(x));
+	thlocal.push(new UInt64Item(x));
 }
 
 uint64_t ni_popUInt64()
 {
-	auto item = vstack[vstackPtr++];
-	return item->uint64Value();
+	return thlocal.pop()->uint64Value();
 }
 
 void ni_pushUInt64Array(uint64_t* values, size_t count)
 {
-	vstack.push_back(new UInt64ArrayItem(values, count));
+	thlocal.push(new UInt64ArrayItem(values, count));
 }
-
-static std::vector<uint64_t> lastUInt64Array;
 
 void ni_popUInt64Array(uint64_t** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastUInt64Array = item->uint64Array();
-	*values = lastUInt64Array.data();
-	*count = lastUInt64Array.size();
+	thlocal.lastUInt64Array = thlocal.pop()->uint64Array();
+	*values = thlocal.lastUInt64Array.data();
+	*count = thlocal.lastUInt64Array.size();
 }
 
 // ==== end ints, sigh =======================================
 
 void ni_pushFloat(float x)
 {
-	vstack.push_back(new FloatItem(x));
+	thlocal.push(new FloatItem(x));
 }
 
 float ni_popFloat()
 {
-	auto item = vstack[vstackPtr++];
-	return item->floatValue();
+	return thlocal.pop()->floatValue();
 }
 
 void ni_pushFloatArray(float* values, size_t count)
 {
-	vstack.push_back(new FloatArrayItem(values, count));
+	thlocal.push(new FloatArrayItem(values, count));
 }
-
-static std::vector<float> lastFloatArray;
 
 void ni_popFloatArray(float** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastFloatArray = item->floatArray();
-	*values = lastFloatArray.data();
-	*count = lastFloatArray.size();
+	thlocal.lastFloatArray = thlocal.pop()->floatArray();
+	*values = thlocal.lastFloatArray.data();
+	*count = thlocal.lastFloatArray.size();
 }
 
 void ni_pushDouble(double x)
 {
-	vstack.push_back(new DoubleItem(x));
+	thlocal.push(new DoubleItem(x));
 }
 
 double ni_popDouble()
 {
-	auto item = vstack[vstackPtr++];
-	return item->doubleValue();
+	return thlocal.pop()->doubleValue();
 }
 
 void ni_pushDoubleArray(double* values, size_t count)
 {
-	vstack.push_back(new DoubleArrayItem(values, count));
+	thlocal.push(new DoubleArrayItem(values, count));
 }
-
-static std::vector<double> lastDoubleArray;
 
 void ni_popDoubleArray(double** values, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastDoubleArray = item->doubleArray();
-	*values = lastDoubleArray.data();
-	*count = lastDoubleArray.size();
+	thlocal.lastDoubleArray = thlocal.pop()->doubleArray();
+	*values = thlocal.lastDoubleArray.data();
+	*count = thlocal.lastDoubleArray.size();
 }
 
 void ni_pushString(const char* str, size_t length)
 {
-	vstack.push_back(new StringItem(str, length));
+	thlocal.push(new StringItem(str, length));
 }
-
-static std::string lastPoppedString; // pointers gotta point to something ...
 
 void ni_popString(const char** strPtr, size_t* length)
 {
-	auto item = vstack[vstackPtr++];
-	lastPoppedString = item->stringValue();
-	*strPtr = lastPoppedString.c_str();
-	*length = lastPoppedString.size();
+	thlocal.lastPoppedString = thlocal.pop()->stringValue();
+	*strPtr = thlocal.lastPoppedString.c_str();
+	*length = thlocal.lastPoppedString.size();
 }
 
 void ni_pushStringArray(const char** strs, size_t* lengths, size_t count)
 {
-	vstack.push_back(new StringArrayItem(strs, lengths, count));
+	thlocal.push(new StringArrayItem(strs, lengths, count));
 }
-
-static std::vector<std::string> lastPoppedStringArray;
-static const char** lastPoppedStrs = nullptr;
-static size_t* lastPoppedStrLengths = nullptr;
 
 void ni_popStringArray(const char*** strs, size_t** lengths, size_t* count)
 {
-	auto item = vstack[vstackPtr++];
-	lastPoppedStringArray = item->stringArray();
+	thlocal.lastPoppedStringArray = thlocal.pop()->stringArray();
 	//
-	delete[] lastPoppedStrs;
-	delete[] lastPoppedStrLengths;
-	auto _count = lastPoppedStringArray.size();
-	lastPoppedStrs = new const char*[_count];
-	lastPoppedStrLengths = new size_t[_count];
+	delete[] thlocal.lastPoppedStrs;
+	delete[] thlocal.lastPoppedStrLengths;
+	auto _count = thlocal.lastPoppedStringArray.size();
+	thlocal.lastPoppedStrs = new const char*[_count];
+	thlocal.lastPoppedStrLengths = new size_t[_count];
 	for (auto i = 0; i < _count; i++) {
-		lastPoppedStrs[i] = lastPoppedStringArray[i].data();
-		lastPoppedStrLengths[i] = lastPoppedStringArray[i].size();
+		thlocal.lastPoppedStrs[i] = thlocal.lastPoppedStringArray[i].data();
+		thlocal.lastPoppedStrLengths[i] = thlocal.lastPoppedStringArray[i].size();
 	}
-	*strs = lastPoppedStrs;
-	*lengths = lastPoppedStrLengths;
+	*strs = thlocal.lastPoppedStrs;
+	*lengths = thlocal.lastPoppedStrLengths;
 	*count = _count;
 }
 
 void ni_pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor)
 {
-	vstack.push_back(new BufferItem(id, isClientId, inSafetyArea, descriptor));
+	thlocal.push(new BufferItem(id, isClientId, inSafetyArea, descriptor));
 }
 
 void ni_popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor)
 {
-	auto item = vstack[vstackPtr++];
-	item->buffer(id, isClientId, inSafetyArea, descriptor);
+	thlocal.pop()->buffer(id, isClientId, inSafetyArea, descriptor);
 }
 
-// visible to client ===========================================
 void ni_pushClientFunc(int id)
 {
-	vstack.push_back(new ClientFuncItem(id));
+	thlocal.push(new ClientFuncItem(id));
+}
+
+void ni_pushServerFunc(int id)
+{
+	thlocal.push(new ServerFuncItem(id));
 }
 
 int ni_popServerFunc() {
-	auto item = vstack[vstackPtr++];
-	return item->serverFuncId();
+	return thlocal.pop()->serverFuncId();
 }
 
 void ni_invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID)
 {
 	method->ifunc(serverID);
-	assert(ni_currentException == nullptr); // use below when exceptions are involved
+	assert(thlocal.currentException == nullptr); // use below when exceptions are involved
 }
 
 ni_ExceptionRef ni_invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID) {
-	assert(ni_currentException == nullptr);
+	assert(thlocal.currentException == nullptr);
 	method->ifunc(serverID);
-	auto ret = ni_currentException;
-	ni_currentException = nullptr;
+	auto ret = thlocal.currentException;
+	thlocal.currentException = nullptr;
 	return ret;
 }
 
 void ni_pushInstance(int id, bool isClientId, bool inSafetyArea)
 {
-	vstack.push_back(new InstanceItem(id, isClientId, inSafetyArea));
+	thlocal.push(new InstanceItem(id, isClientId, inSafetyArea));
 }
 
 int ni_popInstance(bool* isClientID, bool* inSafetyArea) {
-	auto item = vstack[vstackPtr++];
-	return item->instanceId(isClientID, inSafetyArea);
+	return thlocal.pop()->instanceId(isClientID, inSafetyArea);
 }
 
 void ni_pushNull()
 {
-	vstack.push_back(new NullItem());
+	thlocal.push(new NullItem());
 }
 
 ni_ExceptionRef ni_getAndClearException() {
-	auto ret = ni_currentException;
-	ni_currentException = nullptr;
+	auto ret = thlocal.currentException;
+	thlocal.currentException = nullptr;
 	return ret;
 }
 
 void ni_setException(ni_ExceptionRef e) {
-	ni_currentException = e;
+	thlocal.currentException = e;
 }
 
 // visible to server only ====================
 int ni_popClientFunc() {
-	auto item = vstack[vstackPtr++];
-	return item->clientFuncId();
+	return thlocal.pop()->clientFuncId();
 }
 
 void ni_clearClientSafetyArea() {
@@ -1138,9 +1103,9 @@ void ni_clearClientSafetyArea() {
 }
 
 void ni_processExceptions() {
-	if (ni_currentException != nullptr) {
-		auto e = ni_currentException;
-		ni_currentException = nullptr;
+	if (thlocal.currentException != nullptr) {
+		auto e = thlocal.currentException;
+		thlocal.currentException = nullptr;
 		e->buildAndThrow();
 	}
 }

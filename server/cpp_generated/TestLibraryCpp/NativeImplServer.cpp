@@ -19,11 +19,8 @@ void ni_execServerFunc(int id)
 }
 
 ni_ExceptionRef ni_execServerFuncWithExceptions(int id) {
-	assert(ni_currentException == nullptr);
 	ServerFuncVal::getById(id)->wrapper();
-	auto ret = ni_currentException;
-	ni_currentException = nullptr;
-	return ret;
+	return ni_getAndClearException();
 }
 
 void pushServerFuncVal(std::function<void()> wrapper, size_t key) {
@@ -379,17 +376,11 @@ void ClientObject::nativePush(bool inSafetyArea)
 
 void ClientObject::invokeMethod(ni_InterfaceMethodRef method) {
 	::ni_clientMethodExec(method, id);
-	assert(ni_currentException == nullptr); // never use this where an exception can throw! (trying to keep things tight for maximum throughput)
 }
 
 void ClientObject::invokeMethodWithExceptions(ni_InterfaceMethodRef method) {
-	assert(ni_currentException == nullptr);
 	::ni_clientMethodExec(method, id);
-	if (ni_currentException != nullptr) {
-		auto e = ni_currentException;
-		ni_currentException = nullptr;
-		ni_buildAndthrow(e);
-	}
+	ni_processExceptions();
 }
 
 void ClientFuncVal::remoteExec()
@@ -400,11 +391,7 @@ void ClientFuncVal::remoteExec()
 void ClientFuncVal::remoteExecWithExceptions()
 {
 	ni_clientFuncExec(id);
-	if (ni_currentException != nullptr) {
-		auto e = ni_currentException;
-		ni_currentException = nullptr;
-		ni_buildAndthrow(e);
-	}
+	ni_processExceptions();
 }
 
 void ClientFuncVal::nativePush(bool inSafetyArea)

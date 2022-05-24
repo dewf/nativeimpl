@@ -505,14 +505,15 @@ static void nullMethodExec(ni_InterfaceMethodRef method, int id) {}
 
 // private global stuff ============================
 static std::map<std::string, ni_ModuleRef> modules;
-static std::stack<StackItem *> vstack;
 
 niClientFuncExec ni_clientFuncExec;
 niClientMethodExec ni_clientMethodExec;
 niClientResourceRelease ni_clientResourceRelease;
 niClientClearSafetyArea ni_clientClearSafetyArea;
 
-ni_ExceptionRef ni_currentException = nullptr;
+// todo: thread-local
+static std::stack<StackItem *> vstack;
+static ni_ExceptionRef ni_currentException = nullptr;
 
 ni_ModuleRef ni_registerModule(const char *name)
 {
@@ -1190,6 +1191,12 @@ void ni_pushNull()
 	vstack.push(new NullItem());
 }
 
+ni_ExceptionRef ni_getAndClearException() {
+	auto ret = ni_currentException;
+	ni_currentException = nullptr;
+	return ret;
+}
+
 void ni_setException(ni_ExceptionRef e) {
 	ni_currentException = e;
 }
@@ -1207,6 +1214,10 @@ void ni_clearClientSafetyArea() {
 	::ni_clientClearSafetyArea(); // ugh this confusing naming ...
 }
 
-void ni_buildAndthrow(ni_ExceptionRef e) {
-	e->buildAndThrow();
+void ni_processExceptions() {
+	if (ni_currentException != nullptr) {
+		auto e = ni_currentException;
+		ni_currentException = nullptr;
+		e->buildAndThrow();
+	}
 }

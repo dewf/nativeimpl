@@ -23,7 +23,6 @@ extern "C" {
 	extern niClientMethodExec ni_clientMethodExec;
 	extern niClientResourceRelease ni_clientResourceRelease;
 	extern niClientClearSafetyArea ni_clientClearSafetyArea;
-	extern ni_ExceptionRef ni_currentException;
 
 	typedef void (*ModuleFunc)();
 	typedef void (*InterfaceFunc)(int serverID);
@@ -126,7 +125,8 @@ extern "C" {
 	extern void ni_pushNull();
 
 	extern void ni_setException(ni_ExceptionRef e);
-	extern void ni_buildAndthrow(ni_ExceptionRef e);
+	extern ni_ExceptionRef ni_getAndClearException();
+	extern void ni_processExceptions(); // formerly buildAndThrow
 
 	extern void ni_clearClientSafetyArea();
 }

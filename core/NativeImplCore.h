@@ -181,8 +181,7 @@ extern "C" {
 
 	void ni_dumpTables();
 
-	// ni_setException (and the invocation methods returning ni_ExceptionRef) exist because the client is assumed
-	// to not have direct memory access to ni_currentException, like the server does.
 	void ni_setException(ni_ExceptionRef e);
-	void ni_buildAndthrow(ni_ExceptionRef e);
+	ni_ExceptionRef ni_getAndClearException();
+	void ni_processExceptions(); // formerly buildAndThrow
 }

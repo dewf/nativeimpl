@@ -152,14 +152,6 @@
     <ClCompile Include="Implementation.cpp" />
     <ClCompile Include="Wrappers.cpp" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\..\moonshot\opendl\build\msvc\2022\opendl.vcxproj">
-      <Project>{59c967f3-72e7-4557-b1db-2399f02103c5}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\..\moonshot\openwl\build\msvc\2022\openwl.vcxproj">
-      <Project>{eecfebaf-ab67-4bb4-b812-37c25d2112bb}</Project>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

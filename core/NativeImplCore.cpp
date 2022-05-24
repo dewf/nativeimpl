@@ -512,7 +512,8 @@ niClientResourceRelease ni_clientResourceRelease;
 niClientClearSafetyArea ni_clientClearSafetyArea;
 
 // todo: thread-local
-static std::stack<StackItem *> vstack;
+static std::vector<StackItem*> vstack;
+static int vstackPtr = 0;
 static ni_ExceptionRef ni_currentException = nullptr;
 
 ni_ModuleRef ni_registerModule(const char *name)
@@ -586,7 +587,7 @@ ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char *name, Exception
 
 void ni_pushServerFunc(int id)
 {
-	vstack.push(new ServerFuncItem(id));
+	vstack.push_back(new ServerFuncItem(id));
 }
 
 // client methods (some used by server as well) ===============================
@@ -682,87 +683,72 @@ ni_ExceptionRef ni_invokeModuleMethodWithExceptions(ni_ModuleMethodRef method) {
 
 void ni_pushPtr(void* value)
 {
-	vstack.push(new PtrItem(value));
+	vstack.push_back(new PtrItem(value));
 }
 
 void* ni_popPtr()
 {
-	auto item = vstack.top();
-	auto v = item->ptrValue();
-	vstack.pop();
-	delete item;
-	return v;
+	auto item = vstack[vstackPtr++];
+	return item->ptrValue();
 }
 
 void ni_pushPtrArray(void** values, size_t count)
 {
-	vstack.push(new PtrArray(values, count));
+	vstack.push_back(new PtrArray(values, count));
 }
 
 static std::vector<void*> lastPtrArray;
 
 void ni_popPtrArray(void*** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastPtrArray = item->ptrArray();
-	vstack.pop();
-	delete item;
 	*values = lastPtrArray.data();
 	*count = lastPtrArray.size();
 }
 
 void ni_pushSizeT(size_t value) {
-	vstack.push(new SizeTItem(value));
+	vstack.push_back(new SizeTItem(value));
 }
 
 size_t ni_popSizeT() {
-	auto item = vstack.top();
-	auto v = item->sizeTValue();
-	vstack.pop();
-	delete item;
-	return v;
+	auto item = vstack[vstackPtr++];
+	return item->sizeTValue();
 }
 
 void ni_pushSizeTArray(size_t* values, size_t count) {
-	vstack.push(new SizeTArray(values, count));
+	vstack.push_back(new SizeTArray(values, count));
 }
 
 static std::vector<size_t> lastSizeTArray;
 
 void ni_popSizeTArray(size_t** values, size_t* count) {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastSizeTArray = item->sizeTArray();
-	vstack.pop();
-	delete item;
 	*values = lastSizeTArray.data();
 	*count = lastSizeTArray.size();
 }
 
 void ni_pushBool(bool value) {
-	vstack.push(new BoolItem(value));
+	vstack.push_back(new BoolItem(value));
 }
 
 bool ni_popBool() {
-	auto item = vstack.top();
-	auto b = item->boolValue();
-	vstack.pop();
-	delete item;
-	return b;
+	auto item = vstack[vstackPtr++];
+	return item->boolValue();
 }
 
 void ni_pushBoolArray(bool* values, size_t count)
 {
-	vstack.push(new BoolArrayItem(values, count));
+	vstack.push_back(new BoolArrayItem(values, count));
 }
 
 static std::vector<uint8_t> lastBoolArray;
 
 void ni_popBoolArray(bool** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastBoolArray = item->boolArray();
-	vstack.pop();
-	delete item;
 	*((uint8_t**)values) = lastBoolArray.data();
 	*count = lastBoolArray.size();
 }
@@ -771,62 +757,52 @@ void ni_popBoolArray(bool** values, size_t* count)
 
 void ni_pushInt8(int8_t x)
 {
-	vstack.push(new Int8Item(x));
+	vstack.push_back(new Int8Item(x));
 }
 
 int8_t ni_popInt8()
 {
-	auto item = vstack.top();
-	auto x = item->int8Value();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->int8Value();
 }
 
 void ni_pushInt8Array(int8_t* values, size_t count)
 {
-	vstack.push(new Int8ArrayItem(values, count));
+	vstack.push_back(new Int8ArrayItem(values, count));
 }
 
 static std::vector<int8_t> lastInt8Array;
 
 void ni_popInt8Array(int8_t** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastInt8Array = item->int8Array();
-	vstack.pop();
-	delete item;
 	*values = lastInt8Array.data();
 	*count = lastInt8Array.size();
 }
 
 void ni_pushUInt8(uint8_t x)
 {
-	vstack.push(new UInt8Item(x));
+	vstack.push_back(new UInt8Item(x));
 }
 
 uint8_t ni_popUInt8()
 {
-	auto item = vstack.top();
-	auto x = item->uint8Value();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->uint8Value();
 }
 
 void ni_pushUInt8Array(uint8_t* values, size_t count)
 {
-	vstack.push(new UInt8ArrayItem(values, count));
+	vstack.push_back(new UInt8ArrayItem(values, count));
 }
 
 static std::vector<uint8_t> lastUInt8Array;
 
 void ni_popUInt8Array(uint8_t** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastUInt8Array = item->uint8Array();
-	vstack.pop();
-	delete item;
 	*values = lastUInt8Array.data();
 	*count = lastUInt8Array.size();
 }
@@ -835,62 +811,52 @@ void ni_popUInt8Array(uint8_t** values, size_t* count)
 
 void ni_pushInt16(int16_t x)
 {
-	vstack.push(new Int16Item(x));
+	vstack.push_back(new Int16Item(x));
 }
 
 int16_t ni_popInt16()
 {
-	auto item = vstack.top();
-	auto x = item->int16Value();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->int16Value();
 }
 
 void ni_pushInt16Array(int16_t* values, size_t count)
 {
-	vstack.push(new Int16ArrayItem(values, count));
+	vstack.push_back(new Int16ArrayItem(values, count));
 }
 
 static std::vector<int16_t> lastInt16Array;
 
 void ni_popInt16Array(int16_t** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastInt16Array = item->int16Array();
-	vstack.pop();
-	delete item;
 	*values = lastInt16Array.data();
 	*count = lastInt16Array.size();
 }
 
 void ni_pushUInt16(uint16_t x)
 {
-	vstack.push(new UInt16Item(x));
+	vstack.push_back(new UInt16Item(x));
 }
 
 uint16_t ni_popUInt16()
 {
-	auto item = vstack.top();
-	auto x = item->uint16Value();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->uint16Value();
 }
 
 void ni_pushUInt16Array(uint16_t* values, size_t count)
 {
-	vstack.push(new UInt16ArrayItem(values, count));
+	vstack.push_back(new UInt16ArrayItem(values, count));
 }
 
 static std::vector<uint16_t> lastUInt16Array;
 
 void ni_popUInt16Array(uint16_t** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastUInt16Array = item->uint16Array();
-	vstack.pop();
-	delete item;
 	*values = lastUInt16Array.data();
 	*count = lastUInt16Array.size();
 }
@@ -899,62 +865,52 @@ void ni_popUInt16Array(uint16_t** values, size_t* count)
 
 void ni_pushInt32(int32_t x)
 {
-	vstack.push(new Int32Item(x));
+	vstack.push_back(new Int32Item(x));
 }
 
 int32_t ni_popInt32()
 {
-	auto item = vstack.top();
-	auto x = item->int32Value();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->int32Value();
 }
 
 void ni_pushInt32Array(int32_t* values, size_t count)
 {
-	vstack.push(new Int32ArrayItem(values, count));
+	vstack.push_back(new Int32ArrayItem(values, count));
 }
 
 static std::vector<int32_t> lastInt32Array;
 
 void ni_popInt32Array(int32_t** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastInt32Array = item->int32Array();
-	vstack.pop();
-	delete item;
 	*values = lastInt32Array.data();
 	*count = lastInt32Array.size();
 }
 
 void ni_pushUInt32(uint32_t x)
 {
-	vstack.push(new UInt32Item(x));
+	vstack.push_back(new UInt32Item(x));
 }
 
 uint32_t ni_popUInt32()
 {
-	auto item = vstack.top();
-	auto x = item->uint32Value();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->uint32Value();
 }
 
 void ni_pushUInt32Array(uint32_t* values, size_t count)
 {
-	vstack.push(new UInt32ArrayItem(values, count));
+	vstack.push_back(new UInt32ArrayItem(values, count));
 }
 
 static std::vector<uint32_t> lastUInt32Array;
 
 void ni_popUInt32Array(uint32_t** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastUInt32Array = item->uint32Array();
-	vstack.pop();
-	delete item;
 	*values = lastUInt32Array.data();
 	*count = lastUInt32Array.size();
 }
@@ -963,62 +919,52 @@ void ni_popUInt32Array(uint32_t** values, size_t* count)
 
 void ni_pushInt64(int64_t x)
 {
-	vstack.push(new Int64Item(x));
+	vstack.push_back(new Int64Item(x));
 }
 
 int64_t ni_popInt64()
 {
-	auto item = vstack.top();
-	auto x = item->int64Value();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->int64Value();
 }
 
 void ni_pushInt64Array(int64_t* values, size_t count)
 {
-	vstack.push(new Int64ArrayItem(values, count));
+	vstack.push_back(new Int64ArrayItem(values, count));
 }
 
 static std::vector<int64_t> lastInt64Array;
 
 void ni_popInt64Array(int64_t** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastInt64Array = item->int64Array();
-	vstack.pop();
-	delete item;
 	*values = lastInt64Array.data();
 	*count = lastInt64Array.size();
 }
 
 void ni_pushUInt64(uint64_t x)
 {
-	vstack.push(new UInt64Item(x));
+	vstack.push_back(new UInt64Item(x));
 }
 
 uint64_t ni_popUInt64()
 {
-	auto item = vstack.top();
-	auto x = item->uint64Value();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->uint64Value();
 }
 
 void ni_pushUInt64Array(uint64_t* values, size_t count)
 {
-	vstack.push(new UInt64ArrayItem(values, count));
+	vstack.push_back(new UInt64ArrayItem(values, count));
 }
 
 static std::vector<uint64_t> lastUInt64Array;
 
 void ni_popUInt64Array(uint64_t** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastUInt64Array = item->uint64Array();
-	vstack.pop();
-	delete item;
 	*values = lastUInt64Array.data();
 	*count = lastUInt64Array.size();
 }
@@ -1027,84 +973,74 @@ void ni_popUInt64Array(uint64_t** values, size_t* count)
 
 void ni_pushFloat(float x)
 {
-	vstack.push(new FloatItem(x));
+	vstack.push_back(new FloatItem(x));
 }
 
 float ni_popFloat()
 {
-	auto item = vstack.top();
-	auto x = item->floatValue();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->floatValue();
 }
 
 void ni_pushFloatArray(float* values, size_t count)
 {
-	vstack.push(new FloatArrayItem(values, count));
+	vstack.push_back(new FloatArrayItem(values, count));
 }
 
 static std::vector<float> lastFloatArray;
 
 void ni_popFloatArray(float** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastFloatArray = item->floatArray();
-	vstack.pop();
-	delete item;
 	*values = lastFloatArray.data();
 	*count = lastFloatArray.size();
 }
 
 void ni_pushDouble(double x)
 {
-	vstack.push(new DoubleItem(x));
+	vstack.push_back(new DoubleItem(x));
 }
 
 double ni_popDouble()
 {
-	auto item = vstack.top();
-	auto x = item->doubleValue();
-	vstack.pop();
-	delete item;
-	return x;
+	auto item = vstack[vstackPtr++];
+	return item->doubleValue();
 }
 
 void ni_pushDoubleArray(double* values, size_t count)
 {
-	vstack.push(new DoubleArrayItem(values, count));
+	vstack.push_back(new DoubleArrayItem(values, count));
 }
 
 static std::vector<double> lastDoubleArray;
 
 void ni_popDoubleArray(double** values, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastDoubleArray = item->doubleArray();
-	vstack.pop();
-	delete item;
 	*values = lastDoubleArray.data();
 	*count = lastDoubleArray.size();
 }
 
-void ni_pushString(const char* str, size_t length) {
-	vstack.push(new StringItem(str, length));
+void ni_pushString(const char* str, size_t length)
+{
+	vstack.push_back(new StringItem(str, length));
 }
 
 static std::string lastPoppedString; // pointers gotta point to something ...
 
-void ni_popString(const char** strPtr, size_t* length) {
-	auto item = vstack.top();
+void ni_popString(const char** strPtr, size_t* length)
+{
+	auto item = vstack[vstackPtr++];
 	lastPoppedString = item->stringValue();
-	vstack.pop();
-	delete item;
 	*strPtr = lastPoppedString.c_str();
 	*length = lastPoppedString.size();
 }
 
 void ni_pushStringArray(const char** strs, size_t* lengths, size_t count)
 {
-	vstack.push(new StringArrayItem(strs, lengths, count));
+	vstack.push_back(new StringArrayItem(strs, lengths, count));
 }
 
 static std::vector<std::string> lastPoppedStringArray;
@@ -1113,10 +1049,8 @@ static size_t* lastPoppedStrLengths = nullptr;
 
 void ni_popStringArray(const char*** strs, size_t** lengths, size_t* count)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	lastPoppedStringArray = item->stringArray();
-	vstack.pop();
-	delete item;
 	//
 	delete[] lastPoppedStrs;
 	delete[] lastPoppedStrLengths;
@@ -1134,29 +1068,24 @@ void ni_popStringArray(const char*** strs, size_t** lengths, size_t* count)
 
 void ni_pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor)
 {
-	vstack.push(new BufferItem(id, isClientId, inSafetyArea, descriptor));
+	vstack.push_back(new BufferItem(id, isClientId, inSafetyArea, descriptor));
 }
 
 void ni_popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor)
 {
-	auto item = vstack.top();
+	auto item = vstack[vstackPtr++];
 	item->buffer(id, isClientId, inSafetyArea, descriptor);
-	vstack.pop();
-	delete item;
 }
 
 // visible to client ===========================================
 void ni_pushClientFunc(int id)
 {
-	vstack.push(new ClientFuncItem(id));
+	vstack.push_back(new ClientFuncItem(id));
 }
 
 int ni_popServerFunc() {
-	auto item = vstack.top();
-	auto id = item->serverFuncId();
-	vstack.pop();
-	delete item;
-	return id;
+	auto item = vstack[vstackPtr++];
+	return item->serverFuncId();
 }
 
 void ni_invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID)
@@ -1175,20 +1104,17 @@ ni_ExceptionRef ni_invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef met
 
 void ni_pushInstance(int id, bool isClientId, bool inSafetyArea)
 {
-	vstack.push(new InstanceItem(id, isClientId, inSafetyArea));
+	vstack.push_back(new InstanceItem(id, isClientId, inSafetyArea));
 }
 
 int ni_popInstance(bool* isClientID, bool* inSafetyArea) {
-	auto item = vstack.top();
-	auto id = item->instanceId(isClientID, inSafetyArea);
-	vstack.pop();
-	delete item;
-	return id;
+	auto item = vstack[vstackPtr++];
+	return item->instanceId(isClientID, inSafetyArea);
 }
 
 void ni_pushNull()
 {
-	vstack.push(new NullItem());
+	vstack.push_back(new NullItem());
 }
 
 ni_ExceptionRef ni_getAndClearException() {
@@ -1203,11 +1129,8 @@ void ni_setException(ni_ExceptionRef e) {
 
 // visible to server only ====================
 int ni_popClientFunc() {
-	auto item = vstack.top();
-	auto id = item->clientFuncId();
-	vstack.pop();
-	delete item;
-	return id;
+	auto item = vstack[vstackPtr++];
+	return item->clientFuncId();
 }
 
 void ni_clearClientSafetyArea() {

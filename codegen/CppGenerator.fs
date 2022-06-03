@@ -76,7 +76,7 @@ let rec typeToCppString (typeMap: Map<string, UserOrGeneric>) = function
             if enumInfo.FlagsMode then
                 let widthType =
                     enumInfo.MaybeWidth
-                    |> Option.defaultValue (Primitive(Int(true, Width32)))
+                    |> Option.defaultValue (Primitive(Int(false, Width32)))
                 typeToCppString typeMap widthType
             else
                 name
@@ -777,7 +777,10 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
             let widthType =
                 match info.MaybeWidth with
                 | Some widthType -> widthType
-                | None -> Primitive(Int(true,Width32))
+                | None ->
+                    let signed =
+                        not info.FlagsMode
+                    Primitive(Int(signed,Width32))
             if info.FlagsMode then
                 write 0 "inline void %s__push(%s value) {" name (typeToCppString typeMap widthType)
                 pushValue writer 1 widthType "value" NotApplicable

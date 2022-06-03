@@ -311,8 +311,10 @@ type ArrayRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, oute
             let widthType =
                 match typeMap[name] with
                 | UserOrGeneric.User (EnumDef info) ->
-                        info.MaybeWidth
-                        |> Option.defaultValue (Primitive(Int(true,Width32)))
+                    let signed =
+                        not info.FlagsMode
+                    info.MaybeWidth
+                    |> Option.defaultValue (Primitive(Int(signed,Width32)))
                 | _ -> failwith "ArrayRenderer this.EnumType trouble!!!"
             // push
             write 2 "private static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
@@ -455,17 +457,26 @@ type SetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, outerT
             write 3 "// ???"
             write 2 "}"
         member this.EnumType (name: string) =
+            let widthType =
+                match typeMap[name] with
+                | UserOrGeneric.User (EnumDef info) ->
+                    let signed =
+                        not info.FlagsMode
+                    info.MaybeWidth
+                    |> Option.defaultValue (Primitive(Int(signed,Width32)))
+                | _ -> failwith "SetRenderer this.EnumType trouble!!!"
             // push
-            write 2 "private static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "private static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
-            pushValue writer 3 (ArrayType (Primitive(Int(true,Width32)))) "items.Select(x => (int)x).ToArray()" (Indirect "isReturn")
+            write 3 "var intValues = items.Select(i => (%s)i).ToArray();" (typeToCsString typeMap widthType)
+            pushValue writer 3 (ArrayType widthType) "intValues" NotApplicable
             write 2 "}"
             // pop
             blank()
             write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
-            popValue writer 3 (ArrayType (Primitive(Int(true,Width32)))) (NewVariable "intArray")
-            write 3 "return intArray.Select(x => (%s)x).ToHashSet();" (typeToName elemType)
+            popValue writer 3 (ArrayType widthType) (NewVariable "intValues")
+            write 3 "return intValues.Select(i => (%s)i).ToHashSet();" (typeToCsString typeMap elemType)
             write 2 "}"
         member this.StructType (structName: string) (namedFields: NamedField list) =
             // PUSH ===================
@@ -658,7 +669,9 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
                 | Some widthType ->
                     widthType, sprintf " : %s" (typeToCsString typeMap widthType)
                 | None ->
-                    Primitive(Int(true,Width32)), ""
+                    let signed =
+                        not info.FlagsMode
+                    Primitive(Int(signed,Width32)), ""
             if info.FlagsMode then
                 write 2 "[Flags]"
             write 2 "public enum %s%s" name widthStr

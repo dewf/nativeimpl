@@ -11,31 +11,33 @@ unit TestLibrary;
 interface
 
 uses
-  Classes, SysUtils, NativeImplClient, fgl;
+  Classes, SysUtils, NativeImplClient; // , fgl;
 
 type
-
   { ISomeIntFunc }
-
   ISomeIntFunc = interface
     function Apply(x: Integer): Integer;
   end;
 
-  { dependencies for TSomeIntFuncWrapper }
-
-  TSomeIntFuncWrapper = class; // fwd decl
-  TIntFuncMap = specialize TFPGMap<Pointer,TSomeIntFuncWrapper>;
-
   { TSomeIntFuncWrapper }
-  TSomeIntFuncWrapper = class(TClientFuncValue)
-    private
-      _map: TIntFuncMap; static; // to make sure we're not re-wrapping a given "closure" again
-      _f: ISomeIntFunc;          // lifetime managed by interface
+  TSomeIntFuncWrapper = class; // fwd
+  TSomeIntFuncWrapperBase = specialize TGenericFuncWrapper<ISomeIntFunc,TSomeIntFuncWrapper>;
+  TSomeIntFuncWrapper = class (TSomeIntFuncWrapperBase)
     public
-      class constructor Create;                                         // static init
-      class function GetOrCreate(f: ISomeIntFunc): TSomeIntFuncWrapper; // static factory, checks for duplicates
-      procedure Apply(); override;                                      // handles the stack operations to invoke interface-specific .Apply
-      destructor Destroy(); override;
+      procedure Apply(); override;
+  end;
+
+  { IArrayFunc }
+  IArrayFunc = interface
+    function Apply(items: array of Integer): Integer;
+  end;
+
+  { TArrayFuncWrapper }
+  TArrayFuncWrapper = class; // fwd decl
+  TArrayFuncWrapperBase = specialize TGenericFuncWrapper<IArrayFunc,TArrayFuncWrapper>;
+  TArrayFuncWrapper = class(TArrayFuncWrapperBase)
+    public
+      procedure Apply(); override;
   end;
 
 function Init(): Boolean;
@@ -46,6 +48,7 @@ function Sum(a: Integer; b: Integer; c: Integer): Integer;
 function AppendToString(str: String): String;
 function ArraySum(values: Array of Integer): Integer;
 function ApplyIntFunc(f: ISomeIntFunc; i: Integer): Integer;
+function ApplyArrayFunc(f: IArrayFunc; numItems: Integer): Integer;
 
 implementation
 
@@ -55,6 +58,7 @@ var
   appendToStringMethod: TModuleMethodHandle;
   arraySumMethod: TModuleMethodHandle;
   intFuncMethod: TModuleMethodHandle;
+  arrayFuncMethod: TModuleMethodHandle;
 
 function Init: Boolean;
 begin
@@ -68,6 +72,7 @@ begin
   appendToStringMethod := NativeImplClient.GetModuleMethod(m, 'appendToString');
   arraySumMethod := NativeImplClient.GetModuleMethod(m, 'arraySum');
   intFuncMethod := NativeImplClient.GetModuleMethod(m, 'applyIntFunc');
+  arrayFuncMethod := NativeImplClient.GetModuleMethod(m, 'applyArrayFunc');
 end;
 
 procedure Shutdown;
@@ -91,7 +96,7 @@ begin
   result := NativeImplClient.PopString();
 end;
 
-function ArraySum(values: Array of Integer): Integer;
+function ArraySum(values: array of Integer): Integer;
 begin
   NativeImplClient.PushInt32Array(values);
   NativeImplClient.InvokeModuleMethod(arraySumMethod);
@@ -109,6 +114,17 @@ begin
   result := NativeImplClient.PopInt32();
 end;
 
+function ApplyArrayFunc(f: IArrayFunc; numItems: Integer): Integer;
+var
+  wrapper: TArrayFuncWrapper;
+begin
+  wrapper := TArrayFuncWrapper.GetOrCreate(f);
+  NativeImplClient.PushInt32(numItems);
+  NativeImplClient.PushFuncValue(wrapper);
+  NativeImplClient.InvokeModuleMethod(arrayFuncMethod);
+  result := NativeImplClient.PopInt32();
+end;
+
 { TSomeIntFuncWrapper }
 
 procedure TSomeIntFuncWrapper.Apply;
@@ -120,39 +136,18 @@ begin
   NativeImplClient.PushInt32(res);
 end;
 
-destructor TSomeIntFuncWrapper.Destroy;
-begin
-  inherited Destroy;
-  // a given wrapper got destroyed, so remove its content from lookup table
-  _map.Remove(Pointer(_f));
-  writeln('TSomeIntFuncWrapper.Destroy!');
-end;
+{ TArrayFuncWrapper }
 
-class constructor TSomeIntFuncWrapper.Create;
-begin
-  _map := TIntFuncMap.Create();
-end;
-
-class function TSomeIntFuncWrapper.GetOrCreate(f: ISomeIntFunc): TSomeIntFuncWrapper;
+procedure TArrayFuncWrapper.Apply;
 var
-  wrapper: TSomeIntFuncWrapper;
+  items: array of Integer;
+  res: Integer;
 begin
-  // check to see if this particular closure already exists, return if so
-  // otherwise return a new wrapper
-  if _map.TryGetData(Pointer(f), wrapper) then
-  begin
-    // 'wrapper' var already populated due to TryGetData above
-  end else
-  begin
-    // need to create
-    wrapper := TSomeIntFuncWrapper.Create;
-    wrapper._f := f;
-    _map.Add(Pointer(f), wrapper);
-  end;
-  // return
-  result := wrapper;
+  // no need for super method
+  items := NativeImplClient.PopInt32Array();
+  res := _f.Apply(items);
+  NativeImplClient.PushInt32(res);
 end;
-
 
 end.
 

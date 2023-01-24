@@ -12,6 +12,14 @@ type
       destructor Destroy; override;
   end;
 
+  { MyArrayFunc }
+
+  MyArrayFunc = class(TInterfacedObject, IArrayFunc)
+    public
+      function Apply(items: array of Integer): Integer;
+      destructor Destroy; override;
+  end;
+
 var
   sum: Integer;
   appendedStr: String;
@@ -21,6 +29,27 @@ var
   i: Integer;
   //intFunc: ISomeIntFunc;
   intFuncResult: Integer;
+  arrayFuncResult: Integer;
+
+{ MyArrayFunc }
+
+function MyArrayFunc.Apply(items: array of Integer): Integer;
+var
+  i, sum: Integer;
+begin
+  sum := 0;
+  for i := 0 to length(items) - 1 do
+  begin
+    sum := sum + items[i];
+  end;
+  result := sum;
+end;
+
+destructor MyArrayFunc.Destroy;
+begin
+  inherited Destroy;
+  writeln('MyArrayFunc.Destroy!');
+end;
 
 { MyIntFunc }
 function MyIntFunc.Apply(x: Integer): Integer;
@@ -30,6 +59,7 @@ end;
 
 destructor MyIntFunc.Destroy;
 begin
+  inherited Destroy;
   writeln('MyIntFunc.Destroy!');
 end;
 
@@ -60,6 +90,9 @@ begin
 
   intFuncResult := TestLibrary.ApplyIntFunc(MyIntFunc.Create(), 123);
   writeln('applyIntFunc(123) = ' + IntToStr(intFuncResult));
+
+  arrayFuncResult := TestLibrary.ApplyArrayFunc(MyArrayFunc.Create(), 100);
+  writeln('applyArrayFunc(f, 100) = ' + IntToStr(arrayFuncResult));
 
   TestLibrary.Shutdown();
   writeln('(enter to exit)');

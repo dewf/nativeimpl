@@ -61,6 +61,22 @@ type
       procedure Apply(); virtual; abstract;
   end;
 
+  TIntArray = Array of Integer;
+
+  { TGenericFuncWrapper }
+  generic TGenericFuncWrapper<FuncType,WrapperType> = class(TClientFuncValue)
+    type
+      TFuncWrapperMap = specialize TFPGMap<Pointer,WrapperType>;
+    private
+      _map: TFuncWrapperMap; static; // to make sure we're not re-wrapping a given "closure" again
+      _f: FuncType;                  // lifetime managed by interface
+    public
+      class constructor Create;                             // static init
+      class function GetOrCreate(f: FuncType): WrapperType; // static factory, checks for duplicates
+      procedure Apply(); override;
+      destructor Destroy(); override;
+  end;
+
 function Init(): Boolean;
 procedure Shutdown();
 function GetModule(Name: String): TModuleHandle;
@@ -71,6 +87,7 @@ function PopInt32(): Integer;
 procedure PushString(str: String);
 function PopString(): String;
 procedure PushInt32Array(i: Array of Integer);
+function PopInt32Array(): TIntArray;
 procedure PushFuncValue(f: TClientFuncValue);
 
 implementation
@@ -115,6 +132,23 @@ begin
 end;
 
 // end callbacks ==============================================================
+
+
+{ TModuleMethodHandle }
+
+constructor TModuleMethodHandle.Create(h: NativeMethods.TModuleRef);
+begin
+  self.Handle := h;
+end;
+
+{ TModuleHandle }
+
+constructor TModuleHandle.Create(h: NativeMethods.TModuleRef);
+begin
+  self.Handle := h;
+end;
+
+// main exports:
 
 function Init: Boolean;
 var
@@ -191,6 +225,22 @@ begin
   NativeMethods.pushInt32Array(PInteger(i), Length(i));
 end;
 
+function PopInt32Array: TIntArray;
+var
+  values: PInteger;
+  count: NativeUInt;
+  arr: array of Integer;
+  i: Integer;
+begin
+  NativeMethods.popInt32Array(@values, @count);
+  arr := nil;
+  setLength(arr, count);
+  // how to efficiently (and correctly!) copy?
+  for i := 0 to count do
+      arr[i] := values[i];
+  result := arr;
+end;
+
 procedure PushFuncValue(f: TClientFuncValue);
 begin
   NativeMethods.pushClientFunc(f._id);
@@ -245,18 +295,44 @@ begin
   result := outItem;
 end;
 
-{ TModuleMethodHandle }
+{ TGenericFuncWrapper }
 
-constructor TModuleMethodHandle.Create(h: NativeMethods.TModuleRef);
+class constructor TGenericFuncWrapper.Create;
 begin
-  self.Handle := h;
+  _map := TFuncWrapperMap.Create();
 end;
 
-{ TModuleHandle }
-
-constructor TModuleHandle.Create(h: NativeMethods.TModuleRef);
+class function TGenericFuncWrapper.GetOrCreate(f: FuncType): WrapperType;
+var
+  wrapper: WrapperType;
 begin
-  self.Handle := h;
+  // check to see if this particular closure already exists, return if so
+  // otherwise return a new wrapper
+  if _map.TryGetData(Pointer(f), wrapper) then
+  begin
+    // 'wrapper' var already populated due to TryGetData above
+  end else
+  begin
+    // need to create
+    wrapper := WrapperType.Create;
+    wrapper._f := f;
+    _map.Add(Pointer(f), wrapper);
+  end;
+  // return
+  result := wrapper;
+end;
+
+procedure TGenericFuncWrapper.Apply;
+begin
+  // this MUST be overridden!
+end;
+
+destructor TGenericFuncWrapper.Destroy;
+begin
+  inherited Destroy;
+  // a given wrapper got destroyed, so remove its content from lookup table
+  _map.Remove(Pointer(_f));
+  writeln('TGenericFuncWrapper.Destroy!');
 end;
 
 end.

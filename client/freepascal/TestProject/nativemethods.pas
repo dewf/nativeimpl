@@ -39,8 +39,8 @@ function popInt32(): Integer; cdecl; external 'TestLibrary.dll';
 procedure pushString(str: PChar; length: NativeUInt); cdecl; external 'TestLibrary.dll';
 procedure popString(pStr: PPChar; pLength: PNativeUInt); cdecl; external 'TestLibrary.dll';
 
-// TESTLIBRARY_API void pushInt32Array(int32_t* values, size_t count);
-// TESTLIBRARY_API void popInt32Array(int32_t** values, size_t* count);
+procedure pushClientFunc(id: Integer); cdecl; external 'TestLibrary.dll';
+
 procedure pushInt32Array(values: PInteger; count: NativeUInt); cdecl; external 'TestLibrary.dll';
 procedure popInt32Array(values: PPtrInt; count: PNativeUInt); cdecl; external 'TestLibrary.dll';
 

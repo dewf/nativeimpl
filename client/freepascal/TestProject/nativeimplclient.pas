@@ -2,6 +2,7 @@
 unit NativeImplClient;
 
 {$mode ObjFPC}{$H+}
+{$interfaces corba} // no COM interfaces
 
 interface
 
@@ -13,19 +14,25 @@ type
   { TModuleHandle }
 
   TModuleHandle = class
-  private
-    Handle: NativeMethods.TModuleRef;
-  public
-    constructor Create(h: NativeMethods.TModuleRef);
+    private
+      Handle: NativeMethods.TModuleRef;
+    public
+      constructor Create(h: NativeMethods.TModuleRef);
   end;
 
   { TModuleMethodHandle }
 
   TModuleMethodHandle = class
-  private
-    Handle: NativeMethods.TModuleMethodRef;
-  public
-    constructor Create(h: NativeMethods.TModuleRef);
+    private
+      Handle: NativeMethods.TModuleMethodRef;
+    public
+      constructor Create(h: NativeMethods.TModuleRef);
+  end;
+
+  // pretty sure this needs to be a superclass,
+  // so it can provide reference counting / self-deletion behavior
+  IFunctionValue = interface
+    procedure Apply();
   end;
 
 function Init(): Boolean;
@@ -38,13 +45,25 @@ function PopInt32(): Integer;
 procedure PushString(str: String);
 function PopString(): String;
 procedure PushInt32Array(i: Array of Integer);
+procedure PushFuncValue(f: IFunctionValue);
 
 implementation
 
 // CALLBACKS - need to be extern(C)! =========================================
 
 procedure ClientFuncExec(id: Integer); cdecl;
+var
+  x: Integer;
 begin
+  if id = 101 then
+  begin
+    WriteLn('==== fake client func :) ====');
+    x := NativeMethods.PopInt32();
+    NativeMethods.PushInt32(x * 3);
+  end else
+  begin
+    WriteLn('ClientFuncExec: unknown ID ' + IntToStr(id));
+  end;
 end;
 
 procedure ClientMethodExec(method: TInterfaceMethodRef; objID: Integer); cdecl;
@@ -53,6 +72,7 @@ end;
 
 procedure ClientResourceRelease(id: Integer); cdecl;
 begin
+  // could be function or object
 end;
 
 procedure ClientClearSafetyArea(); cdecl;
@@ -134,6 +154,15 @@ end;
 procedure PushInt32Array(i: array of Integer);
 begin
   NativeMethods.pushInt32Array(PInteger(i), Length(i));
+end;
+
+procedure PushFuncValue(f: IFunctionValue);
+var
+  id: Integer;
+begin
+  // store in a table or something, get ID
+  id := 101;
+  NativeMethods.pushClientFunc(id);
 end;
 
 { TModuleMethodHandle }

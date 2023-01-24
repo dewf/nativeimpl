@@ -6,9 +6,10 @@ uses TestLibrary, SysUtils;
 
 type
   { MyIntFunc }
-  MyIntFunc = class(ISomeIntFunc)
+  MyIntFunc = class(TInterfacedObject, ISomeIntFunc)
     public
       function Apply(x: Integer): Integer;
+      destructor Destroy; override;
   end;
 
 var
@@ -18,13 +19,18 @@ var
   valuesToSum2: Array[0..19] of Integer; // 190
   summed: Integer;
   i: Integer;
-  intFunc: ISomeIntFunc;
+  //intFunc: ISomeIntFunc;
   intFuncResult: Integer;
 
 { MyIntFunc }
 function MyIntFunc.Apply(x: Integer): Integer;
 begin
-  result := x * 3;
+  result := x * 1001;
+end;
+
+destructor MyIntFunc.Destroy;
+begin
+  writeln('MyIntFunc.Destroy!');
 end;
 
 begin
@@ -52,8 +58,7 @@ begin
   summed := TestLibrary.ArraySum(valuesToSum2);
   writeln('summed2: ' + IntToStr(summed));
 
-  intFunc := MyIntFunc.Create(); // needs to be refcounted or something
-  intFuncResult := TestLibrary.ApplyIntFunc(intFunc, 123);
+  intFuncResult := TestLibrary.ApplyIntFunc(MyIntFunc.Create(), 123);
   writeln('applyIntFunc(123) = ' + IntToStr(intFuncResult));
 
   TestLibrary.Shutdown();

@@ -1,7 +1,7 @@
 unit TestLibrary;
 
 {$mode ObjFPC}{$H+}
-{$interfaces corba} // no COM interfaces
+//{$interfaces corba} // no COM interfaces
 
 // suppress fgl inline warning shit
 {$warn 3123 off} // "inherited" not yet supported inside inline procedure/function
@@ -21,19 +21,21 @@ type
     function Apply(x: Integer): Integer;
   end;
 
-  TSomeIntFuncWrapper = class; // fwd decl
+  { dependencies for TSomeIntFuncWrapper }
 
+  TSomeIntFuncWrapper = class; // fwd decl
   TIntFuncMap = specialize TFPGMap<Pointer,TSomeIntFuncWrapper>;
 
   { TSomeIntFuncWrapper }
-  TSomeIntFuncWrapper = class(IFunctionValue)
+  TSomeIntFuncWrapper = class(TClientFuncValue)
     private
-      _map: TIntFuncMap; static;
-      _f: ISomeIntFunc;
+      _map: TIntFuncMap; static; // to make sure we're not re-wrapping a given "closure" again
+      _f: ISomeIntFunc;          // lifetime managed by interface
     public
-      class constructor Create; // static init
-      class function GetOrCreate(f: ISomeIntFunc): TSomeIntFuncWrapper;
-      procedure Apply();
+      class constructor Create;                                         // static init
+      class function GetOrCreate(f: ISomeIntFunc): TSomeIntFuncWrapper; // static factory, checks for duplicates
+      procedure Apply(); override;                                      // handles the stack operations to invoke interface-specific .Apply
+      destructor Destroy(); override;
   end;
 
 function Init(): Boolean;
@@ -118,6 +120,14 @@ begin
   NativeImplClient.PushInt32(res);
 end;
 
+destructor TSomeIntFuncWrapper.Destroy;
+begin
+  inherited Destroy;
+  // a given wrapper got destroyed, so remove its content from lookup table
+  _map.Remove(Pointer(_f));
+  writeln('TSomeIntFuncWrapper.Destroy!');
+end;
+
 class constructor TSomeIntFuncWrapper.Create;
 begin
   _map := TIntFuncMap.Create();
@@ -129,15 +139,17 @@ var
 begin
   // check to see if this particular closure already exists, return if so
   // otherwise return a new wrapper
-  if _map.TryGetData(@f, wrapper) then
+  if _map.TryGetData(Pointer(f), wrapper) then
   begin
-    wrapper := TSomeIntFuncWrapper.Create;
-    wrapper._f := f;
+    // 'wrapper' var already populated due to TryGetData above
   end else
   begin
-    // else already stored in 'wrapper', due to TryGetData
-    // but update retain count
+    // need to create
+    wrapper := TSomeIntFuncWrapper.Create;
+    wrapper._f := f;
+    _map.Add(Pointer(f), wrapper);
   end;
+  // return
   result := wrapper;
 end;
 

@@ -2,12 +2,17 @@
 unit NativeImplClient;
 
 {$mode ObjFPC}{$H+}
-{$interfaces corba} // no COM interfaces
+//{$interfaces corba} // no COM interfaces
+
+// suppress fgl inline warning shit
+{$warn 3123 off} // "inherited" not yet supported inside inline procedure/function
+{$warn 3124 off} // inlining disabled
+{$warn 6058 off} // ... marked as inline is not inlined
 
 interface
 
 uses
-  Classes, SysUtils, NativeMethods;
+  Classes, SysUtils, NativeMethods, fgl;
 
 type
 
@@ -29,10 +34,31 @@ type
       constructor Create(h: NativeMethods.TModuleRef);
   end;
 
-  // pretty sure this needs to be a superclass,
-  // so it can provide reference counting / self-deletion behavior
-  IFunctionValue = interface
-    procedure Apply();
+  { TClientResource }
+
+  TClientResource = class;
+  TResourceIdMap = specialize TFPGMap<Integer,TClientResource>;
+
+  TClientResource = class
+    private
+      _id: Integer;
+      RefCount: Integer;
+      procedure Retain();
+      procedure Release();
+    private
+      _nextId: Integer; static;
+      _resourceMap: TResourceIdMap; static;
+      class constructor Create;
+      class function GetByID(id: Integer): TClientResource;
+    public
+      constructor Create;
+  end;
+
+  { TClientFuncValue }
+
+  TClientFuncValue = class (TClientResource)
+    public
+      procedure Apply(); virtual; abstract;
   end;
 
 function Init(): Boolean;
@@ -45,7 +71,7 @@ function PopInt32(): Integer;
 procedure PushString(str: String);
 function PopString(): String;
 procedure PushInt32Array(i: Array of Integer);
-procedure PushFuncValue(f: IFunctionValue);
+procedure PushFuncValue(f: TClientFuncValue);
 
 implementation
 
@@ -53,16 +79,16 @@ implementation
 
 procedure ClientFuncExec(id: Integer); cdecl;
 var
-  x: Integer;
+  f: TClientFuncValue;
 begin
-  if id = 101 then
+  f := TClientFuncValue(TClientResource.GetByID(id));
+  if f <> nil then
   begin
-    WriteLn('==== fake client func :) ====');
-    x := NativeMethods.PopInt32();
-    NativeMethods.PushInt32(x * 3);
+    writeln('ClientFuncExec: found id ' + IntToStr(id));
+    f.Apply();
   end else
   begin
-    WriteLn('ClientFuncExec: unknown ID ' + IntToStr(id));
+    writeln('ClientFuncExec: unknown ID ' + IntToStr(id));
   end;
 end;
 
@@ -71,8 +97,17 @@ begin
 end;
 
 procedure ClientResourceRelease(id: Integer); cdecl;
+var
+  res: TClientResource;
 begin
-  // could be function or object
+  res := TClientResource.GetByID(id);
+  if res <> nil then
+  begin
+    res.Release();
+  end else
+  begin
+    writeln('ClientResourceRelease: id not found: ' + IntToStr(id));
+  end;
 end;
 
 procedure ClientClearSafetyArea(); cdecl;
@@ -156,13 +191,58 @@ begin
   NativeMethods.pushInt32Array(PInteger(i), Length(i));
 end;
 
-procedure PushFuncValue(f: IFunctionValue);
-var
-  id: Integer;
+procedure PushFuncValue(f: TClientFuncValue);
 begin
-  // store in a table or something, get ID
-  id := 101;
-  NativeMethods.pushClientFunc(id);
+  NativeMethods.pushClientFunc(f._id);
+end;
+
+{ TClientResource }
+
+constructor TClientResource.Create;
+begin
+  RefCount := 1;
+  _id := _nextId;
+  Inc(_nextId);
+  // add self to table
+  _resourceMap.Add(_id, self);
+end;
+
+procedure TClientResource.Retain;
+begin
+  Inc(RefCount);
+end;
+
+procedure TClientResource.Release;
+begin
+  Dec(RefCount);
+  if RefCount = 0 then
+  begin
+    writeln('freepascal: TClientResource releasing');
+    // need to remove from table + self destruct
+    _resourceMap.Remove(_id);
+    Destroy;
+  end;
+end;
+
+class constructor TClientResource.Create;
+begin
+  _nextId := 1;
+  _resourceMap := TResourceIdMap.Create();
+end;
+
+class function TClientResource.GetByID(id: Integer): TClientResource;
+var
+  outItem: TClientResource;
+begin
+  if _resourceMap.TryGetData(id, outItem) then
+  begin
+    // outItem already set
+  end else
+  begin
+    writeln('TClientResource.GetById() - id not found!');
+    outItem := nil;
+  end;
+  result := outItem;
 end;
 
 { TModuleMethodHandle }

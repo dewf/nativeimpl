@@ -19,26 +19,13 @@ type
     function Apply(x: Integer): Integer;
   end;
 
-  { TSomeIntFuncWrapper }
-  TSomeIntFuncWrapper = class; // fwd
-  TSomeIntFuncWrapperBase = specialize TGenericFuncWrapper<ISomeIntFunc,TSomeIntFuncWrapper>;
-  TSomeIntFuncWrapper = class (TSomeIntFuncWrapperBase)
-    public
-      procedure Apply(); override;
-  end;
-
   { IArrayFunc }
   IArrayFunc = interface
     function Apply(items: array of Integer): Integer;
   end;
 
-  { TArrayFuncWrapper }
-  TArrayFuncWrapper = class; // fwd decl
-  TArrayFuncWrapperBase = specialize TGenericFuncWrapper<IArrayFunc,TArrayFuncWrapper>;
-  TArrayFuncWrapper = class(TArrayFuncWrapperBase)
-    public
-      procedure Apply(); override;
-  end;
+procedure SomeIntFuncWrapper(f: IUnknown);
+procedure ArrayFuncWrapper(f: IUnknown);
 
 function Init(): Boolean;
 procedure Shutdown();
@@ -59,6 +46,25 @@ var
   arraySumMethod: TModuleMethodHandle;
   intFuncMethod: TModuleMethodHandle;
   arrayFuncMethod: TModuleMethodHandle;
+
+procedure SomeIntFuncWrapper(f: IUnknown);
+var
+  x, res: Integer;
+begin
+  x := NativeImplClient.PopInt32();
+  res := ISomeIntFunc(f).Apply(x);
+  NativeImplClient.PushInt32(res);
+end;
+
+procedure ArrayFuncWrapper(f: IUnknown);
+var
+  items: array of Integer;
+  res: Integer;
+begin
+  items := NativeImplClient.PopInt32Array();
+  res := IArrayFunc(f).Apply(items);
+  NativeImplClient.PushInt32(res);
+end;
 
 function Init: Boolean;
 begin
@@ -104,49 +110,19 @@ begin
 end;
 
 function ApplyIntFunc(f: ISomeIntFunc; i: Integer): Integer;
-var
-  wrapper: TSomeIntFuncWrapper;
 begin
-  wrapper := TSomeIntFuncWrapper.GetOrCreate(f);
   NativeImplClient.PushInt32(i);
-  NativeImplClient.PushFuncValue(wrapper);
+  NativeImplClient.PushFuncValue(@SomeIntFuncWrapper, f);
   NativeImplClient.InvokeModuleMethod(intFuncMethod);
   result := NativeImplClient.PopInt32();
 end;
 
 function ApplyArrayFunc(f: IArrayFunc; numItems: Integer): Integer;
-var
-  wrapper: TArrayFuncWrapper;
 begin
-  wrapper := TArrayFuncWrapper.GetOrCreate(f);
   NativeImplClient.PushInt32(numItems);
-  NativeImplClient.PushFuncValue(wrapper);
+  NativeImplClient.PushFuncValue(@ArrayFuncWrapper, f);
   NativeImplClient.InvokeModuleMethod(arrayFuncMethod);
   result := NativeImplClient.PopInt32();
-end;
-
-{ TSomeIntFuncWrapper }
-
-procedure TSomeIntFuncWrapper.Apply;
-var
-  x, res: Integer;
-begin
-  x := NativeImplClient.PopInt32();
-  res := _f.Apply(x);
-  NativeImplClient.PushInt32(res);
-end;
-
-{ TArrayFuncWrapper }
-
-procedure TArrayFuncWrapper.Apply;
-var
-  items: array of Integer;
-  res: Integer;
-begin
-  // no need for super method
-  items := NativeImplClient.PopInt32Array();
-  res := _f.Apply(items);
-  NativeImplClient.PushInt32(res);
 end;
 
 end.

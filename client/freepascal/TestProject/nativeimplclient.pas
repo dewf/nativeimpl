@@ -17,7 +17,6 @@ uses
 type
 
   { TModuleHandle }
-
   TModuleHandle = class
     private
       Handle: NativeMethods.TModuleRef;
@@ -26,7 +25,6 @@ type
   end;
 
   { TModuleMethodHandle }
-
   TModuleMethodHandle = class
     private
       Handle: NativeMethods.TModuleMethodRef;
@@ -35,7 +33,6 @@ type
   end;
 
   { TClientResource }
-
   TClientResource = class;
   TResourceIdMap = specialize TFPGMap<Integer,TClientResource>;
 
@@ -56,26 +53,19 @@ type
 
   { TClientFuncValue }
 
+  TWrapperFunc = procedure(f: IUnknown);
+
   TClientFuncValue = class (TClientResource)
+    private
+      _wrapper: TWrapperFunc;
+      _f: IUnknown;
     public
-      procedure Apply(); virtual; abstract;
+      class function GetByID(id: Integer): TClientFuncValue; inline;
+      constructor Create(wrapper: TWrapperFunc; f: IUnknown);
+      procedure Apply();
   end;
 
   TIntArray = Array of Integer;
-
-  { TGenericFuncWrapper }
-  generic TGenericFuncWrapper<FuncType,WrapperType> = class(TClientFuncValue)
-    type
-      TFuncWrapperMap = specialize TFPGMap<Pointer,WrapperType>;
-    private
-      _map: TFuncWrapperMap; static; // to make sure we're not re-wrapping a given "closure" again
-      _f: FuncType;                  // lifetime managed by interface
-    public
-      class constructor Create;                             // static init
-      class function GetOrCreate(f: FuncType): WrapperType; // static factory, checks for duplicates
-      procedure Apply(); override;
-      destructor Destroy(); override;
-  end;
 
 function Init(): Boolean;
 procedure Shutdown();
@@ -86,9 +76,11 @@ procedure PushInt32(i: Integer);
 function PopInt32(): Integer;
 procedure PushString(str: String);
 function PopString(): String;
+
 procedure PushInt32Array(i: Array of Integer);
 function PopInt32Array(): TIntArray;
-procedure PushFuncValue(f: TClientFuncValue);
+
+procedure PushFuncValue(wrapper: TWrapperFunc; f: IUnknown);
 
 implementation
 
@@ -98,7 +90,7 @@ procedure ClientFuncExec(id: Integer); cdecl;
 var
   f: TClientFuncValue;
 begin
-  f := TClientFuncValue(TClientResource.GetByID(id));
+  f := TClientFuncValue.GetByID(id);
   if f <> nil then
   begin
     writeln('ClientFuncExec: found id ' + IntToStr(id));
@@ -129,6 +121,25 @@ end;
 
 procedure ClientClearSafetyArea(); cdecl;
 begin
+end;
+
+{ TClientFuncValue }
+
+class function TClientFuncValue.GetByID(id: Integer): TClientFuncValue; inline;
+begin
+  result := TClientFuncValue(TClientResource.GetByID(id));
+end;
+
+constructor TClientFuncValue.Create(wrapper: TWrapperFunc; f: IUnknown);
+begin
+  inherited Create();
+  _wrapper := wrapper;
+  _f := f;
+end;
+
+procedure TClientFuncValue.Apply;
+begin
+  _wrapper(_f);
 end;
 
 // end callbacks ==============================================================
@@ -241,9 +252,13 @@ begin
   result := arr;
 end;
 
-procedure PushFuncValue(f: TClientFuncValue);
+procedure PushFuncValue(wrapper: TWrapperFunc; f: IUnknown);
+var
+  funcValue: TClientFuncValue;
 begin
-  NativeMethods.pushClientFunc(f._id);
+  // should be GetOrCreate(wrapper, f) so we can potentially re-use existing "closures"
+  funcValue := TClientFuncValue.Create(wrapper, f); // automatically saved as client resource
+  NativeMethods.pushClientFunc(funcValue._id);
 end;
 
 { TClientResource }
@@ -293,46 +308,6 @@ begin
     outItem := nil;
   end;
   result := outItem;
-end;
-
-{ TGenericFuncWrapper }
-
-class constructor TGenericFuncWrapper.Create;
-begin
-  _map := TFuncWrapperMap.Create();
-end;
-
-class function TGenericFuncWrapper.GetOrCreate(f: FuncType): WrapperType;
-var
-  wrapper: WrapperType;
-begin
-  // check to see if this particular closure already exists, return if so
-  // otherwise return a new wrapper
-  if _map.TryGetData(Pointer(f), wrapper) then
-  begin
-    // 'wrapper' var already populated due to TryGetData above
-  end else
-  begin
-    // need to create
-    wrapper := WrapperType.Create;
-    wrapper._f := f;
-    _map.Add(Pointer(f), wrapper);
-  end;
-  // return
-  result := wrapper;
-end;
-
-procedure TGenericFuncWrapper.Apply;
-begin
-  // this MUST be overridden!
-end;
-
-destructor TGenericFuncWrapper.Destroy;
-begin
-  inherited Destroy;
-  // a given wrapper got destroyed, so remove its content from lookup table
-  _map.Remove(Pointer(_f));
-  writeln('TGenericFuncWrapper.Destroy!');
 end;
 
 end.

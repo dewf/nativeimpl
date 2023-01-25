@@ -3,6 +3,7 @@ unit NativeImplClient;
 
 {$mode ObjFPC}{$H+}
 //{$interfaces corba} // no COM interfaces
+{$modeswitch advancedrecords}
 
 // suppress fgl inline warning shit
 {$warn 3123 off} // "inherited" not yet supported inside inline procedure/function
@@ -33,14 +34,13 @@ type
   end;
 
   { TClientResource }
-  TClientResource = class;
-  TResourceIdMap = specialize TFPGMap<Integer,TClientResource>;
-
   TClientResource = class
+    type
+      TResourceIdMap = specialize TFPGMap<Integer,TClientResource>;
     private
       _id: Integer;
       RefCount: Integer;
-      procedure Retain();
+      procedure AddRef();
       procedure Release();
     private
       _nextId: Integer; static;
@@ -51,18 +51,29 @@ type
       constructor Create;
   end;
 
-  { TClientFuncValue }
-
   TWrapperFunc = procedure(f: IUnknown);
 
+  { TClosureInfo }
+  TClosureInfo = record
+    wrapper: TWrapperFunc;
+    f: IUnknown;
+    class operator <(a, b: TClosureInfo): boolean;
+    class operator >(a, b: TClosureInfo): boolean;
+  end;
+
+  { TClientFuncValue }
   TClientFuncValue = class (TClientResource)
+    type
+      TExistingMap = specialize TFPGMap<TClosureInfo,TClientFuncValue>;
     private
-      _wrapper: TWrapperFunc;
-      _f: IUnknown;
+      existingMap: TExistingMap; static;
+      _closure: TClosureInfo;
     public
-      class function GetByID(id: Integer): TClientFuncValue; inline;
-      constructor Create(wrapper: TWrapperFunc; f: IUnknown);
+      class constructor Create; // create map
+      class function GetByID(id: Integer): TClientFuncValue; inline; // for fetching on ClientFuncExec
+      class function GetOrCreate(closure: TClosureInfo): TClientFuncValue;
       procedure Apply();
+      destructor Destroy; override; // remove self from map
   end;
 
   TIntArray = Array of Integer;
@@ -93,7 +104,7 @@ begin
   f := TClientFuncValue.GetByID(id);
   if f <> nil then
   begin
-    writeln('ClientFuncExec: found id ' + IntToStr(id));
+    writeln('ClientFuncExec: executing id ' + IntToStr(id));
     f.Apply();
   end else
   begin
@@ -123,23 +134,74 @@ procedure ClientClearSafetyArea(); cdecl;
 begin
 end;
 
+{ TClosureInfo }
+
+class operator TClosureInfo.<(a, b: TClosureInfo): boolean;
+begin
+  if Pointer(a.wrapper) < Pointer(b.wrapper) then
+    result := true
+  else
+    if Pointer(a.wrapper) = Pointer(b.wrapper) then
+      result := Pointer(a.f) < Pointer(b.f)
+    else
+      result := false
+end;
+
+class operator TClosureInfo.>(a, b: TClosureInfo): boolean;
+begin
+  if Pointer(a.wrapper) > Pointer(b.wrapper) then
+    result := true
+  else
+    if Pointer(a.wrapper) = Pointer(b.wrapper) then
+      result := Pointer(a.f) > Pointer(b.f)
+    else
+      result := false
+end;
+
 { TClientFuncValue }
+
+class constructor TClientFuncValue.Create;
+begin
+  existingMap := TExistingMap.Create;
+end;
 
 class function TClientFuncValue.GetByID(id: Integer): TClientFuncValue; inline;
 begin
   result := TClientFuncValue(TClientResource.GetByID(id));
 end;
 
-constructor TClientFuncValue.Create(wrapper: TWrapperFunc; f: IUnknown);
+class function TClientFuncValue.GetOrCreate(closure: TClosureInfo): TClientFuncValue;
+var
+  funcValue: TClientFuncValue;
 begin
-  inherited Create();
-  _wrapper := wrapper;
-  _f := f;
+  // check the map for existing
+  // if not there, create a new one
+  if existingMap.TryGetData(closure, funcValue) then
+  begin
+    // already exists
+    writeln('TClientFuncValue.GetOrCreate(): already exists, nice!');
+    // but we need to add a reference, since it's going across again (on return from this func)
+    funcValue.AddRef();
+  end else
+  begin
+    // need to create anew
+    funcValue := TClientFuncValue.Create;  // super ctor, I think
+    funcValue._closure := closure;
+    existingMap.Add(closure, funcValue);   // to find it in the future
+  end;
+  result := funcValue;
 end;
 
 procedure TClientFuncValue.Apply;
 begin
-  _wrapper(_f);
+  _closure.wrapper(_closure.f);
+end;
+
+destructor TClientFuncValue.Destroy;
+begin
+  writeln('TClientFuncValue.Destroy - removing from map');
+  // remove self from 'existing' map
+  existingMap.Remove(_closure); // closure is key
 end;
 
 // end callbacks ==============================================================
@@ -246,7 +308,7 @@ begin
   NativeMethods.popInt32Array(@values, @count);
   arr := nil;
   setLength(arr, count);
-  // how to efficiently (and correctly!) copy?
+  // TODO: how to efficiently (and correctly!) copy?
   for i := 0 to count do
       arr[i] := values[i];
   result := arr;
@@ -255,9 +317,11 @@ end;
 procedure PushFuncValue(wrapper: TWrapperFunc; f: IUnknown);
 var
   funcValue: TClientFuncValue;
+  closure: TClosureInfo;
 begin
-  // should be GetOrCreate(wrapper, f) so we can potentially re-use existing "closures"
-  funcValue := TClientFuncValue.Create(wrapper, f); // automatically saved as client resource
+  closure.wrapper := wrapper;
+  closure.f := f;
+  funcValue := TClientFuncValue.GetOrCreate(closure);
   NativeMethods.pushClientFunc(funcValue._id);
 end;
 
@@ -272,7 +336,7 @@ begin
   _resourceMap.Add(_id, self);
 end;
 
-procedure TClientResource.Retain;
+procedure TClientResource.AddRef;
 begin
   Inc(RefCount);
 end;

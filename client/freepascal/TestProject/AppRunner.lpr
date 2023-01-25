@@ -19,17 +19,7 @@ type
       function Apply(items: array of Integer): Integer;
       destructor Destroy; override;
   end;
-
-var
-  sum: Integer;
-  appendedStr: String;
-  valuesToSum: Array of Integer = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10); // 55
-  valuesToSum2: Array[0..19] of Integer; // 190
-  summed: Integer;
-  i: Integer;
-  //intFunc: ISomeIntFunc;
-  intFuncResult: Integer;
-  arrayFuncResult: Integer;
+// type end ====================
 
 { MyArrayFunc }
 
@@ -63,6 +53,21 @@ begin
   writeln('MyIntFunc.Destroy!');
 end;
 
+
+// vars =========================
+var
+  sum: Integer;
+  appendedStr: String;
+  valuesToSum: Array of Integer = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10); // 55
+  valuesToSum2: Array[0..19] of Integer; // 190
+  summed: Integer;
+  i: Integer;
+  //intFunc: ISomeIntFunc;
+  intFuncResult: Integer;
+  arrayFuncResult: Integer;
+
+  f: ISomeIntFunc;
+
 begin
   writeln('-------- app start -------------');
     
@@ -72,27 +77,35 @@ begin
         exit();
   end;
 
-  sum := TestLibrary.Sum(101, 202, 303);
-  writeln('sum is: ' + IntToStr(sum));
+  //sum := TestLibrary.Sum(101, 202, 303);
+  //writeln('sum is: ' + IntToStr(sum));
+  //
+  //appendedStr := TestLibrary.AppendToString('@@WOOT DOOT@@');
+  //writeln('appended string is: ' + appendedStr);
+  //
+  //summed := TestLibrary.ArraySum(valuesToSum);
+  //writeln('summed values: ' + IntToStr(summed));
+  //
+  //for i:=0 to 19 do
+  //begin
+  //  valuesToSum2[i] := i;
+  //end;
+  //summed := TestLibrary.ArraySum(valuesToSum2);
+  //writeln('summed2: ' + IntToStr(summed));
 
-  appendedStr := TestLibrary.AppendToString('@@WOOT DOOT@@');
-  writeln('appended string is: ' + appendedStr);
+  f := MyIntFunc.Create();
 
-  summed := TestLibrary.ArraySum(valuesToSum);
-  writeln('summed values: ' + IntToStr(summed));
+  TestLibrary.StashFunc(f);
 
-  for i:=0 to 19 do
-  begin
-    valuesToSum2[i] := i;
-  end;
-  summed := TestLibrary.ArraySum(valuesToSum2);
-  writeln('summed2: ' + IntToStr(summed));
-
-  intFuncResult := TestLibrary.ApplyIntFunc(MyIntFunc.Create(), 123);
+  intFuncResult := TestLibrary.ApplyIntFunc(f, 123);
   writeln('applyIntFunc(123) = ' + IntToStr(intFuncResult));
 
-  arrayFuncResult := TestLibrary.ApplyArrayFunc(MyArrayFunc.Create(), 100);
-  writeln('applyArrayFunc(f, 100) = ' + IntToStr(arrayFuncResult));
+  TestLibrary.ClearedStashedFunc();
+
+  f := nil;
+
+  //arrayFuncResult := TestLibrary.ApplyArrayFunc(MyArrayFunc.Create(), 100);
+  //writeln('applyArrayFunc(f, 100) = ' + IntToStr(arrayFuncResult));
 
   TestLibrary.Shutdown();
   writeln('(enter to exit)');

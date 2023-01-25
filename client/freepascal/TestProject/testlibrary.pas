@@ -34,7 +34,11 @@ procedure Shutdown();
 function Sum(a: Integer; b: Integer; c: Integer): Integer;
 function AppendToString(str: String): String;
 function ArraySum(values: Array of Integer): Integer;
+
 function ApplyIntFunc(f: ISomeIntFunc; i: Integer): Integer;
+procedure StashFunc(f: ISomeIntFunc);
+procedure ClearedStashedFunc();
+
 function ApplyArrayFunc(f: IArrayFunc; numItems: Integer): Integer;
 
 implementation
@@ -45,6 +49,8 @@ var
   appendToStringMethod: TModuleMethodHandle;
   arraySumMethod: TModuleMethodHandle;
   intFuncMethod: TModuleMethodHandle;
+  stashFuncMethod: TModuleMethodHandle;
+  clearStashedFuncMethod: TModuleMethodHandle;
   arrayFuncMethod: TModuleMethodHandle;
 
 procedure SomeIntFuncWrapper(f: IUnknown);
@@ -78,6 +84,8 @@ begin
   appendToStringMethod := NativeImplClient.GetModuleMethod(m, 'appendToString');
   arraySumMethod := NativeImplClient.GetModuleMethod(m, 'arraySum');
   intFuncMethod := NativeImplClient.GetModuleMethod(m, 'applyIntFunc');
+  stashFuncMethod := NativeImplClient.GetModuleMethod(m, 'stashFunc');
+  clearStashedFuncMethod := NativeImplClient.GetModuleMethod(m, 'clearStashedFunc');
   arrayFuncMethod := NativeImplClient.GetModuleMethod(m, 'applyArrayFunc');
 end;
 
@@ -115,6 +123,17 @@ begin
   NativeImplClient.PushFuncValue(@SomeIntFuncWrapper, f);
   NativeImplClient.InvokeModuleMethod(intFuncMethod);
   result := NativeImplClient.PopInt32();
+end;
+
+procedure StashFunc(f: ISomeIntFunc);
+begin
+  NativeImplClient.PushFuncValue(@SomeIntFuncWrapper, f);
+  NativeImplClient.InvokeModuleMethod(stashFuncMethod);
+end;
+
+procedure ClearedStashedFunc;
+begin
+  NativeImplClient.InvokeModuleMethod(clearStashedFuncMethod);
 end;
 
 function ApplyArrayFunc(f: IArrayFunc; numItems: Integer): Integer;

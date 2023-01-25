@@ -3,17 +3,11 @@ unit NativeImplClient;
 
 {$mode ObjFPC}{$H+}
 //{$interfaces corba} // no COM interfaces
-{$modeswitch advancedrecords}
-
-// suppress fgl inline warning shit
-{$warn 3123 off} // "inherited" not yet supported inside inline procedure/function
-{$warn 3124 off} // inlining disabled
-{$warn 6058 off} // ... marked as inline is not inlined
 
 interface
 
 uses
-  Classes, SysUtils, NativeMethods, fgl;
+  Classes, SysUtils, NativeMethods, ClientResource, ClientFuncValue;
 
 type
 
@@ -31,49 +25,6 @@ type
       Handle: NativeMethods.TModuleMethodRef;
     public
       constructor Create(h: NativeMethods.TModuleRef);
-  end;
-
-  { TClientResource }
-  TClientResource = class
-    type
-      TResourceIdMap = specialize TFPGMap<Integer,TClientResource>;
-    private
-      _id: Integer;
-      RefCount: Integer;
-      procedure AddRef();
-      procedure Release();
-    private
-      _nextId: Integer; static;
-      _resourceMap: TResourceIdMap; static;
-      class constructor Create;
-      class function GetByID(id: Integer): TClientResource;
-    public
-      constructor Create;
-  end;
-
-  TWrapperFunc = procedure(f: IUnknown);
-
-  { TClosureInfo }
-  TClosureInfo = record
-    wrapper: TWrapperFunc;
-    f: IUnknown;
-    class operator <(a, b: TClosureInfo): boolean;
-    class operator >(a, b: TClosureInfo): boolean;
-  end;
-
-  { TClientFuncValue }
-  TClientFuncValue = class (TClientResource)
-    type
-      TExistingMap = specialize TFPGMap<TClosureInfo,TClientFuncValue>;
-    private
-      existingMap: TExistingMap; static;
-      _closure: TClosureInfo;
-    public
-      class constructor Create; // create map
-      class function GetByID(id: Integer): TClientFuncValue; inline; // for fetching on ClientFuncExec
-      class function GetOrCreate(closure: TClosureInfo): TClientFuncValue;
-      procedure Apply();
-      destructor Destroy; override; // remove self from map
   end;
 
   TIntArray = Array of Integer;
@@ -132,76 +83,6 @@ end;
 
 procedure ClientClearSafetyArea(); cdecl;
 begin
-end;
-
-{ TClosureInfo }
-
-class operator TClosureInfo.<(a, b: TClosureInfo): boolean;
-begin
-  if Pointer(a.wrapper) < Pointer(b.wrapper) then
-    result := true
-  else
-    if Pointer(a.wrapper) = Pointer(b.wrapper) then
-      result := Pointer(a.f) < Pointer(b.f)
-    else
-      result := false
-end;
-
-class operator TClosureInfo.>(a, b: TClosureInfo): boolean;
-begin
-  if Pointer(a.wrapper) > Pointer(b.wrapper) then
-    result := true
-  else
-    if Pointer(a.wrapper) = Pointer(b.wrapper) then
-      result := Pointer(a.f) > Pointer(b.f)
-    else
-      result := false
-end;
-
-{ TClientFuncValue }
-
-class constructor TClientFuncValue.Create;
-begin
-  existingMap := TExistingMap.Create;
-end;
-
-class function TClientFuncValue.GetByID(id: Integer): TClientFuncValue; inline;
-begin
-  result := TClientFuncValue(TClientResource.GetByID(id));
-end;
-
-class function TClientFuncValue.GetOrCreate(closure: TClosureInfo): TClientFuncValue;
-var
-  funcValue: TClientFuncValue;
-begin
-  // check the map for existing
-  // if not there, create a new one
-  if existingMap.TryGetData(closure, funcValue) then
-  begin
-    // already exists
-    writeln('TClientFuncValue.GetOrCreate(): already exists, nice!');
-    // but we need to add a reference, since it's going across again (on return from this func)
-    funcValue.AddRef();
-  end else
-  begin
-    // need to create anew
-    funcValue := TClientFuncValue.Create;  // super ctor, I think
-    funcValue._closure := closure;
-    existingMap.Add(closure, funcValue);   // to find it in the future
-  end;
-  result := funcValue;
-end;
-
-procedure TClientFuncValue.Apply;
-begin
-  _closure.wrapper(_closure.f);
-end;
-
-destructor TClientFuncValue.Destroy;
-begin
-  writeln('TClientFuncValue.Destroy - removing from map');
-  // remove self from 'existing' map
-  existingMap.Remove(_closure); // closure is key
 end;
 
 // end callbacks ==============================================================
@@ -323,53 +204,5 @@ begin
   NativeMethods.pushClientFunc(funcValue._id);
 end;
 
-{ TClientResource }
-
-constructor TClientResource.Create;
-begin
-  RefCount := 1;
-  _id := _nextId;
-  Inc(_nextId);
-  // add self to table
-  _resourceMap.Add(_id, self);
-end;
-
-procedure TClientResource.AddRef;
-begin
-  Inc(RefCount);
-end;
-
-procedure TClientResource.Release;
-begin
-  Dec(RefCount);
-  if RefCount = 0 then
-  begin
-    writeln('freepascal: TClientResource releasing');
-    // need to remove from table + self destruct
-    _resourceMap.Remove(_id);
-    Destroy;
-  end;
-end;
-
-class constructor TClientResource.Create;
-begin
-  _nextId := 1;
-  _resourceMap := TResourceIdMap.Create();
-end;
-
-class function TClientResource.GetByID(id: Integer): TClientResource;
-var
-  outItem: TClientResource;
-begin
-  if _resourceMap.TryGetData(id, outItem) then
-  begin
-    // outItem already set
-  end else
-  begin
-    writeln('TClientResource.GetById() - id not found!');
-    outItem := nil;
-  end;
-  result := outItem;
-end;
 
 end.

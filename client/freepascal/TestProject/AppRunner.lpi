@@ -44,6 +44,16 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="TestLibrary"/>
       </Unit>
+      <Unit>
+        <Filename Value="clientresource.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="ClientResource"/>
+      </Unit>
+      <Unit>
+        <Filename Value="clientfuncvalue.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="ClientFuncValue"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

@@ -3,15 +3,10 @@ unit TestLibrary;
 {$mode ObjFPC}{$H+}
 //{$interfaces corba} // no COM interfaces
 
-// suppress fgl inline warning shit
-{$warn 3123 off} // "inherited" not yet supported inside inline procedure/function
-{$warn 3124 off} // inlining disabled
-{$warn 6058 off} // ... marked as inline is not inlined
-
 interface
 
 uses
-  Classes, SysUtils, NativeImplClient; // , fgl;
+  Classes, SysUtils, NativeImplClient;
 
 type
   { ISomeIntFunc }
@@ -53,6 +48,8 @@ var
   clearStashedFuncMethod: TModuleMethodHandle;
   arrayFuncMethod: TModuleMethodHandle;
 
+// function val wrappers ===========================
+
 procedure SomeIntFuncWrapper(f: IUnknown);
 var
   x, res: Integer;
@@ -71,6 +68,8 @@ begin
   res := IArrayFunc(f).Apply(items);
   NativeImplClient.PushInt32(res);
 end;
+
+// end func val wrappers ===========================
 
 function Init: Boolean;
 begin

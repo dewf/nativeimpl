@@ -13,16 +13,15 @@ type
   end;
 
   { MyArrayFunc }
-
   MyArrayFunc = class(TInterfacedObject, IArrayFunc)
     public
       function Apply(items: array of Integer): Integer;
       destructor Destroy; override;
   end;
-// type end ====================
+
+// functions ============================================
 
 { MyArrayFunc }
-
 function MyArrayFunc.Apply(items: array of Integer): Integer;
 var
   i, sum: Integer;
@@ -68,6 +67,7 @@ var
 
   f: ISomeIntFunc;
 
+// app proper ====================
 begin
   writeln('-------- app start -------------');
     
@@ -77,12 +77,12 @@ begin
         exit();
   end;
 
-  //sum := TestLibrary.Sum(101, 202, 303);
-  //writeln('sum is: ' + IntToStr(sum));
-  //
-  //appendedStr := TestLibrary.AppendToString('@@WOOT DOOT@@');
-  //writeln('appended string is: ' + appendedStr);
-  //
+  sum := TestLibrary.Sum(101, 202, 303);
+  writeln('sum is: ' + IntToStr(sum));
+
+  appendedStr := TestLibrary.AppendToString('@@WOOT DOOT@@');
+  writeln('appended string is: ' + appendedStr);
+
   summed := TestLibrary.ArraySum(valuesToSum);
   writeln('summed values: ' + IntToStr(summed));
 
@@ -95,14 +95,13 @@ begin
 
   f := MyIntFunc.Create();
 
-  //TestLibrary.StashFunc(f);
+  TestLibrary.StashFunc(f);
 
   intFuncResult := TestLibrary.ApplyIntFunc(f, 123);
   writeln('applyIntFunc(123) = ' + IntToStr(intFuncResult));
 
-  //TestLibrary.ClearedStashedFunc();
-
-  //f := nil;
+  TestLibrary.ClearedStashedFunc();
+  f := nil;
 
   arrayFuncResult := TestLibrary.ApplyArrayFunc(MyArrayFunc.Create(), 100);
   writeln('applyArrayFunc(f, 100) = ' + IntToStr(arrayFuncResult));

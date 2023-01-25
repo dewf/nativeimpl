@@ -303,14 +303,12 @@ var
   values: PInteger;
   count: NativeUInt;
   arr: array of Integer;
-  i: Integer;
 begin
   NativeMethods.popInt32Array(@values, @count);
   arr := nil;
   setLength(arr, count);
-  // TODO: how to efficiently (and correctly!) copy?
-  for i := 0 to count do
-      arr[i] := values[i];
+  // no way to treat values+count as an array?
+  Move(values^,Pointer(arr)^,count * sizeof(Integer));
   result := arr;
 end;
 

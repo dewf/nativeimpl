@@ -17,7 +17,6 @@ type
       destructor Destroy; override;
   end;
 
-
 implementation
 
 { TServerResource }
@@ -30,6 +29,7 @@ end;
 destructor TServerResource.Destroy;
 begin
   NativeMethods.releaseServerResource(_id);
+  inherited Destroy;
 end;
 
 end.

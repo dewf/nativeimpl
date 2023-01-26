@@ -8,12 +8,12 @@ uses
   Classes, SysUtils;
 
 type
-  TModuleRef = NativeUInt;
-  TModuleMethodRef = NativeUInt;
-  TInterfaceRef = NativeUInt;
-  TInterfaceMethodRef = NativeUInt;
-  TObjectRef = NativeUInt;
-  TExceptionRef = NativeUInt;
+  TModuleRef = Type NativeUInt;
+  TModuleMethodRef = Type NativeUInt;
+  TInterfaceRef = Type NativeUInt;
+  TInterfaceMethodRef = Type NativeUInt;
+  TObjectRef = Type NativeUInt;
+  TExceptionRef = Type NativeUInt;
 
   TClientFuncExec = procedure(id: Integer); cdecl;
   TClientMethodExec = procedure(method: TInterfaceMethodRef; objID: Integer); cdecl;
@@ -30,6 +30,10 @@ procedure nativeImplShutdown(); cdecl; external 'TestLibrary.dll';
 
 function getModule(name: PChar): TModuleRef; cdecl; external 'TestLibrary.dll';
 function getModuleMethod(m: TModuleRef; name: PChar): TModuleMethodRef; cdecl; external 'TestLibrary.dll';
+function getInterface(m: TModuleRef; name: PChar): TInterfaceRef; cdecl; external 'TestLibrary.dll';
+function getInterfaceMethod(iface: TInterfaceRef; name: PChar): TInterfaceMethodRef; cdecl; external 'TestLibrary.dll';
+function getException(m: TModuleRef; name: PChar): TExceptionRef; cdecl; external 'TestLibrary.dll';
+procedure pushModuleConstants(m: TModuleRef); cdecl; external 'TestLibrary.dll';
 
 procedure invokeModuleMethod(method: TModuleMethodRef); cdecl; external 'TestLibrary.dll';
 

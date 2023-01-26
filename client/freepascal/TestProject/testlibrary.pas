@@ -6,7 +6,7 @@ unit TestLibrary;
 interface
 
 uses
-  Classes, SysUtils, NativeImplClient, ServerFuncVal;
+  Classes, SysUtils, NativeImplClient, ServerFuncVal, ServerObject;
 
 type
   { ISomeIntFunc }
@@ -19,13 +19,16 @@ type
     function Apply(items: array of Integer): Integer;
   end;
 
-procedure SimpleIntFuncWrapper(f: IUnknown);
-procedure ArrayFuncWrapper(f: IUnknown);
+  { IThing01 }
+  ICoolThing = interface
+    function DoSomething(x: Integer): Integer;
+  end;
+
+// exported methods:
 
 function Init(): Boolean;
 procedure Shutdown();
 
-// exported methods:
 function Sum(a: Integer; b: Integer; c: Integer): Integer;
 function AppendToString(str: String): String;
 function ArraySum(values: Array of Integer): Integer;
@@ -38,22 +41,11 @@ function MakeIntFunc(): ISimpleIntFunc;
 
 function ApplyArrayFunc(f: IArrayFunc; numItems: Integer): Integer;
 
+function MakeThing(): ICoolThing;
+
 implementation
 
 type
-
-  { TServerIntFuncWrapper }
-
-  //TServerIntFuncWrapper = class(TInterfacedObject, ISimpleIntFunc)
-  //  private
-  //    _f: TServerFuncVal;
-  //  public
-  //    class function Pop(): ISimpleIntFunc;
-  //    constructor Create(f: TServerFuncVal);
-  //    function Apply(x: Integer): Integer; // actual signature
-  //    destructor Destroy; override;
-  //end;
-
   { TServerIntFuncWrapper }
   TServerIntFuncWrapper = class; // fwd
   TServerIntFuncWrapperBase = specialize TServerFuncWrapperBase<ISimpleIntFunc, TServerIntFuncWrapper>;
@@ -61,6 +53,18 @@ type
     public
       function Apply(x: Integer): Integer;
   end;
+
+  { TServerCoolThing }
+  TServerCoolThing = class(TInterfacedObject, ICoolThing)
+    private
+      _obj: TServerObject;
+    public
+      constructor Create(id: Integer);
+      function DoSomething(x: Integer): Integer;
+      destructor Destroy; override;
+  end;
+
+// private stuff
 
 var
   m: TModuleHandle;
@@ -73,8 +77,13 @@ var
   arrayFuncMethod: TModuleMethodHandle;
   makeIntFuncMethod: TModuleMethodHandle;
 
-// function val wrappers ===========================
+  makeThingMethod: TModuleMethodHandle;
 
+  // IThing01 methods
+  coolThing__iface: TInterfaceHandle;
+  coolThing__doSomethingMethod: TInterfaceMethodHandle;
+
+// function val wrappers ===========================
 procedure SimpleIntFuncWrapper(f: IUnknown);
 var
   x, res: Integer;
@@ -93,8 +102,59 @@ begin
   res := IArrayFunc(f).Apply(items);
   NativeImplClient.PushInt32(res);
 end;
-
 // end func val wrappers ===========================
+
+// private functions
+
+function ICoolThing__Pop: ICoolThing;
+var
+  id: Integer;
+  isClientId, inSafetyArea: Boolean;
+begin
+  id := NativeImplClient.PopInstance(isClientId, inSafetyArea);
+  if isClientId then
+  begin
+    // short circuit
+    writeln('ICoolThing__Pop: client pop not yet implemented');
+    result := nil;
+    // clear safety area, only a client thing? I forget
+  end else
+  begin
+    // create server object
+    result := TServerCoolThing.Create(id);
+    // safety area??
+  end;
+end;
+
+{ TServerCoolThing }
+constructor TServerCoolThing.Create(id: Integer);
+begin
+  _obj := TServerObject.Create(id);
+end;
+
+function TServerCoolThing.DoSomething(x: Integer): Integer;
+begin
+  NativeImplClient.PushInt32(x);
+  _obj.InvokeMethod(coolThing__doSomethingMethod);
+  result := NativeImplClient.PopInt32();
+end;
+
+destructor TServerCoolThing.Destroy;
+begin
+  _obj.Free;
+  inherited Destroy;
+end;
+
+function TServerIntFuncWrapper.Apply(x: Integer): Integer;
+begin
+  NativeImplClient.PushInt32(x);
+  _f.Invoke();
+  result := NativeImplClient.PopInt32();
+end;
+
+// end private functions
+
+// begin exported functions ==================================================
 
 function Init: Boolean;
 begin
@@ -112,6 +172,12 @@ begin
   clearStashedFuncMethod := NativeImplClient.GetModuleMethod(m, 'clearStashedFunc');
   arrayFuncMethod := NativeImplClient.GetModuleMethod(m, 'applyArrayFunc');
   makeIntFuncMethod := NativeImplClient.GetModuleMethod(m, 'makeIntFunc');
+
+  makeThingMethod := NativeImplClient.GetModuleMethod(m, 'makeThing');
+
+  coolThing__iface := NativeImplClient.GetInterface(m, 'CoolThing');
+  coolThing__doSomethingMethod := NativeImplClient.GetInterfaceMethod(coolThing__iface, 'doSomething');
+
 end;
 
 procedure Shutdown;
@@ -176,34 +242,12 @@ begin
   result := NativeImplClient.PopInt32();
 end;
 
-{ TServerIntFuncWrapper }
-
-//class function TServerIntFuncWrapper.Pop: ISimpleIntFunc;
-//var
-//  f: TServerFuncVal;
-//begin
-//  f := NativeImplClient.PopServerFuncVal();
-//  result := TServerIntFuncWrapper.Create(f);
-//end;
-//
-//constructor TServerIntFuncWrapper.Create(f: TServerFuncVal);
-//begin
-//  inherited Create;
-//  _f := f;
-//end;
-
-function TServerIntFuncWrapper.Apply(x: Integer): Integer;
+function MakeThing: ICoolThing;
 begin
-  NativeImplClient.PushInt32(x);
-  _f.Invoke();
-  result := NativeImplClient.PopInt32();
+  NativeImplClient.InvokeModuleMethod(makeThingMethod);
+  result := ICoolThing__Pop();
 end;
 
-//destructor TServerIntFuncWrapper.Destroy;
-//begin
-//  _f.Free();
-//  inherited Destroy;
-//end;
-
+// module end
 end.
 

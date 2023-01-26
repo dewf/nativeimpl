@@ -66,6 +66,8 @@ var
   intFuncResult: Integer;
   arrayFuncResult: Integer;
   serverFunc: ISimpleIntFunc;
+
+  thing: ICoolThing;
 begin
   //sum := TestLibrary.Sum(101, 202, 303);
   //writeln('sum is: ' + IntToStr(sum));
@@ -96,9 +98,16 @@ begin
   //arrayFuncResult := TestLibrary.ApplyArrayFunc(MyArrayFunc.Create(), 100);
   //writeln('applyArrayFunc(f, 100) = ' + IntToStr(arrayFuncResult));
 
-  serverFunc := TestLibrary.MakeIntFunc();
-  i := serverFunc.Apply(981);
-  writeln('serverFunc(981) = ' + IntToStr(i));
+  //serverFunc := TestLibrary.MakeIntFunc();
+  //i := serverFunc.Apply(981);
+  //writeln('serverFunc(981) = ' + IntToStr(i));
+  //
+  //i := TestLibrary.ApplyIntFunc(serverFunc, 567);
+  //writeln('applyIntFunc(serverFunc, 567) = ' + IntToStr(i));
+
+  thing := TestLibrary.MakeThing();
+  i := thing.doSomething(9876);
+  writeln('thing.doSomething(9876) = ' + IntToStr(i));
 end;
 
 // app proper ====================

@@ -10,22 +10,18 @@ uses
   Classes, SysUtils, NativeMethods, ClientResource, ClientFuncValue, ServerFuncVal;
 
 type
-
-  { TModuleHandle }
-  TModuleHandle = class
+  { THandle }
+  generic THandle<T> = class
     private
-      Handle: NativeMethods.TModuleRef;
+      Handle: T;
     public
-      constructor Create(h: NativeMethods.TModuleRef);
+      constructor Create(h: T);
   end;
 
-  { TModuleMethodHandle }
-  TModuleMethodHandle = class
-    private
-      Handle: NativeMethods.TModuleMethodRef;
-    public
-      constructor Create(h: NativeMethods.TModuleRef);
-  end;
+  TModuleHandle = specialize THandle<NativeMethods.TModuleRef>;
+  TModuleMethodHandle = specialize THandle<NativeMethods.TModuleMethodRef>;
+  TInterfaceHandle = specialize THandle<NativeMethods.TInterfaceRef>;
+  TInterfaceMethodHandle = specialize THandle<NativeMethods.TInterfaceMethodRef>;
 
   TIntArray = Array of Integer;
 
@@ -33,7 +29,12 @@ function Init(): Boolean;
 procedure Shutdown();
 function GetModule(Name: String): TModuleHandle;
 function GetModuleMethod(m: TModuleHandle; Name: String): TModuleMethodHandle;
+function GetInterface(m: TModuleHandle; Name: String): TInterfaceHandle;
+function GetInterfaceMethod(iface: TInterfaceHandle; Name: String): TInterfaceMethodHandle;
+
 procedure InvokeModuleMethod(method: TModuleMethodHandle);
+procedure InvokeInterfaceMethod(method: TInterfaceMethodHandle; objID: Integer);
+
 procedure PushInt32(i: Integer);
 function PopInt32(): Integer;
 procedure PushString(str: String);
@@ -46,7 +47,10 @@ function PopServerFuncVal(): TServerFuncVal;
 
 procedure PushFuncValue(wrapper: TWrapperFunc; f: IUnknown);
 
+function PopInstance(out isClientID: Boolean; out inSafetyArea: Boolean): Integer;
+
 procedure ClearServerSafetyArea();
+procedure ReleaseServerResource(id: Integer);
 
 implementation
 
@@ -91,19 +95,10 @@ end;
 
 // end callbacks ==============================================================
 
-
-{ TModuleMethodHandle }
-
-constructor TModuleMethodHandle.Create(h: NativeMethods.TModuleRef);
+{ THandle }
+constructor THandle.Create(h: T);
 begin
-  self.Handle := h;
-end;
-
-{ TModuleHandle }
-
-constructor TModuleHandle.Create(h: NativeMethods.TModuleRef);
-begin
-  self.Handle := h;
+  Handle := h;
 end;
 
 // main exports:
@@ -135,7 +130,7 @@ begin
   end;
 end;
 
-function GetModuleMethod(m: TModuleHandle; Name: String): TModuleMethodHandle;
+function GetModuleMethod(m: TModuleHandle; name: String): TModuleMethodHandle;
 var
   rawHandle: NativeMethods.TModuleMethodRef;
 begin
@@ -149,9 +144,36 @@ begin
   end;
 end;
 
+function GetInterface(m: TModuleHandle; name: String): TInterfaceHandle;
+var
+  rawHandle: NativeMethods.TInterfaceRef;
+begin
+  rawHandle := NativeMethods.getInterface(m.Handle, PChar(name));
+  if rawHandle <> 0 then
+  begin
+    Result := TInterfaceHandle.Create(rawHandle);
+  end;
+end;
+
+function GetInterfaceMethod(iface: TInterfaceHandle; name: String): TInterfaceMethodHandle;
+var
+  rawHandle: NativeMethods.TInterfaceMethodRef;
+begin
+  rawHandle := NativeMethods.getInterfaceMethod(iface.Handle, PChar(name));
+  if rawHandle <> 0 then
+  begin
+    result := TInterfaceMethodHandle.Create(rawHandle);
+  end;
+end;
+
 procedure InvokeModuleMethod(method: TModuleMethodHandle);
 begin
   NativeMethods.invokeModuleMethod(method.Handle);
+end;
+
+procedure InvokeInterfaceMethod(method: TInterfaceMethodHandle; objID: Integer);
+begin
+  NativeMethods.invokeInterfaceMethod(method.Handle, objID);
 end;
 
 procedure PushInt32(i: Integer);
@@ -216,9 +238,19 @@ begin
   NativeMethods.pushClientFunc(funcValue._id);
 end;
 
+function PopInstance(out isClientID: Boolean; out inSafetyArea: Boolean): Integer;
+begin
+  result := NativeMethods.popInstance(@isClientID, @inSafetyArea);
+end;
+
 procedure ClearServerSafetyArea;
 begin
   NativeMethods.clearServerSafetyArea();
+end;
+
+procedure ReleaseServerResource(id: Integer);
+begin
+  NativeMethods.releaseServerResource(id);
 end;
 
 

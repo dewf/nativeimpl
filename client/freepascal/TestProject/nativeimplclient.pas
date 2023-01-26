@@ -7,7 +7,7 @@ unit NativeImplClient;
 interface
 
 uses
-  Classes, SysUtils, NativeMethods, ClientResource, ClientFuncValue;
+  Classes, SysUtils, NativeMethods, ClientResource, ClientFuncValue, ServerFuncVal;
 
 type
 
@@ -42,7 +42,11 @@ function PopString(): String;
 procedure PushInt32Array(i: Array of Integer);
 function PopInt32Array(): TIntArray;
 
+function PopServerFuncVal(): TServerFuncVal;
+
 procedure PushFuncValue(wrapper: TWrapperFunc; f: IUnknown);
+
+procedure ClearServerSafetyArea();
 
 implementation
 
@@ -193,6 +197,14 @@ begin
   result := arr;
 end;
 
+function PopServerFuncVal: TServerFuncVal;
+var
+  id: Integer;
+begin
+  id := NativeMethods.popServerFunc();
+  result := TServerFuncVal.Create(id);
+end;
+
 procedure PushFuncValue(wrapper: TWrapperFunc; f: IUnknown);
 var
   funcValue: TClientFuncValue;
@@ -202,6 +214,11 @@ begin
   closure.f := f;
   funcValue := TClientFuncValue.GetOrCreate(closure);
   NativeMethods.pushClientFunc(funcValue._id);
+end;
+
+procedure ClearServerSafetyArea;
+begin
+  NativeMethods.clearServerSafetyArea();
 end;
 
 

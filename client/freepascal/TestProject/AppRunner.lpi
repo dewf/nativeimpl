@@ -54,6 +54,16 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="ClientFuncValue"/>
       </Unit>
+      <Unit>
+        <Filename Value="serverresource.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="ServerResource"/>
+      </Unit>
+      <Unit>
+        <Filename Value="serverfuncval.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="ServerFuncVal"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

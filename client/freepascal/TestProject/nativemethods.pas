@@ -44,6 +44,19 @@ procedure pushClientFunc(id: Integer); cdecl; external 'TestLibrary.dll';
 procedure pushInt32Array(values: PInteger; count: NativeUInt); cdecl; external 'TestLibrary.dll';
 procedure popInt32Array(values: PPtrInt; count: PNativeUInt); cdecl; external 'TestLibrary.dll';
 
+function popServerFunc(): Integer; cdecl; external 'TestLibrary.dll';
+
+procedure execServerFunc(id: Integer); cdecl; external 'TestLibrary.dll';
+function execServerFuncWithExceptions(id: Integer): TExceptionRef; cdecl; external 'TestLibrary.dll';
+
+procedure invokeInterfaceMethod(method: TInterfaceMethodRef; serverID: Integer); cdecl; external 'TestLibrary.dll';
+function invokeInterfaceMethodWithExceptions(method: TInterfaceMethodRef; serverID: Integer): TExceptionRef; cdecl; external 'TestLibrary.dll';
+procedure pushInstance(id: Integer; isClientId: Boolean; inSafetyArea: Boolean); cdecl; external 'TestLibrary.dll';
+function popInstance(isClientId: PBoolean; inSafetyArea: PBoolean): Integer; cdecl; external 'TestLibrary.dll';
+procedure pushNull(); cdecl; external 'TestLibrary.dll';
+procedure releaseServerResource(id: Integer); cdecl; external 'TestLibrary.dll';
+procedure clearServerSafetyArea(); cdecl; external 'TestLibrary.dll';
+
 implementation
 
 end.

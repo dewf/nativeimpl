@@ -6,7 +6,7 @@ uses TestLibrary, SysUtils;
 
 type
   { MyIntFunc }
-  MyIntFunc = class(TInterfacedObject, ISomeIntFunc)
+  MyIntFunc = class(TInterfacedObject, ISimpleIntFunc)
     public
       function Apply(x: Integer): Integer;
       destructor Destroy; override;
@@ -52,8 +52,9 @@ begin
   writeln('MyIntFunc.Destroy!');
 end;
 
-
-// vars =========================
+// everything in a proc so that we can test interface method counting
+// (if done at root application level, stuff doesn't get freed)
+procedure TestEverything();
 var
   sum: Integer;
   appendedStr: String;
@@ -61,50 +62,57 @@ var
   valuesToSum2: Array[0..19] of Integer; // 190
   summed: Integer;
   i: Integer;
-  //intFunc: ISomeIntFunc;
+  intFunc: ISimpleIntFunc;
   intFuncResult: Integer;
   arrayFuncResult: Integer;
+  serverFunc: ISimpleIntFunc;
+begin
+  //sum := TestLibrary.Sum(101, 202, 303);
+  //writeln('sum is: ' + IntToStr(sum));
+  //
+  //appendedStr := TestLibrary.AppendToString('@@WOOT DOOT@@');
+  //writeln('appended string is: ' + appendedStr);
+  //
+  //summed := TestLibrary.ArraySum(valuesToSum);
+  //writeln('summed values: ' + IntToStr(summed));
+  //
+  //for i:=0 to 19 do
+  //begin
+  //  valuesToSum2[i] := i;
+  //end;
+  //summed := TestLibrary.ArraySum(valuesToSum2);
+  //writeln('summed2: ' + IntToStr(summed));
+  //
+  //intFunc := MyIntFunc.Create();
+  //
+  //TestLibrary.StashFunc(intFunc);
+  //
+  //intFuncResult := TestLibrary.ApplyIntFunc(intFunc, 123);
+  //writeln('applyIntFunc(123) = ' + IntToStr(intFuncResult));
+  //
+  //TestLibrary.ClearedStashedFunc();
+  //intFunc := nil;
+  //
+  //arrayFuncResult := TestLibrary.ApplyArrayFunc(MyArrayFunc.Create(), 100);
+  //writeln('applyArrayFunc(f, 100) = ' + IntToStr(arrayFuncResult));
 
-  f: ISomeIntFunc;
+  serverFunc := TestLibrary.MakeIntFunc();
+  i := serverFunc.Apply(981);
+  writeln('serverFunc(981) = ' + IntToStr(i));
+end;
 
 // app proper ====================
 begin
   writeln('-------- app start -------------');
-    
   if not TestLibrary.Init() then
   begin
         writeln('init failed :(');
         exit();
   end;
 
-  sum := TestLibrary.Sum(101, 202, 303);
-  writeln('sum is: ' + IntToStr(sum));
-
-  appendedStr := TestLibrary.AppendToString('@@WOOT DOOT@@');
-  writeln('appended string is: ' + appendedStr);
-
-  summed := TestLibrary.ArraySum(valuesToSum);
-  writeln('summed values: ' + IntToStr(summed));
-
-  for i:=0 to 19 do
-  begin
-    valuesToSum2[i] := i;
-  end;
-  summed := TestLibrary.ArraySum(valuesToSum2);
-  writeln('summed2: ' + IntToStr(summed));
-
-  f := MyIntFunc.Create();
-
-  TestLibrary.StashFunc(f);
-
-  intFuncResult := TestLibrary.ApplyIntFunc(f, 123);
-  writeln('applyIntFunc(123) = ' + IntToStr(intFuncResult));
-
-  TestLibrary.ClearedStashedFunc();
-  f := nil;
-
-  arrayFuncResult := TestLibrary.ApplyArrayFunc(MyArrayFunc.Create(), 100);
-  writeln('applyArrayFunc(f, 100) = ' + IntToStr(arrayFuncResult));
+  // separated into a function so we can test refcounting
+  // at root program level stuff never got freed ...
+  TestEverything();
 
   TestLibrary.Shutdown();
   writeln('(enter to exit)');

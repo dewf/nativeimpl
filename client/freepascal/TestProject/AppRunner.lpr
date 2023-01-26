@@ -53,7 +53,7 @@ begin
 end;
 
 // everything in a proc so that we can test interface method counting
-// (if done at root application level, stuff doesn't get freed)
+// (if done at root application level, stuff doesn't get freed at end)
 procedure TestEverything();
 var
   sum: Integer;
@@ -69,41 +69,41 @@ var
 
   thing: ICoolThing;
 begin
-  //sum := TestLibrary.Sum(101, 202, 303);
-  //writeln('sum is: ' + IntToStr(sum));
-  //
-  //appendedStr := TestLibrary.AppendToString('@@WOOT DOOT@@');
-  //writeln('appended string is: ' + appendedStr);
-  //
-  //summed := TestLibrary.ArraySum(valuesToSum);
-  //writeln('summed values: ' + IntToStr(summed));
-  //
-  //for i:=0 to 19 do
-  //begin
-  //  valuesToSum2[i] := i;
-  //end;
-  //summed := TestLibrary.ArraySum(valuesToSum2);
-  //writeln('summed2: ' + IntToStr(summed));
-  //
-  //intFunc := MyIntFunc.Create();
-  //
-  //TestLibrary.StashFunc(intFunc);
-  //
-  //intFuncResult := TestLibrary.ApplyIntFunc(intFunc, 123);
-  //writeln('applyIntFunc(123) = ' + IntToStr(intFuncResult));
-  //
-  //TestLibrary.ClearedStashedFunc();
-  //intFunc := nil;
-  //
-  //arrayFuncResult := TestLibrary.ApplyArrayFunc(MyArrayFunc.Create(), 100);
-  //writeln('applyArrayFunc(f, 100) = ' + IntToStr(arrayFuncResult));
+  sum := TestLibrary.Sum(101, 202, 303);
+  writeln('sum is: ' + IntToStr(sum));
 
-  //serverFunc := TestLibrary.MakeIntFunc();
-  //i := serverFunc.Apply(981);
-  //writeln('serverFunc(981) = ' + IntToStr(i));
-  //
-  //i := TestLibrary.ApplyIntFunc(serverFunc, 567);
-  //writeln('applyIntFunc(serverFunc, 567) = ' + IntToStr(i));
+  appendedStr := TestLibrary.AppendToString('@@WOOT DOOT@@');
+  writeln('appended string is: ' + appendedStr);
+
+  summed := TestLibrary.ArraySum(valuesToSum);
+  writeln('summed values: ' + IntToStr(summed));
+
+  for i:=0 to 19 do
+  begin
+    valuesToSum2[i] := i;
+  end;
+  summed := TestLibrary.ArraySum(valuesToSum2);
+  writeln('summed2: ' + IntToStr(summed));
+
+  intFunc := MyIntFunc.Create();
+
+  TestLibrary.StashFunc(intFunc);
+
+  intFuncResult := TestLibrary.ApplyIntFunc(intFunc, 123);
+  writeln('applyIntFunc(123) = ' + IntToStr(intFuncResult));
+
+  TestLibrary.ClearedStashedFunc();
+  intFunc := nil;
+
+  arrayFuncResult := TestLibrary.ApplyArrayFunc(MyArrayFunc.Create(), 100);
+  writeln('applyArrayFunc(f, 100) = ' + IntToStr(arrayFuncResult));
+
+  serverFunc := TestLibrary.MakeIntFunc();
+  i := serverFunc.Apply(981);
+  writeln('serverFunc(981) = ' + IntToStr(i));
+
+  i := TestLibrary.ApplyIntFunc(serverFunc, 567);
+  writeln('applyIntFunc(serverFunc, 567) = ' + IntToStr(i));
 
   thing := TestLibrary.MakeThing();
   i := thing.doSomething(9876);
@@ -122,6 +122,7 @@ begin
   // separated into a function so we can test refcounting
   // at root program level stuff never got freed ...
   TestEverything();
+  TestLibrary.__DumpTables();
 
   TestLibrary.Shutdown();
   writeln('(enter to exit)');

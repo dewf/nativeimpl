@@ -61,6 +61,8 @@ procedure pushNull(); cdecl; external 'TestLibrary.dll';
 procedure releaseServerResource(id: Integer); cdecl; external 'TestLibrary.dll';
 procedure clearServerSafetyArea(); cdecl; external 'TestLibrary.dll';
 
+procedure dumpTables(); cdecl; external 'TestLibrary.dll';
+
 implementation
 
 end.

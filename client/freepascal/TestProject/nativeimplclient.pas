@@ -52,6 +52,8 @@ function PopInstance(out isClientID: Boolean; out inSafetyArea: Boolean): Intege
 procedure ClearServerSafetyArea();
 procedure ReleaseServerResource(id: Integer);
 
+procedure DumpTables();
+
 implementation
 
 // CALLBACKS - need to be extern(C)! =========================================
@@ -253,5 +255,10 @@ begin
   NativeMethods.releaseServerResource(id);
 end;
 
+procedure DumpTables;
+begin
+  // TODO: dump local tables
+  NativeMethods.dumpTables();
+end;
 
 end.

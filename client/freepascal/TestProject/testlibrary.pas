@@ -43,6 +43,8 @@ function ApplyArrayFunc(f: IArrayFunc; numItems: Integer): Integer;
 
 function MakeThing(): ICoolThing;
 
+procedure __DumpTables();
+
 implementation
 
 type
@@ -246,6 +248,11 @@ function MakeThing: ICoolThing;
 begin
   NativeImplClient.InvokeModuleMethod(makeThingMethod);
   result := ICoolThing__Pop();
+end;
+
+procedure __DumpTables;
+begin
+  NativeImplClient.DumpTables();
 end;
 
 // module end

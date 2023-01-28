@@ -494,7 +494,7 @@ let parseModule (input: TokenAndLocation list) =
                 parseFields loc etc
             ([UserType (name, StructDef fields)], etc2)
             |> Some
-        | Lookahead 2 ([ExceptionToken; Identifier name], _, etc) ->
+        | Lookahead 2 ([ExceptionToken; Identifier name], loc, etc) ->
             // does it have arguments? (these become fields)
             let args, etc =
                 match etc with
@@ -509,7 +509,7 @@ let parseModule (input: TokenAndLocation list) =
                     | _ ->
                         failwithf "expected statement end at %s" (loc.ToString())
                 | _ ->
-                    failwith "error parsing exception: expecting statement end or arguments list"
+                    failwithf "error parsing exception: expecting statement end or arguments list, at %s" (loc.ToString())
             let fields =
                 args |> List.map (fun (name, type_) -> { Name = name; Type_ = type_ })
             ([UserType (name, ExceptionDef fields)], etc)

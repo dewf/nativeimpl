@@ -1202,14 +1202,24 @@ let generate (m: Module) =
     let typeMap =
         userTypesAndGenerics m
         
+    let basePath =
+        @"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp"
+        
     printfn "C++ writing Wrappers.cpp"
-    use wrappersCpp = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp\Wrappers.cpp")
+    use wrappersCpp = new StreamWriter(@$"{basePath}\Wrappers.cpp")
     generateWrappersCpp m wrappersCpp
 
     printfn "C++ writing Implementation.h"
-    use implementationH = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp\Implementation.h")
+    use implementationH = new StreamWriter(@$"{basePath}\Implementation.h")
     generateImplementationH m typeMap implementationH
 
     printfn "C++ writing Implementation.cpp"
-    use implementationCpp = new StreamWriter(@"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp\Implementation.cpp")
+    let implementationFilename =
+        let default' =
+            @$"{basePath}\Implementation.cpp"
+        if File.Exists(default') then
+            @$"{basePath}\Implementation.new"
+        else
+            default'
+    use implementationCpp = new StreamWriter(implementationFilename)
     generateImplementationCpp m typeMap implementationCpp

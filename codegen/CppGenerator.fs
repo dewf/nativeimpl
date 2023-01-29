@@ -1218,7 +1218,7 @@ let generate (m: Module) =
         let default' =
             @$"{basePath}\Implementation.cpp"
         if File.Exists(default') then
-            @$"{basePath}\Implementation.new"
+            @$"{basePath}\Implementation.cpp.new"
         else
             default'
     use implementationCpp = new StreamWriter(implementationFilename)

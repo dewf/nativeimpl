@@ -47,13 +47,18 @@ void main()
     // auto f = testlib.getServerFunc();
     // writefln("getServerFunc()(123) = %d", f(123));
 
-    auto thing = testlib.makeThing();
-    using(thing, {
-        auto res = thing.someMethod(1001);
-        writefln(".doSomething result: %d", res);
-
+    // auto thing = testlib.makeThing();
+    {
+        auto thing = using(testlib.makeThing());
+        auto res = thing.someMethod(1003);
         testlib.operateOnThing(thing, 111);
-    });
+    }
+    // {
+    //     auto thing2 = using2(testlib.makeThing());
+    //     auto res = thing2.someMethod(1003);
+    //     testlib.operateOnThing(thing2, 111);
+    // }
+    // writefln("end of 2nd scope");
 
     // writefln("stashing func ...");
     // testlib.stashFunc((int i) {

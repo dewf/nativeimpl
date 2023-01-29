@@ -214,12 +214,30 @@ interface IDisposable {
     void dispose();
 }
 
-void using(IDisposable thing, void delegate() woot) {
-    try {
-        woot();
-    } finally {
-        thing.dispose();
+// void using(IDisposable thing, void delegate() woot) {
+//     try {
+//         woot();
+//     } finally {
+//         thing.dispose();
+//     }
+// }
+
+// hat tip to Paul Backus:
+struct Disposable(T : IDisposable)
+{
+    T unwrap;
+    alias unwrap this;
+
+    ~this()
+    {
+        if (unwrap !is null)
+            unwrap.dispose;
     }
+}
+
+Disposable!T using(T : IDisposable)(T payload)
+{
+    return Disposable!T(payload);
 }
 
 interface IThing01 : IDisposable {

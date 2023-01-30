@@ -21,12 +21,12 @@ public:
     //     // see note in C#, not sure if applicable or ... it's been a long time
     //     return ret;
     // }
-    // override void testThrow(bool doThrow) {
-    //     writefln("dlang hello from MyThing.testThrow! dothrow: %s", doThrow);
-    //     if (doThrow) {
-    //         throw new testlib.InterfaceMethodException(98_765);
-    //     }
-    // }
+    override void testThrow(bool doThrow) {
+        writefln("dlang hello from MyThing.testThrow! dothrow: %s", doThrow);
+        if (doThrow) {
+            throw new testlib.InterfaceMethodException(98_765);
+        }
+    }
     // override void onTimerTick() {
     //     writeln("dlang on timer tick!!!");
     // }
@@ -37,41 +37,60 @@ public:
 
 void main()
 {
-    auto x = 1001;
     testlib.init();
 
-    writefln("sum(10, 11, 12) = %d", testlib.sum(10, 11, 12));
+    // writefln("sum(10, 11, 12) = %d", testlib.sum(10, 11, 12));
 
-    auto f = (int i) { return x * i; };
-    testlib.stashFunc(f);
-    writefln("execFunc01(101) = %d", testlib.execFunc01(f));
-    writeln("----");
+    // auto x = 1001;
+    // auto f = (int i) { return x * i; };
+    // testlib.stashFunc(f);
+    // writefln("execFunc01(101) = %d", testlib.execFunc01(f));
+    // writeln("----");
 
-    auto thing2 = new MyThing();
-    auto res = testlib.operateOnThing(thing2, 987);
-    writefln("testlib.operateOnThing(myThing, 987) = %d", res);
+    // auto thing2 = new MyThing();
+    // auto res = testlib.operateOnThing(thing2, 987);
+    // writefln("testlib.operateOnThing(myThing, 987) = %d", res);
 
-    // auto res2 = testlib.operateOnThing(thing2, 1001);
-    // writefln("testlib.operateOnThing(myThing, 1001) = %d", res2);
-    foreach (value; [1, 0, -1])
+    // // auto res2 = testlib.operateOnThing(thing2, 1001);
+    // // writefln("testlib.operateOnThing(myThing, 1001) = %d", res2);
+    // foreach (value; [1, 0, -1])
+    // {
+    //     writefln("testNegative(%d)", value);
+    //     try {
+    //         testlib.testNegative(value);
+    //     } catch (testlib.NegativeException e) {
+    //         writefln(" ... caught negative exception! : %d", e.value);
+    //     }
+    // }
+
+    // auto f2 = testlib.getServerFunc();
+    // writefln("getServerFunc()(123) = %d", f2(123));
+
+    // // IThing01 + using(...)
+    // {
+    //     auto serverThing = using(testlib.makeThing());
+    //     auto res3 = serverThing.someMethod(1003);
+    //     testlib.operateOnThing(serverThing, 111);
+    //     // testlib.testClientThrow(serverThing);
+    // }
+
+    // auto thing3 = new MyThing();
+    // // testlib.testClientThrow(thing3);
+    // testlib.saveThing(thing3);
+    // auto gotBack = testlib.getSavedThing();
+    // // auto x = gotBack.someMethod(10_001);
+
+    auto myThing = new MyThing();
     {
-        writefln("testNegative(%d)", value);
-        try {
-            testlib.testNegative(value);
-        } catch (testlib.NegativeException e) {
-            writefln(" ... caught negative exception! : %d", e.value);
-        }
+        testlib.saveThing(myThing);
+        auto wot = using(testlib.getSavedThing());
+        // auto thing4 = using(testlib.makeThing());
+        // testlib.saveThing(thing4);
+        // auto gotBack2 = using(testlib.getSavedThing());
     }
+    writeln("end of block");
 
-    auto f2 = testlib.getServerFunc();
-    writefln("getServerFunc()(123) = %d", f2(123));
-
-    // IThing01 + using(...)
-    {
-        auto thing = using(testlib.makeThing());
-        auto res3 = thing.someMethod(1003);
-        testlib.operateOnThing(thing, 111);
-    }
+    // =============================================
 
     // writefln("stashing func ...");
     // testlib.stashFunc((int i) {

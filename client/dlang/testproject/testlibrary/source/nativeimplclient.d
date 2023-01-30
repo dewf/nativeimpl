@@ -234,6 +234,14 @@ void invokeModuleMethodWithExceptions(ModuleMethodRef method) {
     }
 }
 
+void pushBool(bool b) {
+    nativemethods.pushBool(b);
+}
+
+bool popBool() {
+    return nativemethods.popBool();
+}
+
 void pushInt32(int x) {
     nativemethods.pushInt32(x);
 }
@@ -256,6 +264,10 @@ ServerFuncVal popServerFuncVal() {
 
 int popInstance(ref bool isClientId, ref bool inSafetyArea) {
     return nativemethods.popInstance(&isClientId, &inSafetyArea);
+}
+
+void pushNull() {
+    nativemethods.pushNull();
 }
 
 void clearServerSafetyArea() {
@@ -306,6 +318,12 @@ class ServerObject : ServerResource, IPushable {
     // finalizer handled by ServerResource
     void invokeMethod(InterfaceMethodRef method) {
         nativemethods.invokeInterfaceMethod(method.handle, id);
+    }
+    void invokeWithExceptions(InterfaceMethodRef method) {
+        auto e = nativemethods.invokeInterfaceMethodWithExceptions(method.handle, id);
+        if (e) {
+            throw exceptionBuilders[e]();
+        }
     }
     override void push(bool isReturnValue) {
         if (isReturnValue) {

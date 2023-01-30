@@ -19,21 +19,21 @@ InterfaceRef _ithing01;
 InterfaceMethodRef _ithing01SomeMethod;
 // InterfaceMethodRef _ithing01StashThing;
 // InterfaceMethodRef _ithing01GetStashedThing;
-// InterfaceMethodRef _ithing01TestThrow;
+InterfaceMethodRef _ithing01TestThrow;
 // InterfaceMethodRef _ithing01OnTimerTick;
 
 ModuleMethodRef _makeThing;
 ModuleMethodRef _operateOnThing;
-// ModuleMethodRef _saveThing;
-// ModuleMethodRef _getSavedThing;
+ModuleMethodRef _saveThing;
+ModuleMethodRef _getSavedThing;
 
 // ModuleMethodRef _clientStashTest;
 
 ExceptionRef _negativeException;
 ModuleMethodRef _testNegative;
 
-// ni_ExceptionRef _interfaceMethodException;
-// ModuleMethodRef _testClientThrow;
+ExceptionRef _interfaceMethodException;
+ModuleMethodRef _testClientThrow;
 // ModuleMethodRef _startTimer;
 // ModuleMethodRef _stopTimer;
 
@@ -56,14 +56,14 @@ void init() {
     _ithing01SomeMethod = getInterfaceMethod(_ithing01, "someMethod");
     // _ithing01StashThing = getInterfaceMethod(_ithing01, "stashThing");
     // _ithing01GetStashedThing = getInterfaceMethod(_ithing01, "getStashedThing");
-    // _ithing01TestThrow = getInterfaceMethod(_ithing01, "testThrow");
+    _ithing01TestThrow = getInterfaceMethod(_ithing01, "testThrow");
     // _ithing01OnTimerTick = getInterfaceMethod(_ithing01, "onTimerTick");
 
     _makeThing = getModuleMethod(_module, "makeThing");
     _operateOnThing = getModuleMethod(_module, "operateOnThing");
 
-    // _saveThing = getModuleMethod(_module, "saveThing");
-    // _getSavedThing = getModuleMethod(_module, "getSavedThing");
+    _saveThing = getModuleMethod(_module, "saveThing");
+    _getSavedThing = getModuleMethod(_module, "getSavedThing");
 
     // _clientStashTest = getModuleMethod(_module, "clientStashTest");
 
@@ -85,15 +85,15 @@ void init() {
     //     auto ret = cast(Pushable) thing.getStashedThing();
     //     ret.push(true); // safe push for return, remote side responsible for clearing
     // });
-    // setClientMethodWrapper(_ithing01TestThrow, (ClientObject obj){
-    //     auto thing = cast(ClientIThing01) obj;
-    //     const doThrow = popBool();
-    //     try {
-    //         thing.testThrow(doThrow);
-    //     } catch (InterfaceMethodException e) {
-    //         e.setAndPush();
-    //     }
-    // });
+    setClientMethodWrapper(_ithing01TestThrow, (ClientObject obj){
+        auto thing = cast(ClientIThing01) obj;
+        const doThrow = nativeimplclient.popBool();
+        try {
+            thing.testThrow(doThrow);
+        } catch (InterfaceMethodException e) {
+            e.setAndPush();
+        }
+    });
     // setClientMethodWrapper(_ithing01OnTimerTick, (ClientObject obj) {
     //     writeln("in method wrapper for client timertick");
     //     auto thing = cast(ClientIThing01) obj;
@@ -104,14 +104,14 @@ void init() {
 
     // exception testing
     _negativeException = getException(_module, "NegativeException");
-    setExceptionBuilder(_negativeException, () => NegativeException.pop()); // not sure why we can't pass these directly with an &
+    setExceptionBuilder(_negativeException, () => NegativeException.pop());
 
     _testNegative = getModuleMethod(_module, "testNegative");
 
-    // _interfaceMethodException = getException(_module, "InterfaceMethodException");
-    // setExceptionBuilder(_interfaceMethodException, () => InterfaceMethodException.pop()); // same
+    _interfaceMethodException = getException(_module, "InterfaceMethodException");
+    setExceptionBuilder(_interfaceMethodException, () => InterfaceMethodException.pop());
 
-    // _testClientThrow = getModuleMethod(_module, "testClientThrow");
+    _testClientThrow = getModuleMethod(_module, "testClientThrow");
     // _startTimer = getModuleMethod(_module, "startTimer");
     // _stopTimer = getModuleMethod(_module, "stopTimer");
 }
@@ -139,21 +139,23 @@ class NegativeException : Exception {
     }
 }
 
-// class InterfaceMethodException : Exception {
-//     private int _value;
-//     public int value() = _value;
-//     public this(int value) {
-//         super("Interface Method Exception");
-//         _value = value;
-//     }
-//     public void setAndPush() {
-//         setException(_interfaceMethodException);
-//         pushInt(_value);
-//     }
-//     public static InterfaceMethodException pop() {
-//         return new InterfaceMethodException(popInt());
-//     }
-// }
+class InterfaceMethodException : Exception {
+    private int _value;
+    public int value() {
+        return _value;
+    }
+    public this(int value) {
+        super("Interface Method Exception");
+        _value = value;
+    }
+    public void setAndPush() {
+        setException(_interfaceMethodException);
+        nativeimplclient.pushInt32(_value);
+    }
+    public static InterfaceMethodException pop() {
+        return new InterfaceMethodException(nativeimplclient.popInt32());
+    }
+}
 
 int sum(int a, int b, int c) {
     nativeimplclient.pushInt32(c);
@@ -246,7 +248,7 @@ interface IThing01 : IDisposable {
     int someMethod(int x);
     // void stashThing(IThing01 subThing);
     // IThing01 getStashedThing();
-    // void testThrow(bool doThrow); // throws InterfaceMethodException
+    void testThrow(bool doThrow); // throws InterfaceMethodException
     // void onTimerTick();
 }
 
@@ -254,11 +256,14 @@ interface IThing01 : IDisposable {
 private IThing01 __IThing01__pop(ref bool inSafetyArea) {
     bool isClientId;
     const id = nativeimplclient.popInstance(isClientId, inSafetyArea);
-    if (!isClientId) {
-        return new ServerIThing01(id);
+    if (id != 0) {
+        if (isClientId) {
+            return cast(IThing01) ClientObject.getByID(id);
+        } else {
+            return new ServerIThing01(id);
+        }
     } else {
-        throw new Exception("not yet implemented");
-        // return cast(IThing01) ClientObject.getById(id);
+        return null;
     }
 }
 
@@ -270,7 +275,7 @@ public:
     abstract int someMethod(int x);
     // abstract void stashThing(IThing01 subThing);
     // abstract IThing01 getStashedThing();
-    // abstract void testThrow(bool doThrow);
+    abstract void testThrow(bool doThrow);
     // abstract void onTimerTick();
 }
 
@@ -294,10 +299,10 @@ public:
     //     clearServerSafetyArea();  // because remote returned an interface to us - was being kept safe on the remote side until we got it (premature derefs are bad mmkay)
     //     return ret;
     // }
-    // void testThrow(bool doThrow) {
-    //     pushBool(doThrow);
-    //     invokeWithExceptions(_ithing01TestThrow); // will throw for us if necessary
-    // }
+    void testThrow(bool doThrow) {
+        nativeimplclient.pushBool(doThrow);
+        invokeWithExceptions(_ithing01TestThrow); // will throw for us if necessary
+    }
     // void onTimerTick() {
     //     invoke(_ithing01OnTimerTick);
     // }
@@ -318,33 +323,49 @@ IThing01 makeThing() {
 
 int operateOnThing(IThing01 thing, int arg) {
     nativeimplclient.pushInt32(arg);
-    (cast(IPushable)thing).push(false);
+    if (thing) {
+        (cast(IPushable)thing).push(false);
+    } else {
+        nativeimplclient.pushNull();
+    }
     nativeimplclient.invokeModuleMethod(_operateOnThing);
     return nativeimplclient.popInt32();
 }
 
-// void saveThing(IThing01 thing) {
-//     (cast(Pushable)thing).push(false);
-//     invokeModuleMethod(_saveThing);
-// }
+void saveThing(IThing01 thing) {
+    if (thing) {
+        (cast(IPushable)thing).push(false);
+    } else {
+        nativeimplclient.pushNull();
+    }
+    invokeModuleMethod(_saveThing);
+}
 
-// IThing01 getSavedThing() {
-//     invokeModuleMethod(_getSavedThing);
-//     auto ret = IThing01__pop();
-//     writeln("dlang IThing01 safely popped, before clearing safety area");
-//     clearServerSafetyArea();
-//     return ret;
-// }
+IThing01 getSavedThing() {
+    invokeModuleMethod(_getSavedThing);
+    bool inSafetyArea;
+    auto ret = __IThing01__pop(inSafetyArea);
+    writeln("dlang IThing01 safely popped, before clearing safety area");
+    if (inSafetyArea) {
+        writeln("dlang clearing remote safety area");
+        clearServerSafetyArea();
+    }
+    return ret;
+}
 
 void testNegative(int value) {
     nativeimplclient.pushInt32(value);
     nativeimplclient.invokeModuleMethodWithExceptions(_testNegative); // indirect version, will throw for us
 }
 
-// void testClientThrow(IThing01 thing) {
-//     (cast(Pushable)thing).push(false);
-//     invokeModuleMethod(_testClientThrow);
-// }
+void testClientThrow(IThing01 thing) {
+    if (thing) {
+        (cast(IPushable)thing).push(false);
+    } else {
+        nativeimplclient.pushNull();
+    }
+    invokeModuleMethod(_testClientThrow);
+}
 
 // void startTimer(IThing01 thing, int frequency) {
 //     pushInt(frequency);

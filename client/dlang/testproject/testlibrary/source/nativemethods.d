@@ -53,6 +53,8 @@ extern (C) {
     void pushInstance(int id, bool isClientId, bool inSafetyArea);
     int popInstance(bool* isClientId, bool* inSafetyArea);
 
+    void pushNull();
+
     void releaseServerResource(int id);
     
     void setException(ni_ExceptionRef e);

@@ -6,43 +6,37 @@ import nativemethods;
 
 class WrappedHandle(T) {
     private T handle;
-    public this(T handle) {
+    private this(T handle) {
         this.handle = handle;
     }
 }
 
 class ModuleRef : WrappedHandle!ni_ModuleRef {
-    public this(ni_ModuleRef handle) {
+    private this(ni_ModuleRef handle) {
         super(handle);
     }
 }
 
 class ModuleMethodRef : WrappedHandle!ni_ModuleMethodRef {
-    public this(ni_ModuleMethodRef handle) {
+    private this(ni_ModuleMethodRef handle) {
         super(handle);
     }
 }
 
 class InterfaceRef : WrappedHandle!ni_InterfaceRef {
-    public this(ni_InterfaceRef handle) {
+    private this(ni_InterfaceRef handle) {
         super(handle);
     }
 }
 
 class InterfaceMethodRef : WrappedHandle!ni_InterfaceMethodRef {
-    public this(ni_InterfaceMethodRef handle) {
-        super(handle);
-    }
-}
-
-class ObjectRef : WrappedHandle!ni_ObjectRef {
-    public this(ni_ObjectRef handle) {
+    private this(ni_InterfaceMethodRef handle) {
         super(handle);
     }
 }
 
 class ExceptionRef : WrappedHandle!ni_ExceptionRef {
-    public this(ni_ExceptionRef handle) {
+    private this(ni_ExceptionRef handle) {
         super(handle);
     }
 }
@@ -69,8 +63,8 @@ extern (C) {
 
     void clientMethodExec(ni_InterfaceMethodRef method, int objID) {
         // writefln("dlang client method exec: %08X / %d", method, objID);
-        // auto obj = clientObjects[objID];
-        // methodWrappers[method](obj);
+        auto obj = ClientObject.getByID(objID);
+        methodWrappers[method](obj);
     }
 
     void clientResourceRelease(int id) {
@@ -78,13 +72,13 @@ extern (C) {
     }
 
     void clientClearSafetyArea() {
-        // writeln("dlang client clear safety area");
-        // safetyArea.length = 0;
-        // safetyArea.assumeSafeAppend(); // only because we know there are no slices out there
+        writeln("== dlang client clear safety area ==");
+        safetyArea.length = 0;
+        safetyArea.assumeSafeAppend(); // only because we know there are no slices out there
     }
 }
 
-// wrapped versions of native methods ======================================================
+// wrapped versions of native methods, other public stuff ======================================================
 
 public:
 
@@ -124,7 +118,7 @@ alias FuncValWrapper = void delegate();
 
 void pushClientFuncVal(FuncValWrapper wrapper, size_t key) {
     auto f = ClientFuncVal.getOrCreate(wrapper, key);
-    nativemethods.pushClientFunc(f.id);
+    f.resourcePush();
 }
 
 ServerFuncVal popServerFuncVal() {
@@ -140,92 +134,11 @@ void clearServerSafetyArea() {
     nativemethods.clearServerSafetyArea();
 }
 
-// interface Pushable {
-//     void push(bool isReturn);
-// }
+alias MethodWrapper = void delegate(ClientObject obj);
 
-// abstract class ClientObject : Pushable {
-//     private int _id = -1;
-//     private int _refCount;
-//     int id() = _id;
-//     int refCount() = _refCount;
-
-//     public void push(bool _isReturn) {
-//         writeln("in ClientObject.clientPush()");
-//         if (_id == -1) {
-//             // unset as yet
-//             _id = nextClientObjectId++;
-//             _refCount = 1;
-//             clientObjects[_id] = this;
-//             writefln("dlang ClientObject: pushed %d", _id);
-//         } else{
-//             // just increase refcount as we pass it over
-//             _refCount++;
-//             writefln("dlang ClientObject: increased refcount to %d", _id);
-//         }
-//         pushClientInst(_id);
-//     }
-//     public void release() {
-//         _refCount -= 1;
-//         if (_refCount == 0) {
-//             writefln("dlang release client object %d - refCount 0, removing from table", _id);
-//             clientObjects.remove(_id);
-//             _id = -1; // reset ID, since we're not in the table anymore
-//             // all this does is remove this object from the 'checked-out' table -
-//             // things we were force-kept-alive as long as the remote (server) side had reference to them
-//             // but that doesn't mean we're ready to dispose it - might still be useful to us on this side!
-//         }
-//     }
-//     public static ClientObject getById(int id) {
-//         return clientObjects[id];
-//     }
-// }
-
-// class ServerObject : Pushable {
-//     protected int _id;
-//     private bool _remoteReleased;
-//     public this(int id) {
-//         _id = id;
-//     }
-//     ~this() {
-//         // backstop in case the derived class not manually disposed
-//         writefln("dlang ServerObject id %d - dtor invoked, calling ServerDispose()", _id);
-//         serverDispose();
-//     }
-//     void serverDispose() {
-//         if (_remoteReleased) return;
-//         safeReleaseServerInstance(_id);
-//         _remoteReleased = true;
-//     }
-//     void makeSafe() {
-//         safetyArea ~= this;
-//     }
-//     void invoke(ni_InterfaceMethodRef method) {
-//         invokeInterfaceMethod(method, _id);
-//     }
-//     void invokeWithExceptions(ni_InterfaceMethodRef method) {
-//         auto e = invokeInterfaceMethodWithExceptions(method, _id);
-//         if (e) {
-//             throw exceptionBuilders[e]();
-//         }
-//     }
-//     void push(bool isReturn) {
-//         pushServerInst(_id);
-//         if (isReturn) {
-//             // save this object to the safety area, until the other side has pulled it off
-//             // otherwise, if this is the last proxy on this side,
-//             // could remotely detonate the server's real copy before it's done taking 'ownership'
-//             // (dependent on probably-unlikely GC collection, but better safe than sorry)
-//             makeSafe();
-//         }
-//     }
-// }
-
-// alias MethodWrapper = void delegate(ClientObject obj);
-
-// void setClientMethodWrapper(ni_InterfaceMethodRef method, MethodWrapper wrapper) {
-//     methodWrappers[method] = wrapper;
-// }
+void setClientMethodWrapper(InterfaceMethodRef method, MethodWrapper wrapper) {
+    methodWrappers[method.handle] = wrapper;
+}
 
 // alias ExceptionBuilder = Exception delegate();
 
@@ -249,21 +162,33 @@ __gshared int nextResourceId = 1;
 __gshared ClientResource[int] resourceMap;
 
 class ClientResource {
-    int id = -1;
+    int _id = -1;
     int refCount;
-    this() {
-        id = nextResourceId++;
-        refCount = 1;
-        resourceMap[id] = this;
+
+    abstract void nativePush(int id); // must be implemented
+
+    void resourcePush() {
+        // id is meaningless until it's about to go out, hence delayed to this point
+        if (_id == -1) {
+            _id = nextResourceId++;
+            refCount = 1;
+            resourceMap[_id] = this;
+        } else {
+            refCount += 1;
+        }
+        nativePush(_id);
     }
+
     void unregister() {
-        writefln("dlang ClientResource.unregister(%d)", id);
-        resourceMap.remove(id);
+        writefln("dlang ClientResource.unregister(%d)", _id);
+        resourceMap.remove(_id);
+        // reset ID, since we're pulling it out of map
+        // will have to be re-registered
+        _id = -1;
+        // refCount = 0;
         // override for any subclass cleanup
     }
-    void addRef() {
-        refCount += 1;
-    }
+
     void release() {
         writefln("ClientResource.release()");
         refCount -= 1;
@@ -271,6 +196,7 @@ class ClientResource {
             unregister();
         }
     }
+
     static ClientResource getByID(int id) {
         return resourceMap[id];
     }
@@ -288,14 +214,19 @@ class ClientFuncVal : ClientResource {
     this(FuncValWrapper wrapper, size_t key) {
         this.wrapper = wrapper;
         this.key = key;
-        // store in reverse dict
+        // unlike the base ClientResource/ClientObject, a ClientFuncVal is only ever created just before being pushed
+        // so no harm in filling the table entry immediately (vs. in a 'register' or push method)
         if (key) {
             reverseFuncValDict[key] = this;
         }
     }
+    override void nativePush(int id) {
+        nativemethods.pushClientFunc(id);
+    }
     override void unregister() {
         super.unregister();
         // remove self from reverse dict
+        // unlike ClientObjects, there's should be no potential for a ClientFuncVal being reused once it's removed, because they only exist within library wrapper code
         writefln("dlang ClientFuncVal.unregister()");
         if (key) {
             reverseFuncValDict.remove(key);
@@ -305,7 +236,7 @@ class ClientFuncVal : ClientResource {
         // woot!
         wrapper();
     }
-    // static methods:
+    // static methods -------------------------------
     static ClientFuncVal getByID(int id) {
         return cast(ClientFuncVal) ClientResource.getByID(id);
     }
@@ -314,10 +245,9 @@ class ClientFuncVal : ClientResource {
             // new
             return new ClientFuncVal(wrapper, key);
         } else {
-            // else just increment refcount of existing
-            auto existing = reverseFuncValDict[key];
-            existing.addRef();
-            return existing;
+            // return existing
+            // used to addRef here, but now that's taken care of by ClientResource.push()
+            return reverseFuncValDict[key];
         }
     }
 }
@@ -333,7 +263,7 @@ class ServerResource {
             if (!remoteIsShutdown) {
                 nativemethods.releaseServerResource(id);
             } else {
-                writefln("(didn't release server obj %d - remote was already shutdown", id);
+                writefln("(didn't release server obj %d - remote was already shutdown)", id);
             }
             disposed = true;
         }
@@ -343,7 +273,9 @@ class ServerResource {
     }
 }
 
-// __gshared MethodWrapper[ni_InterfaceMethodRef] methodWrappers;
+__gshared MethodWrapper[ni_InterfaceMethodRef] methodWrappers;
+
+__gshared ServerObject[] safetyArea; // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
 
 // __gshared ExceptionBuilder[ni_ExceptionRef] exceptionBuilders;
 
@@ -364,8 +296,6 @@ class ServerFuncVal : ServerResource {
     }
 }
 
-__gshared ServerObject[] safetyArea; // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
-
 class ServerObject : ServerResource, IPushable {
     this(int id) {
         super(id);
@@ -382,7 +312,16 @@ class ServerObject : ServerResource, IPushable {
     }
 }
 
-// TODO: clientobject
-// serverobject
-// hmmm ...
-
+class ClientObject: ClientResource, IPushable {
+    override void nativePush(int id) {
+        nativemethods.pushInstance(id, true, false); // never in safety area - only applicable when returning server objects to server
+    }
+    override void push(bool isReturnValue) {
+        // isReturnValue unused - client objects never go in safety area
+        resourcePush(); // rely on ClientResource push to determine ID / addref before sending out
+    }
+    // static methods:
+    static ClientObject getByID(int id) {
+        return cast(ClientObject) ClientResource.getByID(id);
+    }
+}

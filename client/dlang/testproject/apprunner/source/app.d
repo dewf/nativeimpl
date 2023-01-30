@@ -5,35 +5,35 @@ import core.time: dur;
 import testlib = testlibrary;
 import testlibrary;
 
-// class MyThing : testlib.ClientIThing01 {
-// public:
-//     private testlib.IThing01 _stashed;
-//     override int someMethod(int x) {
-//         writefln("dlang MyThing.someMethod(%d)", x);
-//         return x + 101;
-//     }
-//     override void stashThing(testlib.IThing01 subThing) {
-//         _stashed = subThing;
-//     }
-//     override testlib.IThing01 getStashedThing() {
-//         auto ret = _stashed;
-//         _stashed = null;
-//         // see note in C#, not sure if applicable or ... it's been a long time
-//         return ret;
-//     }
-//     override void testThrow(bool doThrow) {
-//         writefln("dlang hello from MyThing.testThrow! dothrow: %s", doThrow);
-//         if (doThrow) {
-//             throw new testlib.InterfaceMethodException(98_765);
-//         }
-//     }
-//     override void onTimerTick() {
-//         writeln("dlang on timer tick!!!");
-//     }
-//     override void dispose() {
-//         writeln("dlang MyThing - perfunctory dispose()");
-//     }
-// }
+class MyThing : testlib.ClientIThing01 {
+public:
+    // private testlib.IThing01 _stashed;
+    override int someMethod(int x) {
+        writefln("dlang MyThing.someMethod(%d)", x);
+        return x + 101;
+    }
+    // override void stashThing(testlib.IThing01 subThing) {
+    //     _stashed = subThing;
+    // }
+    // override testlib.IThing01 getStashedThing() {
+    //     auto ret = _stashed;
+    //     _stashed = null;
+    //     // see note in C#, not sure if applicable or ... it's been a long time
+    //     return ret;
+    // }
+    // override void testThrow(bool doThrow) {
+    //     writefln("dlang hello from MyThing.testThrow! dothrow: %s", doThrow);
+    //     if (doThrow) {
+    //         throw new testlib.InterfaceMethodException(98_765);
+    //     }
+    // }
+    // override void onTimerTick() {
+    //     writeln("dlang on timer tick!!!");
+    // }
+    // override void dispose() {
+    //     writeln("dlang MyThing - perfunctory dispose()");
+    // }
+}
 
 void main()
 {
@@ -42,23 +42,27 @@ void main()
 
     // writefln("sum(10, 11, 12) = %d", testlib.sum(10, 11, 12));
 
-    // writefln("execFunc01(101) = %d", testlib.execFunc01(i => x * i));
+    // auto f = (int i) { return x * i; };
+    // testlib.stashFunc(f);
+    // writefln("execFunc01(101) = %d", testlib.execFunc01(f));
+    // writeln("----");
+
+    auto thing2 = new MyThing();
+    auto res = testlib.operateOnThing(thing2, 987);
+    writefln("testlib.operateOnThing(myThing, 987) = %d", res);
+
+    auto res2 = testlib.operateOnThing(thing2, 1001);
+    writefln("testlib.operateOnThing(myThing, 1001) = %d", res2);
 
     // auto f = testlib.getServerFunc();
     // writefln("getServerFunc()(123) = %d", f(123));
 
-    // auto thing = testlib.makeThing();
-    {
-        auto thing = using(testlib.makeThing());
-        auto res = thing.someMethod(1003);
-        testlib.operateOnThing(thing, 111);
-    }
+    // IThing01 + using(...)
     // {
-    //     auto thing2 = using2(testlib.makeThing());
-    //     auto res = thing2.someMethod(1003);
-    //     testlib.operateOnThing(thing2, 111);
+    //     auto thing = using(testlib.makeThing());
+    //     auto res3 = thing.someMethod(1003);
+    //     testlib.operateOnThing(thing, 111);
     // }
-    // writefln("end of 2nd scope");
 
     // writefln("stashing func ...");
     // testlib.stashFunc((int i) {

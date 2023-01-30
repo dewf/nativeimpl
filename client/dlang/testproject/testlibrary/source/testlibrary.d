@@ -67,12 +67,12 @@ void init() {
 
     // _clientStashTest = getModuleMethod(_module, "clientStashTest");
 
-    // setClientMethodWrapper(_ithing01SomeMethod, (ClientObject obj) {
-    //     auto thing = cast(ClientIThing01) obj;
-    //     const x = popInt();
-    //     const res = thing.someMethod(x);
-    //     pushInt(res);
-    // });
+    setClientMethodWrapper(_ithing01SomeMethod, (ClientObject obj) {
+        auto thing = cast(ClientIThing01) obj;
+        const x = nativeimplclient.popInt32();
+        const res = thing.someMethod(x);
+        nativeimplclient.pushInt32(res);
+    });
     // setClientMethodWrapper(_ithing01StashThing, (ClientObject obj) {
     //     auto thing = cast(ClientIThing01) obj;
     //     auto subThing = IThing01__pop();
@@ -260,18 +260,17 @@ private IThing01 __IThing01__pop(ref bool inSafetyArea) {
     }
 }
 
-// abstract class ClientIThing01 : ClientObject, IThing01 {
-// public:
-//     void dispose() {
-//         // override if necessary
-//         // (note: from C# version, might be useless around here)
-//     }
-//     abstract int someMethod(int x);
-//     abstract void stashThing(IThing01 subThing);
-//     abstract IThing01 getStashedThing();
-//     abstract void testThrow(bool doThrow);
-//     abstract void onTimerTick();
-// }
+abstract class ClientIThing01 : ClientObject, IThing01 {
+public:
+    void dispose() {
+        // making this an optional override for client
+    }
+    abstract int someMethod(int x);
+    // abstract void stashThing(IThing01 subThing);
+    // abstract IThing01 getStashedThing();
+    // abstract void testThrow(bool doThrow);
+    // abstract void onTimerTick();
+}
 
 private class ServerIThing01 : ServerObject, IThing01 {
 public:

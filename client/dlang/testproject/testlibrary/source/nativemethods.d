@@ -12,7 +12,7 @@ extern (C) {
     mixin(NIHANDLE!("ModuleMethod"));
     mixin(NIHANDLE!("Interface"));
     mixin(NIHANDLE!("InterfaceMethod"));
-    mixin(NIHANDLE!("Object"));
+    // mixin(NIHANDLE!("Object"));
     mixin(NIHANDLE!("Exception"));
 
     alias niClientFuncExec = void function(int id);

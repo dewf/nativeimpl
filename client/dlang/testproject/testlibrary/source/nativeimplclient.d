@@ -4,56 +4,8 @@ import std.string: toStringz;
 
 import nativemethods;
 
-class WrappedHandle(T) {
-    private T handle;
-    private this(T handle) {
-        this.handle = handle;
-    }
-}
-
-class ModuleRef : WrappedHandle!ni_ModuleRef {
-    private this(ni_ModuleRef handle) {
-        super(handle);
-    }
-}
-
-class ModuleMethodRef : WrappedHandle!ni_ModuleMethodRef {
-    private this(ni_ModuleMethodRef handle) {
-        super(handle);
-    }
-}
-
-class InterfaceRef : WrappedHandle!ni_InterfaceRef {
-    private this(ni_InterfaceRef handle) {
-        super(handle);
-    }
-}
-
-class InterfaceMethodRef : WrappedHandle!ni_InterfaceMethodRef {
-    private this(ni_InterfaceMethodRef handle) {
-        super(handle);
-    }
-}
-
-class ExceptionRef : WrappedHandle!ni_ExceptionRef {
-    private this(ni_ExceptionRef handle) {
-        super(handle);
-    }
-}
-
-int init() {
-    return nativeImplInit(
-        &clientFuncExec,
-        &clientMethodExec,
-        &clientResourceRelease,
-        &clientClearSafetyArea);
-}
-
-void shutdown() {
-    // prevent any calls to the backend (eg during object finalization), will just break
-    remoteIsShutdown = true;
-    nativeImplShutdown();
-}
+// PRIVATE ====================================================================================================
+private:
 
 // C entry points:
 extern (C) {
@@ -78,88 +30,13 @@ extern (C) {
     }
 }
 
-// wrapped versions of native methods, other public stuff ======================================================
-
-public:
-
-ModuleRef getModule(string name) {
-    auto h = nativemethods.getModule(name.toStringz);
-    return h ? new ModuleRef(h) : null;
-}
-
-ModuleMethodRef getModuleMethod(ModuleRef m, string name) {
-    auto h = nativemethods.getModuleMethod(m.handle, name.toStringz);
-    return h ? new ModuleMethodRef(h) : null;
-}
-
-void invokeModuleMethod(ModuleMethodRef method) {
-    nativemethods.invokeModuleMethod(method.handle);
-}
-
-InterfaceRef getInterface(ModuleRef m, string name) {
-    auto h = nativemethods.getInterface(m.handle, name.toStringz);
-    return h ? new InterfaceRef(h) : null;
-}
-
-InterfaceMethodRef getInterfaceMethod(InterfaceRef iface, string name) {
-    auto h = nativemethods.getInterfaceMethod(iface.handle, name.toStringz);
-    return h ? new InterfaceMethodRef(h) : null;
-}
-
-void pushInt32(int x) {
-    nativemethods.pushInt32(x);
-}
-
-int popInt32() {
-    return nativemethods.popInt32();
-}
-
-alias FuncValWrapper = void delegate();
-
-void pushClientFuncVal(FuncValWrapper wrapper, size_t key) {
-    auto f = ClientFuncVal.getOrCreate(wrapper, key);
-    f.resourcePush();
-}
-
-ServerFuncVal popServerFuncVal() {
-    auto id = nativemethods.popServerFunc();
-    return new ServerFuncVal(id);
-}
-
-int popInstance(ref bool isClientId, ref bool inSafetyArea) {
-    return nativemethods.popInstance(&isClientId, &inSafetyArea);
-}
-
-void clearServerSafetyArea() {
-    nativemethods.clearServerSafetyArea();
-}
-
-alias MethodWrapper = void delegate(ClientObject obj);
-
-void setClientMethodWrapper(InterfaceMethodRef method, MethodWrapper wrapper) {
-    methodWrappers[method.handle] = wrapper;
-}
-
-// alias ExceptionBuilder = Exception delegate();
-
-// void setExceptionBuilder(ni_ExceptionRef e, ExceptionBuilder builder) {
-//     exceptionBuilders[e] = builder;
-// }
-
-// // void invokeWithExceptions(ni_ModuleMethodRef method) {
-// //     auto e = invokeModuleMethodWithExceptions(method);
-// //     if (e) {
-// //         throw exceptionBuilders[e]();
-// //     }
-// // }
-
-// PRIVATE ====================================================================================================
-private:
-
 __gshared bool remoteIsShutdown;
-
 __gshared int nextResourceId = 1;
 __gshared ClientResource[int] resourceMap;
+__gshared ClientFuncVal[size_t] reverseFuncValDict; // key: delegateKey(...)
+__gshared MethodWrapper[ni_InterfaceMethodRef] methodWrappers;
+__gshared ServerObject[] safetyArea; // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
+__gshared ExceptionBuilder[ni_ExceptionRef] exceptionBuilders;
 
 class ClientResource {
     int _id = -1;
@@ -201,12 +78,6 @@ class ClientResource {
         return resourceMap[id];
     }
 }
-
-// to prevent duplicates of a given func value
-public size_t delegateKey(T)(T d) {
-    return d.ptr ? cast(size_t)d.ptr : cast(size_t)d.funcptr; // use context first if it exists, otherwise func ptr
-}
-__gshared ClientFuncVal[size_t] reverseFuncValDict;
 
 class ClientFuncVal : ClientResource {
     FuncValWrapper wrapper;
@@ -273,17 +144,143 @@ class ServerResource {
     }
 }
 
-__gshared MethodWrapper[ni_InterfaceMethodRef] methodWrappers;
-
-__gshared ServerObject[] safetyArea; // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
-
-// __gshared ExceptionBuilder[ni_ExceptionRef] exceptionBuilders;
-
-// PUBLIC ==============================================================================================
+// PUBLIC ================================================================================================
 public:
 
-interface IPushable {
-    void push(bool isReturnValue);
+class WrappedHandle(T) {
+    private T handle;
+    private this(T handle) {
+        this.handle = handle;
+    }
+}
+
+class ModuleRef : WrappedHandle!ni_ModuleRef {
+    private this(ni_ModuleRef handle) {
+        super(handle);
+    }
+}
+
+class ModuleMethodRef : WrappedHandle!ni_ModuleMethodRef {
+    private this(ni_ModuleMethodRef handle) {
+        super(handle);
+    }
+}
+
+class InterfaceRef : WrappedHandle!ni_InterfaceRef {
+    private this(ni_InterfaceRef handle) {
+        super(handle);
+    }
+}
+
+class InterfaceMethodRef : WrappedHandle!ni_InterfaceMethodRef {
+    private this(ni_InterfaceMethodRef handle) {
+        super(handle);
+    }
+}
+
+class ExceptionRef : WrappedHandle!ni_ExceptionRef {
+    private this(ni_ExceptionRef handle) {
+        super(handle);
+    }
+}
+
+int init() {
+    return nativeImplInit(
+        &clientFuncExec,
+        &clientMethodExec,
+        &clientResourceRelease,
+        &clientClearSafetyArea);
+}
+
+void shutdown() {
+    // prevent any calls to the backend (eg during object finalization), will just break
+    remoteIsShutdown = true;
+    nativeImplShutdown();
+}
+
+ModuleRef getModule(string name) {
+    auto h = nativemethods.getModule(name.toStringz);
+    return h ? new ModuleRef(h) : null;
+}
+
+ModuleMethodRef getModuleMethod(ModuleRef m, string name) {
+    auto h = nativemethods.getModuleMethod(m.handle, name.toStringz);
+    return h ? new ModuleMethodRef(h) : null;
+}
+
+InterfaceRef getInterface(ModuleRef m, string name) {
+    auto h = nativemethods.getInterface(m.handle, name.toStringz);
+    return h ? new InterfaceRef(h) : null;
+}
+
+InterfaceMethodRef getInterfaceMethod(InterfaceRef iface, string name) {
+    auto h = nativemethods.getInterfaceMethod(iface.handle, name.toStringz);
+    return h ? new InterfaceMethodRef(h) : null;
+}
+
+ExceptionRef getException(ModuleRef m, string name) {
+    auto h = nativemethods.getException(m.handle, name.toStringz);
+    return h ? new ExceptionRef(h) : null;
+}
+
+void invokeModuleMethod(ModuleMethodRef method) {
+    nativemethods.invokeModuleMethod(method.handle);
+}
+
+void invokeModuleMethodWithExceptions(ModuleMethodRef method) {
+    auto e = nativemethods.invokeModuleMethodWithExceptions(method.handle);
+    if (e) {
+        throw exceptionBuilders[e]();
+    }
+}
+
+void pushInt32(int x) {
+    nativemethods.pushInt32(x);
+}
+
+int popInt32() {
+    return nativemethods.popInt32();
+}
+
+alias FuncValWrapper = void delegate();
+
+void pushClientFuncVal(FuncValWrapper wrapper, size_t key) {
+    auto f = ClientFuncVal.getOrCreate(wrapper, key);
+    f.resourcePush();
+}
+
+ServerFuncVal popServerFuncVal() {
+    auto id = nativemethods.popServerFunc();
+    return new ServerFuncVal(id);
+}
+
+int popInstance(ref bool isClientId, ref bool inSafetyArea) {
+    return nativemethods.popInstance(&isClientId, &inSafetyArea);
+}
+
+void clearServerSafetyArea() {
+    nativemethods.clearServerSafetyArea();
+}
+
+alias MethodWrapper = void delegate(ClientObject obj);
+
+void setClientMethodWrapper(InterfaceMethodRef method, MethodWrapper wrapper) {
+    methodWrappers[method.handle] = wrapper;
+}
+
+alias ExceptionBuilder = Exception delegate();
+
+void setExceptionBuilder(ExceptionRef e, ExceptionBuilder builder) {
+    exceptionBuilders[e.handle] = builder;
+}
+
+void setException(ExceptionRef e) {
+    nativemethods.setException(e.handle);
+}
+
+// to prevent duplicates of a given func value
+size_t delegateKey(T)(T d) {
+    return d.ptr ? cast(size_t)d.ptr : cast(size_t)d.funcptr; // use context first if it exists, otherwise func ptr
 }
 
 class ServerFuncVal : ServerResource {
@@ -294,6 +291,12 @@ class ServerFuncVal : ServerResource {
     void exec() {
         nativemethods.execServerFunc(id);
     }
+}
+
+// wrapper methods taking interface arguments won't know if they are dealing with a server or client objects,
+// so both implement this interface for easy pushing
+interface IPushable {
+    void push(bool isReturnValue);
 }
 
 class ServerObject : ServerResource, IPushable {

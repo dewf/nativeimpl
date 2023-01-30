@@ -29,8 +29,8 @@ ModuleMethodRef _operateOnThing;
 
 // ModuleMethodRef _clientStashTest;
 
-// ni_ExceptionRef _negativeException;
-// ModuleMethodRef _testNegative;
+ExceptionRef _negativeException;
+ModuleMethodRef _testNegative;
 
 // ni_ExceptionRef _interfaceMethodException;
 // ModuleMethodRef _testClientThrow;
@@ -102,11 +102,11 @@ void init() {
     //     // no return
     // });
 
-    // // exception testing
-    // _negativeException = getException(_module, "NegativeException");
-    // setExceptionBuilder(_negativeException, () => NegativeException.pop()); // not sure why we can't pass these directly with an &
+    // exception testing
+    _negativeException = getException(_module, "NegativeException");
+    setExceptionBuilder(_negativeException, () => NegativeException.pop()); // not sure why we can't pass these directly with an &
 
-    // _testNegative = getModuleMethod(_module, "testNegative");
+    _testNegative = getModuleMethod(_module, "testNegative");
 
     // _interfaceMethodException = getException(_module, "InterfaceMethodException");
     // setExceptionBuilder(_interfaceMethodException, () => InterfaceMethodException.pop()); // same
@@ -121,21 +121,23 @@ void shutdown() {
     nativeimplclient.shutdown();
 }
 
-// class NegativeException : Exception {
-//     private int _value;
-//     public int value() = _value;
-//     public this(int value) {
-//         super("Negative Value Exception");
-//         _value = value;
-//     }
-//     public void setAndPush() {
-//         setException(_negativeException);
-//         pushInt(_value);
-//     }
-//     public static NegativeException pop() {
-//         return new NegativeException(popInt());
-//     }
-// }
+class NegativeException : Exception {
+    private int _value;
+    public int value() {
+        return _value;
+    }
+    public this(int value) {
+        super("Negative Value Exception");
+        _value = value;
+    }
+    public void setAndPush() {
+        setException(_negativeException);
+        nativeimplclient.pushInt32(_value);
+    }
+    public static NegativeException pop() {
+        return new NegativeException(nativeimplclient.popInt32());
+    }
+}
 
 // class InterfaceMethodException : Exception {
 //     private int _value;
@@ -334,10 +336,10 @@ int operateOnThing(IThing01 thing, int arg) {
 //     return ret;
 // }
 
-// void testNegative(int value) {
-//     pushInt(value);
-//     invokeWithExceptions(_testNegative); // indirect version, will throw for us
-// }
+void testNegative(int value) {
+    nativeimplclient.pushInt32(value);
+    nativeimplclient.invokeModuleMethodWithExceptions(_testNegative); // indirect version, will throw for us
+}
 
 // void testClientThrow(IThing01 thing) {
 //     (cast(Pushable)thing).push(false);

@@ -50,13 +50,12 @@ extern (C) {
     int popServerFunc();
     void execServerFunc(int id);
     
-    // void pushClientInst(int id);
     void pushInstance(int id, bool isClientId, bool inSafetyArea);
     int popInstance(bool* isClientId, bool* inSafetyArea);
 
     void releaseServerResource(int id);
     
-    // void setException(ni_ExceptionRef e);
+    void setException(ni_ExceptionRef e);
 
     void clearServerSafetyArea();
 }

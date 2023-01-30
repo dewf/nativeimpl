@@ -3,7 +3,7 @@ import core.thread.osthread: Thread;
 import core.time: dur;
 
 import testlib = testlibrary;
-import testlibrary;
+import testlibrary : using;
 
 class MyThing : testlib.ClientIThing01 {
 public:
@@ -40,29 +40,38 @@ void main()
     auto x = 1001;
     testlib.init();
 
-    // writefln("sum(10, 11, 12) = %d", testlib.sum(10, 11, 12));
+    writefln("sum(10, 11, 12) = %d", testlib.sum(10, 11, 12));
 
-    // auto f = (int i) { return x * i; };
-    // testlib.stashFunc(f);
-    // writefln("execFunc01(101) = %d", testlib.execFunc01(f));
-    // writeln("----");
+    auto f = (int i) { return x * i; };
+    testlib.stashFunc(f);
+    writefln("execFunc01(101) = %d", testlib.execFunc01(f));
+    writeln("----");
 
     auto thing2 = new MyThing();
     auto res = testlib.operateOnThing(thing2, 987);
     writefln("testlib.operateOnThing(myThing, 987) = %d", res);
 
-    auto res2 = testlib.operateOnThing(thing2, 1001);
-    writefln("testlib.operateOnThing(myThing, 1001) = %d", res2);
+    // auto res2 = testlib.operateOnThing(thing2, 1001);
+    // writefln("testlib.operateOnThing(myThing, 1001) = %d", res2);
+    foreach (value; [1, 0, -1])
+    {
+        writefln("testNegative(%d)", value);
+        try {
+            testlib.testNegative(value);
+        } catch (testlib.NegativeException e) {
+            writefln(" ... caught negative exception! : %d", e.value);
+        }
+    }
 
-    // auto f = testlib.getServerFunc();
-    // writefln("getServerFunc()(123) = %d", f(123));
+    auto f2 = testlib.getServerFunc();
+    writefln("getServerFunc()(123) = %d", f2(123));
 
     // IThing01 + using(...)
-    // {
-    //     auto thing = using(testlib.makeThing());
-    //     auto res3 = thing.someMethod(1003);
-    //     testlib.operateOnThing(thing, 111);
-    // }
+    {
+        auto thing = using(testlib.makeThing());
+        auto res3 = thing.someMethod(1003);
+        testlib.operateOnThing(thing, 111);
+    }
 
     // writefln("stashing func ...");
     // testlib.stashFunc((int i) {

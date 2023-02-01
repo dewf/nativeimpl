@@ -346,3 +346,36 @@ class ClientObject: ClientResource, IPushable {
         return cast(ClientObject) ClientResource.getByID(id);
     }
 }
+
+// lifetime management stuff
+
+interface IDisposable {
+    void dispose();
+}
+
+// void using(IDisposable thing, void delegate() woot) {
+//     try {
+//         woot();
+//     } finally {
+//         thing.dispose();
+//     }
+// }
+
+// thanks to Paul Backus:
+struct Disposable(T : IDisposable)
+{
+    T unwrap;
+    alias unwrap this;
+
+    ~this()
+    {
+        if (unwrap !is null)
+            unwrap.dispose;
+    }
+}
+
+Disposable!T using(T : IDisposable)(T payload)
+{
+    return Disposable!T(payload);
+}
+

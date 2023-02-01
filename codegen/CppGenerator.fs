@@ -162,8 +162,8 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         write level "%s (%s)ni_popPtr();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
         if context = SafeReturn then
-            write level "bool inSafetyArea;"
-            write level "%s %s__pop(&inSafetyArea);" contextPrefix ifaceName
+            write level "bool __inSafetyArea;"
+            write level "%s %s__pop(&__inSafetyArea);" contextPrefix ifaceName
         else
             write level  "%s %s__pop(nullptr);" contextPrefix ifaceName
     | DelegateType delegateName ->
@@ -214,7 +214,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     // epilogue
     match context with
     | SafeReturn ->
-        write level "if (inSafetyArea) {"
+        write level "if (__inSafetyArea) {"
         write (level + 1) "ni_clearClientSafetyArea();"
         write level "}"
         write level "return __ret;"

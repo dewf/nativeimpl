@@ -161,7 +161,11 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     | OpaqueHandleType name ->
         write level "%s (%s)ni_popPtr();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
-        write level "%s %s__pop();" contextPrefix ifaceName
+        if context = SafeReturn then
+            write level "bool inSafetyArea;"
+            write level "%s %s__pop(&inSafetyArea);" contextPrefix ifaceName
+        else
+            write level  "%s %s__pop(nullptr);" contextPrefix ifaceName
     | DelegateType delegateName ->
         write level "%s %s__pop();" contextPrefix delegateName
     | ArrayType niType ->
@@ -207,9 +211,12 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
         write level "%s__buildAndThrow();" exceptionName
     | _ ->
         write level "// (pop not yet implemented: %A)" type_
+    // epilogue
     match context with
     | SafeReturn ->
-        write level "ni_clearClientSafetyArea();"
+        write level "if (inSafetyArea) {"
+        write (level + 1) "ni_clearClientSafetyArea();"
+        write level "}"
         write level "return __ret;"
     | _ ->
         ()
@@ -402,10 +409,10 @@ let renderWrapperInterface (writer: TextWriter) (typeMap: Map<string, UserOrGene
     write 0 "}"
     // POP ====================================
     blank()
-    write 0 "%s %s__pop()" (typeToCppString typeMap outerType) (typeToName outerType)
+    write 0 "%s %s__pop(bool *inSafetyArea)" (typeToCppString typeMap outerType) (typeToName outerType)
     write 0 "{"
-    write 1 "bool isClientID, inSafetyArea;"
-    write 1 "auto id = ni_popInstance(&isClientID, &inSafetyArea);"
+    write 1 "bool isClientID;"
+    write 1 "auto id = ni_popInstance(&isClientID, inSafetyArea);"
     write 1 "if (id != 0) {"
     write 2 "if (isClientID) {"
     write 3 "return %s(new Client%s(id));" (typeToCppString typeMap outerType) (typeToName outerType)
@@ -658,7 +665,7 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
     match content with
     | UserOrGeneric.FwdInterface ->
         write 0 "void %s__push(std::shared_ptr<%s> thing, bool isReturn);" name name
-        write 0 "std::shared_ptr<%s> %s__pop();" name name
+        write 0 "std::shared_ptr<%s> %s__pop(bool *inSafetyArea);" name name
     | UserOrGeneric.Generic gType ->
         match gType with
         | BufferType elemType ->

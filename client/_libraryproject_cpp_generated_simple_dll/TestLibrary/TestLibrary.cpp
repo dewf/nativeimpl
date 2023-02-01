@@ -1,6 +1,6 @@
 #include "TestLibrary.h"
 
-#include "../../../../core/NativeImplCore.h"
+#include "../../../core/NativeImplCore.h"
 
 int nativeImplInit(
     niClientFuncExec clientFuncExec,

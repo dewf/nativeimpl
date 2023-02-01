@@ -18,10 +18,10 @@
     <None Include="cpp.hint" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\..\core\NativeImplCore.h">
+    <ClInclude Include="TestLibrary.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="TestLibrary.h">
+    <ClInclude Include="..\..\..\core\NativeImplCore.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -29,10 +29,10 @@
     <ClCompile Include="dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\core\NativeImplCore.cpp">
+    <ClCompile Include="TestLibrary.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TestLibrary.cpp">
+    <ClCompile Include="..\..\..\core\NativeImplCore.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

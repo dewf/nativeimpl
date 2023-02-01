@@ -474,7 +474,11 @@ public:
 		inSafetyArea(inSafetyArea) {}
 	int instanceId(bool* isClientId, bool* inSafetyArea) override {
 		*isClientId = this->isClientId;
-		*inSafetyArea = this->inSafetyArea;
+		if (inSafetyArea) {
+			// optional ptr - we only care about this in 'safe return' contexts (popping instance return values)
+			// it's not necessary when popping function arguments
+			*inSafetyArea = this->inSafetyArea;
+		}
 		return id;
 	}
 };

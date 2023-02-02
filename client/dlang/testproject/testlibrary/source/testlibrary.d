@@ -1,6 +1,7 @@
 module testlibrary;
 import std.stdio;
 import std.conv: to;
+import std.sumtype;
 
 import nativeimplclient;
 
@@ -17,25 +18,28 @@ ModuleMethodRef _returnStashedFunc;
 
 InterfaceRef _ithing01;
 InterfaceMethodRef _ithing01SomeMethod;
-// InterfaceMethodRef _ithing01StashThing;
-// InterfaceMethodRef _ithing01GetStashedThing;
+InterfaceMethodRef _ithing01StashThing;
+InterfaceMethodRef _ithing01GetStashedThing;
 InterfaceMethodRef _ithing01TestThrow;
-// InterfaceMethodRef _ithing01OnTimerTick;
+InterfaceMethodRef _ithing01OnTimerTick;
 
 ModuleMethodRef _makeThing;
 ModuleMethodRef _operateOnThing;
 ModuleMethodRef _saveThing;
 ModuleMethodRef _getSavedThing;
 
-// ModuleMethodRef _clientStashTest;
+ModuleMethodRef _clientStashTest;
 
 ExceptionRef _negativeException;
 ModuleMethodRef _testNegative;
 
 ExceptionRef _interfaceMethodException;
 ModuleMethodRef _testClientThrow;
-// ModuleMethodRef _startTimer;
-// ModuleMethodRef _stopTimer;
+ModuleMethodRef _startTimer;
+ModuleMethodRef _stopTimer;
+
+ModuleMethodRef _takeSumType;
+ModuleMethodRef _makeSumType;
 
 public: // ==========================================================================================
 
@@ -54,10 +58,10 @@ void init() {
 
     _ithing01 = getInterface(_module, "IThing01");
     _ithing01SomeMethod = getInterfaceMethod(_ithing01, "someMethod");
-    // _ithing01StashThing = getInterfaceMethod(_ithing01, "stashThing");
-    // _ithing01GetStashedThing = getInterfaceMethod(_ithing01, "getStashedThing");
+    _ithing01StashThing = getInterfaceMethod(_ithing01, "stashThing");
+    _ithing01GetStashedThing = getInterfaceMethod(_ithing01, "getStashedThing");
     _ithing01TestThrow = getInterfaceMethod(_ithing01, "testThrow");
-    // _ithing01OnTimerTick = getInterfaceMethod(_ithing01, "onTimerTick");
+    _ithing01OnTimerTick = getInterfaceMethod(_ithing01, "onTimerTick");
 
     _makeThing = getModuleMethod(_module, "makeThing");
     _operateOnThing = getModuleMethod(_module, "operateOnThing");
@@ -65,7 +69,7 @@ void init() {
     _saveThing = getModuleMethod(_module, "saveThing");
     _getSavedThing = getModuleMethod(_module, "getSavedThing");
 
-    // _clientStashTest = getModuleMethod(_module, "clientStashTest");
+    _clientStashTest = getModuleMethod(_module, "clientStashTest");
 
     setClientMethodWrapper(_ithing01SomeMethod, (ClientObject obj) {
         auto thing = cast(ClientIThing01) obj;
@@ -73,18 +77,19 @@ void init() {
         const res = thing.someMethod(x);
         nativeimplclient.pushInt32(res);
     });
-    // setClientMethodWrapper(_ithing01StashThing, (ClientObject obj) {
-    //     auto thing = cast(ClientIThing01) obj;
-    //     auto subThing = IThing01__pop();
-    //     thing.stashThing(subThing);
-    //     // no return value
-    // });
-    // setClientMethodWrapper(_ithing01GetStashedThing, (ClientObject obj) {
-    //     auto thing = cast(ClientIThing01) obj;
-    //     // no params
-    //     auto ret = cast(Pushable) thing.getStashedThing();
-    //     ret.push(true); // safe push for return, remote side responsible for clearing
-    // });
+    setClientMethodWrapper(_ithing01StashThing, (ClientObject obj) {
+        auto thing = cast(ClientIThing01) obj;
+        bool __ignored;
+        auto subThing = __IThing01__pop(__ignored);
+        thing.stashThing(subThing);
+        // no return value
+    });
+    setClientMethodWrapper(_ithing01GetStashedThing, (ClientObject obj) {
+        auto thing = cast(ClientIThing01) obj;
+        // no params
+        auto ret = cast(IPushable) thing.getStashedThing();
+        ret.push(true); // safe push for return, remote side (potentially) responsible for clearing our safety area - if the object is a client object
+    });
     setClientMethodWrapper(_ithing01TestThrow, (ClientObject obj){
         auto thing = cast(ClientIThing01) obj;
         const doThrow = nativeimplclient.popBool();
@@ -94,13 +99,13 @@ void init() {
             e.setAndPush();
         }
     });
-    // setClientMethodWrapper(_ithing01OnTimerTick, (ClientObject obj) {
-    //     writeln("in method wrapper for client timertick");
-    //     auto thing = cast(ClientIThing01) obj;
-    //     // no params
-    //     thing.onTimerTick();
-    //     // no return
-    // });
+    setClientMethodWrapper(_ithing01OnTimerTick, (ClientObject obj) {
+        writeln("in method wrapper for client timertick");
+        auto thing = cast(ClientIThing01) obj;
+        // no params
+        thing.onTimerTick();
+        // no return
+    });
 
     // exception testing
     _negativeException = getException(_module, "NegativeException");
@@ -112,8 +117,11 @@ void init() {
     setExceptionBuilder(_interfaceMethodException, () => InterfaceMethodException.pop());
 
     _testClientThrow = getModuleMethod(_module, "testClientThrow");
-    // _startTimer = getModuleMethod(_module, "startTimer");
-    // _stopTimer = getModuleMethod(_module, "stopTimer");
+    _startTimer = getModuleMethod(_module, "startTimer");
+    _stopTimer = getModuleMethod(_module, "stopTimer");
+
+    _takeSumType = getModuleMethod(_module, "takeSumType");
+    _makeSumType = getModuleMethod(_module, "makeSumType");
 }
 
 void shutdown() {
@@ -214,42 +222,17 @@ SimpleIntFunc returnStashedFunc() {
     return &wrapper;
 }
 
-interface IDisposable {
-    void dispose();
-}
-
-// void using(IDisposable thing, void delegate() woot) {
-//     try {
-//         woot();
-//     } finally {
-//         thing.dispose();
-//     }
-// }
-
-// hat tip to Paul Backus:
-struct Disposable(T : IDisposable)
-{
-    T unwrap;
-    alias unwrap this;
-
-    ~this()
-    {
-        if (unwrap !is null)
-            unwrap.dispose;
-    }
-}
-
-Disposable!T using(T : IDisposable)(T payload)
-{
-    return Disposable!T(payload);
-}
+// re-export these
+alias IDisposable = nativeimplclient.IDisposable;
+alias Disposable = nativeimplclient.Disposable;
+alias using = nativeimplclient.using;
 
 interface IThing01 : IDisposable {
     int someMethod(int x);
-    // void stashThing(IThing01 subThing);
-    // IThing01 getStashedThing();
+    void stashThing(IThing01 subThing);
+    IThing01 getStashedThing();
     void testThrow(bool doThrow); // throws InterfaceMethodException
-    // void onTimerTick();
+    void onTimerTick();
 }
 
 // keep this out of the interface to keep it clean
@@ -273,10 +256,10 @@ public:
         // making this an optional override for client
     }
     abstract int someMethod(int x);
-    // abstract void stashThing(IThing01 subThing);
-    // abstract IThing01 getStashedThing();
+    abstract void stashThing(IThing01 subThing);
+    abstract IThing01 getStashedThing();
     abstract void testThrow(bool doThrow);
-    // abstract void onTimerTick();
+    abstract void onTimerTick();
 }
 
 private class ServerIThing01 : ServerObject, IThing01 {
@@ -289,26 +272,27 @@ public:
         invokeMethod(_ithing01SomeMethod);
         return nativeimplclient.popInt32();
     }
-    // void stashThing(IThing01 subThing) {
-    //     (cast(Pushable)subThing).push(false);
-    //     invoke(_ithing01StashThing);
-    // }
-    // IThing01 getStashedThing() {
-    //     invoke(_ithing01GetStashedThing);
-    //     auto ret = IThing01__pop();
-    //     clearServerSafetyArea();  // because remote returned an interface to us - was being kept safe on the remote side until we got it (premature derefs are bad mmkay)
-    //     return ret;
-    // }
+    void stashThing(IThing01 subThing) {
+        (cast(IPushable)subThing).push(false);
+        invokeMethod(_ithing01StashThing);
+    }
+    IThing01 getStashedThing() {
+        invokeMethod(_ithing01GetStashedThing);
+        bool inSafetyArea;
+        auto ret = __IThing01__pop(inSafetyArea);
+        if (inSafetyArea) {
+            // because remote returned an interface to us - was being kept safe on the remote side until we got it (premature derefs are bad mmkay)
+            clearServerSafetyArea();  
+        }
+        return ret;
+    }
     void testThrow(bool doThrow) {
         nativeimplclient.pushBool(doThrow);
         invokeWithExceptions(_ithing01TestThrow); // will throw for us if necessary
     }
-    // void onTimerTick() {
-    //     invoke(_ithing01OnTimerTick);
-    // }
-    // void dispose() {
-    //     serverDispose();
-    // }
+    void onTimerTick() {
+        invokeMethod(_ithing01OnTimerTick);
+    }
 }
 
 IThing01 makeThing() {
@@ -353,6 +337,15 @@ IThing01 getSavedThing() {
     return ret;
 }
 
+void clientStashTest(IThing01 thing) {
+    if (thing) {
+        (cast(IPushable)thing).push(false);
+    } else {
+        nativeimplclient.pushNull();
+    }
+    invokeModuleMethod(_clientStashTest);
+}
+
 void testNegative(int value) {
     nativeimplclient.pushInt32(value);
     nativeimplclient.invokeModuleMethodWithExceptions(_testNegative); // indirect version, will throw for us
@@ -367,13 +360,94 @@ void testClientThrow(IThing01 thing) {
     invokeModuleMethod(_testClientThrow);
 }
 
-// void startTimer(IThing01 thing, int frequency) {
-//     pushInt(frequency);
-//     (cast(Pushable)thing).push(false);
-//     invokeModuleMethod(_startTimer);
-//     // no return value
-// }
+void startTimer(IThing01 thing, int frequency) {
+    pushInt32(frequency);
+    if (thing) {
+        (cast(IPushable)thing).push(false);
+    } else {
+        nativeimplclient.pushNull();
+    }
+    invokeModuleMethod(_startTimer);
+    // no return value
+}
 
-// void stopTimer() {
-//     invokeModuleMethod(_stopTimer);
-// }
+void stopTimer() {
+    invokeModuleMethod(_stopTimer);
+}
+
+struct FancySumType {
+    enum Tag {
+        Value1,
+        Value2,
+        Value3
+    }
+    struct Value1 { 
+        int a;
+        string b;
+        static FancySumType make(int a, string b) {
+            return FancySumType(cast(FancySumType.T) Value1(a, b));
+        }
+    }
+    struct Value2 {
+        static FancySumType make() {
+            return FancySumType(cast(FancySumType.T) Value2());
+        }
+    }
+    struct Value3 {
+        string x;
+        static FancySumType make(string x) {
+            return FancySumType(cast(FancySumType.T) Value3(x));
+        }
+    }
+    alias T = SumType!(Value1, Value2, Value3);
+    T value;
+    alias value this;
+}
+
+void __FancySumType__Push(FancySumType value) {
+    value.match!(
+        (FancySumType.Value1 v1) {
+            nativeimplclient.pushString(v1.b);
+            nativeimplclient.pushInt32(v1.a);
+            nativeimplclient.pushInt32(FancySumType.Tag.Value1);
+        },
+        (FancySumType.Value2 v2) {
+            // no params
+            nativeimplclient.pushInt32(FancySumType.Tag.Value2);
+        },
+        (FancySumType.Value3 v3) {
+            nativeimplclient.pushString(v3.x);
+            nativeimplclient.pushInt32(FancySumType.Tag.Value3);
+        }
+    );
+}
+
+FancySumType __FancySumType__Pop() {
+    auto tag = cast(FancySumType.Tag) nativeimplclient.popInt32();
+    switch (tag) {
+        case FancySumType.Tag.Value1: {
+            auto a = nativeimplclient.popInt32();
+            auto b = nativeimplclient.popString();
+            return FancySumType.Value1.make(a, b);
+        }
+        case FancySumType.Tag.Value2: {
+            return FancySumType.Value2.make();
+        }
+        case FancySumType.Tag.Value3: {
+            auto x = nativeimplclient.popString();
+            return FancySumType.Value3.make(x);
+        }
+        default:
+            assert(0);
+    }
+}
+
+void takeSumType(FancySumType value) {
+    __FancySumType__Push(value);
+    nativeimplclient.invokeModuleMethod(_takeSumType);
+}
+
+FancySumType makeSumType() {
+    nativeimplclient.invokeModuleMethod(_makeSumType);
+    return __FancySumType__Pop();
+}

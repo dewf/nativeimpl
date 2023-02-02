@@ -3,36 +3,38 @@ import core.thread.osthread: Thread;
 import core.time: dur;
 
 import testlib = testlibrary;
-import testlibrary : using;
+import testlibrary; // : using;
+
+import std.sumtype;
 
 class MyThing : testlib.ClientIThing01 {
 public:
-    // private testlib.IThing01 _stashed;
+    private testlib.IThing01 _stashed;
     override int someMethod(int x) {
         writefln("dlang MyThing.someMethod(%d)", x);
         return x + 101;
     }
-    // override void stashThing(testlib.IThing01 subThing) {
-    //     _stashed = subThing;
-    // }
-    // override testlib.IThing01 getStashedThing() {
-    //     auto ret = _stashed;
-    //     _stashed = null;
-    //     // see note in C#, not sure if applicable or ... it's been a long time
-    //     return ret;
-    // }
+    override void stashThing(testlib.IThing01 subThing) {
+        _stashed = subThing;
+    }
+    override testlib.IThing01 getStashedThing() {
+        auto ret = _stashed;
+        _stashed = null;
+        // see note in C#, not sure if applicable or ... it's been a long time
+        return ret;
+    }
     override void testThrow(bool doThrow) {
         writefln("dlang hello from MyThing.testThrow! dothrow: %s", doThrow);
         if (doThrow) {
             throw new testlib.InterfaceMethodException(98_765);
         }
     }
-    // override void onTimerTick() {
-    //     writeln("dlang on timer tick!!!");
-    // }
-    // override void dispose() {
-    //     writeln("dlang MyThing - perfunctory dispose()");
-    // }
+    override void onTimerTick() {
+        writeln("dlang MyThing.onTimerTick()");
+    }
+    override void dispose() {
+        writeln("dlang MyThing - perfunctory dispose()");
+    }
 }
 
 void main()
@@ -80,15 +82,15 @@ void main()
     // auto gotBack = testlib.getSavedThing();
     // // auto x = gotBack.someMethod(10_001);
 
-    auto myThing = new MyThing();
-    {
-        testlib.saveThing(myThing);
-        auto wot = using(testlib.getSavedThing());
-        // auto thing4 = using(testlib.makeThing());
-        // testlib.saveThing(thing4);
-        // auto gotBack2 = using(testlib.getSavedThing());
-    }
-    writeln("end of block");
+    // auto myThing = new MyThing();
+    // {
+    //     testlib.saveThing(myThing);
+    //     auto wot = using(testlib.getSavedThing());
+    //     // auto thing4 = using(testlib.makeThing());
+    //     // testlib.saveThing(thing4);
+    //     // auto gotBack2 = using(testlib.getSavedThing());
+    // }
+    // writeln("end of block");
 
     // =============================================
 
@@ -120,10 +122,30 @@ void main()
     // testlib.operateOnThing(myThing, 109);
     // testlib.testClientThrow(myThing);
 
+    // testlib.clientStashTest(myThing);
+
     // testlib.startTimer(myThing, 2);
     // writeln("sleeping 5 seconds ...");
     // Thread.sleep(dur!"seconds"(5));
     // testlib.stopTimer();
 
+    FancySumType sumValue = FancySumType.Value1.make(9876, "wahooo");
+    takeSumType(sumValue);
+
+    auto sumValue2 = makeSumType();
+    writeln("dlang makeSumType():");
+    sumValue2.match!(
+        (FancySumType.Value1 v1) {
+            writefln(" - got v1: %d/%s", v1.a, v1.b);
+        },
+        (FancySumType.Value2 v2) {
+            writefln(" - got v2: (no params)");
+        },
+        (FancySumType.Value3 v3) {
+            writefln(" - got v3: %s", v3.x);
+        }
+    );
+
     testlib.shutdown();
 }
+

@@ -46,6 +46,9 @@ extern (C) {
     void pushInt32(int x);
     int popInt32();
 
+    void pushString(const(char)* str, size_t length);
+    void popString(const(char)** strPtr, size_t* length);
+
     void pushClientFunc(int id);
     int popServerFunc();
     void execServerFunc(int id);

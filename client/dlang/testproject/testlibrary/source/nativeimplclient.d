@@ -1,6 +1,7 @@
 module nativeimplclient;
 import std.stdio;
 import std.string: toStringz;
+// import std.conv: to;
 
 import nativemethods;
 
@@ -248,6 +249,17 @@ void pushInt32(int x) {
 
 int popInt32() {
     return nativemethods.popInt32();
+}
+
+void pushString(string s) {
+    nativemethods.pushString(s.toStringz, s.length);
+}
+
+string popString() {
+    const(char)* str;
+    size_t length;
+    nativemethods.popString(&str, &length);
+    return str[0..length].idup;
 }
 
 alias FuncValWrapper = void delegate();

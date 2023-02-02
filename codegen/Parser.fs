@@ -414,7 +414,7 @@ let parseOneEnumValue (input: TokenAndLocation list) =
         | Lookahead 1 ([Comma], _, etc) ->
             // more expected
             Some (value, etc)
-        | _ ->
+        | { Location = loc } :: _ ->
             failwithf "parsing enum value: unexpected token at %s" (loc.ToString())
     | { Location = loc } :: _ ->
         failwithf "parsing enum value: expected identifier at %s" (loc.ToString())

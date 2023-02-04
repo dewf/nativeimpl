@@ -1,7 +1,8 @@
 module nativeimplclient;
 import std.stdio;
 import std.string: toStringz;
-// import std.conv: to;
+import std.algorithm: map;
+import std.range: array;
 
 import nativemethods;
 
@@ -235,6 +236,14 @@ void invokeModuleMethodWithExceptions(ModuleMethodRef method) {
     }
 }
 
+void pushSizeT(size_t value) {
+    nativemethods.pushSizeT(value);
+}
+
+size_t popSizeT() {
+    return nativemethods.popSizeT();
+}
+
 void pushBool(bool b) {
     nativemethods.pushBool(b);
 }
@@ -256,10 +265,29 @@ void pushString(string s) {
 }
 
 string popString() {
-    const(char)* str;
+    immutable(char)* str;
     size_t length;
     nativemethods.popString(&str, &length);
     return str[0..length].idup;
+}
+
+void pushStringArray(string[] values) {
+    auto strs = values.map!(v => v.toStringz).array;
+    auto lengths = values.map!(v => v.length).array;
+    nativemethods.pushStringArray(strs.ptr, lengths.ptr, lengths.length);
+}
+
+string[] popStringArray() {
+    immutable(char)** strs;
+    size_t* lengths;
+    size_t count;
+    nativemethods.popStringArray(&strs, &lengths, &count);
+    string[] ret = new string[count];
+    for (size_t i; i < count; i++) {
+        auto len = lengths[i];
+        ret[i] = strs[i][0..len].idup;
+    }
+    return ret;
 }
 
 alias FuncValWrapper = void delegate();
@@ -364,14 +392,6 @@ class ClientObject: ClientResource, IPushable {
 interface IDisposable {
     void dispose();
 }
-
-// void using(IDisposable thing, void delegate() woot) {
-//     try {
-//         woot();
-//     } finally {
-//         thing.dispose();
-//     }
-// }
 
 // thanks to Paul Backus:
 struct Disposable(T : IDisposable)

@@ -40,14 +40,19 @@ extern (C) {
 
     ni_ExceptionRef getException(ni_ModuleRef m, const char *name);
 
+    void pushSizeT(size_t value);
+    size_t popSizeT();
+
     void pushBool(bool b);
     bool popBool();
 
     void pushInt32(int x);
     int popInt32();
 
-    void pushString(const(char)* str, size_t length);
-    void popString(const(char)** strPtr, size_t* length);
+    void pushString(immutable(char)* str, size_t length);
+    void popString(immutable(char)** strPtr, size_t* length);
+    void pushStringArray(immutable(char)** strs, size_t* lengths, size_t count);
+    void popStringArray(immutable(char)*** strs, size_t** lengths, size_t* count);
 
     void pushClientFunc(int id);
     int popServerFunc();

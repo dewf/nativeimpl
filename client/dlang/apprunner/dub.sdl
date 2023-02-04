@@ -11,11 +11,11 @@ targetType "executable"
 configuration "win32-config-64" {
     platforms "windows-x86_64"
     targetPath "$PACKAGE_DIR/bin64"
-    copyfiles "$PACKAGE_DIR/../../../_libraryproject_cpp_generated_simple_dll/x64/Debug/*.dll"
+    copyfiles "$PACKAGE_DIR/../../_libraryproject_cpp_generated_simple_dll/x64/Debug/*.dll"
 }
 
 configuration "win32-config-32" {
     platforms "windows-x86_mscoff"
     targetPath "$PACKAGE_DIR/bin"
-    copyFiles "$PACKAGE_DIR/../../../_libraryproject_cpp_generated_simple_dll/Debug/*.dll"
+    copyFiles "$PACKAGE_DIR/../../_libraryproject_cpp_generated_simple_dll/Debug/*.dll"
 }

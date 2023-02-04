@@ -12,6 +12,7 @@
         <Compile Include="Common.fs" />
         <Compile Include="CppGenerator.fs" />
         <Compile Include="CsharpGenerator.fs" />
+        <Compile Include="DlangGenerator.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>
 

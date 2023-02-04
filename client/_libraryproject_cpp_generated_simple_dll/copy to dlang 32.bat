@@ -1,3 +1,3 @@
-copy .\Debug\TestLibrary.dll ..\dlang\testproject\apprunner\bin\
+copy .\Debug\TestLibrary.dll ..\dlang\apprunner\bin\
 pause
 

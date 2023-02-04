@@ -2,6 +2,9 @@
 
 open System
 
+let lower (text: string) =
+    text.ToLower()
+    
 let lowerFirst (text: string) =
     Char.ToLower(text[0]).ToString() + text.Substring(1)
 

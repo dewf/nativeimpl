@@ -9,10 +9,10 @@ targetPath "$PACKAGE_DIR/lib"
 configuration "win32-config-64" {
 	platforms "windows-x86_64"
 	targetType "library"
-	libs "$PACKAGE_DIR/../../../_libraryproject_cpp_generated_simple_dll/x64/Debug/TestLibrary"
+	libs "$PACKAGE_DIR/../../_libraryproject_cpp_generated_simple_dll/x64/Debug/TestLibrary"
 }
 configuration "win32-config-32" {
 	platforms "windows-x86_mscoff"
 	targetType "library"
-	libs "$PACKAGE_DIR/../../../_libraryproject_cpp_generated_simple_dll/Debug/TestLibrary"
+	libs "$PACKAGE_DIR/../../_libraryproject_cpp_generated_simple_dll/Debug/TestLibrary"
 }

@@ -5,6 +5,8 @@ import core.time: dur;
 import testlib = testlibrary;
 import testlibrary; // : using;
 
+import simpleset: Set;
+
 import std.sumtype;
 
 class MyThing : testlib.ClientIThing01 {
@@ -92,7 +94,7 @@ void main()
     // }
     // writeln("end of block");
 
-    // =============================================
+    // // =============================================
 
     // writefln("stashing func ...");
     // testlib.stashFunc((int i) {
@@ -118,7 +120,7 @@ void main()
     // auto thing = testlib.makeThing();
     // writefln("thing.someMethod(456): %d", thing.someMethod(456));
 
-    // auto myThing = new MyThing();
+    // // auto myThing = new MyThing();
     // testlib.operateOnThing(myThing, 109);
     // testlib.testClientThrow(myThing);
 
@@ -129,22 +131,27 @@ void main()
     // Thread.sleep(dur!"seconds"(5));
     // testlib.stopTimer();
 
-    FancySumType sumValue = FancySumType.Value1.make(9876, "wahooo");
-    takeSumType(sumValue);
+    // FancySumType sumValue = FancySumType.Value1.make(9876, "wahooo");
+    // takeSumType(sumValue);
 
-    auto sumValue2 = makeSumType();
-    writeln("dlang makeSumType():");
-    sumValue2.match!(
-        (FancySumType.Value1 v1) {
-            writefln(" - got v1: %d/%s", v1.a, v1.b);
-        },
-        (FancySumType.Value2 v2) {
-            writefln(" - got v2: (no params)");
-        },
-        (FancySumType.Value3 v3) {
-            writefln(" - got v3: %s", v3.x);
-        }
-    );
+    // auto sumValue2 = makeSumType();
+    // writeln("dlang makeSumType():");
+    // sumValue2.match!(
+    //     (FancySumType.Value1 v1) {
+    //         writefln(" - got v1: %d/%s", v1.a, v1.b);
+    //     },
+    //     (FancySumType.Value2 v2) {
+    //         writefln(" - got v2: (no params)");
+    //     },
+    //     (FancySumType.Value3 v3) {
+    //         writefln(" - got v3: %s", v3.x);
+    //     }
+    // );
+
+    auto set1 = testlib.makeSet();
+    writefln("set1: %s", set1);
+
+    testlib.takeSet(Set!string("1 - one", "2 - two", "3 - three", "1 - one"));
 
     testlib.shutdown();
 }

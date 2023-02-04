@@ -1,9 +1,10 @@
 module testlibrary;
+
 import std.stdio;
 import std.conv: to;
 import std.sumtype;
-
 import nativeimplclient;
+import simpleset: Set;
 
 private: // =========================================================================================
 
@@ -40,6 +41,9 @@ ModuleMethodRef _stopTimer;
 
 ModuleMethodRef _takeSumType;
 ModuleMethodRef _makeSumType;
+
+ModuleMethodRef _takeSet;
+ModuleMethodRef _makeSet;
 
 public: // ==========================================================================================
 
@@ -122,6 +126,9 @@ void init() {
 
     _takeSumType = getModuleMethod(_module, "takeSumType");
     _makeSumType = getModuleMethod(_module, "makeSumType");
+
+    _takeSet = getModuleMethod(_module, "takeSet");
+    _makeSet = getModuleMethod(_module, "makeSet");
 }
 
 void shutdown() {
@@ -450,4 +457,24 @@ void takeSumType(FancySumType value) {
 FancySumType makeSumType() {
     nativeimplclient.invokeModuleMethod(_makeSumType);
     return __FancySumType__Pop();
+}
+
+void __StringSet__Push(Set!string stringSet) {
+    auto arr = stringSet.array();
+    nativeimplclient.pushStringArray(arr);
+}
+
+Set!string __StringSet__Pop() {
+    auto arr = nativeimplclient.popStringArray();
+    return Set!string(arr);
+}
+
+void takeSet(Set!string stringSet) {
+    __StringSet__Push(stringSet);
+    nativeimplclient.invokeModuleMethod(_takeSet);
+}
+
+Set!string makeSet() {
+    nativeimplclient.invokeModuleMethod(_makeSet);
+    return __StringSet__Pop();
 }

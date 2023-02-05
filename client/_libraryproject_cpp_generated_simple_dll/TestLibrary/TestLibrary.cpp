@@ -338,14 +338,14 @@ void popStringArray(const char*** strs, size_t** lengths, size_t* count)
     ni_popStringArray(strs, lengths, count);
 }
 
-void pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor)
+void pushBuffer(int id, bool isClientId, ni_BufferDescriptor* descriptor)
 {
-    ni_pushBuffer(id, isClientId, inSafetyArea, descriptor);
+    ni_pushBuffer(id, isClientId, descriptor);
 }
 
-void popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor)
+void popBuffer(int* id, bool* isClientId, ni_BufferDescriptor* descriptor)
 {
-    ni_popBuffer(id, isClientId, inSafetyArea, descriptor);
+    ni_popBuffer(id, isClientId, descriptor);
 }
 
 void pushClientFunc(int id)
@@ -378,14 +378,14 @@ ni_ExceptionRef invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method
     return ni_invokeInterfaceMethodWithExceptions(method, serverID);
 }
 
-void pushInstance(int id, bool isClientId, bool inSafetyArea)
+void pushInstance(int id, bool isClientId)
 {
-    ni_pushInstance(id, isClientId, inSafetyArea);
+    ni_pushInstance(id, isClientId);
 }
 
-int popInstance(bool* isClientID, bool* inSafetyArea)
+int popInstance(bool* isClientID)
 {
-    return ni_popInstance(isClientID, inSafetyArea);
+    return ni_popInstance(isClientID);
 }
 
 void pushNull()

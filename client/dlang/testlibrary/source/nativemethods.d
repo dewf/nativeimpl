@@ -58,8 +58,8 @@ extern (C) {
     int popServerFunc();
     void execServerFunc(int id);
     
-    void pushInstance(int id, bool isClientId, bool inSafetyArea);
-    int popInstance(bool* isClientId, bool* inSafetyArea);
+    void pushInstance(int id, bool isClientId);
+    int popInstance(bool* isClientId);
 
     void pushNull();
 

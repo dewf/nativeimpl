@@ -113,14 +113,14 @@ extern "C" {
 		size_t totalCount;
 		size_t totalSize;
 	};
-	extern void ni_pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor);
-	extern void ni_popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor);
+	extern void ni_pushBuffer(int id, bool isClientId, ni_BufferDescriptor* descriptor);
+	extern void ni_popBuffer(int* id, bool* isClientId, ni_BufferDescriptor* descriptor);
 
 	extern int ni_popClientFunc();
 	extern void ni_pushServerFunc(int id);
 
-	extern void ni_pushInstance(int id, bool isClientId, bool inSafetyArea);
-	extern int ni_popInstance(bool* isClientId, bool* inSafetyArea);
+	extern void ni_pushInstance(int id, bool isClientId);
+	extern int ni_popInstance(bool* isClientId);
 
 	extern void ni_pushNull();
 

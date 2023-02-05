@@ -302,8 +302,8 @@ ServerFuncVal popServerFuncVal() {
     return new ServerFuncVal(id);
 }
 
-int popInstance(ref bool isClientId, ref bool inSafetyArea) {
-    return nativemethods.popInstance(&isClientId, &inSafetyArea);
+int popInstance(ref bool isClientId) {
+    return nativemethods.popInstance(&isClientId);
 }
 
 void pushNull() {
@@ -369,13 +369,13 @@ class ServerObject : ServerResource, IPushable {
         if (isReturnValue) {
             safetyArea ~= this;
         }
-        nativemethods.pushInstance(id, false, isReturnValue);
+        nativemethods.pushInstance(id, false);
     }
 }
 
 class ClientObject: ClientResource, IPushable {
     override void nativePush(int id) {
-        nativemethods.pushInstance(id, true, false); // never in safety area - only applicable when returning server objects to server
+        nativemethods.pushInstance(id, true);
     }
     override void push(bool isReturnValue) {
         // isReturnValue unused - client objects never go in safety area

@@ -97,9 +97,9 @@ public:
 
 	virtual int clientFuncId() { throw WrongTypeException(); }
 	virtual int serverFuncId() { throw WrongTypeException(); }
-	virtual int instanceId(bool* isClientId, bool* inSafetyArea) { throw WrongTypeException(); }
+	virtual int instanceId(bool* isClientId) { throw WrongTypeException(); }
 
-	virtual void buffer(int *id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor) { throw WrongTypeException(); }
+	virtual void buffer(int *id, bool* isClientId, ni_BufferDescriptor* descriptor) { throw WrongTypeException(); }
 };
 
 class NullItem : public StackItem {
@@ -109,15 +109,13 @@ public:
 	void* ptrValue() override {
 		return nullptr;
 	}
-	int instanceId(bool* isClientId, bool* inSafetyArea) override {
+	int instanceId(bool* isClientId) override {
 		*isClientId = false;
-		*inSafetyArea = false;
 		return 0;
 	}
-	void buffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor) override {
+	void buffer(int* id, bool* isClientId, ni_BufferDescriptor* descriptor) override {
 		*id = 0;
 		*isClientId = false;
-		*inSafetyArea = false;
 		descriptor->start = nullptr;
 	}
 };
@@ -467,18 +465,11 @@ class InstanceItem : public StackItem {
 public:
 	int id;
 	bool isClientId;
-	bool inSafetyArea;
-	InstanceItem(int id, bool isClientId, bool inSafetyArea) :
+	InstanceItem(int id, bool isClientId) :
 		id(id),
-		isClientId(isClientId),
-		inSafetyArea(inSafetyArea) {}
-	int instanceId(bool* isClientId, bool* inSafetyArea) override {
+		isClientId(isClientId) {}
+	int instanceId(bool* isClientId) override {
 		*isClientId = this->isClientId;
-		if (inSafetyArea) {
-			// optional ptr - we only care about this in 'safe return' contexts (popping instance return values)
-			// it's not necessary when popping function arguments
-			*inSafetyArea = this->inSafetyArea;
-		}
 		return id;
 	}
 };
@@ -487,17 +478,15 @@ class BufferItem : public StackItem {
 public:
 	int id;
 	bool isClientId;
-	bool inSafetyArea;
 	ni_BufferDescriptor descriptor;
-	BufferItem(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor)
-		: id(id), isClientId(isClientId), inSafetyArea(inSafetyArea)
+	BufferItem(int id, bool isClientId, ni_BufferDescriptor* descriptor)
+		: id(id), isClientId(isClientId)
 	{
 		this->descriptor = *descriptor;
 	}
-	void buffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor) override {
+	void buffer(int* id, bool* isClientId, ni_BufferDescriptor* descriptor) override {
 		*id = this->id;
 		*isClientId = this->isClientId;
-		*inSafetyArea = this->inSafetyArea;
 		*descriptor = this->descriptor;
 	}
 };
@@ -1035,14 +1024,14 @@ void ni_popStringArray(const char*** strs, size_t** lengths, size_t* count)
 	*count = _count;
 }
 
-void ni_pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor)
+void ni_pushBuffer(int id, bool isClientId, ni_BufferDescriptor* descriptor)
 {
-	thlocal.push(new BufferItem(id, isClientId, inSafetyArea, descriptor));
+	thlocal.push(new BufferItem(id, isClientId, descriptor));
 }
 
-void ni_popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor)
+void ni_popBuffer(int* id, bool* isClientId, ni_BufferDescriptor* descriptor)
 {
-	thlocal.pop()->buffer(id, isClientId, inSafetyArea, descriptor);
+	thlocal.pop()->buffer(id, isClientId, descriptor);
 }
 
 void ni_pushClientFunc(int id)
@@ -1073,13 +1062,13 @@ ni_ExceptionRef ni_invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef met
 	return ret;
 }
 
-void ni_pushInstance(int id, bool isClientId, bool inSafetyArea)
+void ni_pushInstance(int id, bool isClientId)
 {
-	thlocal.push(new InstanceItem(id, isClientId, inSafetyArea));
+	thlocal.push(new InstanceItem(id, isClientId));
 }
 
-int ni_popInstance(bool* isClientID, bool* inSafetyArea) {
-	return thlocal.pop()->instanceId(isClientID, inSafetyArea);
+int ni_popInstance(bool* isClientID) {
+	return thlocal.pop()->instanceId(isClientID);
 }
 
 void ni_pushNull()

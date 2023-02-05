@@ -330,7 +330,7 @@ std::shared_ptr<ServerObject> ServerObject::getByID(int id)
 
 void ServerObject::nativePush()
 {
-	ni_pushInstance(id, false, false);
+	ni_pushInstance(id, false);
 }
 
 void ni_releaseServerResource(int id)
@@ -360,7 +360,7 @@ void ClientResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 		auto clientOuter = std::dynamic_pointer_cast<ClientResource>(outer);
 		safeArea.push_back(clientOuter);
 	}
-	nativePush(isReturn);
+	nativePush();
 }
 
 ClientResource::~ClientResource() {
@@ -369,9 +369,9 @@ ClientResource::~ClientResource() {
 	::ni_clientResourceRelease(id);
 }
 
-void ClientObject::nativePush(bool inSafetyArea)
+void ClientObject::nativePush()
 {
-	ni_pushInstance(id, true, inSafetyArea);
+	ni_pushInstance(id, true);
 }
 
 void ClientObject::invokeMethod(ni_InterfaceMethodRef method) {
@@ -394,11 +394,11 @@ void ClientFuncVal::remoteExecWithExceptions()
 	ni_processExceptions();
 }
 
-void ClientFuncVal::nativePush(bool inSafetyArea)
+void ClientFuncVal::nativePush()
 {
-	// currently this should never be called, only server func values can be pushed
+	// currently this should never be called, only server func values can be pushed from server
 	// (a client function returned would be wrapped as a server func)
-	throw "oops";
+	throw "ClientFuncVal::nativePush - oops";
 }
 
 void ServerFuncVal::nativePush()

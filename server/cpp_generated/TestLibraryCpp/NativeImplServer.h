@@ -35,7 +35,7 @@ protected:
 class ClientResource : public Pushable {
 protected:
 	int id;
-	virtual void nativePush(bool inSafetyArea) = 0;
+	virtual void nativePush() = 0;
 public:
 	ClientResource(int id) : id(id) {}
 	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
@@ -56,7 +56,7 @@ public:
 	void invokeMethod(ni_InterfaceMethodRef method);
 	void invokeMethodWithExceptions(ni_InterfaceMethodRef method);
 protected:
-	void nativePush(bool inSafetyArea) override;
+	void nativePush() override;
 };
 
 class ClientFuncVal : public ClientResource {
@@ -65,7 +65,7 @@ public:
 	void remoteExec();
 	void remoteExecWithExceptions();
 protected:
-	void nativePush(bool inSafetyArea) override;
+	void nativePush() override;
 };
 
 class ServerFuncVal : public ServerResource {
@@ -101,8 +101,8 @@ public:
 		*length = descriptor.totalCount;
 		return (T*)descriptor.start;
 	}
-	void nativePush(bool inSafetyArea) override {
-		ni_pushBuffer(id, true, inSafetyArea, &descriptor);
+	void nativePush() override {
+		ni_pushBuffer(id, true, &descriptor);
 	}
 };
 
@@ -120,7 +120,7 @@ protected:
 		desc.elementSize = elementSize;
 		desc.totalCount = totalCount;
 		desc.totalSize = totalSize;
-		ni_pushBuffer(id, false, false, &desc);
+		ni_pushBuffer(id, false, &desc);
 	}
 	void releaseExtra() override {
 		free(block);

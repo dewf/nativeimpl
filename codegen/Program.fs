@@ -14,4 +14,5 @@ let moduleDef =
 
 CppGenerator.generate moduleDef
 DlangGenerator.generate moduleDef
-//CsharpGenerator.generate moduleDef
+// CsharpGenerator.generate moduleDef
+

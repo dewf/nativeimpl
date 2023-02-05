@@ -146,8 +146,8 @@ extern "C" {
 		size_t totalCount;
 		size_t totalSize;
 	};
-	void ni_pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor);
-	void ni_popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor);
+	void ni_pushBuffer(int id, bool isClientId, ni_BufferDescriptor* descriptor);
+	void ni_popBuffer(int* id, bool* isClientId, ni_BufferDescriptor* descriptor);
 
 	void ni_pushClientFunc(int id);
 	void ni_pushServerFunc(int id);
@@ -165,8 +165,8 @@ extern "C" {
 	// TODO: get rid of the safety area flag, it was there so we could only conditionally clear the safety area,
 	// but I think all the ifs and checking (conditional setting of 'remotesafetyareadirty' or whatever) will end up
 	// being equivalent to simply clearing the remote safety area unconditionally at the end of every invocation returning (something containing) an interface reference
-	void ni_pushInstance(int id, bool isClientId, bool inSafetyArea);
-	int ni_popInstance(bool* isClientID, bool* inSafetyArea);
+	void ni_pushInstance(int id, bool isClientId);
+	int ni_popInstance(bool* isClientID);
 
 	// should work for all reference types: object instances, opaque handles, buffers, etc
 	void ni_pushNull();

@@ -83,8 +83,7 @@ void init() {
     });
     setClientMethodWrapper(_ithing01StashThing, (ClientObject obj) {
         auto thing = cast(ClientIThing01) obj;
-        bool __ignored;
-        auto subThing = __IThing01__pop(__ignored);
+        auto subThing = __IThing01__pop();
         thing.stashThing(subThing);
         // no return value
     });
@@ -243,9 +242,9 @@ interface IThing01 : IDisposable {
 }
 
 // keep this out of the interface to keep it clean
-private IThing01 __IThing01__pop(ref bool inSafetyArea) {
+private IThing01 __IThing01__pop() {
     bool isClientId;
-    const id = nativeimplclient.popInstance(isClientId, inSafetyArea);
+    const id = nativeimplclient.popInstance(isClientId);
     if (id != 0) {
         if (isClientId) {
             return cast(IThing01) ClientObject.getByID(id);
@@ -285,12 +284,8 @@ public:
     }
     IThing01 getStashedThing() {
         invokeMethod(_ithing01GetStashedThing);
-        bool inSafetyArea;
-        auto ret = __IThing01__pop(inSafetyArea);
-        if (inSafetyArea) {
-            // because remote returned an interface to us - was being kept safe on the remote side until we got it (premature derefs are bad mmkay)
-            clearServerSafetyArea();  
-        }
+        auto ret = __IThing01__pop();
+        clearServerSafetyArea();
         return ret;
     }
     void testThrow(bool doThrow) {
@@ -304,11 +299,8 @@ public:
 
 IThing01 makeThing() {
     nativeimplclient.invokeModuleMethod(_makeThing);
-    bool inSafetyArea;
-    auto ret = __IThing01__pop(inSafetyArea); // couldn't we simply check to see if this is a client object, and only then clear server safety area?
-    if (inSafetyArea) {
-        nativeimplclient.clearServerSafetyArea();
-    }
+    auto ret = __IThing01__pop();
+    nativeimplclient.clearServerSafetyArea();
     return ret;
 }
 
@@ -334,13 +326,9 @@ void saveThing(IThing01 thing) {
 
 IThing01 getSavedThing() {
     invokeModuleMethod(_getSavedThing);
-    bool inSafetyArea;
-    auto ret = __IThing01__pop(inSafetyArea);
-    writeln("dlang IThing01 safely popped, before clearing safety area");
-    if (inSafetyArea) {
-        writeln("dlang clearing remote safety area");
-        clearServerSafetyArea();
-    }
+    auto ret = __IThing01__pop();
+    writeln("dlang clearing remote safety area");
+    clearServerSafetyArea();
     return ret;
 }
 

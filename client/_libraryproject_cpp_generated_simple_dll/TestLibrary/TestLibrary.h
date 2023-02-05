@@ -96,8 +96,8 @@ extern "C" {
 	TESTLIBRARY_API void pushStringArray(const char** strs, size_t* lengths, size_t count);
 	TESTLIBRARY_API void popStringArray(const char*** strs, size_t** lengths, size_t* count);
 
-	TESTLIBRARY_API void pushBuffer(int id, bool isClientId, bool inSafetyArea, ni_BufferDescriptor* descriptor);
-	TESTLIBRARY_API void popBuffer(int* id, bool* isClientId, bool* inSafetyArea, ni_BufferDescriptor* descriptor);
+	TESTLIBRARY_API void pushBuffer(int id, bool isClientId, ni_BufferDescriptor* descriptor);
+	TESTLIBRARY_API void popBuffer(int* id, bool* isClientId, ni_BufferDescriptor* descriptor);
 
 	TESTLIBRARY_API void pushClientFunc(int id);
 	TESTLIBRARY_API int popServerFunc();

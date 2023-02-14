@@ -134,10 +134,8 @@ type PopValueContext =
     | SafeReturn
     | ExceptionContext
 
-let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
+let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopValueContext) =
+    let write = writer.Write
     let contextPrefix =
         match context with
         | Variable varName -> sprintf "auto %s =" varName
@@ -220,10 +218,8 @@ type PushIsReturn =
     | Indirect of name: string
     | NotApplicable
 
-let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
+let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
+    let write = writer.Write
     let isReturnString() =
         match isReturn with
         | Direct value -> if value then "true" else "false"
@@ -301,11 +297,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
         write level "// (pushValue not supported yet: %A)" type_
 
 
-let renderWrapperDelegate (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (info: DelegateInfo) (typeContainsRefs: NIType -> bool) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let renderWrapperDelegate (writer: IFormatWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (info: DelegateInfo) (typeContainsRefs: NIType -> bool) =
+    let write, blank = writer.Write, writer.Blank
     // push
     write 0 "void %s__push(std::function<%s> f) {" name name
     write 1 "size_t uniqueKey = 0;"
@@ -358,11 +351,8 @@ let renderWrapperDelegate (writer: TextWriter) (typeMap: Map<string, UserOrGener
     write 1 "return wrapper;"
     write 0 "}"
 
-let renderWrapperInterface (writer: TextWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (methods: NamedFunction list) (typeContainsRefs: NIType -> bool) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let renderWrapperInterface (writer: IFormatWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (methods: NamedFunction list) (typeContainsRefs: NIType -> bool) =
+    let write, blank = writer.Write, writer.Blank
     // client wrapper
     write 0 "class Client%s : public ClientObject, public %s {" name name
     write 0 "public:"
@@ -420,11 +410,9 @@ let renderWrapperInterface (writer: TextWriter) (typeMap: Map<string, UserOrGene
     write 1 "}"
     write 0 "}"
 
-let renderWrapperException (writer: TextWriter) (name: string) (exFields: NamedField list) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let renderWrapperException (writer: IFormatWriter) (name: string) (exFields: NamedField list) =
+    let write, blank = writer.Write, writer.Blank
+    //
     blank()
     write 0 "void %s__push(%s e) {" name name
     // push field values (reverse order)
@@ -442,11 +430,8 @@ let renderWrapperException (writer: TextWriter) (name: string) (exFields: NamedF
     write 1 "throw %s(%s);" name (joinedFieldNames exFields)
     write 0 "}"
 
-let renderWrapperSumType (writer: TextWriter) (sumTypeName: string) (values: SumTypeValue list) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let renderWrapperSumType (writer: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
+    let write, blank = writer.Write, writer.Blank
     let tagType =
         Primitive(Int(true,Width32))
     // push
@@ -477,11 +462,8 @@ let renderWrapperSumType (writer: TextWriter) (sumTypeName: string) (values: Sum
     write 1 "}"
     write 0 "}"
 
-type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, outerType: NIType, elemType: NIType) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+type ArrayOrSetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, outerType: NIType, elemType: NIType) =
+    let write, blank = writer.Write, writer.Blank
     // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
     let arrayDefault () =
         // PUSH ========
@@ -647,11 +629,9 @@ type ArrayOrSetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>,
         member this.Other (t: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString typeMap outerType)
 
-let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,bool>) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let renderWrapperUserTypes (writer: IFormatWriter) (containsRefsMap: Map<string,bool>) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
+    let write, blank = writer.Write, writer.Blank
+    //
     let typeContainsRefs (type_: NIType) =
         containsRefsMap.TryFind(typeToInternalKey type_)
         |> Option.defaultValue false
@@ -804,11 +784,8 @@ let renderWrapperUserTypes (writer: TextWriter) (containsRefsMap: Map<string,boo
         | SumTypeDef values ->
             renderWrapperSumType writer name values
 
-let generateWrappersCpp (m: Module) (writer: TextWriter) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let generateWrappersCpp (m: Module) (writer: IFormatWriter) =
+    let write, blank = writer.Write, writer.Blank
     // things we'll need to use a few times:
     let globals =
         m.Defs
@@ -955,10 +932,9 @@ let generateWrappersCpp (m: Module) (writer: TextWriter) =
     // nothing for C++
     write 0 "}"
 
-let renderHeaderException (writer: TextWriter) (exName: string) (exFields: NamedField list) (typeMap: Map<string, UserOrGeneric>) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
+let renderHeaderException (writer: IFormatWriter) (exName: string) (exFields: NamedField list) (typeMap: Map<string, UserOrGeneric>) =
+    let write, blank = writer.Write, writer.Blank
+    //
     write 0 "class %s {" exName
     write 0 "public:"
     for namedField in exFields do
@@ -973,12 +949,9 @@ let renderHeaderException (writer: TextWriter) (exName: string) (exFields: Named
         write 2 ": %s {}" joinedInitializers
     write 0 "};"
 
-let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFunction list) (typeMap: Map<string, UserOrGeneric>) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank() =
-        write 0 ""
+let renderHeaderInterface (writer: IFormatWriter) (name: string) (methods: NamedFunction list) (typeMap: Map<string, UserOrGeneric>) =
+    let write, blank = writer.Write, writer.Blank
+    //
     write 0 "class %s {" name
     write 0 "public:"
     for namedFunc in methods do
@@ -1007,10 +980,9 @@ let renderHeaderInterface (writer: TextWriter) (name: string) (methods: NamedFun
     write 1 "}"
     write 0 "};"
 
-let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumTypeValue list) (typeMap: Map<string, UserOrGeneric>) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
+let renderHeaderSumType (writer: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) (typeMap: Map<string, UserOrGeneric>) =
+    let write, blank = writer.Write, writer.Blank
+    //
     write 0 "struct %s {" sumTypeName
     write 0 "public:"
     write 1 "enum class Tag {"
@@ -1032,11 +1004,9 @@ let renderHeaderSumType (writer: TextWriter) (sumTypeName: string) (values: SumT
         write 1 "std::shared_ptr<%s> %s;" value.Name (lowerFirst value.Name)
     write 0 "};"
 
-let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let renderHeaderUserTypes (writer: IFormatWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
+    let write, blank = writer.Write, writer.Blank
+    //
     blank()
     match content with
     | UserOrGeneric.FwdInterface ->
@@ -1099,11 +1069,9 @@ let renderHeaderUserTypes (writer: TextWriter) (name: string) (content: UserOrGe
         | SumTypeDef enumValues ->
             renderHeaderSumType writer name enumValues typeMap 
 
-let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: TextWriter) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) =
+    let write, blank = writer.Write, writer.Blank
+    //
     let globals =
         m.Defs
         |> List.choose (function
@@ -1147,11 +1115,9 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
                 sprintf " // throws %s" joined
         write 0 "%s %s(%s);%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
 
-let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: TextWriter) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) =
+    let write, blank = writer.Write, writer.Blank
+    //
     let globals =
         m.Defs
         |> List.choose (function
@@ -1207,20 +1173,28 @@ let generate (m: Module) =
         @"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp"
         
     printfn "C++ writing Wrappers.cpp"
-    use wrappersCpp = new StreamWriter(@$"{basePath}\Wrappers.cpp")
-    generateWrappersCpp m wrappersCpp
+    use wrappersOutput =
+        let writer = new StreamWriter(@$"{basePath}\Wrappers.cpp")
+        new SimpleFormatWriter(writer)
+    generateWrappersCpp m wrappersOutput
 
     printfn "C++ writing Implementation.h"
-    use implementationH = new StreamWriter(@$"{basePath}\Implementation.h")
-    generateImplementationH m typeMap implementationH
+    use implHeaderOutput =
+        let writer = new StreamWriter(@$"{basePath}\Implementation.h")
+        new SimpleFormatWriter(writer)
+    generateImplementationH m typeMap implHeaderOutput
 
     printfn "C++ writing Implementation.cpp"
     let implementationFilename =
+        // in the future we may auto-populate .cpp.new from the existing .cpp,
+        //   but will never overwrite something the user has worked on
         let default' =
             @$"{basePath}\Implementation.cpp"
         if File.Exists(default') then
             @$"{basePath}\Implementation.cpp.new"
         else
             default'
-    use implementationCpp = new StreamWriter(implementationFilename)
-    generateImplementationCpp m typeMap implementationCpp
+    use implementationOutput =
+        let writer = new StreamWriter(implementationFilename)
+        new SimpleFormatWriter(writer)
+    generateImplementationCpp m typeMap implementationOutput

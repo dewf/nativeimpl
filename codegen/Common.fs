@@ -1,6 +1,8 @@
 ﻿module Common
 
+open System
 open System.Collections.Generic
+open System.IO
 open Parser
 
 let rec typeToInternalKey = function
@@ -561,3 +563,21 @@ let renderArrayLike (typeMap: Map<string, UserOrGeneric>) (elemType: NIType) (re
         renderer.Primitive prim
     | other ->
         renderer.Other other
+
+
+// workaround for not being able to pass functions which take format strings
+// (formerly necessitated fully declaring 'write' and 'blank' anew in every function)
+type IFormatWriter =
+    abstract Write : int -> FSharp.Core.Printf.TextWriterFormat<'T> -> 'T
+    abstract Blank : unit -> unit
+
+type SimpleFormatWriter(writer: TextWriter) =
+    interface IDisposable with
+        member this.Dispose() =
+            writer.Dispose()
+    interface IFormatWriter with
+        member this.Write indent fmt =
+            writer.Write(String.replicate indent "    ")
+            fprintfn writer fmt
+        member this.Blank() =
+            writer.WriteLine()

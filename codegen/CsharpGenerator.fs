@@ -119,10 +119,8 @@ type PopValueContext =
     | Return
     | SafeReturn
 
-let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
+let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopValueContext) =
+    let write = writer.Write
     let contextPrefix =
         match context with
         | NewVariable name -> sprintf "var %s =" name
@@ -197,10 +195,8 @@ type PushIsReturn =
     | Indirect of name: string
     | NotApplicable
 
-let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
+let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
+    let write = writer.Write
     let isReturnString() =
         match isReturn with
         | Direct value -> if value then "true" else "false"
@@ -262,11 +258,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | _ ->
         write level "// pushValue %A not yet supported" type_
 
-type ArrayRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, outerType: NIType, elemType: NIType) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, outerType: NIType, elemType: NIType) =
+    let write, blank = writer.Write, writer.Blank
     let arrayDefault () =
         // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
         // PUSH ========
@@ -411,11 +404,8 @@ type ArrayRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, oute
         member this.Other (t: NIType) =
             write 2 "// TODO: push/pop for array of %s" (typeToCsString typeMap outerType)
 
-type SetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, outerType: NIType, elemType: NIType) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, outerType: NIType, elemType: NIType) =
+    let write, blank = writer.Write, writer.Blank
     let setDefault () =
         // use this for any element types with no particular specializations (typedefs, delegates, arrays -- everything but structs and tuples, basically)
         // PUSH ========
@@ -518,11 +508,8 @@ type SetRenderer(writer: TextWriter, typeMap: Map<string, UserOrGeneric>, outerT
         member this.Other (t: NIType) =
             write 2 "// TODO: push/pop for set of %s" (typeToCsString typeMap outerType)
 
-let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
+    let write, blank = writer.Write, writer.Blank
     //
     blank()
     match content with
@@ -954,11 +941,8 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
             write 3 "return Wrapper;"
             write 2 "}"
 
-let writeLibrary (m: Module) (writer: TextWriter) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let writeLibrary (m: Module) (writer: IFormatWriter) =
+    let write, blank = writer.Write, writer.Blank
 
     let moduleMethods =
         m.Defs
@@ -1156,5 +1140,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
 
 let generate (m: Module) =
     printfn "C# writing TestLibrary.cs"
-    use testLibraryCs = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\testproject\TestLibraryClient\TestLibrary.cs")
-    writeLibrary m testLibraryCs
+    use output =
+        let writer = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\testproject\TestLibraryClient\TestLibrary.cs")
+        new SimpleFormatWriter(writer)
+    writeLibrary m output

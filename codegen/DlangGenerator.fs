@@ -101,10 +101,8 @@ type PopValueContext =
     | Return
     | SafeReturn
     
-let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValueContext) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
+let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopValueContext) =
+    let write = writer.Write
     let contextPrefix =
         match context with
         | NewVariable name -> sprintf "auto %s =" name
@@ -179,10 +177,8 @@ type PushIsReturn =
     | Indirect of name: string
     | NotApplicable
 
-let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
+let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
+    let write = writer.Write
     let isReturnString() =
         match isReturn with
         | Direct value -> if value then "true" else "false"
@@ -244,11 +240,8 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | _ ->
         write level "// pushValue %A not yet supported" type_
         
-let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
+    let write, blank = writer.Write, writer.Blank
     //
     blank()
     match content with
@@ -316,11 +309,8 @@ let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (
     | _ ->
         failwithf "renderLibraryUserTypes: unsupported type [%A]" content
 
-let writeLibrary (m: Module) (writer: TextWriter) =
-    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
-        writer.Write(String.replicate level "    ")
-        fprintfn writer fmt
-    let blank () = write 0 ""
+let writeLibrary (m: Module) (writer: IFormatWriter) =
+    let write, blank = writer.Write, writer.Blank
     
     let moduleMethods =
         m.Defs
@@ -528,5 +518,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
 
 let generate (m: Module) =
     printfn "Dlang writing testlibrary.d"
-    use testLibraryDlang = new StreamWriter(@"F:\Workbench\nativeimpl\client\dlang\testlibrary\source\testlibrary_generated.d")
-    writeLibrary m testLibraryDlang
+    use output =
+        let writer = new StreamWriter(@"F:\Workbench\nativeimpl\client\dlang\testlibrary\source\testlibrary_generated.d")
+        new SimpleFormatWriter(writer)
+    writeLibrary m output

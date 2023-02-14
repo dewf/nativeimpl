@@ -33,7 +33,7 @@ let rec typeToDlangString (typeMap: Map<string, UserOrGeneric>) = function
     | ExceptionType name -> upperFirst name
     | DelegateType name -> upperFirst name
     | ArrayType niType -> sprintf "%s[]" (typeToDlangString typeMap niType)
-    // | SetType niType -> sprintf "HashSet<%s>" (typeToDlangString typeMap niType)
+    | SetType niType -> sprintf "Set!%s" (typeToDlangString typeMap niType)
     // | BufferType elemType -> sprintf "INativeBuffer<%s>" (typeToDlangString typeMap elemType)
     | TupleType tupleTypes ->
         let joined =
@@ -162,7 +162,7 @@ let popValue (writer: TextWriter) (level: int) (type_: NIType) (context: PopValu
     | EnumType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | SumType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
+        write level "%s __%s__Pop();" contextPrefix (upperFirst name)
     | TypedefType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | _ ->
@@ -228,7 +228,7 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | EnumType name ->
         write level "%s__Push(%s);" name content
     | SumType name ->
-        write level "%s__Push(%s, %s);" name content (isReturnString())
+        write level "__%s__Push(%s, %s);" name content (isReturnString())
     | StructType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | TupleType _ ->
@@ -244,7 +244,78 @@ let pushValue (writer: TextWriter) (level: int) (type_: NIType) (content: string
     | _ ->
         write level "// pushValue %A not yet supported" type_
         
-    
+let renderLibraryUserTypes (writer: TextWriter) (containsRefs: NIType -> bool) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
+    let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
+        writer.Write(String.replicate level "    ")
+        fprintfn writer fmt
+    let blank () = write 0 ""
+    //
+    blank()
+    match content with
+    | UserOrGeneric.FwdInterface ->
+        () // Dlang doesn't require forward declarations
+    | UserOrGeneric.User userType ->
+        match userType with
+        | SumTypeDef sumTypeValues ->
+            // definition =========
+            write 0 "struct %s {" (upperFirst name)
+            // tag ----------------
+            write 1 "private enum Tag {"
+            for value, maybeComma in sumTypeValues |> withTrailingCommas do
+                write 2 "%s%s" value.Name maybeComma
+            write 1 "}"
+            // value defs ---------
+            for value in sumTypeValues do
+                write 1 "struct %s {" (upperFirst value.Name)
+                for argName, argType in value.Args do
+                    write 2 "%s %s;" (typeToDlangString typeMap argType) argName
+                // 'make' func ----
+                write 2 "static %s make(%s) {" (upperFirst name) (argsJoined typeMap value.Args)
+                write 3 "return %s(cast(%s.T) %s(%s));" (upperFirst name) (upperFirst name) value.Name (argNamesJoined value.Args)
+                write 2 "}"
+                write 1 "}"
+            // sumtype proper -----
+            let joinedValueNames =
+                sumTypeValues
+                |> List.map (fun v -> v.Name)
+                |> String.concat ","
+            write 1 "alias T = SumType!(%s);" joinedValueNames
+            write 1 "T value;"
+            write 1 "alias value this;"
+            write 0 "}"
+            // PUSH
+            blank()
+            write 0 "private void __%s__Push(%s value, bool isReturn) {" (upperFirst name) (upperFirst name)
+            write 1 "value.match!("
+            for (i, value), maybeComma in sumTypeValues |> List.indexed |> withTrailingCommas do
+                let varName = sprintf "v%d" (i + 1)
+                write 2 "(%s.%s %s) {" (upperFirst name) value.Name varName
+                for argName, argType in value.Args |> List.rev do
+                    pushValue writer 3 argType (sprintf "%s.%s" varName argName) (Indirect "isReturn")
+                pushValue writer 3 (Primitive (Int (true, Width32))) (sprintf "%s.Tag.%s" (upperFirst name) value.Name) NotApplicable
+                write 2 "}%s" maybeComma
+            write 1 ");"
+            write 0 "}"
+            // POP
+            blank()
+            write 0 "private %s __%s__Pop() {" (upperFirst name) (upperFirst name)
+            write 1 "auto tag = cast(%s.Tag) nativeimplclient.popInt32();" (upperFirst name)
+            write 1 "switch (tag) {"
+            for value in sumTypeValues do
+                write 2 "case %s.Tag.%s: {" (upperFirst name) value.Name
+                for argName, argType in value.Args do
+                    popValue writer 3 argType (NewVariable argName)
+                write 3 "return %s.%s.make(%s);" (upperFirst name) value.Name (argNamesJoined value.Args)
+                write 2 "}"
+            write 2 "default:"
+            write 3 "assert(0);"
+            write 1 "}"
+            write 0 "}"
+        | _ ->
+            failwithf "renderLibraryUserTypes: usertype [%A] not yet supported" userType
+    | _ ->
+        failwithf "renderLibraryUserTypes: unsupported type [%A]" content
+
 let writeLibrary (m: Module) (writer: TextWriter) =
     let write (level: int) (fmt: FSharp.Core.Printf.TextWriterFormat<'T>) =
         writer.Write(String.replicate level "    ")
@@ -283,6 +354,7 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     write 0 "import std.conv: to;"
     write 0 "import std.sumtype;"
     write 0 "import nativeimplclient;"
+    write 0 "import simpleset: Set;"
     blank()
     write 0 "private:"
     blank()
@@ -324,9 +396,9 @@ let writeLibrary (m: Module) (writer: TextWriter) =
     let containsRefs (type_: NIType) =
         containsRefsMap.TryFind(typeToInternalKey type_)
         |> Option.defaultValue false
-    // let renderFunc =
-    //     renderLibraryUserTypes writer containsRefs
-    // renderUserTypes typeMap renderFunc
+    let renderFunc =
+        renderLibraryUserTypes writer containsRefs
+    renderUserTypes typeMap renderFunc
     
     // public globals accessors
     if not globals.IsEmpty then

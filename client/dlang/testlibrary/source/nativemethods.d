@@ -43,6 +43,9 @@ extern (C) {
     void pushSizeT(size_t value);
     size_t popSizeT();
 
+    void pushPtr(void* ptr);
+    void* popPtr();
+
     void pushBool(bool b);
     bool popBool();
 
@@ -68,5 +71,7 @@ extern (C) {
     void setException(ni_ExceptionRef e);
 
     void clearServerSafetyArea();
+
+    void dumpTables();
 }
 

@@ -9,39 +9,52 @@ import simpleset: Set;
 
 import std.sumtype;
 
-class MyThing : testlib.ClientIThing01 {
-public:
-    private testlib.IThing01 _stashed;
-    override int someMethod(int x) {
-        writefln("dlang MyThing.someMethod(%d)", x);
-        return x + 101;
+// class MyThing : testlib.ClientIThing01 {
+// public:
+//     private testlib.IThing01 _stashed;
+//     override int someMethod(int x) {
+//         writefln("dlang MyThing.someMethod(%d)", x);
+//         return x + 101;
+//     }
+//     override void stashThing(testlib.IThing01 subThing) {
+//         _stashed = subThing;
+//     }
+//     override testlib.IThing01 getStashedThing() {
+//         auto ret = _stashed;
+//         _stashed = null;
+//         // see note in C#, not sure if applicable or ... it's been a long time
+//         return ret;
+//     }
+//     override void testThrow(bool doThrow) {
+//         writefln("dlang hello from MyThing.testThrow! dothrow: %s", doThrow);
+//         if (doThrow) {
+//             throw new testlib.InterfaceMethodException(98_765);
+//         }
+//     }
+//     override void onTimerTick() {
+//         writeln("dlang MyThing.onTimerTick()");
+//     }
+//     override void dispose() {
+//         writeln("dlang MyThing - perfunctory dispose()");
+//     }
+// }
+
+class MyOpaque2 {
+    MyOpaque _priv;
+    this(int x) {
+        _priv = testlib.makeOpaque(x);
     }
-    override void stashThing(testlib.IThing01 subThing) {
-        _stashed = subThing;
-    }
-    override testlib.IThing01 getStashedThing() {
-        auto ret = _stashed;
-        _stashed = null;
-        // see note in C#, not sure if applicable or ... it's been a long time
-        return ret;
-    }
-    override void testThrow(bool doThrow) {
-        writefln("dlang hello from MyThing.testThrow! dothrow: %s", doThrow);
-        if (doThrow) {
-            throw new testlib.InterfaceMethodException(98_765);
-        }
-    }
-    override void onTimerTick() {
-        writeln("dlang MyThing.onTimerTick()");
-    }
-    override void dispose() {
-        writeln("dlang MyThing - perfunctory dispose()");
+    int someMethod(int a, string b) {
+        return myOpaqueSomeMethod(_priv, a, b);
     }
 }
 
 void main()
 {
     testlib.init();
+
+    auto op = testlib.makeOpaque(1234);
+    writefln("op.someMethod(101, \"hi\") = %d", myOpaqueSomeMethod(op, 101, "hi"));
 
     // outer block for 'using'
     {
@@ -133,27 +146,28 @@ void main()
         // Thread.sleep(dur!"seconds"(5));
         // testlib.stopTimer();
 
-        FancySumType sumValue = FancySumType.Value1.make(9876, "wahooo");
-        takeSumType(sumValue);
+        // FancySumType sumValue = FancySumType.Value1.make(9876, "wahooo");
+        // takeSumType(sumValue);
 
-        auto sumValue2 = makeSumType();
-        writeln("dlang makeSumType():");
-        sumValue2.match!(
-            (FancySumType.Value1 v1) {
-                writefln(" - got v1: %d/%s", v1.a, v1.b);
-            },
-            (FancySumType.Value2 v2) {
-                writefln(" - got v2: (no params)");
-            },
-            (FancySumType.Value3 v3) {
-                writefln(" - got v3: %s", v3.x);
-            }
-        );
+        // auto sumValue2 = makeSumType();
+        // writeln("dlang makeSumType():");
+        // sumValue2.match!(
+        //     (FancySumType.Value1 v1) {
+        //         writefln(" - got v1: %d/%s", v1.a, v1.b);
+        //     },
+        //     (FancySumType.Value2 v2) {
+        //         writefln(" - got v2: (no params)");
+        //     },
+        //     (FancySumType.Value3 v3) {
+        //         writefln(" - got v3: %s", v3.x);
+        //     }
+        // );
 
-        auto set1 = testlib.makeSet();
-        writefln("set1: %s", set1);
+        // auto set1 = testlib.makeSet();
+        // writefln("set1: %s", set1);
 
-        testlib.takeSet(Set!string("1 - one", "2 - two", "3 - three", "1 - one"));
+        // testlib.takeSet(Set!string("1 - one", "2 - two", "3 - three", "1 - one"));
     }
+    testlib.dumpTables();
     testlib.shutdown();
 }

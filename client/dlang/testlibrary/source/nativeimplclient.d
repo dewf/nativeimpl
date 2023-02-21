@@ -1,6 +1,7 @@
 module nativeimplclient;
 import std.stdio;
 import std.string: toStringz;
+import std.format: format;
 import std.algorithm: map;
 import std.range: array;
 
@@ -108,6 +109,10 @@ class ClientFuncVal : ClientResource {
     void exec() {
         // woot!
         wrapper();
+    }
+    override string toString() const
+    {
+        return format!"ClientFuncVal[key:%08X]"(key);
     }
     // static methods -------------------------------
     static ClientFuncVal getByID(int id) {
@@ -242,6 +247,14 @@ void pushSizeT(size_t value) {
 
 size_t popSizeT() {
     return nativemethods.popSizeT();
+}
+
+void pushPtr(void* ptr) {
+    nativemethods.pushPtr(ptr);
+}
+
+void* popPtr() {
+    return nativemethods.popPtr();
 }
 
 void pushBool(bool b) {
@@ -381,6 +394,10 @@ class ClientObject: ClientResource, IPushable {
         // isReturnValue unused - client objects never go in safety area
         resourcePush(); // rely on ClientResource push to determine ID / addref before sending out
     }
+    override string toString() const
+    {
+        return "ClientObject";
+    }
     // static methods:
     static ClientObject getByID(int id) {
         return cast(ClientObject) ClientResource.getByID(id);
@@ -411,3 +428,12 @@ Disposable!T using(T : IDisposable)(T payload)
     return Disposable!T(payload);
 }
 
+void dumpTables() {
+    writeln("=== dlang client resources: ===");
+    foreach(id, value; resourceMap) {
+        writefln(" - %d: %s", id, value);
+    }
+    writeln("=== dlang client safety area ===");
+    writefln(" - %d server objects", safetyArea.length);
+    nativemethods.dumpTables();
+}

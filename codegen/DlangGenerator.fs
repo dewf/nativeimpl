@@ -124,7 +124,7 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         | Float64 -> write level "%s nativeimplclient.popDouble();" contextPrefix
         | StringType -> write level "%s nativeimplclient.popString();" contextPrefix
     | OpaqueHandleType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
+        write level "%s %s.pop();" contextPrefix (upperFirst name)
     | InterfaceType ifaceName ->
         write level "%s %s__Pop();" contextPrefix (upperFirst ifaceName)
     | DelegateType name ->
@@ -197,7 +197,7 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
         | Float64 -> write level "nativeimplclient.pushDouble(%s);" content
         | StringType -> write level "nativeimplclient.pushString(%s);" content
     | OpaqueHandleType name ->
-        write level "%s__Push(%s);" (upperFirst name) content
+        write level "(%s).push();" content
     | InterfaceType name ->
         write level "%s__Push(%s, %s);" (upperFirst name) content (isReturnString())
     | DelegateType name ->
@@ -249,6 +249,21 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
         () // Dlang doesn't require forward declarations
     | UserOrGeneric.User userType ->
         match userType with
+        | OpaqueHandleDef ->
+            write 0 "struct %s {" (upperFirst name)
+            write 0 "private:"
+            write 1 "void* _ptr;"
+            write 1 "this(void* ptr) {"
+            write 2 "_ptr = ptr;"
+            write 1 "}"
+            write 1 "void push() {"
+            write 2 "nativeimplclient.pushPtr(_ptr);"
+            write 1 "}"
+            write 1 "static %s pop() {" (upperFirst name)
+            write 2 "auto ptr = nativeimplclient.popPtr();"
+            write 2 "return %s(ptr);" (upperFirst name)
+            write 1 "}"
+            write 0 "}"
         | SumTypeDef sumTypeValues ->
             // definition =========
             write 0 "struct %s {" (upperFirst name)
@@ -405,9 +420,9 @@ let writeLibrary (m: Module) (writer: IFormatWriter) =
             pushValue writer 1 argType argName (Direct false)
         // invoke remote
         if namedFunc.Throws.IsEmpty then
-            write 1 "nativeImplClient.invokeModuleMethod(_%s);" (lowerFirst namedFunc.Name)
+            write 1 "nativeimplclient.invokeModuleMethod(_%s);" (lowerFirst namedFunc.Name)
         else
-            write 1 "nativeImplClient.invokeModuleMethodWithExceptions(_%s);" (lowerFirst namedFunc.Name)
+            write 1 "nativeimplclient.invokeModuleMethodWithExceptions(_%s);" (lowerFirst namedFunc.Name)
         // return pop
         popValue writer 1 namedFunc.Returns (if containsRefs namedFunc.Returns then SafeReturn else Return)
         write 0 "}"
@@ -444,7 +459,7 @@ let writeLibrary (m: Module) (writer: IFormatWriter) =
     if not moduleMethods.IsEmpty then
         blank()
         for namedFunc in moduleMethods do
-            write 1 "_%s = nativeImplClient.getModuleMethod(_module, \"%s\");" (lowerFirst namedFunc.Name) (lowerFirst namedFunc.Name)
+            write 1 "_%s = nativeimplclient.getModuleMethod(_module, \"%s\");" (lowerFirst namedFunc.Name) (lowerFirst namedFunc.Name)
             
     // exceptions
     if not exceptions.IsEmpty then
@@ -457,15 +472,15 @@ let writeLibrary (m: Module) (writer: IFormatWriter) =
     if not interfaces.IsEmpty then
         for ifaceName, methods in interfaces do
             blank()
-            write 1 "_%s = nativeImplClient.getInterface(_module, \"%s\");" (lowerFirst ifaceName) ifaceName
+            write 1 "_%s = nativeimplclient.getInterface(_module, \"%s\");" (lowerFirst ifaceName) ifaceName
             // methods
             if not methods.IsEmpty then
                 for method in methods do
-                    write 1 "_%s_%s = nativeImplClient.getInterfaceMethod(_%s, \"%s\");" (lowerFirst ifaceName) (lowerFirst method.Name) (lowerFirst ifaceName) method.Name
+                    write 1 "_%s_%s = nativeimplclient.getInterfaceMethod(_%s, \"%s\");" (lowerFirst ifaceName) (lowerFirst method.Name) (lowerFirst ifaceName) method.Name
             // method wrappers
             for method in methods do
                 blank()
-                write 1 "nativeImplClient.setClientMethodWrapper(_%s_%s, (ClientObject obj) {" (lowerFirst ifaceName) method.Name
+                write 1 "nativeimplclient.setClientMethodWrapper(_%s_%s, (ClientObject obj) {" (lowerFirst ifaceName) method.Name
                 write 2 "auto inst = cast(Client%s) obj;" ifaceName
                 // pop args
                 for argName, argType in method.Args do
@@ -519,6 +534,6 @@ let writeLibrary (m: Module) (writer: IFormatWriter) =
 let generate (m: Module) =
     printfn "Dlang writing testlibrary.d"
     use output =
-        let writer = new StreamWriter(@"F:\Workbench\nativeimpl\client\dlang\testlibrary\source\testlibrary_generated.d")
+        let writer = new StreamWriter(@"F:\Workbench\nativeimpl\client\dlang\testlibrary\source\testlibrary.d")
         new SimpleFormatWriter(writer)
     writeLibrary m output

@@ -1141,6 +1141,6 @@ let writeLibrary (m: Module) (writer: IFormatWriter) =
 let generate (m: Module) =
     printfn "C# writing TestLibrary.cs"
     use output =
-        let writer = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\testproject\TestLibraryClient\TestLibrary.cs")
+        let writer = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\TestLibraryClient\TestLibrary.cs")
         new SimpleFormatWriter(writer)
     writeLibrary m output

@@ -1,10 +1,10 @@
-﻿module CppGenerator
+﻿module Generators.Backend.CppGenerator
 
 open System.IO
 open Parser
 
 open Util
-open Common
+open Generators.Common
 
 let rec typeToName = function
     | UnitType -> "Unit"

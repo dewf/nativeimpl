@@ -1,6 +1,8 @@
 open System.IO
 open Tokenizer
 open Parser
+open Generators.Frontend
+open Generators.Backend
 
 let tokens =
     File.ReadAllText @"F:\Workbench\nativeimpl\test-interface-def.txt"
@@ -13,6 +15,5 @@ let moduleDef =
 //printfn "module: %A" module_
 
 CppGenerator.generate moduleDef
-DlangGenerator.generate moduleDef
-//CsharpGenerator.generate moduleDef
-
+CsharpGenerator.generate moduleDef
+//DlangGenerator.generate moduleDef

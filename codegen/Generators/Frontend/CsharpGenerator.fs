@@ -1,10 +1,10 @@
-﻿module CsharpGenerator
+﻿module Generators.Frontend.CsharpGenerator
 
 open System.IO
 open Parser
 
 open Util
-open Common
+open Generators.Common
 
 let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
     | UnitType -> "void"

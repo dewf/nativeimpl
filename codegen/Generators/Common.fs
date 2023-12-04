@@ -1,4 +1,4 @@
-﻿module Common
+﻿module Generators.Common
 
 open System
 open System.Collections.Generic

@@ -1,10 +1,10 @@
-﻿module DlangGenerator
+﻿module Generators.Frontend.DlangGenerator
 
 open System.IO
 open Parser
 
 open Util
-open Common
+open Generators.Common
 
 let rec typeToDlangString (typeMap: Map<string, UserOrGeneric>) = function
     | UnitType -> "void"

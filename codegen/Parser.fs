@@ -1,4 +1,5 @@
 ﻿module Parser
+open System.IO
 open Tokenizer
 open Util
 
@@ -263,6 +264,7 @@ type ModuleDefinition =
 
 type Module = {
     Name: string
+    Imports: string list
     Defs: ModuleDefinition list
 }
 
@@ -582,10 +584,26 @@ let parseModule (input: TokenAndLocation list) =
     List.unfold parseNext input
     |> List.collect id
 
+let consumeImports (input: TokenAndLocation list) =
+    let rec nextImport (revImports: string list) (remaining: TokenAndLocation list) =
+        match remaining with
+        | Lookahead 3 ([ImportToken; Identifier name; Semicolon], _, etc) ->
+            nextImport (name :: revImports) etc
+        | _ ->
+            revImports, remaining
+    let rev, etc =
+        nextImport [] input
+    List.rev rev, etc
+
 let parseTokens (input: TokenAndLocation list) =
     match input with
     | Lookahead 3 ([ModuleToken; Identifier name; Semicolon], _, etc) ->
-        { Name = name; Defs = parseModule etc }
+        // imports, if any must occur at top of file after "module"
+        let imports, etc =
+            consumeImports etc
+        { Name = name
+          Imports = imports
+          Defs = parseModule etc }
     | _ ->
         failwith "createSyntaxTree: didn't find module definition"
 
@@ -709,3 +727,10 @@ let resolveUserTypes (module_: Module) =
         module_.Defs
         |> List.map (resolveModuleDef userTypes)
     { module_ with Defs = nextDefs }
+
+let loadModule (filename: string) =
+    let tokens =
+        File.ReadAllText filename
+        |> tokenize
+    parseTokens tokens
+    |> resolveUserTypes

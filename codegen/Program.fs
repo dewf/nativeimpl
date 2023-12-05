@@ -1,19 +1,15 @@
-open System.IO
-open Tokenizer
 open Parser
 open Generators.Frontend
 open Generators.Backend
 
-let tokens =
-    File.ReadAllText @"F:\Workbench\nativeimpl\test-interface-def.txt"
-    |> tokenize
-    
+let files =
+    [  "/Users/daniel/Desktop/Development/nativeimpl/importme.txt"
+       "/Users/daniel/Desktop/Development/nativeimpl/testing.txt" ]
+
 let moduleDef =
-    parseTokens tokens
-    |> resolveUserTypes
-
+    loadModule @"/Users/daniel/Desktop/Development/nativeimpl/testing.txt"
+    
 //printfn "module: %A" module_
-
-CppGenerator.generate moduleDef
-CsharpGenerator.generate moduleDef
+//CppGenerator.generate moduleDef
+//CsharpGenerator.generate moduleDef
 //DlangGenerator.generate moduleDef

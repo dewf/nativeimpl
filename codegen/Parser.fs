@@ -616,6 +616,12 @@ type ModuleContext = {
     Module: Module
 }
 
+// this is going to add a bunch of complexity though it will probably be a good idea eventually
+// (for resolved NITypes, which currently just have a 'name' string)
+// type ResolvedName =
+//     | ThisModule of name: string
+//     | Imported of path: string list * name: string
+
 let resolveIdentifier (context: ModuleContext) (identifier: string) (loc: Location) =
     let toSearch =
         let fromImports =
@@ -764,20 +770,27 @@ let moduleNameToFilename (rootPath: string) (name: string) =
     $"{rootPath}/{parts}.nimpl"
 
 let rec loadModule (rootPath: string) (moduleMap: Map<string, Module>) (name: string) =
-    let filename =
-        moduleNameToFilename rootPath name
-    let tokens =
-        File.ReadAllText filename
-        |> tokenize
-    let parsed =
-        parseTokens tokens
-    // load imports before performing resolution
-    let nextMap =
-        (moduleMap, parsed.Imports)
-        ||> List.fold (loadModule rootPath)
-    // perform resolution against our imports
-    let resolved =
-        parsed
-        |> resolveUserTypes nextMap
-    // return updated module map
-    nextMap.Add(name, resolved)
+    match moduleMap.TryFind name with
+    | Some _ ->
+        // already loaded!
+        printfn "module [%s] already loaded!" name
+        moduleMap
+    | None ->
+        printfn "loading [%s]" name
+        let filename =
+            moduleNameToFilename rootPath name
+        let tokens =
+            File.ReadAllText filename
+            |> tokenize
+        let parsed =
+            parseTokens tokens
+        // load imports before performing resolution
+        let nextMap =
+            (moduleMap, parsed.Imports)
+            ||> List.fold (loadModule rootPath)
+        // perform resolution against our imports
+        let resolved =
+            parsed
+            |> resolveUserTypes nextMap
+        // return updated module map
+        nextMap.Add(name, resolved)

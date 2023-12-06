@@ -6,10 +6,10 @@ let files =
     [  "/Users/daniel/Desktop/Development/nativeimpl/importme.txt"
        "/Users/daniel/Desktop/Development/nativeimpl/testing.txt" ]
 
-let moduleDef =
+let moduleMap =
     loadModule "/Users/daniel/Desktop/Development/nativeimpl/" Map.empty "Testing"
     
-printfn "module: %A" moduleDef
+printfn "moduleMap: %A" moduleMap
 //CppGenerator.generate moduleDef
 //CsharpGenerator.generate moduleDef
 //DlangGenerator.generate moduleDef

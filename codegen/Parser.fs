@@ -265,7 +265,7 @@ type ModuleDefinition =
 type Module = {
     Name: string
     Imports: string list
-    SymbolTable: Map<string, UserType> option
+    UserTypes: Map<string, UserType> option
     Defs: ModuleDefinition list
 }
 
@@ -604,77 +604,100 @@ let parseTokens (input: TokenAndLocation list) =
             consumeImports etc
         { Name = name
           Imports = imports
-          SymbolTable = None
+          UserTypes = None
           Defs = parseModule etc }
     | _ ->
         failwith "createSyntaxTree: didn't find module definition"
 
-let rec resolveType (userTypes: Map<string, UserType>) (type_: NIType) =
+
+// resolution stuff ===========================
+type ModuleContext = {
+    Loaded: Map<string, Module>
+    Module: Module
+}
+
+let resolveIdentifier (context: ModuleContext) (identifier: string) (loc: Location) =
+    let toSearch =
+        let fromImports =
+            context.Module.Imports
+            |> List.map (context.Loaded.TryFind >> Option.get >> (fun m -> m.UserTypes))
+        context.Module.UserTypes :: fromImports
+        |> List.map Option.get // because these should all have their symbol tables loaded by now
+    let found =
+        toSearch
+        |> List.choose (fun map -> map.TryFind identifier)
+    // must be only 1 result, otherwise it's ambiguous and we have a problem
+    match found with
+    | result :: etc ->
+        if etc.Length > 0 then
+            failwithf "error resolving identifier [%s] from module [%s] @ %s: ambiguous results (also present in an import?)" identifier context.Module.Name (loc.ToString())
+        else
+            result
+    | _ ->
+        failwithf "error resolving identifier [%s] from module [%s] @ %s: symbol not found, in module or its imports" identifier context.Module.Name (loc.ToString())
+
+let rec resolveType (context: ModuleContext) (type_: NIType) =
     match type_ with
     | ArrayType niType ->
-        ArrayType (resolveType userTypes niType)
+        ArrayType (resolveType context niType)
     | MapType (keyType, valueType) ->
-        MapType (resolveType userTypes keyType, resolveType userTypes valueType)
+        MapType (resolveType context keyType, resolveType context valueType)
     | TupleType tupleTypes ->
-        TupleType (tupleTypes |> List.map (resolveType userTypes))
+        TupleType (tupleTypes |> List.map (resolveType context))
     | SetType niType ->
-        SetType (resolveType userTypes niType)
+        SetType (resolveType context niType)
     | Unresolved (name, loc) ->
-        match userTypes.TryFind(name) with
-        | Some value ->
-            match value with
-            | OpaqueHandleDef -> OpaqueHandleType name
-            | StructDef _ -> StructType name
-            | InterfaceDef _ -> InterfaceType name
-            | DelegateDef _ -> DelegateType name
-            | TypeDef _ -> TypedefType name
-            | EnumDef _ -> EnumType name
-            | SumTypeDef _ -> SumType name
-            | ExceptionDef _ ->
-                // how do we enforce that this is only allowed in a "throws" context?
-                ExceptionType name
-        | None ->
-            failwithf "failed to find symbol '%s' at %s" name (loc.ToString())
+        match resolveIdentifier context name loc with
+        | OpaqueHandleDef -> OpaqueHandleType name
+        | StructDef _ -> StructType name
+        | InterfaceDef _ -> InterfaceType name
+        | DelegateDef _ -> DelegateType name
+        | TypeDef _ -> TypedefType name
+        | EnumDef _ -> EnumType name
+        | SumTypeDef _ -> SumType name
+        | ExceptionDef _ ->
+            // how do we enforce that this is only allowed in a "throws" context?
+            ExceptionType name
     | _ ->
         type_
 
-let resolveFieldType (userTypes: Map<string, UserType>) (ft: NamedField) =
+let resolveFieldType (context: ModuleContext) (ft: NamedField) =
     let nextType =
-        resolveType userTypes ft.Type_
+        resolveType context ft.Type_
     { ft with Type_ = nextType }
 
-let resolveFunctionTypes (userTypes: Map<string, UserType>) (nf: NamedFunction) =
+let resolveFunctionTypes (context: ModuleContext) (nf: NamedFunction) =
     let nextArgs =
         nf.Args
-        |> List.map (fun (name, argType) -> (name, resolveType userTypes argType))
+        |> List.map (fun (name, argType) -> (name, resolveType context argType))
     let nextReturns =
-        resolveType userTypes nf.Returns
+        resolveType context nf.Returns
     let nextThrows =
         nf.Throws
-        |> List.map (resolveType userTypes)
+        |> List.map (resolveType context)
     { nf with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
-let resolveDelegateTypes (userTypes: Map<string, UserType>) (info: DelegateInfo) =
+let resolveDelegateTypes (context: ModuleContext) (info: DelegateInfo) =
     let nextArgs =
         info.Args
-        |> List.map (fun (name, argType) -> (name, resolveType userTypes argType))
+        |> List.map (fun (name, argType) -> (name, resolveType context argType))
     let nextReturns =
-        resolveType userTypes info.Returns
+        resolveType context info.Returns
     let nextThrows =
         info.Throws
-        |> List.map (resolveType userTypes)
+        |> List.map (resolveType context)
     { info with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
-let resolveSumTypeTypes (userTypes: Map<string, UserType>) (values: SumTypeValue list) =
+let resolveSumTypeTypes (context: ModuleContext) (values: SumTypeValue list) =
     values
     |> List.map (fun value ->
         let nextArgs =
             value.Args
             |> List.map (fun (name, type_) ->
-                name, resolveType userTypes type_)
+                name, resolveType context type_)
         { value with Args = nextArgs })
 
-let resolveModuleDef (userTypes: Map<string, UserType>) (def: ModuleDefinition) =
+let resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
     match def with
     | UserType (name, userType) ->
         let nextUserType =
@@ -682,37 +705,37 @@ let resolveModuleDef (userTypes: Map<string, UserType>) (def: ModuleDefinition) 
             | StructDef fieldTypes ->
                 let nextFieldTypes =
                     fieldTypes
-                    |> List.map (resolveFieldType userTypes)
+                    |> List.map (resolveFieldType context)
                 StructDef nextFieldTypes
             | ExceptionDef fieldTypes ->
                 let nextFieldTypes =
                     fieldTypes
-                    |> List.map (resolveFieldType userTypes)
+                    |> List.map (resolveFieldType context)
                 ExceptionDef nextFieldTypes
             | InterfaceDef namedFunctions ->
                 let nextFunctions =
                     namedFunctions
-                    |> List.map (resolveFunctionTypes userTypes)
+                    |> List.map (resolveFunctionTypes context)
                 InterfaceDef nextFunctions
             | DelegateDef delegateInfo ->
                 let nextInfo =
-                    resolveDelegateTypes userTypes delegateInfo
+                    resolveDelegateTypes context delegateInfo
                 DelegateDef nextInfo
             | OpaqueHandleDef ->
                 OpaqueHandleDef
             | TypeDef niType ->
-                TypeDef (resolveType userTypes niType)
+                TypeDef (resolveType context niType)
             | EnumDef values ->
                 EnumDef values
             | SumTypeDef enumValues ->
                 let nextValues =
-                    resolveSumTypeTypes userTypes enumValues
+                    resolveSumTypeTypes context enumValues
                 SumTypeDef nextValues
         UserType (name, nextUserType)
     | Global (name, niType) ->
-        Global (name, resolveType userTypes niType)
+        Global (name, resolveType context niType)
     | FunctionDef namedFunction ->
-        FunctionDef (resolveFunctionTypes userTypes namedFunction)
+        FunctionDef (resolveFunctionTypes context namedFunction)
 
 let getUserTypes (module_: Module) =
     module_.Defs
@@ -721,14 +744,19 @@ let getUserTypes (module_: Module) =
         | _ -> None)
     |> Map.ofList
 
-let resolveUserTypes (module_: Module) =
-    let userTypes =
-        getUserTypes module_
+let resolveUserTypes (loaded: Map<string, Module>) (module_: Module) =
+    let nextModule =
+        let symbols =
+            getUserTypes module_
+        { module_ with UserTypes = Some symbols }
+    let context =
+        { Loaded = loaded; Module = nextModule }
     // go throughout whole tree and replace all Unresolved types with things from the table, if they even exist
     let nextDefs =
-        module_.Defs
-        |> List.map (resolveModuleDef userTypes)
-    { module_ with SymbolTable = Some userTypes; Defs = nextDefs }
+        nextModule.Defs
+        |> List.map (resolveModuleDef context)
+    // now has both a symbol table and resolved definitions
+    { nextModule with Defs = nextDefs }
     
 let moduleNameToFilename (rootPath: string) (name: string) =
     let parts =
@@ -747,8 +775,9 @@ let rec loadModule (rootPath: string) (moduleMap: Map<string, Module>) (name: st
     let nextMap =
         (moduleMap, parsed.Imports)
         ||> List.fold (loadModule rootPath)
+    // perform resolution against our imports
     let resolved =
         parsed
-        |> resolveUserTypes
-    // return new module map
+        |> resolveUserTypes nextMap
+    // return updated module map
     nextMap.Add(name, resolved)

@@ -27,6 +27,13 @@ module List =
             | _ ->
                 (List.rev revFront), current
         takeMore count xs []
+    let splitWhile (pred: 'a -> bool) (xs: 'a list) =
+        // basically a combined take/skip
+        let front =
+            xs |> List.takeWhile pred
+        let etc =
+            xs |> List.skip front.Length
+        front, etc
 
 type IntWidth =
     | Width8
@@ -82,6 +89,19 @@ let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([token
             front |> List.map (fun tl -> tl.Token)
         Some (tokens, front.Head.Location, etc)
     else
+        None
+
+let (|TakeWhile|_|) (pred: Token -> bool) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
+    let front, etc =
+        input
+        |> List.splitWhile (fun tl -> pred tl.Token)
+    match front with
+    | h :: _ ->
+        // has at least 1 item
+        let tokens =
+            front |> List.map (fun tl -> tl.Token)
+        Some (tokens, h.Location, etc)
+    | _ ->
         None
 
 type ContentUntilMatchingState = {
@@ -463,7 +483,7 @@ let parseSumTypeValues (loc: Location) (input: TokenAndLocation list) =
         List.unfold parseOneSumTypeValue content
     values, etc
 
-let parseModule (input: TokenAndLocation list) =
+let parseModuleDefs (input: TokenAndLocation list) =
     let parseNext (remaining: TokenAndLocation list) =
         match remaining with
         | Lookahead 2 ([OpaqueToken; Identifier opaqueName], loc, etc) ->
@@ -585,30 +605,66 @@ let parseModule (input: TokenAndLocation list) =
     List.unfold parseNext input
     |> List.collect id
 
+let moduleIdentifierTokenFilter = function
+    | Identifier _ | Dot -> true
+    | _ -> false
+    
+let moduleNamePartsToString (parts: Token list) =
+    parts
+    |> List.map (function
+        | Identifier id -> id
+        | Dot -> "."
+        | _ -> failwith "moduleNamePartsToString: shouldn't happen")
+    
 let consumeImports (input: TokenAndLocation list) =
     let rec nextImport (revImports: string list) (remaining: TokenAndLocation list) =
         match remaining with
-        | Lookahead 3 ([ImportToken; Identifier name; Semicolon], _, etc) ->
-            nextImport (name :: revImports) etc
+        | Lookahead 1 ([ImportToken], loc, etc) ->
+            match etc with
+            | TakeWhile moduleIdentifierTokenFilter (nameParts, loc, etc) ->
+                match etc with
+                | Lookahead 1 ([Semicolon], _, etc) ->
+                    // OK!
+                    let joinedName =
+                        moduleNamePartsToString nameParts
+                        |> String.concat ""
+                    nextImport (joinedName :: revImports) etc
+                | _ ->
+                    failwithf "expected semicolon after module identifier @ %s" (loc.ToString())
+            | _ ->
+                failwithf "expected module name identifier @ %s" (loc.ToString())
         | _ ->
             revImports, remaining
     let rev, etc =
         nextImport [] input
     List.rev rev, etc
-
-let parseTokens (input: TokenAndLocation list) =
+    
+let parseModuleToplevel (input: TokenAndLocation list) (outerName: string) =
     match input with
-    | Lookahead 3 ([ModuleToken; Identifier name; Semicolon], _, etc) ->
-        // imports, if any must occur at top of file after "module"
-        let imports, etc =
-            consumeImports etc
-        { Name = name
-          Imports = imports
-          UserTypes = None
-          Defs = parseModule etc }
+    | Lookahead 1 ([ModuleToken], loc, etc) ->
+        match etc with
+        | TakeWhile moduleIdentifierTokenFilter (nameParts, loc, etc) ->
+            match etc with
+            | Lookahead 1 ([Semicolon], _, etc) ->
+                // OK!
+                let joinedName =
+                    moduleNamePartsToString nameParts
+                    |> String.concat ""
+                if joinedName <> outerName then
+                    failwithf "internal module name [%s] did not match outer name/location [%s]" joinedName outerName
+                // imports, if any must occur at top of file after "module"
+                let imports, etc =
+                    consumeImports etc
+                { Name = joinedName
+                  Imports = imports
+                  UserTypes = None
+                  Defs = parseModuleDefs etc }
+            | _ ->
+                failwithf "expected semicolon after module definition @ %s" (loc.ToString())
+        | _ ->
+            failwithf "expected module name identifier @ %s" (loc.ToString())
     | _ ->
-        failwith "createSyntaxTree: didn't find module definition"
-
+        failwith "parseModuleToplevel: expected module definition at beginning of file"
 
 // resolution stuff ===========================
 type ModuleContext = {
@@ -771,10 +827,10 @@ let moduleNameToFilename (rootPath: string) (name: string) =
 
 let rec loadModule (rootPath: string) (moduleMap: Map<string, Module>) (name: string) =
     match moduleMap.TryFind name with
-    | Some _ ->
+    | Some m ->
         // already loaded!
         printfn "module [%s] already loaded!" name
-        moduleMap
+        m, moduleMap
     | None ->
         printfn "loading [%s]" name
         let filename =
@@ -783,14 +839,14 @@ let rec loadModule (rootPath: string) (moduleMap: Map<string, Module>) (name: st
             File.ReadAllText filename
             |> tokenize
         let parsed =
-            parseTokens tokens
+            parseModuleToplevel tokens name
         // load imports before performing resolution
         let nextMap =
             (moduleMap, parsed.Imports)
-            ||> List.fold (loadModule rootPath)
+            ||> List.fold (fun acc name -> loadModule rootPath acc name |> snd)
         // perform resolution against our imports
         let resolved =
             parsed
             |> resolveUserTypes nextMap
         // return updated module map
-        nextMap.Add(name, resolved)
+        resolved, nextMap.Add(name, resolved)

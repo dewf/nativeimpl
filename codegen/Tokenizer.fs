@@ -41,6 +41,7 @@ type Token =
     | Semicolon
     | Comma
     | Colon
+    | Dot
     | EqualsToken
     | LeftShiftToken
     
@@ -177,7 +178,7 @@ let isAlphaNumeric ch =
     ch = '_'
     
 let allowedSymbols =
-    ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "->"]
+    ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "."; "->"]
     
 let nextToken (loc: Location) (input: char[]) =
     match input with
@@ -204,6 +205,7 @@ let nextToken (loc: Location) (input: char[]) =
             | "," -> Comma
             | ":" -> Colon
             | ";" -> Semicolon
+            | "." -> Dot
             | _ -> failwithf "unrecognized symbol: %s at line %d, col %d" _match loc.Line loc.Column
         Some token, etc, loc.PlusCol(cols)
     | WhileMatch isAlphaNumeric (_match, cols, etc) ->

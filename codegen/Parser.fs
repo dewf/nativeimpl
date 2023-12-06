@@ -829,7 +829,6 @@ let rec loadModule (rootPath: string) (moduleMap: Map<string, Module>) (name: st
     match moduleMap.TryFind name with
     | Some m ->
         // already loaded!
-        printfn "module [%s] already loaded!" name
         m, moduleMap
     | None ->
         printfn "loading [%s]" name

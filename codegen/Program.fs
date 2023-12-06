@@ -7,9 +7,9 @@ let files =
        "/Users/daniel/Desktop/Development/nativeimpl/testing.txt" ]
 
 let moduleDef =
-    loadModule @"/Users/daniel/Desktop/Development/nativeimpl/testing.txt"
+    loadModule "/Users/daniel/Desktop/Development/nativeimpl/" Map.empty "Testing"
     
-//printfn "module: %A" module_
+printfn "module: %A" moduleDef
 //CppGenerator.generate moduleDef
 //CsharpGenerator.generate moduleDef
 //DlangGenerator.generate moduleDef

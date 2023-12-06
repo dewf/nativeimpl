@@ -265,6 +265,7 @@ type ModuleDefinition =
 type Module = {
     Name: string
     Imports: string list
+    SymbolTable: Map<string, UserType> option
     Defs: ModuleDefinition list
 }
 
@@ -603,6 +604,7 @@ let parseTokens (input: TokenAndLocation list) =
             consumeImports etc
         { Name = name
           Imports = imports
+          SymbolTable = None
           Defs = parseModule etc }
     | _ ->
         failwith "createSyntaxTree: didn't find module definition"
@@ -726,11 +728,27 @@ let resolveUserTypes (module_: Module) =
     let nextDefs =
         module_.Defs
         |> List.map (resolveModuleDef userTypes)
-    { module_ with Defs = nextDefs }
+    { module_ with SymbolTable = Some userTypes; Defs = nextDefs }
+    
+let moduleNameToFilename (rootPath: string) (name: string) =
+    let parts =
+        name.Replace(".", "/").ToLower()
+    $"{rootPath}/{parts}.nimpl"
 
-let loadModule (filename: string) =
+let rec loadModule (rootPath: string) (moduleMap: Map<string, Module>) (name: string) =
+    let filename =
+        moduleNameToFilename rootPath name
     let tokens =
         File.ReadAllText filename
         |> tokenize
-    parseTokens tokens
-    |> resolveUserTypes
+    let parsed =
+        parseTokens tokens
+    // load imports before performing resolution
+    let nextMap =
+        (moduleMap, parsed.Imports)
+        ||> List.fold (loadModule rootPath)
+    let resolved =
+        parsed
+        |> resolveUserTypes
+    // return new module map
+    nextMap.Add(name, resolved)

@@ -748,7 +748,7 @@ let resolveDelegateTypes (context: ModuleContext) (info: DelegateInfo) =
     let nextThrows =
         info.Throws
         |> List.map (resolveType context)
-    { info with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
+    { Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
 let resolveSumTypeTypes (context: ModuleContext) (values: SumTypeValue list) =
     values

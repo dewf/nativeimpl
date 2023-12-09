@@ -263,7 +263,7 @@ type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, o
     let arrayDefault () =
         // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
         // PUSH ========
-        write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+        write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
         write 2 "{"
         write 3 "foreach (var value in values.Reverse())"
         write 3 "{"
@@ -273,7 +273,7 @@ type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, o
         write 2 "}"
         // POP =========
         blank()
-        write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+        write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
         write 2 "{"
         write 3 "var count = (int)NativeImplClient.PopSizeT();"
         write 3 "var ret = %s;" (newCsArray typeMap elemType "count")
@@ -289,14 +289,14 @@ type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, o
             // then the thin (inlined) wrappers around it
             // push ==================
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-            write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
             pushValue writer 3 (ArrayType tt) "values" (Indirect "isReturn")
             write 2 "}"
             // pop ===================
             blank()
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
             popValue writer 3 (ArrayType tt) Return
             write 2 "}"
@@ -310,21 +310,21 @@ type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, o
                     |> Option.defaultValue (Primitive(Int(signed,Width32)))
                 | _ -> failwith "ArrayRenderer this.EnumType trouble!!!"
             // push
-            write 2 "private static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "internal static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
             write 3 "var intValues = items.Select(i => (%s)i).ToArray();" (typeToCsString typeMap widthType)
             pushValue writer 3 (ArrayType widthType) "intValues" NotApplicable
             write 2 "}"
             // pop
             blank()
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
             popValue writer 3 (ArrayType widthType) (NewVariable "intValues")
             write 3 "return intValues.Select(i => (%s)i).ToArray();" (typeToCsString typeMap elemType)
             write 2 "}"
         member this.StructType (structName: string) (namedFields: NamedField list) =
             // push
-            write 2 "private static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
             write 3 "var count = items.Length;"
             for i, field in namedFields |> List.indexed do
@@ -340,7 +340,7 @@ type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, o
             write 2 "}"
             // pop
             blank()
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
             for i, field in namedFields |> List.indexed do
                 popValue writer 3 (ArrayType field.Type_) (NewVariable (sprintf "f%dValues" i))
@@ -358,7 +358,7 @@ type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, o
             write 2 "}"
         member this.TupleType (tupleTypes: NIType list) =
             // PUSH ====================
-            write 2 "private static void __%s__Push(%s things, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "internal static void __%s__Push(%s things, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
             write 3 "var count = things.Length;"
             for i, type_ in tupleTypes |> List.indexed do
@@ -373,7 +373,7 @@ type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, o
             write 2 "}"
             // POP =====================
             blank()
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
             for i, type_ in tupleTypes |> List.indexed do
                 popValue writer 3 (ArrayType type_) (NewVariable (sprintf "_%dvalues" i))
@@ -409,7 +409,7 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
     let setDefault () =
         // use this for any element types with no particular specializations (typedefs, delegates, arrays -- everything but structs and tuples, basically)
         // PUSH ========
-        write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+        write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
         write 2 "{"
         write 3 "foreach (var value in values)"
         write 3 "{"
@@ -419,7 +419,7 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
         write 2 "}"
         // POP =========
         blank()
-        write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+        write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
         write 2 "{"
         write 3 "var count = (int)NativeImplClient.PopSizeT();"
         write 3 "var __ret = new %s();" (typeToCsString typeMap outerType)
@@ -436,13 +436,13 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
             let newOuter =
                 ArrayType tt
             // PUSH ====================
-            write 2 "private static void __%s__Push(%s things, bool isReturn)" (typeToName newOuter) (typeToCsString typeMap newOuter)
+            write 2 "internal static void __%s__Push(%s things, bool isReturn)" (typeToName newOuter) (typeToCsString typeMap newOuter)
             write 2 "{"
             write 3 "// ???"
             write 2 "}"
             // POP =====================
             blank()
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap newOuter) (typeToName newOuter)
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap newOuter) (typeToName newOuter)
             write 2 "{"
             write 3 "// ???"
             write 2 "}"
@@ -456,27 +456,27 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
                     |> Option.defaultValue (Primitive(Int(signed,Width32)))
                 | _ -> failwith "SetRenderer this.EnumType trouble!!!"
             // push
-            write 2 "private static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "internal static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
             write 3 "var intValues = items.Select(i => (%s)i).ToArray();" (typeToCsString typeMap widthType)
             pushValue writer 3 (ArrayType widthType) "intValues" NotApplicable
             write 2 "}"
             // pop
             blank()
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
             popValue writer 3 (ArrayType widthType) (NewVariable "intValues")
             write 3 "return intValues.Select(i => (%s)i).ToHashSet();" (typeToCsString typeMap elemType)
             write 2 "}"
         member this.StructType (structName: string) (namedFields: NamedField list) =
             // PUSH ===================
-            write 2 "private static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
             write 3 "// ???"
             write 2 "}"
             // POP ====================
             blank()
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
             write 3 "// ???"
             write 2 "}"
@@ -494,13 +494,13 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
             setDefault()
         member this.Primitive (prim: NIPrimitive) =
             // PUSH ==================
-            write 2 "private static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
             pushValue writer 3 (ArrayType elemType) "items.ToArray()" (Indirect "isReturn")
             write 2 "}"
             // POP ===================
             blank()
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
             write 2 "{"
             popValue writer 3 (ArrayType elemType) (NewVariable "items")
             write 3 "return items.ToHashSet();"
@@ -518,7 +518,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
     | UserOrGeneric.Generic gType ->
         match gType with
         | BufferType elemType ->
-            write 2 "private static void __%s__Push(%s buf, bool isReturn)" (typeToName gType) (typeToCsString typeMap gType)
+            write 2 "internal static void __%s__Push(%s buf, bool isReturn)" (typeToName gType) (typeToCsString typeMap gType)
             write 2 "{"
             write 3 "if (buf != null)"
             write 3 "{"
@@ -531,7 +531,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             // POP ==============
             blank()
-            write 2 "private static %s __%s__Pop()" (typeToCsString typeMap gType) (typeToName gType)
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap gType) (typeToName gType)
             write 2 "{"
             write 3 "NativeMethods.popBuffer(out var id, out var isClientId, out var inSafetyArea, out var bufferDescriptor);"
             write 3 "if (id != 0)"
@@ -554,14 +554,14 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             let typesJoined =
                 tupleTypes |> List.map (typeToCsString typeMap) |> String.concat ", "
             // PUSH =============
-            write 2 "private static void __%s__Push((%s) value, bool isReturn)" (typeToName gType) typesJoined
+            write 2 "internal static void __%s__Push((%s) value, bool isReturn)" (typeToName gType) typesJoined
             write 2 "{"
             for i, type_ in tupleTypes |> List.indexed |> List.rev do
                 pushValue writer 3 type_ (sprintf "value.Item%d" (i+1)) (Indirect "isReturn")
             write 2 "}"
             // POP ==============
             blank()
-            write 2 "private static (%s) __%s__Pop()" typesJoined (typeToName gType)
+            write 2 "internal static (%s) __%s__Pop()" typesJoined (typeToName gType)
             write 2 "{"
             for i, type_ in tupleTypes |> List.indexed do
                 popValue writer 3 type_ (NewVariable (sprintf "_%d" i))
@@ -579,14 +579,14 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             renderArrayLike typeMap elemType renderer
         | MapType (keyType, valueType) ->
             // push
-            write 2 "static void __%s__Push(Dictionary<%s, %s> map, bool isReturn)" (typeToName gType) (typeToCsString typeMap keyType) (typeToCsString typeMap valueType)
+            write 2 "internal static void __%s__Push(Dictionary<%s, %s> map, bool isReturn)" (typeToName gType) (typeToCsString typeMap keyType) (typeToCsString typeMap valueType)
             write 2 "{"
             pushValue writer 3 (ArrayType valueType) (sprintf "map.Values.ToArray()") (Indirect "isReturn")
             pushValue writer 3 (ArrayType keyType) (sprintf "map.Keys.ToArray()") (Indirect "isReturn")
             write 2 "}"
             // pop
             blank()
-            write 2 "static Dictionary<%s, %s> __%s__Pop()" (typeToCsString typeMap keyType) (typeToCsString typeMap valueType) (typeToName gType)
+            write 2 "internal static Dictionary<%s, %s> __%s__Pop()" (typeToCsString typeMap keyType) (typeToCsString typeMap valueType) (typeToName gType)
             write 2 "{"
             popValue writer 3 (ArrayType keyType) (NewVariable "keys")
             popValue writer 3 (ArrayType valueType) (NewVariable "values")
@@ -613,13 +613,13 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             // push
             blank()
-            write 2 "private static void %s__Push(%s thing)" (upperFirst name) (upperFirst name)
+            write 2 "internal static void %s__Push(%s thing)" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);"
             write 2 "}"
             // pop
             blank()
-            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "var ptr = NativeImplClient.PopPtr();"
             write 3 "return ptr != IntPtr.Zero ? new %s(ptr) : null;" (upperFirst name)
@@ -637,14 +637,14 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             // push
             blank()
-            write 2 "private static void %s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "internal static void %s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
             write 2 "{"
             for field in namedFields |> List.rev do
                 pushValue writer 3 field.Type_ (sprintf "value.%s" (upperFirst field.Name)) (Indirect "isReturn")
             write 2 "}"
             // pop
             blank()
-            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
             for field in namedFields do
                 popValue writer 3 field.Type_ (NewVariable field.Name)
@@ -672,7 +672,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             blank()
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-            write 2 "private static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
+            write 2 "internal static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
             write 2 "{"
             let content =
                 sprintf "(%s)value" (typeToCsString typeMap widthType)
@@ -680,7 +680,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             blank()
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
             popValue writer 3 widthType (NewVariable "ret")
             write 3 "return (%s)ret;" (upperFirst name)
@@ -712,7 +712,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
                 Primitive(Int(true,Width32))
             // PUSH
             blank()
-            write 2 "private static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "internal static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "%s__Tag which;" (upperFirst name)
             write 3 "switch (thing)"
@@ -730,7 +730,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             // POP
             blank()
-            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
             popValue writer 3 tagType (NewVariable "which")
             write 3 "switch ((%s__Tag)which)" (upperFirst name)
@@ -751,14 +751,14 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             // (at least it will make wrapper funcs a bit clearer)
             // PUSH
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-            write 2 "private static void %s__Push(%s value, bool isReturn)" name (typeToCsString typeMap niType)
+            write 2 "internal static void %s__Push(%s value, bool isReturn)" name (typeToCsString typeMap niType)
             write 2 "{"
             pushValue writer 3 niType "value" (Indirect "isReturn")
             write 2 "}"
             // POP
             blank()
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-            write 2 "private static %s %s__Pop()" (typeToCsString typeMap niType) name
+            write 2 "internal static %s %s__Pop()" (typeToCsString typeMap niType) name
             write 2 "{"
             popValue writer 3 niType Return
             write 2 "}"
@@ -781,7 +781,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             // push
             blank()
-            write 2 "private static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "internal static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "if (thing != null)"
             write 3 "{"
@@ -794,7 +794,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             // pop
             blank()
-            write 2 "private static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "NativeImplClient.PopInstanceId(out var id, out var isClientId);"
             write 3 "if (id != 0)"
@@ -836,7 +836,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             // server wrapper
             blank()
-            write 2 "private class Server%s : ServerObject, %s" (upperFirst name) (upperFirst name)
+            write 2 "internal class Server%s : ServerObject, %s" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "public Server%s(int id) : base(id)" name
             write 3 "{"
@@ -895,7 +895,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "public delegate %s %s(%s);" (typeToCsString typeMap info.Returns) name (argsJoined typeMap info.Args)
             // push
             blank()
-            write 2 "private static void %s__Push(%s callback)" name name
+            write 2 "internal static void %s__Push(%s callback)" name name
             write 2 "{"
             write 3 "void CallbackWrapper()"
             write 3 "{"
@@ -924,7 +924,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             // pop
             blank()
-            write 2 "private static %s %s__Pop()" name name
+            write 2 "internal static %s %s__Pop()" name name
             write 2 "{"
             write 3 "var id = NativeImplClient.PopServerFuncValId();"
             write 3 "var remoteFunc = new ServerFuncVal(id);"
@@ -977,14 +977,14 @@ let writeLibrary (m: Module) (writer: IFormatWriter) (csNamespace: string) (clas
     write 0 "using System.Collections.Generic;"
     write 0 "using System.Linq;"
     write 0 "using System.Runtime.InteropServices;"
-    write 0 "using TestLibraryClient.Support;"
-    write 0 "using ModuleHandle = TestLibraryClient.Support.ModuleHandle;" // sigh
+    write 0 "using TestLibraryClient.NISupport;"
+    write 0 "using ModuleHandle = TestLibraryClient.NISupport.ModuleHandle;" // sigh
     
     // imports
     if not m.Imports.IsEmpty then
         write 0 ""
         for importName in m.Imports do
-            write 0 "using %s.%s;" csNamespace importName
+            write 0 "using static %s.%s;" csNamespace importName
 
     write 0 ""
     write 0 "namespace %s" csNamespace
@@ -1151,7 +1151,7 @@ let computeNamespace (baseNamespace: string) (moduleName: string) =
         |> (fun arr -> arr |> Array.splitAt (arr.Length - 1))
     (pre |> String.concat "."), post[0]
 
-let generate (m: Module) (outPath: string) (outNamespace: string) =
+let generateModule (m: Module) (outPath: string) (outNamespace: string) =
     let csNamespace, className =
         computeNamespace outNamespace m.Name
     let dir =
@@ -1164,3 +1164,24 @@ let generate (m: Module) (outPath: string) (outNamespace: string) =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer)
     writeLibrary m output csNamespace className
+    
+let writeProject (writer: IFormatWriter) =
+    let write, blank = writer.Write, writer.Blank
+    write 0 "<Project Sdk=\"Microsoft.NET.Sdk\">"
+    blank ()
+    write 1 "<PropertyGroup>"
+    write 2 "<TargetFramework>net7.0</TargetFramework>"
+    write 2 "<ImplicitUsings>enable</ImplicitUsings>"
+    write 2 "<AllowUnsafeBlocks>true</AllowUnsafeBlocks>"
+    write 1 "</PropertyGroup>"
+    blank ()
+    write 0 "</Project>"
+
+let generateProject (outPath: string) (outNamespace: string) =
+    let dir =
+        sprintf "%s/client/csharp/%sClient" outPath outNamespace
+    let filename = $"{dir}/{outNamespace}Client.csproj"
+    use output =
+        let writer = new StreamWriter(filename)
+        new SimpleFormatWriter(writer)
+    writeProject output

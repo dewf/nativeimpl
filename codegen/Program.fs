@@ -18,7 +18,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outPath: string) 
             match frontLang.ToLower() with
             | "csharp" | "c#" ->
                 printfn "rendering C# frontend code"
-                CsharpGenerator.generate currentModule outPath (outNamespace + "Client")
+                CsharpGenerator.generateModule currentModule outPath (outNamespace + "Client")
             | _ ->
                 failwithf "unsupported frontend language: %s" frontLang
             // backend
@@ -29,9 +29,9 @@ let appRunner (inputPath: string) (inputModules: string list) (outPath: string) 
             | _ ->
                 failwithf "unsupported backend language: %s" backLang
             nextMap)
-    printfn "woot"
     // printfn "moduleMap: %A" moduleMap
-    // generate project files for frontend (eg sln)
+    // generate project files:
+    CsharpGenerator.generateProject outPath outNamespace
     // generate project files for backend (eg cmake)
 
 appRunner INPUT_PATH INPUTS OUTPUT_PATH NAMESPACE FRONT_LANG BACK_LANG

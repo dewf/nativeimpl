@@ -941,7 +941,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 3 "return Wrapper;"
             write 2 "}"
 
-let writeLibrary (m: Module) (writer: IFormatWriter) =
+let writeLibrary (m: Module) (writer: IFormatWriter) (csNamespace: string) (className: string) =
     let write, blank = writer.Write, writer.Blank
 
     let moduleMethods =
@@ -979,11 +979,17 @@ let writeLibrary (m: Module) (writer: IFormatWriter) =
     write 0 "using System.Runtime.InteropServices;"
     write 0 "using TestLibraryClient.Support;"
     write 0 "using ModuleHandle = TestLibraryClient.Support.ModuleHandle;" // sigh
+    
+    // imports
+    if not m.Imports.IsEmpty then
+        write 0 ""
+        for importName in m.Imports do
+            write 0 "using %s.%s;" csNamespace importName
 
     write 0 ""
-    write 0 "namespace %sClient" m.Name
+    write 0 "namespace %s" csNamespace
     write 0 "{"
-    write 1 "public static class %s" m.Name
+    write 1 "public static class %s" className
     write 1 "{"
     write 2 "private static ModuleHandle _module;"
 
@@ -1137,10 +1143,24 @@ let writeLibrary (m: Module) (writer: IFormatWriter) =
     write 1 "}" // end of static class <module name>
     //
     write 0 "}" // end of namespace
+    
+let computeNamespace (baseNamespace: string) (moduleName: string) =
+    let pre, post =
+        [| baseNamespace.Split('.'); moduleName.Split('.') |]
+        |> Array.concat
+        |> (fun arr -> arr |> Array.splitAt (arr.Length - 1))
+    (pre |> String.concat "."), post[0]
 
-let generate (m: Module) =
-    printfn "C# writing TestLibrary.cs"
+let generate (m: Module) (outPath: string) (outNamespace: string) =
+    let csNamespace, className =
+        computeNamespace outNamespace m.Name
+    let dir =
+        sprintf "%s/client/csharp/%s" outPath (csNamespace.Replace(".", "/"))
+    Directory.CreateDirectory(dir) |> ignore
+    let filename =
+        sprintf "%s/%s.cs" dir className
+    printfn "C# writing TestLibrary.cs (%s :: %s) [%s]" csNamespace className filename
     use output =
-        let writer = new StreamWriter(@"F:\Workbench\nativeimpl\client\csharp\TestLibraryClient\TestLibrary.cs")
+        let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer)
-    writeLibrary m output
+    writeLibrary m output csNamespace className

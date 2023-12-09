@@ -9,16 +9,16 @@ let NAMESPACE = "TestLibrary"
 let FRONT_LANG = "csharp"
 let BACK_LANG = "cpp"
 
-let appRunner (inputPath: string) (inputModules: string list) (outputPath: string) (outputNamespace: string) (frontLang: string) (backLang: string) =
+let appRunner (inputPath: string) (inputModules: string list) (outPath: string) (outNamespace: string) (frontLang: string) (backLang: string) =
     let moduleMap =
         (Map.empty, inputModules)
         ||> List.fold (fun moduleMap name ->
-            let m, nextMap = loadModule inputPath moduleMap name
+            let currentModule, nextMap = loadModule inputPath moduleMap name
             // frontend
             match frontLang.ToLower() with
             | "csharp" | "c#" ->
                 printfn "rendering C# frontend code"
-                // CsharpGenerator.generate m
+                CsharpGenerator.generate currentModule outPath (outNamespace + "Client")
             | _ ->
                 failwithf "unsupported frontend language: %s" frontLang
             // backend
@@ -29,7 +29,8 @@ let appRunner (inputPath: string) (inputModules: string list) (outputPath: strin
             | _ ->
                 failwithf "unsupported backend language: %s" backLang
             nextMap)
-    printfn "moduleMap: %A" moduleMap
+    printfn "woot"
+    // printfn "moduleMap: %A" moduleMap
     // generate project files for frontend (eg sln)
     // generate project files for backend (eg cmake)
 

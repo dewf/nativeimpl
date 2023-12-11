@@ -39,3 +39,9 @@ let unfoldState (f: 'state -> 'state option) (init: 'state): 'state =
         | None -> current
         | Some next -> recInner next
     recInner init
+
+let maybeString (s: String) =
+    if s.Length > 0 then
+        Some s
+    else
+        None

@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.IO
 open Parser
+open Util
 
 let rec typeToInternalKey = function
     | UnitType -> "void"
@@ -581,3 +582,27 @@ type SimpleFormatWriter(writer: TextWriter) =
             fprintfn writer fmt
         member this.Blank() =
             writer.WriteLine()
+
+type OutParams = {
+    Path: string
+    MaybeNamespace: string option
+    LibraryName: string
+}
+
+let namespaceSplitter (namespace': string) =
+    let parts =
+        namespace'.Split(".")
+    let pre, post =
+        parts
+        |> Array.splitAt (parts.Length - 1)
+    (pre |> String.concat "."), post[0]
+    
+let namespaceParts (outParams: OutParams) (moduleName: string) =
+    let baseNamespace =
+        outParams.MaybeNamespace
+        |> Option.map (fun ns -> sprintf "%s.%s" ns outParams.LibraryName)
+        |> Option.defaultValue outParams.LibraryName
+    let modulePrefix, className =
+        moduleName
+        |> namespaceSplitter
+    baseNamespace, maybeString modulePrefix, className

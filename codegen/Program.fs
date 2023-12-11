@@ -1,6 +1,7 @@
 open Parser
 open Generators.Frontend
 open Generators.Backend
+open Generators.Common
 
 let INPUT_PATH = "/Users/daniel/Desktop/Development/nativeimpl/testroot"
 let OUTPUT_PATH = "/Users/daniel/Desktop/ni-output"
@@ -9,7 +10,7 @@ let NAMESPACE = "TestLibrary"
 let FRONT_LANG = "csharp"
 let BACK_LANG = "cpp"
 
-let appRunner (inputPath: string) (inputModules: string list) (outPath: string) (outNamespace: string) (frontLang: string) (backLang: string) =
+let appRunner (inputPath: string) (inputModules: string list) (outParams: OutParams) (frontLang: string) (backLang: string) =
     let moduleMap =
         (Map.empty, inputModules)
         ||> List.fold (fun moduleMap name ->
@@ -18,7 +19,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outPath: string) 
             match frontLang.ToLower() with
             | "csharp" | "c#" ->
                 printfn "rendering C# frontend code"
-                CsharpGenerator.generateModule currentModule outPath (outNamespace + "Client")
+                CsharpGenerator.generateModule currentModule outParams
             | _ ->
                 failwithf "unsupported frontend language: %s" frontLang
             // backend
@@ -31,10 +32,12 @@ let appRunner (inputPath: string) (inputModules: string list) (outPath: string) 
             nextMap)
     // printfn "moduleMap: %A" moduleMap
     // generate project files:
-    CsharpGenerator.generateProject outPath outNamespace
+    CsharpGenerator.generateProject outParams
     // generate project files for backend (eg cmake)
 
-appRunner INPUT_PATH INPUTS OUTPUT_PATH NAMESPACE FRONT_LANG BACK_LANG
+let outParams =
+    { Path = OUTPUT_PATH; MaybeNamespace = Some "Org.Whatever"; LibraryName = "TestLibrary" }
+appRunner INPUT_PATH INPUTS outParams FRONT_LANG BACK_LANG
 
 //CppGenerator.generate moduleDef
 //CsharpGenerator.generate moduleDef

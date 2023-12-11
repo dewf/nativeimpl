@@ -941,7 +941,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 3 "return Wrapper;"
             write 2 "}"
 
-let writeLibrary (m: Module) (writer: IFormatWriter) (csNamespace: string) (className: string) =
+let writeLibrary (m: Module) (writer: IFormatWriter) (baseNamespace: string) (maybeModulePrefix: string option) (className: string) =
     let write, blank = writer.Write, writer.Blank
 
     let moduleMethods =
@@ -977,17 +977,21 @@ let writeLibrary (m: Module) (writer: IFormatWriter) (csNamespace: string) (clas
     write 0 "using System.Collections.Generic;"
     write 0 "using System.Linq;"
     write 0 "using System.Runtime.InteropServices;"
-    write 0 "using TestLibraryClient.NISupport;"
-    write 0 "using ModuleHandle = TestLibraryClient.NISupport.ModuleHandle;" // sigh
+    write 0 "using %s.NISupport;" baseNamespace
+    write 0 "using ModuleHandle = %s.NISupport.ModuleHandle;" baseNamespace // sigh
     
     // imports
     if not m.Imports.IsEmpty then
         write 0 ""
         for importName in m.Imports do
-            write 0 "using static %s.%s;" csNamespace importName
+            write 0 "using static %s.%s;" baseNamespace importName
 
     write 0 ""
-    write 0 "namespace %s" csNamespace
+    let moduleNamespace =
+        maybeModulePrefix
+        |> Option.map (fun mp -> sprintf "%s.%s" baseNamespace mp)
+        |> Option.defaultValue baseNamespace
+    write 0 "namespace %s" moduleNamespace
     write 0 "{"
     write 1 "public static class %s" className
     write 1 "{"
@@ -1144,28 +1148,32 @@ let writeLibrary (m: Module) (writer: IFormatWriter) (csNamespace: string) (clas
     //
     write 0 "}" // end of namespace
     
-let computeNamespace (baseNamespace: string) (moduleName: string) =
-    let pre, post =
-        [| baseNamespace.Split('.'); moduleName.Split('.') |]
-        |> Array.concat
-        |> (fun arr -> arr |> Array.splitAt (arr.Length - 1))
-    (pre |> String.concat "."), post[0]
-
-let generateModule (m: Module) (outPath: string) (outNamespace: string) =
-    let csNamespace, className =
-        computeNamespace outNamespace m.Name
-    let dir =
-        sprintf "%s/client/csharp/%s" outPath (csNamespace.Replace(".", "/"))
-    Directory.CreateDirectory(dir) |> ignore
+let projectDir (outParams: OutParams) =
+    sprintf "%s/client/csharp/%sClient" outParams.Path outParams.LibraryName
+    
+let generateModule (m: Module) (outParams: OutParams) =
+    let baseNamespace, maybeModulePrefix, className =
+        namespaceParts outParams m.Name
+    let moduleDir =
+        let subPath =
+            maybeModulePrefix
+            |> Option.map (fun mp -> mp.Replace(".", "/"))
+            |> Option.defaultValue ""
+        sprintf "%s/%s" (projectDir outParams) subPath
+    Directory.CreateDirectory(moduleDir) |> ignore
     let filename =
-        sprintf "%s/%s.cs" dir className
-    printfn "C# writing TestLibrary.cs (%s :: %s) [%s]" csNamespace className filename
+        sprintf "%s/%s.cs" moduleDir className
+    let modulePrefixString =
+        maybeModulePrefix
+        |> Option.map (fun mp -> $"{mp}.")
+        |> Option.defaultValue ""
+    printfn "C# writing (%s.%s%s) [%s]" baseNamespace modulePrefixString className filename
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer)
-    writeLibrary m output csNamespace className
+    writeLibrary m output baseNamespace maybeModulePrefix className
     
-let writeProject (writer: IFormatWriter) =
+let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     let write, blank = writer.Write, writer.Blank
     write 0 "<Project Sdk=\"Microsoft.NET.Sdk\">"
     blank ()
@@ -1173,15 +1181,19 @@ let writeProject (writer: IFormatWriter) =
     write 2 "<TargetFramework>net7.0</TargetFramework>"
     write 2 "<ImplicitUsings>enable</ImplicitUsings>"
     write 2 "<AllowUnsafeBlocks>true</AllowUnsafeBlocks>"
+    let rootNamespace =
+        outParams.MaybeNamespace
+        |> Option.map (fun ns -> $"{ns}.{outParams.LibraryName}")
+        |> Option.defaultValue outParams.LibraryName
+    write 2 "<RootNamespace>%s</RootNamespace>" rootNamespace
     write 1 "</PropertyGroup>"
     blank ()
     write 0 "</Project>"
 
-let generateProject (outPath: string) (outNamespace: string) =
-    let dir =
-        sprintf "%s/client/csharp/%sClient" outPath outNamespace
-    let filename = $"{dir}/{outNamespace}Client.csproj"
+let generateProject (outParams: OutParams) =
+    let filename =
+        sprintf "%s/%sClient.csproj" (projectDir outParams) outParams.LibraryName
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer)
-    writeProject output
+    writeProject output outParams

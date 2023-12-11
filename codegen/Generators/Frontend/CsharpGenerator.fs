@@ -1157,9 +1157,9 @@ let generateModule (m: Module) (outParams: OutParams) =
     let moduleDir =
         let subPath =
             maybeModulePrefix
-            |> Option.map (fun mp -> mp.Replace(".", "/"))
+            |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
             |> Option.defaultValue ""
-        sprintf "%s/%s" (projectDir outParams) subPath
+        sprintf "%s%s" (projectDir outParams) subPath
     Directory.CreateDirectory(moduleDir) |> ignore
     let filename =
         sprintf "%s/%s.cs" moduleDir className

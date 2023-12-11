@@ -784,7 +784,7 @@ let renderWrapperUserTypes (writer: IFormatWriter) (containsRefsMap: Map<string,
         | SumTypeDef values ->
             renderWrapperSumType writer name values
 
-let generateWrappersCpp (m: Module) (writer: IFormatWriter) =
+let generateWrappersCpp (m: Module) (writer: IFormatWriter) (className: string) =
     let write, blank = writer.Write, writer.Blank
     // things we'll need to use a few times:
     let globals =
@@ -815,7 +815,7 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) =
     // begin output: ===============================================
     // prologue
     write 0 "#include \"NativeImplServer.h\""
-    write 0 "#include \"Implementation.h\""
+    write 0 "#include \"%s.h\"" className
 
     // opaques + interface method + exception handles (for registration storage)
     blank()
@@ -1091,6 +1091,12 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
     write 0 "#include <map>"
     write 0 "#include <tuple>"
     write 0 "#include <set>"
+    
+    // imports
+    if not m.Imports.IsEmpty then
+        blank()
+        for importName in m.Imports do
+            write 0 "#include \"%s.h\"" (importName.Replace(".", "/"))
 
     // all user types in dependency order
     renderUserTypes typeMap (renderHeaderUserTypes writer)
@@ -1115,7 +1121,7 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
                 sprintf " // throws %s" joined
         write 0 "%s %s(%s);%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
 
-let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) =
+let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) (className: string) =
     let write, blank = writer.Write, writer.Blank
     //
     let globals =
@@ -1134,7 +1140,7 @@ let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) 
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
     // begin output: ===============================================
-    write 0 "#include \"Implementation.h\""
+    write 0 "#include \"%s.h\"" className
 
     // globals
     if globals.Length > 0 then
@@ -1164,37 +1170,61 @@ let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) 
         if namedFunc.Returns <> UnitType then
             write 1 "return %s;" (defaultValueForType typeMap namedFunc.Returns)
         write 0 "}"
-
-let generate (m: Module) =
-    let typeMap =
-        userTypesAndGenerics m
         
-    let basePath =
-        @"F:\Workbench\nativeimpl\server\cpp_generated\TestLibraryCpp"
+let projectDir (outParams: OutParams) =
+    sprintf "%s/server/cpp/%sServer" outParams.Path outParams.LibraryName
+    
+let generateModule (outParams: OutParams) (m: Module) =
+    let baseNamespace, maybeModulePrefix, className =
+        namespaceParts outParams m.Name
+    let moduleDir =
+        let subPath =
+            maybeModulePrefix
+            |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
+            |> Option.defaultValue ""
+        sprintf "%s%s" (projectDir outParams) subPath
+    Directory.CreateDirectory(moduleDir) |> ignore
+    
+    let filenameNoExt =
+        sprintf "%s/%s" moduleDir className
         
-    printfn "C++ writing Wrappers.cpp"
-    use wrappersOutput =
-        let writer = new StreamWriter(@$"{basePath}\Wrappers.cpp")
-        new SimpleFormatWriter(writer)
-    generateWrappersCpp m wrappersOutput
-
-    printfn "C++ writing Implementation.h"
-    use implHeaderOutput =
-        let writer = new StreamWriter(@$"{basePath}\Implementation.h")
-        new SimpleFormatWriter(writer)
-    generateImplementationH m typeMap implHeaderOutput
-
-    printfn "C++ writing Implementation.cpp"
+    let modulePrefixString =
+        maybeModulePrefix
+        |> Option.map (fun mp -> $"{mp}.")
+        |> Option.defaultValue ""
+    printfn "C++ writing (%s.%s%s)" baseNamespace modulePrefixString className
+    
+    let wrappersFilename =
+        $"{filenameNoExt}_Wrappers.cpp"
+    let implementationHeaderFilename =
+        $"{filenameNoExt}.h"
     let implementationFilename =
         // in the future we may auto-populate .cpp.new from the existing .cpp,
         //   but will never overwrite something the user has worked on
         let default' =
-            @$"{basePath}\Implementation.cpp"
+            $"{filenameNoExt}.cpp"
         if File.Exists(default') then
-            @$"{basePath}\Implementation.cpp.new"
+            $"{filenameNoExt}.cpp.new"
         else
             default'
+            
+    let typeMap =
+        userTypesAndGenerics m
+        
+    printfn "  - %s" wrappersFilename
+    use wrappersOutput =
+        let writer = new StreamWriter(wrappersFilename)
+        new SimpleFormatWriter(writer)
+    generateWrappersCpp m wrappersOutput className
+
+    printfn "  - %s" implementationHeaderFilename
+    use implHeaderOutput =
+        let writer = new StreamWriter(implementationHeaderFilename)
+        new SimpleFormatWriter(writer)
+    generateImplementationH m typeMap implHeaderOutput
+    
+    printfn "  - %s" implementationFilename
     use implementationOutput =
         let writer = new StreamWriter(implementationFilename)
         new SimpleFormatWriter(writer)
-    generateImplementationCpp m typeMap implementationOutput
+    generateImplementationCpp m typeMap implementationOutput className

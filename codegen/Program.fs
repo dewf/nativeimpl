@@ -6,7 +6,8 @@ open Generators.Common
 let INPUT_PATH = "/Users/daniel/Desktop/Development/nativeimpl/testroot"
 let OUTPUT_PATH = "/Users/daniel/Desktop/ni-output"
 let INPUTS = [ "Nested.Woot"; "ImportMe"; "Testing" ]
-let NAMESPACE = "TestLibrary"
+let NAMESPACE = "Org.Whatever"
+let LIBRARY = "TestLibrary"
 let FRONT_LANG = "csharp"
 let BACK_LANG = "cpp"
 
@@ -26,7 +27,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             match backLang.ToLower() with
             | "cpp" | "c++" ->
                 printfn "rendering C++ backend code"
-                // CppGenerator.generate m
+                CppGenerator.generateModule outParams currentModule
             | _ ->
                 failwithf "unsupported backend language: %s" backLang
             nextMap)
@@ -36,9 +37,5 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     // generate project files for backend (eg cmake)
 
 let outParams =
-    { Path = OUTPUT_PATH; MaybeNamespace = Some "Org.Whatever"; LibraryName = "TestLibrary" }
+    { Path = OUTPUT_PATH; MaybeNamespace = Some NAMESPACE; LibraryName = LIBRARY }
 appRunner INPUT_PATH INPUTS outParams FRONT_LANG BACK_LANG
-
-//CppGenerator.generate moduleDef
-//CsharpGenerator.generate moduleDef
-//DlangGenerator.generate moduleDef

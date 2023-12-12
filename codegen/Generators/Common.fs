@@ -222,7 +222,7 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
             let content = typeMap[name]
             let thisValue, subAcc =
                 match content with
-                | UserOrGeneric.FwdInterface _ ->
+                | UserOrGeneric.FwdInterface ->
                     failwith "createContainsRefMap:processDeps: shouldn't ever encounter this"
                 | UserOrGeneric.Generic niType ->
                     match niType with

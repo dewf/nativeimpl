@@ -5,6 +5,7 @@ open Parser
 
 open Util
 open Generators.Common
+open Extensions
 
 let rec typeToName = function
     | UnitType -> "Unit"
@@ -784,7 +785,30 @@ let renderWrapperUserTypes (writer: IFormatWriter) (containsRefsMap: Map<string,
         | SumTypeDef values ->
             renderWrapperSumType writer name values
 
-let generateWrappersCpp (m: Module) (writer: IFormatWriter) (className: string) =
+let getRelativePath (currentPath: string list) (targetPath: string list) =
+    // remove common segments
+    // prefix (currentPath.count) segments with ".."
+    // then remainder of targetPath
+    let current, target =
+        (currentPath, targetPath)
+        ||> List.skipWhile2 (fun a b -> a = b)
+    List.replicate current.Length ".." @ target
+
+let relativeIncludeFilename (maybeModulePrefix: string option) (targetModule: string) =
+    // for including other module paths
+    let targetParts =
+        targetModule.Split(".")
+        |> List.ofArray
+    match maybeModulePrefix with
+    | Some prefix ->
+            getRelativePath (prefix.Split(".") |> List.ofArray) targetParts
+            |> String.concat "/"
+    | None ->
+        targetParts
+        |> String.concat "/"
+    |> sprintf "%s.h"
+
+let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: string option) (className: string) =
     let write, blank = writer.Write, writer.Blank
     // things we'll need to use a few times:
     let globals =
@@ -814,7 +838,7 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) (className: string) 
             | _ -> None)
     // begin output: ===============================================
     // prologue
-    write 0 "#include \"NativeImplServer.h\""
+    write 0 "#include \"%s\"" (relativeIncludeFilename maybeModulePrefix "NISupport.NativeImplServer")
     write 0 "#include \"%s.h\"" className
 
     // opaques + interface method + exception handles (for registration storage)
@@ -1069,7 +1093,7 @@ let renderHeaderUserTypes (writer: IFormatWriter) (name: string) (content: UserO
         | SumTypeDef enumValues ->
             renderHeaderSumType writer name enumValues typeMap 
 
-let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) =
+let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank
     //
     let globals =
@@ -1083,7 +1107,7 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
     // begin output: ===============================================
-    write 0 "#include \"NativeImplServer.h\""
+    write 0 "#include \"%s\"" (relativeIncludeFilename maybeModulePrefix "NISupport.NativeImplServer")
     write 0 "#include <functional>"
     write 0 "#include <memory>"
     write 0 "#include <string>"
@@ -1215,13 +1239,13 @@ let generateModule (outParams: OutParams) (m: Module) =
     use wrappersOutput =
         let writer = new StreamWriter(wrappersFilename)
         new SimpleFormatWriter(writer)
-    generateWrappersCpp m wrappersOutput className
+    generateWrappersCpp m wrappersOutput maybeModulePrefix className
 
     printfn "  - %s" implementationHeaderFilename
     use implHeaderOutput =
         let writer = new StreamWriter(implementationHeaderFilename)
         new SimpleFormatWriter(writer)
-    generateImplementationH m typeMap implHeaderOutput
+    generateImplementationH m typeMap implHeaderOutput maybeModulePrefix
     
     printfn "  - %s" implementationFilename
     use implementationOutput =

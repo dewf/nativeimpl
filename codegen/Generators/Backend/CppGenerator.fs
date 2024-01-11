@@ -798,6 +798,7 @@ let relativeIncludeFilename (maybeModulePrefix: string option) (targetModule: st
     // for including other module paths
     let targetParts =
         targetModule.Split(".")
+        |> Array.map (fun part -> if part = "$PARENT" then ".." else part)
         |> List.ofArray
     match maybeModulePrefix with
     | Some prefix ->
@@ -838,7 +839,7 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: 
             | _ -> None)
     // begin output: ===============================================
     // prologue
-    write 0 "#include \"%s\"" (relativeIncludeFilename maybeModulePrefix "NISupport.NativeImplServer")
+    write 0 "#include \"%s\"" (relativeIncludeFilename maybeModulePrefix "$PARENT.support.NativeImplServer")
     write 0 "#include \"%s.h\"" className
 
     // opaques + interface method + exception handles (for registration storage)
@@ -1107,7 +1108,9 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
     // begin output: ===============================================
-    write 0 "#include \"%s\"" (relativeIncludeFilename maybeModulePrefix "NISupport.NativeImplServer")
+    write 0 "#pragma once"
+    blank ()
+    write 0 "#include \"%s\"" (relativeIncludeFilename maybeModulePrefix "$PARENT.support.NativeImplServer")
     write 0 "#include <functional>"
     write 0 "#include <memory>"
     write 0 "#include <string>"
@@ -1196,7 +1199,7 @@ let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) 
         write 0 "}"
         
 let projectDir (outParams: OutParams) =
-    sprintf "%s/server/cpp/%sServer" outParams.Path outParams.LibraryName
+    sprintf "%s/server/cpp/%sImpl" outParams.Path outParams.LibraryName
     
 let generateModule (outParams: OutParams) (m: Module) =
     let baseNamespace, maybeModulePrefix, className =
@@ -1208,6 +1211,10 @@ let generateModule (outParams: OutParams) (m: Module) =
             |> Option.defaultValue ""
         sprintf "%s%s" (projectDir outParams) subPath
     Directory.CreateDirectory(moduleDir) |> ignore
+    
+    // let generatedDir =
+    //     $"{moduleDir}/generated"
+    // Directory.CreateDirectory(generatedDir) |> ignore
     
     let filenameNoExt =
         sprintf "%s/%s" moduleDir className

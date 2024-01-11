@@ -3,11 +3,11 @@ open Generators.Frontend
 open Generators.Backend
 open Generators.Common
 
-let INPUT_PATH = "/Users/daniel/Desktop/Development/nativeimpl/testroot"
-let OUTPUT_PATH = "/Users/daniel/Desktop/ni-output"
-let INPUTS = [ "Nested.Woot"; "ImportMe"; "Testing" ]
-let NAMESPACE = "Org.Whatever"
-let LIBRARY = "TestLibrary"
+let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
+let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
+let INPUTS = [ "Windowing"; ]
+let NAMESPACE = "Org.Prefixed"
+let LIBRARY = "GuiBase"
 let FRONT_LANG = "csharp"
 let BACK_LANG = "cpp"
 

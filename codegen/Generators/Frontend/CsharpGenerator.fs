@@ -456,7 +456,7 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
                     |> Option.defaultValue (Primitive(Int(signed,Width32)))
                 | _ -> failwith "SetRenderer this.EnumType trouble!!!"
             // push
-            write 2 "internal static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
             write 3 "var intValues = items.Select(i => (%s)i).ToArray();" (typeToCsString typeMap widthType)
             pushValue writer 3 (ArrayType widthType) "intValues" NotApplicable
@@ -481,7 +481,7 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
             write 3 "// ???"
             write 2 "}"
         member this.TupleType (tupleTypes: NIType list) =
-            write 2 "// IArrayRenderer.tupleType not yet handled"
+            write 2 "// IArrayRenderer.tupleType not yet handled (SetRenderer)"
         member this.ArrayType () =
             setDefault()
         member this.MapType () =
@@ -977,8 +977,8 @@ let writeLibrary (m: Module) (writer: IFormatWriter) (baseNamespace: string) (ma
     write 0 "using System.Collections.Generic;"
     write 0 "using System.Linq;"
     write 0 "using System.Runtime.InteropServices;"
-    write 0 "using %s.NISupport;" baseNamespace
-    write 0 "using ModuleHandle = %s.NISupport.ModuleHandle;" baseNamespace // sigh
+    write 0 "using %s.Support;" baseNamespace
+    write 0 "using ModuleHandle = %s.Support.ModuleHandle;" baseNamespace // sigh
     
     // imports
     if not m.Imports.IsEmpty then
@@ -1125,7 +1125,14 @@ let writeLibrary (m: Module) (writer: IFormatWriter) (baseNamespace: string) (ma
     // invoke user's ModuleInit, if it exists
     match maybeModuleInit with
     | Some initFunc ->
-        write 3 "return ModuleInit(%s);" (argNamesJoined initFunc.Args)
+        blank()
+        let maybeReturn =
+            match initFunc.Returns with
+            | UnitType ->
+                ""
+            | _ ->
+                "return "
+        write 3 "%sModuleInit(%s);" maybeReturn (argNamesJoined initFunc.Args)
     | None ->
         ()
     write 2 "}" // end of Init()

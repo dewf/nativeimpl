@@ -452,8 +452,19 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
                 | UserOrGeneric.User (EnumDef info) ->
                     let signed =
                         not info.FlagsMode
-                    info.MaybeWidth
-                    |> Option.defaultValue (Primitive(Int(signed,Width32)))
+                    // what int size will we use to encode these?
+                    match info.MaybeWidth with
+                    | Some provided ->
+                        // use what the user asked for (currently no checking to verify it's big enough)
+                        provided
+                    | None ->
+                        // what's the smallest width that will accommodate the enum size?
+                        let iWidth =
+                            match info.Values.Length with
+                            | x when x < 128 -> Width8
+                            | x when x < 32768 -> Width16
+                            | _ -> Width32
+                        Primitive(Int(signed, iWidth))
                 | _ -> failwith "SetRenderer this.EnumType trouble!!!"
             // push
             write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)

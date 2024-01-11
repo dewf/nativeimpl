@@ -506,8 +506,21 @@ type ArrayOrSetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneri
             let widthType =
                 match typeMap[name] with
                 | UserOrGeneric.User (EnumDef info) ->
-                        info.MaybeWidth
-                        |> Option.defaultValue (Primitive(Int(true,Width8)))
+                    let signed =
+                        not info.FlagsMode
+                    // what int size will we use to encode these?
+                    match info.MaybeWidth with
+                    | Some provided ->
+                        // use what the user asked for (currently no checking to verify it's big enough)
+                        provided
+                    | None ->
+                        // what's the smallest width that will accommodate the enum size?
+                        let iWidth =
+                            match info.Values.Length with
+                            | x when x < 128 -> Width8
+                            | x when x < 32768 -> Width16
+                            | _ -> Width32
+                        Primitive(Int(signed, iWidth))
                 | _ ->
                     failwith "C++ ArrayOrSetRenderer: weirdness in this.EnumType"
             // PUSH ================

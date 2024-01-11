@@ -1212,12 +1212,17 @@ let generateModule (outParams: OutParams) (m: Module) =
         sprintf "%s%s" (projectDir outParams) subPath
     Directory.CreateDirectory(moduleDir) |> ignore
     
-    // let generatedDir =
-    //     $"{moduleDir}/generated"
-    // Directory.CreateDirectory(generatedDir) |> ignore
+    let generatedDir =
+        $"{moduleDir}/generated"
+    Directory.CreateDirectory(generatedDir) |> ignore
     
     let filenameNoExt =
+        // for .cpp implementation
         sprintf "%s/%s" moduleDir className
+        
+    let generatedFilenameNoExt =
+        // for wrappers/.h
+        sprintf "%s/%s" generatedDir className
         
     let modulePrefixString =
         maybeModulePrefix
@@ -1226,9 +1231,9 @@ let generateModule (outParams: OutParams) (m: Module) =
     printfn "C++ writing (%s.%s%s)" baseNamespace modulePrefixString className
     
     let wrappersFilename =
-        $"{filenameNoExt}_Wrappers.cpp"
+        $"{generatedFilenameNoExt}_Wrappers.cpp"
     let implementationHeaderFilename =
-        $"{filenameNoExt}.h"
+        $"{generatedFilenameNoExt}.h"
     let implementationFilename =
         // in the future we may auto-populate .cpp.new from the existing .cpp,
         //   but will never overwrite something the user has worked on

@@ -1096,7 +1096,10 @@ let renderHeaderUserTypes (writer: IFormatWriter) (name: string) (content: UserO
                     sprintf " : %s" (typeToCppString typeMap widthType)
                 | None ->
                     ""
-            write 0 "enum class %s%s {" name maybeWidth
+            if info.FlagsMode then
+                write 0 "enum %s%s {" name maybeWidth
+            else
+                write 0 "enum class %s%s {" name maybeWidth
             for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
                 match maybeSpecifiedValue with
                 | Some specValue ->

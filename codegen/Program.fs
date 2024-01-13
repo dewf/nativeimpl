@@ -5,7 +5,7 @@ open Generators.Common
 
 let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
 let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
-let INPUTS = [ "Windowing"; ]
+let INPUTS = [ "Windowing"; "Drawing" ]
 let NAMESPACE = "Org.Prefixed"
 let LIBRARY = "GuiBase"
 let FRONT_LANG = "csharp"

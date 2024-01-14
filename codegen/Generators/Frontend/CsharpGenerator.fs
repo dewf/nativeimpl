@@ -952,7 +952,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 3 "return Wrapper;"
             write 2 "}"
 
-let writeLibrary (m: Module) (writer: IFormatWriter) (baseNamespace: string) (maybeModulePrefix: string option) (className: string) =
+let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (maybeModulePrefix: string option) (className: string) =
     let write, blank = writer.Write, writer.Blank
 
     let moduleMethods =
@@ -1183,7 +1183,7 @@ let generateModule (m: Module) (outParams: OutParams) =
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer)
-    writeLibrary m output baseNamespace maybeModulePrefix className
+    writeModule m output baseNamespace maybeModulePrefix className
     
 let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     let write, blank = writer.Write, writer.Blank
@@ -1209,3 +1209,58 @@ let generateProject (outParams: OutParams) =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer)
     writeProject output outParams
+
+let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespace: string) =
+    let write, blank = writer.Write, writer.Blank
+
+    write 0 "using System.Diagnostics;"
+    write 0 "using %s.Support;" baseNamespace
+    blank()
+    write 0 "namespace %s;" baseNamespace
+    blank()
+    write 0 "public static class Library"
+    write 0 "{"
+    write 1 "public static void Init()"
+    write 1 "{"
+    write 2 "Debug.Assert(NativeImplClient.Init() == 0);"
+    write 2 "// registrations, static module inits"
+    for m in allModules do
+        write 2 "%s.Init();" m.Name
+    write 1 "}"
+    blank()
+    write 1 "public static void Shutdown()"
+    write 1 "{"
+    write 2 "// module static shutdowns (if any, might be empty)"
+    for m in allModules |> List.rev do
+        write 2 "%s.Shutdown();" m.Name
+    write 2 "// bye"
+    write 2 "NativeImplClient.Shutdown();"
+    write 1 "}"
+    blank()
+    write 1 "public static void DumpTables()"
+    write 1 "{"
+    write 2 "NativeImplClient.DumpTables();"
+    write 1 "}"
+    write 0 "}"
+
+let generateLibraryFile (allModules: Module list) (outParams: OutParams) =
+    let baseNamespace, maybeModulePrefix, className =
+        namespaceParts outParams "Library"
+    let moduleDir =
+        let subPath =
+            maybeModulePrefix
+            |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
+            |> Option.defaultValue ""
+        sprintf "%s%s" (projectDir outParams) subPath
+    Directory.CreateDirectory(moduleDir) |> ignore
+    let filename =
+        sprintf "%s/%s.cs" moduleDir className
+    let modulePrefixString =
+        maybeModulePrefix
+        |> Option.map (fun mp -> $"{mp}.")
+        |> Option.defaultValue ""
+    printfn "C# writing (%s.%s%s) [%s]" baseNamespace modulePrefixString className filename
+    use output =
+        let writer = new StreamWriter(filename)
+        new SimpleFormatWriter(writer)
+    writeLibrary allModules output baseNamespace

@@ -1217,6 +1217,56 @@ let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) 
 let projectDir (outParams: OutParams) =
     sprintf "%s/server/cpp/%sImpl" outParams.Path outParams.LibraryName
     
+let writeLibrary (allModules: Module list) (writer: IFormatWriter) = // (maybeModulePrefix: string option) =
+    let write, blank = writer.Write, writer.Blank
+
+    for m in allModules do
+        write 0 "#include \"%s\"" (relativeIncludeFilename None m.Name)
+    blank()
+    write 0 "extern \"C\" int nativeLibraryInit() {"
+    for m in allModules do
+        write 1 "%s__register();" m.Name
+    write 1 "// should we do module inits here as well?"
+    write 1 "// currently they are manually done on the C# side inside the <module>.Init methods (which perform registration first) - and those are individually called by Library.Init, which first calls nativeImplInit"
+    write 0 "}"
+    blank()
+    write 0 "extern \"C\" void nativeLibraryShutdown() {"
+    write 1 "// module shutdowns? see note above"
+    write 0 "}"
+    
+let generateLibrary (allModules: Module list) (outParams: OutParams) =
+    let baseNamespace, maybeModulePrefix, className =
+        namespaceParts outParams "Library"
+    let moduleDir =
+        let subPath =
+            maybeModulePrefix
+            |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
+            |> Option.defaultValue ""
+        sprintf "%s%s" (projectDir outParams) subPath
+    Directory.CreateDirectory(moduleDir) |> ignore
+    
+    let generatedDir =
+        $"{moduleDir}/generated"
+    Directory.CreateDirectory(generatedDir) |> ignore
+    
+    let generatedFilenameNoExt =
+        // for wrappers/.h
+        sprintf "%s/%s" generatedDir className
+        
+    let modulePrefixString =
+        maybeModulePrefix
+        |> Option.map (fun mp -> $"{mp}.")
+        |> Option.defaultValue ""
+    printfn "C++ writing (%s.%s%s)" baseNamespace modulePrefixString className
+    
+    let filename =
+        $"{generatedFilenameNoExt}.cpp"
+    use libraryWriter =
+        let writer = new StreamWriter(filename)
+        new SimpleFormatWriter(writer)
+    writeLibrary allModules libraryWriter
+    
+    
 let generateModule (outParams: OutParams) (m: Module) =
     let baseNamespace, maybeModulePrefix, className =
         namespaceParts outParams m.Name

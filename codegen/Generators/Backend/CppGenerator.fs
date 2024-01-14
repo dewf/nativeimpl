@@ -942,9 +942,9 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: 
             pushValue writer 1 globalType globalName (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
         write 0 "}"
 
-    // library entry point / registrations
+    // library registration method
     blank()
-    write 0 "extern \"C\" int nativeLibraryInit() {"
+    write 0 "int %s__register() {" m.Name
     write 1 "auto m = ni_registerModule(\"%s\");" m.Name
     if globals.Length > 0 then
         write 1 "ni_registerModuleConstants(m, &__constantsFunc);"
@@ -963,11 +963,6 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: 
         write 1 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" lowerName name name
     // done
     write 1 "return 0; // = OK"
-    write 0 "}"
-    write 0 ""
-    // shutdown
-    write 0 "extern \"C\" void nativeLibraryShutdown() {"
-    // nothing for C++
     write 0 "}"
 
 let renderHeaderException (writer: IFormatWriter) (exName: string) (exFields: NamedField list) (typeMap: Map<string, UserOrGeneric>) =
@@ -1151,18 +1146,23 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
             write 0 "extern const %s %s;" (typeToCppString typeMap globalType) globalName
 
     // function prototypes
+    if moduleMethods.Length > 0 then
+        blank()
+        for namedFunc in moduleMethods do
+            let throwsComment =
+                if namedFunc.Throws.IsEmpty then
+                    ""
+                else
+                    let joined =
+                        namedFunc.Throws
+                        |> List.map (typeToCppString typeMap)
+                        |> String.concat ", "
+                    sprintf " // throws %s" joined
+            write 0 "%s %s(%s);%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
+        
+    // registration method (called by Library.cpp or wherever we centralize this ...)
     blank()
-    for namedFunc in moduleMethods do
-        let throwsComment =
-            if namedFunc.Throws.IsEmpty then
-                ""
-            else
-                let joined =
-                    namedFunc.Throws
-                    |> List.map (typeToCppString typeMap)
-                    |> String.concat ", "
-                sprintf " // throws %s" joined
-        write 0 "%s %s(%s);%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
+    write 0 "int %s__register();" m.Name
 
 let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) (className: string) =
     let write, blank = writer.Write, writer.Blank

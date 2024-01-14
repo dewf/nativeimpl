@@ -1066,11 +1066,10 @@ let writeLibrary (m: Module) (writer: IFormatWriter) (baseNamespace: string) (ma
     blank()
     match maybeModuleInit with
     | Some initFunc ->
-        write 2 "public static %s Init(%s)" (typeToCsString typeMap initFunc.Returns) (argsJoined typeMap initFunc.Args)
+        write 2 "internal static %s Init(%s)" (typeToCsString typeMap initFunc.Returns) (argsJoined typeMap initFunc.Args)
     | None ->
-        write 2 "public static void Init()"
+        write 2 "internal static void Init()"
     write 2 "{"
-    write 3 "Debug.Assert(NativeImplClient.Init() == 0);"
     write 3 "_module = NativeImplClient.GetModule(\"%s\");" m.Name
 
     // fetch globals
@@ -1145,22 +1144,17 @@ let writeLibrary (m: Module) (writer: IFormatWriter) (baseNamespace: string) (ma
                 "return "
         write 3 "%sModuleInit(%s);" maybeReturn (argNamesJoined initFunc.Args)
     | None ->
-        ()
+        blank()
+        write 3 "// no static init"
     write 2 "}" // end of Init()
     blank()
-    write 2 "public static void Shutdown()"
+    write 2 "internal static void Shutdown()"
     write 2 "{"
     match maybeModuleShutdown with
     | Some _ ->
         write 3 "ModuleShutdown();"
     | None ->
-        ()
-    write 3 "NativeImplClient.Shutdown();"
-    write 2 "}"
-    blank()
-    write 2 "public static void DumpTables()"
-    write 2 "{"
-    write 3 "NativeImplClient.DumpTables();"
+        write 3 "// no static shutdown"
     write 2 "}"
     write 1 "}" // end of static class <module name>
     //

@@ -133,6 +133,7 @@ let rec defaultValueForType (typeMap: Map<string, UserOrGeneric>) = function
 
 type PopValueContext =
     | Variable of name: string
+    | LeftAssign of leftSide: string
     | Return
     | SafeReturn
     | ExceptionContext
@@ -142,6 +143,7 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
     let contextPrefix =
         match context with
         | Variable varName -> sprintf "auto %s =" varName
+        | LeftAssign leftSide -> sprintf "%s = " leftSide
         | Return -> "return"
         | SafeReturn -> "auto __ret ="
         | ExceptionContext -> ""
@@ -774,10 +776,10 @@ let renderWrapperUserTypes (writer: IFormatWriter) (containsRefsMap: Map<string,
             // pop
             blank()
             write 0 "%s %s__pop() {" name name
-            write 1 "%s value;" name
-            popValue writer 1 flagsType (Variable "usedFields")
+            write 1 "%s value = {};" name
+            popValue writer 1 flagsType (LeftAssign "value._usedFields")
             for field in namedFields do
-                write 1 "if (usedFields & %s::Fields::%s) {" name (upperFirst field.Name)
+                write 1 "if (value._usedFields & %s::Fields::%s) {" name (upperFirst field.Name)
                 popValue writer 2 field.Type_ (Variable "x")
                 write 2 "value.set%s(x);" (upperFirst field.Name)
                 write 1 "}"
@@ -890,8 +892,8 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: 
     for name, userType in userTypes do
         let lowerName = lowerFirst name
         match userType with
-//        | OpaqueHandleDef ->
-//            write 0 "NIHANDLE(%s);" lowerName
+        | OpaqueHandleDef ->
+            write 0 "NIHANDLE(%s);" lowerName
         | InterfaceDef namedFunctions ->
             namedFunctions
             |> List.iter (fun nf ->
@@ -1252,7 +1254,10 @@ let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) 
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
     // begin output: ===============================================
-    write 0 "#include \"%s.h\"" className
+    // right now this is hardcoded to the root level - we're not using any of the complex "outParams" stuff that the header/wrappers functions are using
+    // it's quite a big chunk of code at this point and it needs to be extracted and cleaned up
+    // but that's a day's worth of trouble, so not right now ...
+    write 0 "#include \"generated/%s.h\"" className
 
     // globals
     if globals.Length > 0 then

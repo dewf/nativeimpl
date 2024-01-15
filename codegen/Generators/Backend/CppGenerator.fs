@@ -39,6 +39,7 @@ let rec typeToName = function
     | TypedefType name -> upperFirst name
     | EnumType name -> upperFirst name
     | SumType name -> upperFirst name
+    | OptionsType name -> upperFirst name
     | x -> sprintf "(typeToName: not done yet [%A]" x
 
 let rec typeToCppString (typeMap: Map<string, UserOrGeneric>) = function
@@ -70,6 +71,7 @@ let rec typeToCppString (typeMap: Map<string, UserOrGeneric>) = function
     | SetType niType -> sprintf "std::set<%s>" (typeToCppString typeMap niType)
     | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (typeToCppString typeMap elemType)
     | StructType name -> name
+    | OptionsType name -> name
     | TypedefType name -> name
     | EnumType name ->
         match typeMap[name] with
@@ -202,6 +204,8 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         write level "%s %s__pop();" contextPrefix enumTypeName
     | SumType sumTypeName ->
         write level "%s %s__pop();" contextPrefix sumTypeName
+    | OptionsType optionsTypeName ->
+        write level "%s %s__pop();" contextPrefix optionsTypeName
     | ExceptionType exceptionName ->
         write level "%s__buildAndThrow();" exceptionName
     | _ ->
@@ -290,6 +294,8 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
     | EnumType name ->
         write level "%s__push(%s);" name content
     | SumType name ->
+        write level "%s__push(%s, %s);" name content (isReturnString())
+    | OptionsType name ->
         write level "%s__push(%s, %s);" name content (isReturnString())
     | ExceptionType name ->
         assert (isReturn = Direct true)          // maybe needs a separate value for exceptions?
@@ -753,6 +759,30 @@ let renderWrapperUserTypes (writer: IFormatWriter) (containsRefsMap: Map<string,
                 popValue writer 1 field.Type_ (Variable field.Name)
             write 1 "return %s { %s };" name (joinedFieldNames namedFields)
             write 0 "}"
+        | OptionsDef namedFields ->
+            let flagsType =
+                Primitive(Int(true,Width32))
+            // push
+            write 0 "void %s__push(%s value, bool isReturn) {" name name
+            for field in namedFields |> List.rev do
+                write 1 "%s %s;" (typeToCppString typeMap field.Type_) field.Name
+                write 1 "if (value.has%s(&%s)) {" (upperFirst field.Name) field.Name
+                pushValue writer 2 field.Type_ field.Name (Indirect "isReturn")
+                write 1 "}"
+            pushValue writer 1 flagsType "value.getUsedFields()" NotApplicable
+            write 0 "}"
+            // pop
+            blank()
+            write 0 "%s %s__pop() {" name name
+            write 1 "%s value;" name
+            popValue writer 1 flagsType (Variable "usedFields")
+            for field in namedFields do
+                write 1 "if (usedFields & %s::Fields::%s) {" name (upperFirst field.Name)
+                popValue writer 2 field.Type_ (Variable "x")
+                write 2 "value.set%s(x);" (upperFirst field.Name)
+                write 1 "}"
+            write 1 "return value;"
+            write 0 "}"
         | ExceptionDef namedFields ->
             renderWrapperException writer name namedFields
         | InterfaceDef methods ->
@@ -1036,7 +1066,44 @@ let renderHeaderSumType (writer: IFormatWriter) (sumTypeName: string) (values: S
     for value in values do
         write 1 "std::shared_ptr<%s> %s;" value.Name (lowerFirst value.Name)
     write 0 "};"
-
+    
+let renderHeaderOptionsType (writer: IFormatWriter) (optionsTypeName: string) (namedFields: NamedField list) (typeMap: Map<string, UserOrGeneric>) =
+    let write, blank = writer.Write, writer.Blank
+    //
+    write 0 "struct %s {" optionsTypeName
+    write 0 "private:"
+    write 1 "enum Fields {"
+    for (i, field), maybeComma in namedFields |> List.indexed |> withTrailingCommas do
+        write 2 "%s = %d%s" (upperFirst field.Name) (1 <<< i) maybeComma
+    write 1 "};"
+    let usedFieldsType =
+        Primitive (Int(true, Width32))
+    write 1 "%s _usedFields;" (typeToCppString typeMap usedFieldsType)
+    for field in namedFields do
+        write 1 "%s _%s;" (typeToCppString typeMap field.Type_) field.Name
+    write 0 "protected:"
+    write 1 "%s getUsedFields() {" (typeToCppString typeMap usedFieldsType)
+    write 2 "return _usedFields;"
+    write 1 "}"
+    write 1 "friend void %s__push(%s value, bool isReturn);" (upperFirst optionsTypeName) (upperFirst optionsTypeName)
+    write 1 "friend %s %s__pop();" (upperFirst optionsTypeName) (upperFirst optionsTypeName)
+    write 0 "public:"
+    // accessor methods
+    for field in namedFields do
+        write 1 "void set%s(%s value) {" (upperFirst field.Name) (typeToCppString typeMap field.Type_)
+        write 2 "_%s = value;" field.Name
+        write 2 "_usedFields |= Fields::%s;" (upperFirst field.Name)
+        write 1 "}"
+        write 1 "bool has%s(%s *value) {" (upperFirst field.Name) (typeToCppString typeMap field.Type_)
+        write 2 "if (_usedFields & Fields::%s) {" (upperFirst field.Name)
+        write 3 "*value = _%s;" field.Name
+        write 3 "return true;"
+        write 2 "}"
+        write 2 "return false;"
+        write 1 "}"
+    // done
+    write 0 "};"
+    
 let renderHeaderUserTypes (writer: IFormatWriter) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
     let write, blank = writer.Write, writer.Blank
     //
@@ -1067,6 +1134,8 @@ let renderHeaderUserTypes (writer: IFormatWriter) (name: string) (content: UserO
             for field in namedFields do
                 write 1 "%s %s;" (typeToCppString typeMap field.Type_) field.Name
             write 0 "};"
+        | OptionsDef namedFields ->
+            renderHeaderOptionsType writer name namedFields typeMap
         | ExceptionDef namedFields ->
             renderHeaderException writer name namedFields typeMap
         | InterfaceDef namedFunctions ->
@@ -1228,6 +1297,7 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) = // (maybeMo
         write 1 "%s__register();" m.Name
     write 1 "// should we do module inits here as well?"
     write 1 "// currently they are manually done on the C# side inside the <module>.Init methods (which perform registration first) - and those are individually called by Library.Init, which first calls nativeImplInit"
+    write 1 "return 0;"
     write 0 "}"
     blank()
     write 0 "extern \"C\" void nativeLibraryShutdown() {"

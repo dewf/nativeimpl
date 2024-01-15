@@ -39,6 +39,7 @@ let rec typeToInternalKey = function
     | TypedefType name -> name
     | EnumType name -> name
     | SumType name -> name
+    | OptionsType name -> name
 
 [<RequireQualifiedAccess>]
 type UserOrGeneric =
@@ -107,6 +108,9 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
             match userType with
             | OpaqueHandleDef -> []
             | StructDef namedFields ->
+                namedFields
+                |> List.collect (fun field -> typeAndSubTypes field.Type_)
+            | OptionsDef namedFields ->
                 namedFields
                 |> List.collect (fun field -> typeAndSubTypes field.Type_)
             | ExceptionDef namedFields ->
@@ -189,6 +193,7 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
         | OpaqueHandleType name ->
             false, acc.Add(name, false)
         | StructType name -> processDeps name acc
+        | OptionsType name -> processDeps name acc
         | InterfaceType name ->
             // never traverse into interface dependencies themselves ...
             true, acc.Add(name, true)
@@ -258,6 +263,18 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                         // never
                         false, acc
                     | StructDef namedFields ->
+                        // possibly
+                        let subValues, nextAcc =
+                            (([], acc), namedFields)
+                            ||> List.fold (fun (values, acc) field ->
+                                let value, acc =
+                                    processType field.Type_ acc
+                                value :: values, acc)
+                        let result =
+                            subValues
+                            |> List.exists id
+                        result, nextAcc
+                    | OptionsDef namedFields ->
                         // possibly
                         let subValues, nextAcc =
                             (([], acc), namedFields)
@@ -366,6 +383,7 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
             alreadyRendered
         | OpaqueHandleType name -> renderDeps name alreadyRendered
         | StructType name -> renderDeps name alreadyRendered
+        | OptionsType name -> renderDeps name alreadyRendered
         | InterfaceType name ->
             // special handling for interface dependencies! they need to emit forward references,
             // depending on context (either "class <whatever>" in the header, or push/pop prototypes in the wrapper)
@@ -472,6 +490,9 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                     | OpaqueHandleDef -> // no sub fields
                         alreadyRendered
                     | StructDef namedFields ->
+                        (alreadyRendered, namedFields)
+                        ||> List.fold (fun already2 field -> renderType field.Type_ already2)
+                    | OptionsDef namedFields ->
                         (alreadyRendered, namedFields)
                         ||> List.fold (fun already2 field -> renderType field.Type_ already2)
                     | ExceptionDef namedFields ->

@@ -26,6 +26,7 @@ type Token =
     | InterfaceToken
     | EnumToken | FlagsToken
     | SumTypeToken
+    | OptionsToken
     | UnitToken
     | DelegateToken
     | TypedefToken
@@ -222,6 +223,7 @@ let nextToken (loc: Location) (input: char[]) =
             | "enum" -> EnumToken
             | "flags" -> FlagsToken
             | "sumtype" -> SumTypeToken
+            | "options" -> OptionsToken
             | "delegate" -> DelegateToken
             | "typedef" -> TypedefToken
             | "throws" -> ThrowsToken

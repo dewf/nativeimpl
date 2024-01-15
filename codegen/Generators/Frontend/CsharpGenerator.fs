@@ -29,6 +29,7 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
     | EnumType name -> upperFirst name
     | SumType name -> upperFirst name
     | StructType name -> upperFirst name
+    | OptionsType name -> upperFirst name
     | InterfaceType name -> upperFirst name
     | ExceptionType name -> upperFirst name
     | DelegateType name -> upperFirst name
@@ -79,6 +80,7 @@ let rec typeToName = function
         | Float64 -> "Double"
         | StringType -> "String"
     | StructType name -> upperFirst name
+    | OptionsType name -> upperFirst name
     | EnumType name -> upperFirst name
     | TypedefType name -> upperFirst name
     | TupleType tupleTypes ->
@@ -169,6 +171,8 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | StructType name ->
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
+    | OptionsType name ->
+        write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | TupleType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | SetType _ ->
@@ -233,6 +237,7 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
             | _ -> write level "// pushValue not yet supported: Array of prim %A" prim
         | EnumType name -> write level "__%sArray__Push(%s);" (upperFirst name) content
         | StructType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
+        | OptionsType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
         | TypedefType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
         | ArrayType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | SetType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
@@ -244,6 +249,8 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
     | SumType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | StructType name ->
+        write level "%s__Push(%s, %s);" name content (isReturnString())
+    | OptionsType name ->
         write level "%s__Push(%s, %s);" name content (isReturnString())
     | TupleType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
@@ -592,8 +599,8 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             // push
             write 2 "internal static void __%s__Push(Dictionary<%s, %s> map, bool isReturn)" (typeToName gType) (typeToCsString typeMap keyType) (typeToCsString typeMap valueType)
             write 2 "{"
-            pushValue writer 3 (ArrayType valueType) (sprintf "map.Values.ToArray()") (Indirect "isReturn")
-            pushValue writer 3 (ArrayType keyType) (sprintf "map.Keys.ToArray()") (Indirect "isReturn")
+            pushValue writer 3 (ArrayType valueType) "map.Values.ToArray()" (Indirect "isReturn")
+            pushValue writer 3 (ArrayType keyType) "map.Keys.ToArray()" (Indirect "isReturn")
             write 2 "}"
             // pop
             blank()
@@ -695,6 +702,65 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "{"
             popValue writer 3 widthType (NewVariable "ret")
             write 3 "return (%s)ret;" (upperFirst name)
+            write 2 "}"
+        | OptionsDef namedFields ->
+            // definition
+            write 2 "public struct %s" name
+            write 2 "{"
+            write 3 "[Flags]"
+            write 3 "internal enum Fields"
+            write 3 "{"
+            for (i, field), maybeComma in namedFields |> List.indexed |> withTrailingCommas do
+                write 4 "%s = %d%s" (upperFirst field.Name) (1 <<< i) maybeComma
+            write 3 "}"
+            write 3 "internal Fields UsedFields;"
+            blank()
+            for field in namedFields do
+                let fieldTypeCsString =
+                    (typeToCsString typeMap field.Type_)
+                write 3 "private %s _%s;" fieldTypeCsString field.Name
+                write 3 "public %s %s" fieldTypeCsString (upperFirst field.Name)
+                write 3 "{"
+                write 4 "set"
+                write 4 "{"
+                write 5 "_%s = value;" field.Name
+                write 5 "UsedFields |= Fields.%s;" (upperFirst field.Name)
+                write 4 "}"
+                write 3 "}"
+                write 3 "public bool Has%s(out %s value)" (upperFirst field.Name) fieldTypeCsString
+                write 3 "{"
+                write 4 "if (UsedFields.HasFlag(Fields.%s))" (upperFirst field.Name)
+                write 4 "{"
+                write 5 "value = _%s;" field.Name
+                write 5 "return true;"
+                write 4 "}"
+                write 4 "value = default;"
+                write 4 "return false;"
+                write 3 "}"
+            write 2 "}"
+            // push
+            write 2 "internal static void %s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            for field in namedFields |> List.rev do
+                write 3 "if (value.Has%s(out var %s))" (upperFirst field.Name) field.Name
+                write 3 "{"
+                pushValue writer 4 field.Type_ field.Name (Indirect "isReturn")
+                write 3 "}"
+            pushValue writer 3 (Primitive(Int(true, Width32))) "(int)value.UsedFields" NotApplicable
+            write 2 "}"
+            // pop
+            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "var opts = new %s" (upperFirst name)
+            write 3 "{"
+            write 4 "UsedFields = (%s.Fields)NativeImplClient.PopInt32()" (upperFirst name) // hardcoded int32, I don't think we have anything for casting yet
+            write 3 "};"
+            for field in namedFields do
+                write 3 "if (opts.UsedFields.HasFlag(%s.Fields.%s))" (upperFirst name) (upperFirst field.Name)
+                write 3 "{"
+                popValue writer 4 field.Type_ (ExistingVar $"opts.{upperFirst field.Name}")
+                write 3 "}"
+            write 3 "return opts;"
             write 2 "}"
         | SumTypeDef sumTypeValues ->
             // definition

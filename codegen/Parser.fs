@@ -43,6 +43,7 @@ type NIType =
     | TypedefType of name: string
     | EnumType of name: string
     | SumType of name: string
+    | OptionsType of name: string
 
 let validBufferElementType = function
     | Primitive prim ->
@@ -245,6 +246,7 @@ type UserType =
     | TypeDef of actual: NIType
     | EnumDef of info: EnumInfo
     | SumTypeDef of values: SumTypeValue list
+    | OptionsDef of fields: NamedField list
 
 type ModuleDefinition =
     | Global of name: string * type_: NIType
@@ -552,6 +554,11 @@ let parseModuleDefs (input: TokenAndLocation list) =
                 parseSumTypeValues loc etc
             ([UserType (name, SumTypeDef values)], etc2)
             |> Some
+        | Lookahead 3 ([OptionsToken; Identifier name; LeftBrace], loc, etc) ->
+            let fields, etc2 =
+                parseFields loc etc
+            ([UserType (name, OptionsDef fields)], etc2)
+            |> Some
         | [] ->
             // end of file!
             None
@@ -686,6 +693,7 @@ let rec resolveType (context: ModuleContext) (type_: NIType) =
         | TypeDef _ -> TypedefType name
         | EnumDef _ -> EnumType name
         | SumTypeDef _ -> SumType name
+        | OptionsDef _ -> OptionsType name
         | ExceptionDef _ ->
             // how do we enforce that this is only allowed in a "throws" context?
             ExceptionType name
@@ -738,6 +746,11 @@ let resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
                     fieldTypes
                     |> List.map (resolveFieldType context)
                 StructDef nextFieldTypes
+            | OptionsDef fieldTypes ->
+                let nextFieldTypes =
+                    fieldTypes
+                    |> List.map (resolveFieldType context)
+                OptionsDef nextFieldTypes
             | ExceptionDef fieldTypes ->
                 let nextFieldTypes =
                     fieldTypes

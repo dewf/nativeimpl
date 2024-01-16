@@ -26,20 +26,15 @@ let rec typeToName = function
         | Float32 -> "Float"
         | Float64 -> "Double"
         | StringType -> "String"
-    | OpaqueHandleType name -> upperFirst name
-    | InterfaceType name -> upperFirst name
-    | ExceptionType name -> upperFirst name
-    | DelegateType name -> upperFirst name
+    | Resolved (resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        upperFirst name
     | ArrayType niType -> sprintf "%sArray" (typeToName niType)
     | MapType (keyType, valueType) -> sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
     | TupleType tupleTypes -> sprintf "%sTuple" (tupleTypes |> List.map typeToName |> String.concat "")
     | SetType niType -> sprintf "%sSet" (typeToName niType)
     | BufferType elemType -> sprintf "Native%sBuffer" (typeToName elemType)
-    | StructType name -> upperFirst name
-    | TypedefType name -> upperFirst name
-    | EnumType name -> upperFirst name
-    | SumType name -> upperFirst name
-    | OptionsType name -> upperFirst name
     | x -> sprintf "(typeToName: not done yet [%A]" x
 
 let rec typeToCppString (typeMap: Map<string, UserOrGeneric>) = function
@@ -61,31 +56,33 @@ let rec typeToCppString (typeMap: Map<string, UserOrGeneric>) = function
         | Float32 -> "float"
         | Float64 -> "double"
         | StringType -> "std::string"
-    | OpaqueHandleType name -> name
-    | InterfaceType name -> sprintf "std::shared_ptr<%s>" name
-    | ExceptionType name -> name
-    | DelegateType name -> sprintf "std::function<%s>" name
+    | Resolved (resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        match resolvedType with
+        | InterfaceType ->
+            sprintf "std::shared_ptr<%s>" name
+        | DelegateType ->
+            sprintf "std::function<%s>" name
+        | EnumType ->
+            match typeMap[name] with
+            | UserOrGeneric.User (EnumDef enumInfo) ->
+                if enumInfo.FlagsMode then
+                    let widthType =
+                        enumInfo.MaybeWidth
+                        |> Option.defaultValue (Primitive(Int(false, Width32)))
+                    typeToCppString typeMap widthType
+                else
+                    name
+            | _ ->
+                failwithf "typeToCppString: failed to find enum type %s in type map" name
+        | _ ->
+            name
     | ArrayType niType -> sprintf "std::vector<%s>" (typeToCppString typeMap niType)
     | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (typeToCppString typeMap keyType) (typeToCppString typeMap valueType)
     | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map (typeToCppString typeMap) |> String.concat ",")
     | SetType niType -> sprintf "std::set<%s>" (typeToCppString typeMap niType)
     | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (typeToCppString typeMap elemType)
-    | StructType name -> name
-    | OptionsType name -> name
-    | TypedefType name -> name
-    | EnumType name ->
-        match typeMap[name] with
-        | UserOrGeneric.User (EnumDef enumInfo) ->
-            if enumInfo.FlagsMode then
-                let widthType =
-                    enumInfo.MaybeWidth
-                    |> Option.defaultValue (Primitive(Int(false, Width32)))
-                typeToCppString typeMap widthType
-            else
-                name
-        | _ ->
-            failwithf "typeToCppString: failed to find enum type %s in type map" name
-    | SumType name -> name
     | x -> sprintf "(typeToCppString: not done yet [%A])" x
 
 let joinedFields (typeMap: Map<string, UserOrGeneric>) (fields: NamedField list) =
@@ -115,9 +112,18 @@ let rec defaultValueForType (typeMap: Map<string, UserOrGeneric>) = function
         | Float32 -> "0.0f"
         | Float64 -> "0.0"
         | StringType -> "\"default\""
-    | OpaqueHandleType name -> sprintf "new __%s()" (upperFirst name)
-    | InterfaceType name -> sprintf "std::shared_ptr<%s>()" name
-    | DelegateType name -> sprintf "std::function<%s>()" name
+    | Resolved (resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        match resolvedType with
+        | OpaqueHandleType ->
+            sprintf "new __%s()" (upperFirst name)
+        | InterfaceType ->
+            sprintf "std::shared_ptr<%s>()" name
+        | DelegateType ->
+            sprintf "std::function<%s>()" name
+        | _ ->
+            "(defaultValueForType: not yet supported)"
     | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString typeMap niType)
     | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToCppString typeMap keyType) (typeToCppString typeMap valueType)
     | TupleType tupleTypes ->
@@ -161,12 +167,14 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         | Float32 -> write level "%s ni_popFloat();" contextPrefix
         | Float64 -> write level "%s ni_popDouble();" contextPrefix
         | StringType -> write level "%s popStringInternal();" contextPrefix
-    | OpaqueHandleType name ->
-        write level "%s (%s)ni_popPtr();" contextPrefix (upperFirst name)
-    | InterfaceType ifaceName ->
-        write level "%s %s__pop();" contextPrefix ifaceName
-    | DelegateType delegateName ->
-        write level "%s %s__pop();" contextPrefix delegateName
+    | Resolved(resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        match resolvedType with
+        | ExceptionType ->
+            write level "%s__buildAndThrow();" name
+        | _ ->
+            write level "%s %s__pop();" contextPrefix name
     | ArrayType niType ->
         let popFunc =
             match niType with
@@ -179,12 +187,11 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
                 | Float32 -> "popFloatArrayInternal"
                 | Float64 -> "popDoubleArrayInternal"
                 | StringType -> "popStringArrayInternal"
-            | StructType name -> sprintf "__%sArray__pop" name
-            | TypedefType name -> sprintf "__%sArray__pop" name
-            | DelegateType name -> sprintf "__%sArray__pop" name
+            | Resolved (resolvedName, resolvedType) ->
+                let name =
+                    resolvedName.Flatten()
+                sprintf "__%sArray__pop" name
             | ArrayType _ -> sprintf "__%sArray__pop" (typeToName niType)
-            | EnumType name -> sprintf "__%sArray__pop" name
-            | SumType name -> sprintf "__%sArray__pop" name
             | TupleType _ -> sprintf "__%sArray__pop" (typeToName niType)
             | SetType _ -> sprintf "__%sArray__pop" (typeToName niType)
             | MapType _ -> sprintf "__%sArray__pop" (typeToName niType)
@@ -198,18 +205,6 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         write level "%s __%s__pop();" contextPrefix (typeToName type_)
     | BufferType _ ->
         write level "%s __%s__pop();" contextPrefix (typeToName type_)
-    | StructType structName ->
-        write level "%s %s__pop();" contextPrefix structName
-    | TypedefType typedefName ->
-        write level "%s %s__pop();" contextPrefix typedefName
-    | EnumType enumTypeName ->
-        write level "%s %s__pop();" contextPrefix enumTypeName
-    | SumType sumTypeName ->
-        write level "%s %s__pop();" contextPrefix sumTypeName
-    | OptionsType optionsTypeName ->
-        write level "%s %s__pop();" contextPrefix optionsTypeName
-    | ExceptionType exceptionName ->
-        write level "%s__buildAndThrow();" exceptionName
     | _ ->
         write level "// (pop not yet implemented: %A)" type_
     // epilogue
@@ -244,12 +239,18 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
         | Float32 -> write level "ni_pushFloat(%s);" content
         | Float64 -> write level "ni_pushDouble(%s);" content
         | StringType -> write level "pushStringInternal(%s);" content
-    | OpaqueHandleType _ ->
-        write level "ni_pushPtr(%s);" content
-    | InterfaceType name ->
-        write level "%s__push(%s, %s);" name content (isReturnString())
-    | DelegateType name ->
-        write level "%s__push(%s);" name content // still hmm about safety area for functions ...
+    | Resolved (resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        // switch on type for return param?
+        match resolvedType with
+        | ExceptionType ->
+            assert (isReturn = Direct true)          // maybe needs a separate value for exceptions?
+            write level "%s__push(%s);" name content // isreturn irrelevant, exceptions must push everything safely because they are basically returns
+        | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
+            write level "%s__push(%s, %s);" name content (isReturnString())
+        | _ ->
+            write level "%s__push(%s);" name content
     | ArrayType niType ->
         match niType with
         | Primitive prim ->
@@ -269,15 +270,9 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
             write level "__%sArray__push(%s, %s);" (typeToName niType) content (isReturnString())
         | SetType _ ->
             write level "__%sArray__push(%s, %s);" (typeToName niType) content (isReturnString())
-        | StructType name ->
-            write level "__%sArray__push(%s, %s);" name content (isReturnString())
-        | DelegateType name ->
-            write level "__%sArray__push(%s, %s);" name content (isReturnString()) // currently doesn't use the isReturn' value, but lets us emit array stuff more easily
-        | TypedefType name ->
-            write level "__%sArray__push(%s, %s);" name content (isReturnString())
-        | EnumType name ->
-            write level "__%sArray__push(%s, %s);" name content (isReturnString())
-        | SumType name ->
+        | Resolved(resolvedName, resolvedType) ->
+            let name =
+                resolvedName.Flatten()
             write level "__%sArray__push(%s, %s);" name content (isReturnString())
         | _ ->
             write level "// (push not yet supported: ArrayType %A)" niType
@@ -289,19 +284,6 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
         write level "__%s__push(%s, %s);" (typeToName type_) content (isReturnString())
     | BufferType _ ->
         write level "__%s__push(%s, %s);" (typeToName type_) content (isReturnString())
-    | StructType name ->
-        write level "%s__push(%s, %s);" name content (isReturnString())
-    | TypedefType name ->
-        write level "%s__push(%s, %s);" name content (isReturnString())
-    | EnumType name ->
-        write level "%s__push(%s);" name content
-    | SumType name ->
-        write level "%s__push(%s, %s);" name content (isReturnString())
-    | OptionsType name ->
-        write level "%s__push(%s, %s);" name content (isReturnString())
-    | ExceptionType name ->
-        assert (isReturn = Direct true)          // maybe needs a separate value for exceptions?
-        write level "%s__push(%s);" name content // isreturn irrelevant, exceptions must push everything safely because they are basically returns
     | _ ->
         write level "// (pushValue not supported yet: %A)" type_
 
@@ -330,7 +312,9 @@ let renderWrapperDelegate (writer: IFormatWriter) (typeMap: Map<string, UserOrGe
         write 2 "}"
         for exc in info.Throws do
             match exc with
-            | ExceptionType exceptionName ->
+            | Resolved (resolvedName, ExceptionType) ->
+                let exceptionName =
+                    resolvedName.Flatten()
                 write 2 "catch (const %s& e) {" (typeToCppString typeMap exc)
                 write 3 "ni_setException(%s);" (lowerFirst exceptionName)
                 pushValue writer 3 exc "e" (Direct true)
@@ -389,7 +373,7 @@ let renderWrapperInterface (writer: IFormatWriter) (typeMap: Map<string, UserOrG
     write 0 "};"
     // PUSH ===================================
     let outerType =
-        InterfaceType name
+        Resolved (ThisModule name, InterfaceType)
     blank()
     write 0 "void %s__push(%s inst, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
     write 1 "if (inst != nullptr) {"
@@ -928,7 +912,9 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: 
             write 1 "}"
             for exc in namedFunction.Throws do
                 match exc with
-                | ExceptionType exceptionName ->
+                | Resolved (resolvedName, ExceptionType) ->
+                    let exceptionName =
+                        resolvedName.Flatten()
                     write 1 "catch (const %s& e) {" exceptionName
                     write 2 "ni_setException(%s);" (lowerFirst exceptionName)
                     pushValue writer 2 exc "e" (Direct true)
@@ -956,7 +942,9 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: 
                 write 1 "}"
                 for exc in nf.Throws do
                     match exc with
-                    | ExceptionType exceptionName ->
+                    | Resolved (resolvedName, ExceptionType) ->
+                        let exceptionName =
+                            resolvedName.Flatten()
                         write 1 "catch (const %s& e) {" exceptionName
                         write 2 "ni_setException(%s);" (lowerFirst exceptionName)
                         write 2 "%s__push(e);" exceptionName
@@ -1033,7 +1021,7 @@ let renderHeaderInterface (writer: IFormatWriter) (name: string) (methods: Named
     write 0 "};"
     // server wrapper template
     let outerType =
-        InterfaceType name
+        Resolved (ThisModule name, InterfaceType)
     blank()
     write 0 "// inherit from this to create server instances of %s" name
     write 0 "class Server%s : public %s, public ServerObject {" (typeToName outerType) name

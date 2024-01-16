@@ -25,13 +25,10 @@ let rec typeToDlangString (typeMap: Map<string, UserOrGeneric>) = function
         | Float32 -> "float"
         | Float64 -> "double"
         | StringType -> "string"
-    | OpaqueHandleType name -> upperFirst name
-    | EnumType name -> upperFirst name
-    | SumType name -> upperFirst name
-    | StructType name -> upperFirst name
-    | InterfaceType name -> upperFirst name
-    | ExceptionType name -> upperFirst name
-    | DelegateType name -> upperFirst name
+    | Resolved (resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        upperFirst name
     | ArrayType niType -> sprintf "%s[]" (typeToDlangString typeMap niType)
     | SetType niType -> sprintf "Set!%s" (typeToDlangString typeMap niType)
     // | BufferType elemType -> sprintf "INativeBuffer<%s>" (typeToDlangString typeMap elemType)
@@ -41,7 +38,6 @@ let rec typeToDlangString (typeMap: Map<string, UserOrGeneric>) = function
             |> List.map (typeToDlangString typeMap)
             |> String.concat ", "
         sprintf "Tuple!(%s)" joined
-    | TypedefType name -> name
     | MapType (keyType, valueType) ->
         let valueStr = typeToDlangString typeMap valueType
         let keyStr = typeToDlangString typeMap keyType
@@ -68,9 +64,10 @@ let rec typeToName = function
         | Float32 -> "Float"
         | Float64 -> "Double"
         | StringType -> "String"
-    | StructType name -> upperFirst name
-    | EnumType name -> upperFirst name
-    | TypedefType name -> upperFirst name
+    | Resolved (resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        upperFirst name
     | TupleType tupleTypes ->
         let joined =
             tupleTypes
@@ -123,11 +120,9 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         | Float32 -> write level "%s nativeimplclient.popFloat();" contextPrefix
         | Float64 -> write level "%s nativeimplclient.popDouble();" contextPrefix
         | StringType -> write level "%s nativeimplclient.popString();" contextPrefix
-    | OpaqueHandleType name ->
-        write level "%s %s.pop();" contextPrefix (upperFirst name)
-    | InterfaceType ifaceName ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst ifaceName)
-    | DelegateType name ->
+    | Resolved(resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | ArrayType niType ->
         match niType with
@@ -140,8 +135,10 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
             | Float64 -> write level "%s nativeimplclient.popDoubleArray();" contextPrefix
             | StringType -> write level "%s nativeimplclient.popStringArray();" contextPrefix
             | _ -> write level "// popValue not yet supported: array of prim %A" prim
-        | EnumType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
-        | StructType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
+        | Resolved(resolvedName, resolvedType) ->
+            let name =
+                resolvedName.Flatten()
+            write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
         | ArrayType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType)) // sigh, normalize all these already - doing it so many different ways...
         | SetType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType))
         | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
@@ -149,20 +146,12 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         | _ -> write level "// popValue not yet supported: array of %A" niType
     | MapType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
-    | StructType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | TupleType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | SetType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | BufferType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
-    | EnumType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
-    | SumType name ->
-        write level "%s __%s__Pop();" contextPrefix (upperFirst name)
-    | TypedefType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | _ ->
         write level "// popValue %A not yet supported" type_
     match context with
@@ -196,12 +185,11 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
         | Float32 -> write level "nativeimplclient.pushFloat(%s);" content
         | Float64 -> write level "nativeimplclient.pushDouble(%s);" content
         | StringType -> write level "nativeimplclient.pushString(%s);" content
-    | OpaqueHandleType name ->
-        write level "(%s).push();" content
-    | InterfaceType name ->
+    | Resolved(resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        // handle return param differently depending on whether resolvedtype requires one
         write level "%s__Push(%s, %s);" (upperFirst name) content (isReturnString())
-    | DelegateType name ->
-        write level "%s__Push(%s);" (upperFirst name) content
     | ArrayType niType ->
         match niType with
         | Primitive prim ->
@@ -213,28 +201,21 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
             | Float64 -> write level "nativeimplclient.pushDoubleArray(%s);" content
             | StringType -> write level "nativeimplclient.pushStringArray(%s);" content
             | _ -> write level "// pushValue not yet supported: Array of prim %A" prim
-        | EnumType name -> write level "__%sArray__Push(%s);" (upperFirst name) content
-        | StructType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
-        | TypedefType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
+        | Resolved (resolvedName, resolvedType) ->
+            let name =
+                resolvedName.Flatten()
+            write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
         | ArrayType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | SetType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | TupleType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
-    | EnumType name ->
-        write level "%s__Push(%s);" name content
-    | SumType name ->
-        write level "__%s__Push(%s, %s);" name content (isReturnString())
-    | StructType name ->
-        write level "%s__Push(%s, %s);" name content (isReturnString())
     | TupleType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | SetType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | BufferType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
-    | TypedefType name ->
-        write level "%s__Push(%s, %s);" name content (isReturnString())
     | MapType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | _ ->
@@ -495,7 +476,7 @@ let writeLibrary (m: Module) (writer: IFormatWriter) =
                     pushValue writer 3 method.Returns invocation (Direct true)
                     for exc in method.Throws do
                         match exc with
-                        | ExceptionType _ ->
+                        | Resolved (_, ExceptionType) ->
                             write 2 "} catch (%s e) {" (typeToDlangString typeMap exc)
                             write 3 "e.setAndPush();"
                             write 2 "}"

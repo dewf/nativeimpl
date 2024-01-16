@@ -25,14 +25,19 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
         | Float32 -> "float"
         | Float64 -> "double"
         | StringType -> "string"
-    | OpaqueHandleType name -> upperFirst name
-    | EnumType name -> upperFirst name
-    | SumType name -> upperFirst name
-    | StructType name -> upperFirst name
-    | OptionsType name -> upperFirst name
-    | InterfaceType name -> upperFirst name
-    | ExceptionType name -> upperFirst name
-    | DelegateType name -> upperFirst name
+    | Resolved (resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        match resolvedType with
+        | TypedefType ->
+            // no C# typedefs so we just render the type directly
+            match typeMap.TryFind(name) with
+            | Some (UserOrGeneric.User (TypeDef niType)) ->
+                typeToCsString typeMap niType
+            | _ ->
+                failwithf "typeToCsString: failed to find typedef definition"
+        | _ ->
+            upperFirst name
     | ArrayType niType -> sprintf "%s[]" (typeToCsString typeMap niType)
     | SetType niType -> sprintf "HashSet<%s>" (typeToCsString typeMap niType)
     | BufferType elemType -> sprintf "INativeBuffer<%s>" (typeToCsString typeMap elemType)
@@ -42,13 +47,6 @@ let rec typeToCsString (typeMap: Map<string, UserOrGeneric>) = function
             |> List.map (typeToCsString typeMap)
             |> String.concat ", "
         sprintf "(%s)" joined
-    | TypedefType name ->
-        // no C# typedefs so we just render the type directly
-        match typeMap.TryFind(name) with
-        | Some (UserOrGeneric.User (TypeDef niType)) ->
-            typeToCsString typeMap niType
-        | _ ->
-            failwithf "typeToCsString: failed to find typedef definition"
     | MapType (keyType, valueType) ->
         sprintf "Dictionary<%s,%s>" (typeToCsString typeMap keyType) (typeToCsString typeMap valueType)
     | x -> sprintf "(typeToCsString: not yet supported: %A)" x
@@ -79,10 +77,10 @@ let rec typeToName = function
         | Float32 -> "Float"
         | Float64 -> "Double"
         | StringType -> "String"
-    | StructType name -> upperFirst name
-    | OptionsType name -> upperFirst name
-    | EnumType name -> upperFirst name
-    | TypedefType name -> upperFirst name
+    | Resolved (resolvedName, _) ->
+        let name =
+            resolvedName.Flatten()
+        upperFirst name
     | TupleType tupleTypes ->
         let joined =
             tupleTypes
@@ -143,11 +141,9 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         | Float32 -> write level "%s NativeImplClient.PopFloat();" contextPrefix
         | Float64 -> write level "%s NativeImplClient.PopDouble();" contextPrefix
         | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
-    | OpaqueHandleType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
-    | InterfaceType ifaceName ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst ifaceName)
-    | DelegateType name ->
+    | Resolved (resolvedName, _) ->
+        let name =
+            resolvedName.Flatten()
         write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | ArrayType niType ->
         match niType with
@@ -160,8 +156,10 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
             | Float64 -> write level "%s NativeImplClient.PopDoubleArray();" contextPrefix
             | StringType -> write level "%s NativeImplClient.PopStringArray();" contextPrefix
             | _ -> write level "// popValue not yet supported: array of prim %A" prim
-        | EnumType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
-        | StructType name -> write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
+        | Resolved(resolvedName, resolvedType) ->
+            let name =
+                resolvedName.Flatten()
+            write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
         | ArrayType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType)) // sigh, normalize all these already - doing it so many different ways...
         | SetType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType))
         | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
@@ -169,22 +167,12 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         | _ -> write level "// popValue not yet supported: array of %A" niType
     | MapType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
-    | StructType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
-    | OptionsType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | TupleType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | SetType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
     | BufferType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName type_)
-    | EnumType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
-    | SumType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
-    | TypedefType name ->
-        write level "%s %s__Pop();" contextPrefix (upperFirst name)
     | _ ->
         write level "// popValue %A not yet supported" type_
     match context with
@@ -218,12 +206,15 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
         | Float32 -> write level "NativeImplClient.PushFloat(%s);" content
         | Float64 -> write level "NativeImplClient.PushDouble(%s);" content
         | StringType -> write level "NativeImplClient.PushString(%s);" content
-    | OpaqueHandleType name ->
-        write level "%s__Push(%s);" (upperFirst name) content
-    | InterfaceType name ->
-        write level "%s__Push(%s, %s);" (upperFirst name) content (isReturnString())
-    | DelegateType name ->
-        write level "%s__Push(%s);" (upperFirst name) content
+    | Resolved(resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        match resolvedType with
+        | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
+            // types that potentially contain refs, need to honor isReturn
+            write level "%s__Push(%s, %s);" (upperFirst name) content (isReturnString())
+        | _ ->
+            write level "%s__Push(%s);" (upperFirst name) content
     | ArrayType niType ->
         match niType with
         | Primitive prim ->
@@ -235,31 +226,25 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
             | Float64 -> write level "NativeImplClient.PushDoubleArray(%s);" content
             | StringType -> write level "NativeImplClient.PushStringArray(%s);" content
             | _ -> write level "// pushValue not yet supported: Array of prim %A" prim
-        | EnumType name -> write level "__%sArray__Push(%s);" (upperFirst name) content
-        | StructType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
-        | OptionsType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
-        | TypedefType name -> write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
+        | Resolved(resolvedName, resolvedType) ->
+            let name =
+                resolvedName.Flatten()
+            match resolvedType with
+            | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
+                write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
+            | _ ->
+                write level "__%sArray__Push(%s);" (upperFirst name) content
         | ArrayType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | SetType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | TupleType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
-    | EnumType name ->
-        write level "%s__Push(%s);" name content
-    | SumType name ->
-        write level "%s__Push(%s, %s);" name content (isReturnString())
-    | StructType name ->
-        write level "%s__Push(%s, %s);" name content (isReturnString())
-    | OptionsType name ->
-        write level "%s__Push(%s, %s);" name content (isReturnString())
     | TupleType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | SetType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | BufferType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
-    | TypedefType name ->
-        write level "%s__Push(%s, %s);" name content (isReturnString())
     | MapType _ ->
         write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
     | _ ->
@@ -989,7 +974,9 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
                 write 4 "}"
                 for exc in info.Throws do
                     match exc with
-                    | ExceptionType exceptionName as exc ->
+                    | Resolved (resolvedName, ExceptionType) as exc ->
+                        let exceptionName =
+                            resolvedName.Flatten()
                         write 4 "catch (%s e)" (upperFirst exceptionName)
                         write 4 "{"
                         write 5 "e.PushAndSet();"
@@ -1188,7 +1175,7 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
                     write 4 "}"
                     for exc in method.Throws do
                         match exc with
-                        | ExceptionType _ ->
+                        | Resolved (_, ExceptionType) ->
                             write 4 "catch (%s e)" (typeToCsString typeMap exc)
                             write 4 "{"
                             write 5 "NativeImplClient.SetException(_%s);" (lowerFirst (typeToCsString typeMap exc))

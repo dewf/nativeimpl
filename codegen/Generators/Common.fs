@@ -26,20 +26,13 @@ let rec typeToInternalKey = function
         | Float64 -> "float64"
         | StringType -> "string"
     | Unresolved _ -> failwith "typeToInternalKey: Unresolved??"
-    | OpaqueHandleType name -> name
-    | InterfaceType name -> name
-    | ExceptionType name -> name
-    | DelegateType name -> name
+    | Resolved (resolvedName, _) ->
+        resolvedName.Flatten()
     | ArrayType niType -> sprintf "array[%s]" (typeToInternalKey niType)
     | MapType (keyType, valueType) -> sprintf "map[%s,%s]" (typeToInternalKey keyType) (typeToInternalKey valueType)
     | BufferType niType -> sprintf "buffer[%s]" (typeToInternalKey niType)
     | TupleType niTypes -> sprintf "tuple[%s]" (niTypes |> List.map typeToInternalKey |> String.concat ",")
     | SetType niType -> sprintf "set[%s]" (typeToInternalKey niType)
-    | StructType name -> name
-    | TypedefType name -> name
-    | EnumType name -> name
-    | SumType name -> name
-    | OptionsType name -> name
 
 [<RequireQualifiedAccess>]
 type UserOrGeneric =
@@ -62,7 +55,9 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
         let arrayOrSetHandling (niType: NIType) =
             // special handling for array/set of struct/tuple (anything with fields): we render arrays of each field/subtype
             match niType with
-            | StructType name ->
+            | Resolved (resolvedName, StructType) ->
+                let name =
+                    resolvedName.Flatten()
                 match userTypeMap[name] with
                 | StructDef namedFields ->
                     namedFields
@@ -71,7 +66,9 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                     failwith "allGenericTypes/thingWithFieldsSubResults: some issue getting struct def for array of struct"
             | TupleType _ ->
                 tupleHandling niType
-            | TypedefType name ->
+            | Resolved (resolvedName, TypedefType) ->
+                let name =
+                    resolvedName.Flatten()
                 // array of typedefs of tuple need to be flattened, otherwise we won't have the necessary synthetic array types in our lookup tables
                 match userTypeMap[name] with
                 | TypeDef (TupleType _ as tt) ->
@@ -190,18 +187,29 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
             false, acc
         | Primitive _ ->
             false, acc
-        | OpaqueHandleType name ->
-            false, acc.Add(name, false)
-        | StructType name -> processDeps name acc
-        | OptionsType name -> processDeps name acc
-        | InterfaceType name ->
-            // never traverse into interface dependencies themselves ...
-            true, acc.Add(name, true)
-        | ExceptionType name -> processDeps name acc
-        | DelegateType name -> processDeps name acc
-        | TypedefType name -> processDeps name acc
-        | EnumType name -> processDeps name acc
-        | SumType name -> processDeps name acc
+        | Resolved (resolvedName, resolvedType) ->
+            let name =
+                resolvedName.Flatten()
+            match resolvedType with
+            | OpaqueHandleType ->
+                false, acc.Add(name, false)
+            | StructType ->
+                processDeps name acc
+            | InterfaceType ->
+                // never traverse into interface dependencies themselves ...
+                true, acc.Add(name, true)
+            | ExceptionType ->
+                processDeps name acc
+            | DelegateType ->
+                processDeps name acc
+            | TypedefType ->
+                processDeps name acc
+            | EnumType ->
+                processDeps name acc
+            | SumType ->
+                processDeps name acc
+            | OptionsType ->
+                processDeps name acc
         | ArrayType _ ->
             let name = (typeToInternalKey type_)
             processDeps name acc
@@ -381,25 +389,40 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
             alreadyRendered
         | Primitive _ ->
             alreadyRendered
-        | OpaqueHandleType name -> renderDeps name alreadyRendered
-        | StructType name -> renderDeps name alreadyRendered
-        | OptionsType name -> renderDeps name alreadyRendered
-        | InterfaceType name ->
-            // special handling for interface dependencies! they need to emit forward references,
-            // depending on context (either "class <whatever>" in the header, or push/pop prototypes in the wrapper)
-            let checkName =
-                // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
-                sprintf "fwd:class %s" name
-            if not (alreadyRendered.Contains(checkName)) then
-                renderFunc name UserOrGeneric.FwdInterface typeMap
-                alreadyRendered.Add(checkName)
-            else
+        | Resolved (resolvedName, resolvedType) ->
+            match resolvedName with
+            | Imported(path, name) ->
+                // don't attempt to render external stuff!
                 alreadyRendered
-        | ExceptionType name -> renderDeps name alreadyRendered
-        | DelegateType name -> renderDeps name alreadyRendered
-        | TypedefType name -> renderDeps name alreadyRendered
-        | EnumType name -> renderDeps name alreadyRendered
-        | SumType name -> renderDeps name alreadyRendered
+            | ThisModule name ->
+                match resolvedType with
+                | OpaqueHandleType ->
+                    renderDeps name alreadyRendered
+                | StructType ->
+                    renderDeps name alreadyRendered
+                | InterfaceType ->
+                    // special handling for interface dependencies! they need to emit forward references,
+                    // depending on context (either "class <whatever>" in the header, or push/pop prototypes in the wrapper)
+                    let checkName =
+                        // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
+                        sprintf "fwd:class %s" name
+                    if not (alreadyRendered.Contains(checkName)) then
+                        renderFunc name UserOrGeneric.FwdInterface typeMap
+                        alreadyRendered.Add(checkName)
+                    else
+                        alreadyRendered
+                | ExceptionType ->
+                    renderDeps name alreadyRendered
+                | DelegateType ->
+                    renderDeps name alreadyRendered
+                | TypedefType ->
+                    renderDeps name alreadyRendered
+                | EnumType ->
+                    renderDeps name alreadyRendered
+                | SumType ->
+                    renderDeps name alreadyRendered
+                | OptionsType ->
+                    renderDeps name alreadyRendered
         | ArrayType _ ->
             let name = (typeToInternalKey type_)
             renderDeps name alreadyRendered
@@ -437,30 +460,36 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                     let arrayOrSetHandling (niType: NIType) (alreadyRendered: Set<string>) =
                         // process each struct field as an array as well, since that's how we push/pop them
                         match niType with
-                        | StructType structName ->
-                            // array of struct implies array of each struct field
-                            match typeMap[structName] with
-                            | UserOrGeneric.User (StructDef namedFields) ->
-                                (alreadyRendered, namedFields)
-                                ||> List.fold (fun already2 field -> renderType (ArrayType field.Type_) already2)
+                        | Resolved(resolvedName, resolvedType) ->
+                            let name =
+                                resolvedName.Flatten()
+                            match resolvedType with
+                            | StructType ->
+                                // array of struct implies array of each struct field
+                                match typeMap[name] with
+                                | UserOrGeneric.User (StructDef namedFields) ->
+                                    (alreadyRendered, namedFields)
+                                    ||> List.fold (fun already2 field -> renderType (ArrayType field.Type_) already2)
+                                | _ ->
+                                    failwithf "renderDeps: struct (from array) didn't exist in typemap??"
+                            | TypedefType ->
+                                // arrays of typedefs of tuple are flattened
+                                // (why penalize the user because they wanted a typedef?)
+                                // (this just creates the dependency on the array-of-<tuplefield>s, so that the requisite array push/pop methods exist)
+                                match typeMap[name] with
+                                | UserOrGeneric.User (TypeDef (TupleType tupleTypes as tt)) ->
+                                    (alreadyRendered, tupleTypes)
+                                    ||> List.fold (fun already2 type_ -> renderType (ArrayType type_) already2)
+                                    // + the tuple type itself, sigh
+                                    |> renderType (ArrayType tt)
+                                | _ ->
+                                    alreadyRendered
                             | _ ->
-                                failwithf "renderDeps: struct (from array) didn't exist in typemap??"
+                                alreadyRendered
                         | TupleType tupleTypes ->
                             // array of tuple implies array of each tuple subtype
                             (alreadyRendered, tupleTypes)
                             ||> List.fold (fun already2 type_ -> renderType (ArrayType type_) already2)
-                        | TypedefType typeDefName ->
-                            // arrays of typedefs of tuple are flattened
-                            // (why penalize the user because they wanted a typedef?)
-                            // (this just creates the dependency on the array-of-<tuplefield>s, so that the requisite array push/pop methods exist)
-                            match typeMap[typeDefName] with
-                            | UserOrGeneric.User (TypeDef (TupleType tupleTypes as tt)) ->
-                                (alreadyRendered, tupleTypes)
-                                ||> List.fold (fun already2 type_ -> renderType (ArrayType type_) already2)
-                                // + the tuple type itself, sigh
-                                |> renderType (ArrayType tt)
-                            | _ ->
-                                alreadyRendered
                         | _ ->
                             alreadyRendered
                         // and the type itself, of course ...
@@ -560,21 +589,27 @@ type IArrayLikeRenderer =
 
 let renderArrayLike (typeMap: Map<string, UserOrGeneric>) (elemType: NIType) (renderer: IArrayLikeRenderer) =
     match elemType with
-    | TypedefType typeDefName ->
-        match typeMap[typeDefName] with
-        | UserOrGeneric.User (TypeDef (TupleType _ as tt)) ->
-            renderer.TypedefTuple tt
+    | Resolved(resolvedName, resolvedType) ->
+        let name =
+            resolvedName.Flatten()
+        match resolvedType with
+        | TypedefType ->
+            match typeMap[name] with
+            | UserOrGeneric.User (TypeDef (TupleType _ as tt)) ->
+                renderer.TypedefTuple tt
+            | _ ->
+                failwithf "array of typedef %A: TODO (basic array treatment)" name
+        | EnumType ->
+            renderer.EnumType name
+        | StructType ->
+            // fetch the fields so we can make a struct-of-arrays
+            match typeMap[name] with
+            | UserOrGeneric.User (StructDef namedFields) ->
+                renderer.StructType name namedFields
+            | _ ->
+                failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
         | _ ->
-            failwithf "array of typedef %A: TODO (basic array treatment)" typeDefName
-    | EnumType name ->
-        renderer.EnumType name
-    | StructType structName ->
-        // fetch the fields so we can make a struct-of-arrays
-        match typeMap[structName] with
-        | UserOrGeneric.User (StructDef namedFields) ->
-            renderer.StructType structName namedFields
-        | _ ->
-            failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+            renderer.Other elemType
     | TupleType tupleTypes ->
         renderer.TupleType tupleTypes
     | ArrayType _ ->
@@ -583,9 +618,8 @@ let renderArrayLike (typeMap: Map<string, UserOrGeneric>) (elemType: NIType) (re
         renderer.MapType ()
     | Primitive prim ->
         renderer.Primitive prim
-    | other ->
-        renderer.Other other
-
+    | _ ->
+        renderer.Other elemType
 
 // workaround for not being able to pass functions which take format strings
 // (formerly necessitated fully declaring 'write' and 'blank' anew in every function)

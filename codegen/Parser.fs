@@ -22,7 +22,28 @@ type NIPrimitive =
     | Int of signed: bool * width: IntWidth
     | Float32 | Float64
     | StringType
-
+    
+type ResolvedName =
+    | ThisModule of name: string
+    | Imported of path: string list * name: string
+with
+    member this.Flatten() =
+        match this with
+        | ThisModule name -> name
+        | Imported(path, name) -> name
+            // sprintf "%s.%s" (String.concat "." path) name
+    
+type ResolvedType =
+    | OpaqueHandleType
+    | StructType
+    | InterfaceType
+    | ExceptionType
+    | DelegateType
+    | TypedefType
+    | EnumType
+    | SumType
+    | OptionsType
+    
 type NIType =
     | UnitType
     | Primitive of prim: NIPrimitive
@@ -32,18 +53,8 @@ type NIType =
     | TupleType of tupleTypes: NIType list
     | SetType of elem: NIType
     | BufferType of elemType: NIType
-    // Named of ...
     | Unresolved of name: string * loc: Location
-    // these have to be resolved by checking a table, otherwise unresolved
-    | OpaqueHandleType of name: string
-    | StructType of name: string
-    | InterfaceType of name: string
-    | ExceptionType of name: string          // only for 'throws'
-    | DelegateType of name: string
-    | TypedefType of name: string
-    | EnumType of name: string
-    | SumType of name: string
-    | OptionsType of name: string
+    | Resolved of name: ResolvedName * type_: ResolvedType
 
 let validBufferElementType = function
     | Primitive prim ->
@@ -100,9 +111,9 @@ let contentUntilMatching (loc: Location) (startToken: Token) (input: TokenAndLoc
                     if acc.NestLevel = 0 then
                         None
                     else
-                        Some(h, { acc with LastLoc = nextLastLoc; NestLevel = acc.NestLevel - 1; Remaining = etc })
+                        Some(h, { LastLoc = nextLastLoc; NestLevel = acc.NestLevel - 1; Remaining = etc })
                 elif h.Token = startToken then
-                    Some(h, { acc with LastLoc = nextLastLoc; NestLevel = acc.NestLevel + 1; Remaining = etc })
+                    Some(h, { LastLoc = nextLastLoc; NestLevel = acc.NestLevel + 1; Remaining = etc })
                 else
                     Some(h, { acc with LastLoc = nextLastLoc; Remaining = etc })
             | [] ->
@@ -358,7 +369,8 @@ let parseNamedFunction (input: TokenAndLocation list) =
                 let identifiers, etc =
                     parseIdentifierList loc etc Semicolon
                 let throwsList =
-                    identifiers |> List.map (fun name -> (Unresolved (name, loc)))
+                    identifiers
+                    |> List.map (fun name -> Unresolved (name, loc))
                 Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList }, etc)
             | _ ->
                 failwithf "failed to parse function at %s" (loc.ToString())
@@ -475,7 +487,7 @@ let parseModuleDefs (input: TokenAndLocation list) =
                         let nextName =
                             sprintf "%s%s" (lowerFirst opaqueName) (upperFirst nf.Name)
                         let nextArgs =
-                            (thisName, Unresolved (opaqueName, loc)) :: nf.Args
+                            (thisName, Unresolved(opaqueName, loc)) :: nf.Args
                         FunctionDef { nf with Name = nextName; Args = nextArgs })
                 let results =
                     UserType (opaqueName, OpaqueHandleDef) :: functions
@@ -648,22 +660,37 @@ type ModuleContext = {
     Module: Module
 }
 
-// this is going to add a bunch of complexity though it will probably be a good idea eventually
-// (for resolved NITypes, which currently just have a 'name' string)
-// type ResolvedName =
-//     | ThisModule of name: string
-//     | Imported of path: string list * name: string
+type SearchItemKind =
+    | ThisModuleKind
+    | OtherModule of name: string
+    
+type SearchItem = {
+    Kind: SearchItemKind
+    UserTypes: Map<string,UserType>
+}
 
 let resolveIdentifier (context: ModuleContext) (identifier: string) (loc: Location) =
-    let toSearch =
-        let fromImports =
+    let modulesToSearch =
+        let importedModules =
             context.Module.Imports
-            |> List.map (context.Loaded.TryFind >> Option.get >> (fun m -> m.UserTypes))
-        context.Module.UserTypes :: fromImports
-        |> List.map Option.get // because these should all have their symbol tables loaded by now
+            |> List.map (context.Loaded.TryFind >> Option.get >> (fun m -> { Kind = OtherModule m.Name; UserTypes = m.UserTypes.Value }))
+        { Kind = ThisModuleKind; UserTypes = context.Module.UserTypes.Value } :: importedModules
     let found =
-        toSearch
-        |> List.choose (fun map -> map.TryFind identifier)
+        modulesToSearch
+        |> List.choose (fun item ->
+            match item.UserTypes.TryFind identifier with
+            | Some value ->
+                let resolvedName =
+                    match item.Kind with
+                    | ThisModuleKind ->
+                        ThisModule identifier
+                    | OtherModule name ->
+                        let parts =
+                            name.Split(".") |> List.ofArray
+                        Imported (parts, identifier)
+                Some (resolvedName, value)
+            | None ->
+                None)
     // must be only 1 result, otherwise it's ambiguous and we have a problem
     match found with
     | result :: etc ->
@@ -686,17 +713,21 @@ let rec resolveType (context: ModuleContext) (type_: NIType) =
         SetType (resolveType context niType)
     | Unresolved (name, loc) ->
         match resolveIdentifier context name loc with
-        | OpaqueHandleDef -> OpaqueHandleType name
-        | StructDef _ -> StructType name
-        | InterfaceDef _ -> InterfaceType name
-        | DelegateDef _ -> DelegateType name
-        | TypeDef _ -> TypedefType name
-        | EnumDef _ -> EnumType name
-        | SumTypeDef _ -> SumType name
-        | OptionsDef _ -> OptionsType name
-        | ExceptionDef _ ->
-            // how do we enforce that this is only allowed in a "throws" context?
-            ExceptionType name
+        | resolvedName, resolvedDef ->
+            let resolvedType =
+                match resolvedDef with
+                | OpaqueHandleDef -> OpaqueHandleType
+                | StructDef _ -> StructType
+                | InterfaceDef _ -> InterfaceType
+                | DelegateDef _ -> DelegateType
+                | TypeDef _ -> TypedefType
+                | EnumDef _ -> EnumType
+                | SumTypeDef _ -> SumType
+                | OptionsDef _ -> OptionsType
+                | ExceptionDef _ ->
+                    // how do we enforce that this is only allowed in a "throws" context?
+                    ExceptionType
+            Resolved (resolvedName, resolvedType)
     | _ ->
         type_
 

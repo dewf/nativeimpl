@@ -288,174 +288,188 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
         write level "// (pushValue not supported yet: %A)" type_
 
 
-let renderWrapperDelegate (writer: IFormatWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (info: DelegateInfo) (typeContainsRefs: NIType -> bool) =
-    let write, blank = writer.Write, writer.Blank
+let renderWrapperDelegate (writerH: IFormatWriter) (writerCpp: IFormatWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (info: DelegateInfo) (typeContainsRefs: NIType -> bool) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
     // push
-    write 0 "void %s__push(std::function<%s> f) {" name name
-    write 1 "size_t uniqueKey = 0;"
-    write 1 "if (f) {"
-    write 2 "%s* ptr_fun = f.target<%s>();" name name
-    write 2 "if (ptr_fun != nullptr) {"
-    write 3 "uniqueKey = (size_t)ptr_fun;"
-    write 2 "}"
-    write 1 "}"
-    write 1 "auto wrapper = [f]() {"
+    writeH 0 "void %s__push(std::function<%s> f);" name name
+    writeCpp 0 "void %s__push(std::function<%s> f) {" name name
+    writeCpp 1 "size_t uniqueKey = 0;"
+    writeCpp 1 "if (f) {"
+    writeCpp 2 "%s* ptr_fun = f.target<%s>();" name name
+    writeCpp 2 "if (ptr_fun != nullptr) {"
+    writeCpp 3 "uniqueKey = (size_t)ptr_fun;"
+    writeCpp 2 "}"
+    writeCpp 1 "}"
+    writeCpp 1 "auto wrapper = [f]() {"
     for argName, argType in info.Args do
-        popValue writer 2 argType (Variable argName)
+        popValue writerCpp 2 argType (Variable argName)
     let invocation =
         sprintf "f(%s)" (joinedArgNames info.Args)
     if info.Throws.IsEmpty then
-        pushValue writer 2 info.Returns invocation (Direct true)
+        pushValue writerCpp 2 info.Returns invocation (Direct true)
     else
-        write 2 "try {"
-        pushValue writer 3 info.Returns invocation (Direct true)
-        write 2 "}"
+        writeCpp 2 "try {"
+        pushValue writerCpp 3 info.Returns invocation (Direct true)
+        writeCpp 2 "}"
         for exc in info.Throws do
             match exc with
             | Resolved (resolvedName, ExceptionType) ->
                 let exceptionName =
                     resolvedName.Flatten()
-                write 2 "catch (const %s& e) {" (typeToCppString typeMap exc)
-                write 3 "ni_setException(%s);" (lowerFirst exceptionName)
-                pushValue writer 3 exc "e" (Direct true)
-                write 2 "}"
+                writeCpp 2 "catch (const %s& e) {" (typeToCppString typeMap exc)
+                writeCpp 3 "ni_setException(%s);" (lowerFirst exceptionName)
+                pushValue writerCpp 3 exc "e" (Direct true)
+                writeCpp 2 "}"
             | _ ->
                 failwithf "renderWrapperDelegate: 'throws' contained non exception type (%A)" exc
-    write 1 "};"
-    write 1 "pushServerFuncVal(wrapper, uniqueKey);"
-    write 0 "}"
+    writeCpp 1 "};"
+    writeCpp 1 "pushServerFuncVal(wrapper, uniqueKey);"
+    writeCpp 0 "}"
     // pop =============
-    blank()
-    write 0 "std::function<%s> %s__pop() {" name name
-    write 1 "auto id = ni_popClientFunc();"
-    write 1 "auto cf = std::shared_ptr<ClientFuncVal>(new ClientFuncVal(id));"
-    write 1 "auto wrapper = [cf](%s) {" (joinedArgs typeMap info.Args)
+    writeH 0 "std::function<%s> %s__pop();" name name
+    blankCpp()
+    writeCpp 0 "std::function<%s> %s__pop() {" name name
+    writeCpp 1 "auto id = ni_popClientFunc();"
+    writeCpp 1 "auto cf = std::shared_ptr<ClientFuncVal>(new ClientFuncVal(id));"
+    writeCpp 1 "auto wrapper = [cf](%s) {" (joinedArgs typeMap info.Args)
     for argName, argType in info.Args |> List.rev do
-        pushValue writer 2 argType argName (Direct false)
+        pushValue writerCpp 2 argType argName (Direct false)
     if info.Throws.IsEmpty then
-        write 2 "cf->remoteExec();"
+        writeCpp 2 "cf->remoteExec();"
     else
-        write 2 "cf->remoteExecWithExceptions();"
+        writeCpp 2 "cf->remoteExecWithExceptions();"
     if typeContainsRefs info.Returns then
-        popValue writer 2 info.Returns SafeReturn
+        popValue writerCpp 2 info.Returns SafeReturn
     else
-        popValue writer 2 info.Returns Return
-    write 1 "};"
-    write 1 "return wrapper;"
-    write 0 "}"
+        popValue writerCpp 2 info.Returns Return
+    writeCpp 1 "};"
+    writeCpp 1 "return wrapper;"
+    writeCpp 0 "}"
 
-let renderWrapperInterface (writer: IFormatWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (methods: NamedFunction list) (typeContainsRefs: NIType -> bool) =
-    let write, blank = writer.Write, writer.Blank
+let renderWrapperInterface (writerH: IFormatWriter) (writerCpp: IFormatWriter) (typeMap: Map<string, UserOrGeneric>) (name: string) (methods: NamedFunction list) (typeContainsRefs: NIType -> bool) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
     // client wrapper
-    write 0 "class Client%s : public ClientObject, public %s {" name name
-    write 0 "public:"
-    write 1 "Client%s(int id) : ClientObject(id) {}" name
+    writeCpp 0 "class Client%s : public ClientObject, public %s {" name name
+    writeCpp 0 "public:"
+    writeCpp 1 "Client%s(int id) : ClientObject(id) {}" name
     // methods
     for namedFunc in methods do
-        write 1 "%s %s(%s) override {" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args)
+        writeCpp 1 "%s %s(%s) override {" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args)
         // push args (reverse order)
         for argName, argType in namedFunc.Args |> List.rev do
-            pushValue writer 2 argType argName (Direct false)
+            pushValue writerCpp 2 argType argName (Direct false)
         // invoke
         if namedFunc.Throws.IsEmpty then
-            write 2 "invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
+            writeCpp 2 "invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
         else
-            write 2 "invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
+            writeCpp 2 "invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
         // pop result
         if typeContainsRefs namedFunc.Returns then
             // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
             // this is to prevent premature deref which could free the instance before we've gotten ahold of it
-            popValue writer 2 namedFunc.Returns SafeReturn
+            popValue writerCpp 2 namedFunc.Returns SafeReturn
         else
-            popValue writer 2 namedFunc.Returns Return
-        write 1 "}"
+            popValue writerCpp 2 namedFunc.Returns Return
+        writeCpp 1 "}"
     // end
-    write 0 "};"
+    writeCpp 0 "};"
     // PUSH ===================================
     let outerType =
         Resolved (ThisModule name, InterfaceType)
-    blank()
-    write 0 "void %s__push(%s inst, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
-    write 1 "if (inst != nullptr) {"
-    write 2 "auto pushable = std::dynamic_pointer_cast<Pushable>(inst);"
-    write 2 "pushable->push(pushable, isReturn);"
-    write 1 "}"
-    write 1 "else {"
-    write 2 "ni_pushNull();"
-    write 1 "}"
-    write 0 "}"
+    blankH()
+    writeH 0 "void %s__push(%s inst, bool isReturn);" (typeToName outerType) (typeToCppString typeMap outerType)
+    blankCpp()
+    writeCpp 0 "void %s__push(%s inst, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
+    writeCpp 1 "if (inst != nullptr) {"
+    writeCpp 2 "auto pushable = std::dynamic_pointer_cast<Pushable>(inst);"
+    writeCpp 2 "pushable->push(pushable, isReturn);"
+    writeCpp 1 "}"
+    writeCpp 1 "else {"
+    writeCpp 2 "ni_pushNull();"
+    writeCpp 1 "}"
+    writeCpp 0 "}"
     // POP ====================================
-    blank()
-    write 0 "%s %s__pop()" (typeToCppString typeMap outerType) (typeToName outerType)
-    write 0 "{"
-    write 1 "bool isClientID;"
-    write 1 "auto id = ni_popInstance(&isClientID);"
-    write 1 "if (id != 0) {"
-    write 2 "if (isClientID) {"
-    write 3 "return %s(new Client%s(id));" (typeToCppString typeMap outerType) (typeToName outerType)
-    write 2 "}"
-    write 2 "else {"
-    write 3 "return Server%s::getByID(id);" (typeToName outerType)
-    write 2 "}"
-    write 1 "}"
-    write 1 "else {"
-    write 2 "return %s();" (typeToCppString typeMap outerType)
-    write 1 "}"
-    write 0 "}"
+    writeH 0 "%s %s__pop();" (typeToCppString typeMap outerType) (typeToName outerType)
+    blankCpp()
+    writeCpp 0 "%s %s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
+    writeCpp 1 "bool isClientID;"
+    writeCpp 1 "auto id = ni_popInstance(&isClientID);"
+    writeCpp 1 "if (id != 0) {"
+    writeCpp 2 "if (isClientID) {"
+    writeCpp 3 "return %s(new Client%s(id));" (typeToCppString typeMap outerType) (typeToName outerType)
+    writeCpp 2 "}"
+    writeCpp 2 "else {"
+    writeCpp 3 "return Server%s::getByID(id);" (typeToName outerType)
+    writeCpp 2 "}"
+    writeCpp 1 "}"
+    writeCpp 1 "else {"
+    writeCpp 2 "return %s();" (typeToCppString typeMap outerType)
+    writeCpp 1 "}"
+    writeCpp 0 "}"
 
-let renderWrapperException (writer: IFormatWriter) (name: string) (exFields: NamedField list) =
-    let write, blank = writer.Write, writer.Blank
-    //
-    blank()
-    write 0 "void %s__push(%s e) {" name name
-    // push field values (reverse order)
-    for namedField in exFields |> List.rev do
-        let memberVar =
-            sprintf "e.%s" namedField.Name
-        pushValue writer 1 namedField.Type_ memberVar (Direct true) // true = exceptions are always returned by definition, so any references in their fields need to be kept safe ... right?
-    write 0 "}"
-    // build and throw
-    blank()
-    write 0 "void %s__buildAndThrow() {" name
-    for field in exFields do
-        popValue writer 1 field.Type_ (Variable field.Name)
-    // joined variables (_0, _1, etc)
-    write 1 "throw %s(%s);" name (joinedFieldNames exFields)
-    write 0 "}"
+// let renderWrapperException (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (exFields: NamedField list) =
+//     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+//     let writeH, blankH = writerH.Write, writerH.Blank
+//     //
+//     writeH 0 "void %s__push(%s e);" name name
+//     blankCpp()
+//     writeCpp 0 "void %s__push(%s e) {" name name
+//     // push field values (reverse order)
+//     for namedField in exFields |> List.rev do
+//         let memberVar =
+//             sprintf "e.%s" namedField.Name
+//         pushValue writerCpp 1 namedField.Type_ memberVar (Direct true) // true = exceptions are always returned by definition, so any references in their fields need to be kept safe ... right?
+//     writeCpp 0 "}"
+//     // build and throw
+//     writeH 0 "void %s__buildAndThrow();" name
+//     blankCpp()
+//     writeCpp 0 "void %s__buildAndThrow() {" name
+//     for field in exFields do
+//         popValue writerCpp 1 field.Type_ (Variable field.Name)
+//     // joined variables (_0, _1, etc)
+//     writeCpp 1 "throw %s(%s);" name (joinedFieldNames exFields)
+//     writeCpp 0 "}"
 
-let renderWrapperSumType (writer: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
-    let write, blank = writer.Write, writer.Blank
+let renderWrapperSumType (writerH: IFormatWriter) (writerCpp: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
     let tagType =
         Primitive(Int(true,Width32))
     // push
-    write 0 "void %s__push(%s value, bool isReturn) {" sumTypeName sumTypeName
-    write 1 "switch (value.tag) {"
+    writeH 0 "void %s__push(%s value, bool isReturn);" sumTypeName sumTypeName
+    writeCpp 0 "void %s__push(%s value, bool isReturn) {" sumTypeName sumTypeName
+    writeCpp 1 "switch (value.tag) {"
     for value in values do
-        write 1 "case %s::Tag::%s:" sumTypeName value.Name
+        writeCpp 1 "case %s::Tag::%s:" sumTypeName value.Name
         for argName, argType in value.Args |> List.rev do
             let content =
                 sprintf "value.%s->%s" (lowerFirst value.Name) argName
-            pushValue writer 2 argType content (Indirect "isReturn")
-        write 2 "break;"
-    write 1 "}"
-    pushValue writer 1 tagType "(int32_t)value.tag" (Indirect "isReturn")
-    write 0 "}"
+            pushValue writerCpp 2 argType content (Indirect "isReturn")
+        writeCpp 2 "break;"
+    writeCpp 1 "}"
+    pushValue writerCpp 1 tagType "(int32_t)value.tag" (Indirect "isReturn")
+    writeCpp 0 "}"
     // pop
-    blank()
-    write 0 "%s %s__pop() {" sumTypeName sumTypeName
-    popValue writer 1 tagType (Variable "which")
-    write 1 "switch ((%s::Tag)which) {" sumTypeName
+    writeH 0 "%s %s__pop();" sumTypeName sumTypeName
+    blankCpp()
+    writeCpp 0 "%s %s__pop() {" sumTypeName sumTypeName
+    popValue writerCpp 1 tagType (Variable "which")
+    writeCpp 1 "switch ((%s::Tag)which) {" sumTypeName
     for value in values do
-        write 1 "case %s::Tag::%s: {" sumTypeName (upperFirst value.Name)
+        writeCpp 1 "case %s::Tag::%s: {" sumTypeName (upperFirst value.Name)
         for argName, argType in value.Args do
-            popValue writer 2 argType (Variable argName)
-        write 2 "return %s::%s::make(%s); }" sumTypeName (upperFirst value.Name) (joinedArgNames value.Args)
-    write 1 "default:"
-    write 2 "throw \"%s__pop(): unknown tag!\";" sumTypeName
-    write 1 "}"
-    write 0 "}"
+            popValue writerCpp 2 argType (Variable argName)
+        writeCpp 2 "return %s::%s::make(%s); }" sumTypeName (upperFirst value.Name) (joinedArgNames value.Args)
+    writeCpp 1 "default:"
+    writeCpp 2 "throw \"%s__pop(): unknown tag!\";" sumTypeName
+    writeCpp 1 "}"
+    writeCpp 0 "}"
 
 type ArrayOrSetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, outerType: NIType, elemType: NIType) =
+    // TODO! this doesn't yet support .H file writing
+    // should be as simple as adding another writer parameter to the ctor ...
     let write, blank = writer.Write, writer.Blank
     // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
     let arrayDefault () =
@@ -635,155 +649,194 @@ type ArrayOrSetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneri
         member this.Other (t: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString typeMap outerType)
 
-let renderWrapperUserTypes (writer: IFormatWriter) (containsRefsMap: Map<string,bool>) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
-    let write, blank = writer.Write, writer.Blank
+let renderWrapperUserTypes (writerH: IFormatWriter) (writerCpp: IFormatWriter) (containsRefsMap: Map<string,bool>) (name: string) (content: UserOrGeneric) (typeMap: Map<string, UserOrGeneric>) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
     //
     let typeContainsRefs (type_: NIType) =
         containsRefsMap.TryFind(typeToInternalKey type_)
         |> Option.defaultValue false
-    blank()
+    blankCpp()
     match content with
     | UserOrGeneric.FwdInterface ->
-        write 0 "void %s__push(std::shared_ptr<%s> thing, bool isReturn);" name name
-        write 0 "std::shared_ptr<%s> %s__pop();" name name
+        // weird, why didn't we come up with the wrapper.h long ago?
+        ()
+        // writeCpp 0 "void %s__push(std::shared_ptr<%s> thing, bool isReturn);" name name
+        // writeCpp 0 "std::shared_ptr<%s> %s__pop();" name name
     | UserOrGeneric.Generic gType ->
         match gType with
         | BufferType elemType ->
             // PUSH =====
-            write 0 "inline void __%s__push(%s buf, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
-            write 1 "if (buf != nullptr) {"
-            write 2 "auto pushable = std::dynamic_pointer_cast<Pushable>(buf);"
-            write 2 "pushable->push(pushable, isReturn);"
-            write 1 "}"
-            write 1 "else {"
-            write 2 "ni_pushNull();"
-            write 1 "}"
-            write 0 "}"
+            blankH()
+            writeH 0 "inline void __%s__push(%s buf, bool isReturn);" (typeToName gType) (typeToCppString typeMap gType)
+            writeCpp 0 "inline void __%s__push(%s buf, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
+            writeCpp 1 "if (buf != nullptr) {"
+            writeCpp 2 "auto pushable = std::dynamic_pointer_cast<Pushable>(buf);"
+            writeCpp 2 "pushable->push(pushable, isReturn);"
+            writeCpp 1 "}"
+            writeCpp 1 "else {"
+            writeCpp 2 "ni_pushNull();"
+            writeCpp 1 "}"
+            writeCpp 0 "}"
             // POP ======
-            blank()
-            write 0 "%s __%s__pop() {" (typeToCppString typeMap gType) (typeToName gType)
-            write 1 "int id;"
-            write 1 "bool isClientId;"
-            write 1 "ni_BufferDescriptor descriptor;"
-            write 1 "ni_popBuffer(&id, &isClientId, &descriptor);"
-            write 1 "if (id != 0) {"
-            write 2 "if (isClientId) {"
-            write 3 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString typeMap elemType)
-            write 3 "return %s(buf);" (typeToCppString typeMap gType)
-            write 2 "}"
-            write 2 "else {"
-            write 3 "return ServerBuffer<%s>::getByID(id);" (typeToCppString typeMap elemType)
-            write 2 "}"
-            write 1 "}"
-            write 1 "else {"
-            write 2 "return %s();" (typeToCppString typeMap gType)
-            write 1 "}"
-            write 0 "}"
+            writeH 0 "%s __%s__pop();" (typeToCppString typeMap gType) (typeToName gType)
+            blankCpp()
+            writeCpp 0 "%s __%s__pop() {" (typeToCppString typeMap gType) (typeToName gType)
+            writeCpp 1 "int id;"
+            writeCpp 1 "bool isClientId;"
+            writeCpp 1 "ni_BufferDescriptor descriptor;"
+            writeCpp 1 "ni_popBuffer(&id, &isClientId, &descriptor);"
+            writeCpp 1 "if (id != 0) {"
+            writeCpp 2 "if (isClientId) {"
+            writeCpp 3 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString typeMap elemType)
+            writeCpp 3 "return %s(buf);" (typeToCppString typeMap gType)
+            writeCpp 2 "}"
+            writeCpp 2 "else {"
+            writeCpp 3 "return ServerBuffer<%s>::getByID(id);" (typeToCppString typeMap elemType)
+            writeCpp 2 "}"
+            writeCpp 1 "}"
+            writeCpp 1 "else {"
+            writeCpp 2 "return %s();" (typeToCppString typeMap gType)
+            writeCpp 1 "}"
+            writeCpp 0 "}"
         | TupleType tupleTypes ->
             // PUSH =====
-            write 0 "void __%s__push(%s value, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
+            blankH()
+            writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName gType) (typeToCppString typeMap gType)
+            writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
             for i, type_ in tupleTypes |> List.indexed |> List.rev do
-                pushValue writer 1 type_ (sprintf "std::get<%d>(value)" i) (Indirect "isReturn")
-            write 0 "}"
+                pushValue writerCpp 1 type_ (sprintf "std::get<%d>(value)" i) (Indirect "isReturn")
+            writeCpp 0 "}"
             // POP ======
-            blank()
-            write 0 "%s __%s__pop() {" (typeToCppString typeMap gType) (typeToName gType)
+            writeH 0 "%s __%s__pop();" (typeToCppString typeMap gType) (typeToName gType)
+            blankCpp()
+            writeCpp 0 "%s __%s__pop() {" (typeToCppString typeMap gType) (typeToName gType)
             for i, type_ in tupleTypes |> List.indexed do
-                popValue writer 1 type_ (Variable (sprintf "_%d" i))
+                popValue writerCpp 1 type_ (Variable (sprintf "_%d" i))
             let itemsJoined =
                 tupleTypes
                 |> List.indexed
                 |> List.map (fun (i, _) -> sprintf "_%d" i)
                 |> String.concat ", "
-            write 1 "return %s{ %s };" (typeToCppString typeMap gType) itemsJoined
-            write 0 "}"
+            writeCpp 1 "return %s{ %s };" (typeToCppString typeMap gType) itemsJoined
+            writeCpp 0 "}"
         | MapType (keyType, valueType) ->
             // PUSH =====
-            write 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
-            write 1 "std::vector<%s> keys;" (typeToCppString typeMap keyType)
-            write 1 "std::vector<%s> values;" (typeToCppString typeMap valueType)
-            write 1 "for (auto i = _map.begin(); i != _map.end(); i++) {"
-            write 2 "keys.push_back(i->first);"
-            write 2 "values.push_back(i->second);"
-            write 1 "}"
-            pushValue writer 1 (ArrayType valueType) "values" (Indirect "isReturn")
-            pushValue writer 1 (ArrayType keyType) "keys" (Indirect "isReturn")
-            write 0 "}"
+            blankH()
+            writeH 0 "void __%s__push(%s _map, bool isReturn);" (typeToName gType) (typeToCppString typeMap gType)
+            writeCpp 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName gType) (typeToCppString typeMap gType)
+            writeCpp 1 "std::vector<%s> keys;" (typeToCppString typeMap keyType)
+            writeCpp 1 "std::vector<%s> values;" (typeToCppString typeMap valueType)
+            writeCpp 1 "for (auto i = _map.begin(); i != _map.end(); i++) {"
+            writeCpp 2 "keys.push_back(i->first);"
+            writeCpp 2 "values.push_back(i->second);"
+            writeCpp 1 "}"
+            pushValue writerCpp 1 (ArrayType valueType) "values" (Indirect "isReturn")
+            pushValue writerCpp 1 (ArrayType keyType) "keys" (Indirect "isReturn")
+            writeCpp 0 "}"
             // POP =====
-            blank()
-            write 0 "%s __%s__pop() {" (typeToCppString typeMap gType) (typeToName gType)
-            write 1 "%s __ret;" (typeToCppString typeMap gType)
-            popValue writer 1 (ArrayType keyType) (Variable "keys")
-            popValue writer 1 (ArrayType valueType) (Variable "values")
-            write 1 "for (auto i = 0; i < keys.size(); i++) {"
-            write 2 "__ret[keys[i]] = values[i];"
-            write 1 "}"
-            write 1 "return __ret;"
-            write 0 "}"
+            writeH 0 "%s __%s__pop();" (typeToCppString typeMap gType) (typeToName gType)
+            blankCpp()
+            writeCpp 0 "%s __%s__pop() {" (typeToCppString typeMap gType) (typeToName gType)
+            writeCpp 1 "%s __ret;" (typeToCppString typeMap gType)
+            popValue writerCpp 1 (ArrayType keyType) (Variable "keys")
+            popValue writerCpp 1 (ArrayType valueType) (Variable "values")
+            writeCpp 1 "for (auto i = 0; i < keys.size(); i++) {"
+            writeCpp 2 "__ret[keys[i]] = values[i];"
+            writeCpp 1 "}"
+            writeCpp 1 "return __ret;"
+            writeCpp 0 "}"
         | ArrayType niType ->
             let renderer =
-                ArrayOrSetRenderer(writer, typeMap, gType, niType)
+                ArrayOrSetRenderer(writerCpp, typeMap, gType, niType)
             renderArrayLike typeMap niType renderer
         | SetType niType ->
             let renderer =
-                ArrayOrSetRenderer(writer, typeMap, gType, niType)
+                ArrayOrSetRenderer(writerCpp, typeMap, gType, niType)
             renderArrayLike typeMap niType renderer
         | _ ->
-            write 0 "// push/pop for generic %s" (typeToCppString typeMap gType)
+            writeCpp 0 "// push/pop for generic %s" (typeToCppString typeMap gType)
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueHandleDef ->
             ()
         | StructDef namedFields ->
-            write 0 "void %s__push(%s value, bool isReturn) {" name name
+            blankH()
+            writeH 0 "void %s__push(%s value, bool isReturn);" name name
+            writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
             for field in namedFields |> List.rev do
-                pushValue writer 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
-            write 0 "}"
-            blank()
-            write 0 "%s %s__pop() {" name name
+                pushValue writerCpp 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
+            writeCpp 0 "}"
+            blankCpp()
+            writeH 0 "%s %s__pop();" name name
+            writeCpp 0 "%s %s__pop() {" name name
             for field in namedFields do
-                popValue writer 1 field.Type_ (Variable field.Name)
-            write 1 "return %s { %s };" name (joinedFieldNames namedFields)
-            write 0 "}"
+                popValue writerCpp 1 field.Type_ (Variable field.Name)
+            writeCpp 1 "return %s { %s };" name (joinedFieldNames namedFields)
+            writeCpp 0 "}"
         | OptionsDef namedFields ->
             let flagsType =
                 Primitive(Int(true,Width32))
             // push
-            write 0 "void %s__push(%s value, bool isReturn) {" name name
+            blankH()
+            writeH 0 "void %s__push(%s value, bool isReturn);" name name
+            writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
             for field in namedFields |> List.rev do
-                write 1 "%s %s;" (typeToCppString typeMap field.Type_) field.Name
-                write 1 "if (value.has%s(&%s)) {" (upperFirst field.Name) field.Name
-                pushValue writer 2 field.Type_ field.Name (Indirect "isReturn")
-                write 1 "}"
-            pushValue writer 1 flagsType "value.getUsedFields()" NotApplicable
-            write 0 "}"
+                writeCpp 1 "%s %s;" (typeToCppString typeMap field.Type_) field.Name
+                writeCpp 1 "if (value.has%s(&%s)) {" (upperFirst field.Name) field.Name
+                pushValue writerCpp 2 field.Type_ field.Name (Indirect "isReturn")
+                writeCpp 1 "}"
+            pushValue writerCpp 1 flagsType "value.getUsedFields()" NotApplicable
+            writeCpp 0 "}"
             // pop
-            blank()
-            write 0 "%s %s__pop() {" name name
-            write 1 "%s value = {};" name
-            popValue writer 1 flagsType (LeftAssign "value._usedFields")
+            blankCpp()
+            writeH 0 "%s %s__pop();" name name
+            writeCpp 0 "%s %s__pop() {" name name
+            writeCpp 1 "%s value = {};" name
+            popValue writerCpp 1 flagsType (LeftAssign "value._usedFields")
             for field in namedFields do
-                write 1 "if (value._usedFields & %s::Fields::%s) {" name (upperFirst field.Name)
-                popValue writer 2 field.Type_ (Variable "x")
-                write 2 "value.set%s(x);" (upperFirst field.Name)
-                write 1 "}"
-            write 1 "return value;"
-            write 0 "}"
-        | ExceptionDef namedFields ->
-            renderWrapperException writer name namedFields
+                writeCpp 1 "if (value._usedFields & %s::Fields::%s) {" name (upperFirst field.Name)
+                popValue writerCpp 2 field.Type_ (Variable "x")
+                writeCpp 2 "value.set%s(x);" (upperFirst field.Name)
+                writeCpp 1 "}"
+            writeCpp 1 "return value;"
+            writeCpp 0 "}"
+        | ExceptionDef exFields ->
+            blankH()
+            writeH 0 "void %s__push(%s e);" name name
+            blankCpp()
+            writeCpp 0 "void %s__push(%s e) {" name name
+            // push field values (reverse order)
+            for namedField in exFields |> List.rev do
+                let memberVar =
+                    sprintf "e.%s" namedField.Name
+                pushValue writerCpp 1 namedField.Type_ memberVar (Direct true) // true = exceptions are always returned by definition, so any references in their fields need to be kept safe ... right?
+            writeCpp 0 "}"
+            // build and throw
+            writeH 0 "void %s__buildAndThrow();" name
+            blankCpp()
+            writeCpp 0 "void %s__buildAndThrow() {" name
+            for field in exFields do
+                popValue writerCpp 1 field.Type_ (Variable field.Name)
+            // joined variables (_0, _1, etc)
+            writeCpp 1 "throw %s(%s);" name (joinedFieldNames exFields)
+            writeCpp 0 "}"
         | InterfaceDef methods ->
-            renderWrapperInterface writer typeMap name methods typeContainsRefs
+            renderWrapperInterface writerH writerCpp typeMap name methods typeContainsRefs
         | DelegateDef info ->
-            renderWrapperDelegate writer typeMap name info typeContainsRefs
+            renderWrapperDelegate writerH writerCpp typeMap name info typeContainsRefs
         | TypeDef niType ->
             // ghetto, but for now instead of flattening, just write an inline wrapper
-            write 0 "inline %s %s__pop() {" name name
-            popValue writer 1 niType Return
-            write 0 "}"
-            blank()
-            write 0 "inline void %s__push(%s value, bool isReturn) {" name name
-            pushValue writer 1 niType "value" (Indirect "isReturn")
-            write 0 "}"
+            blankH()
+            writeH 0 "%s %s__pop();" name name
+            writeCpp 0 "inline %s %s__pop() {" name name
+            popValue writerCpp 1 niType Return
+            writeCpp 0 "}"
+            writeH 0 "void %s__push(%s value, bool isReturn);" name name
+            blankCpp()
+            writeCpp 0 "inline void %s__push(%s value, bool isReturn) {" name name
+            pushValue writerCpp 1 niType "value" (Indirect "isReturn")
+            writeCpp 0 "}"
         | EnumDef info ->
             let widthType =
                 match info.MaybeWidth with
@@ -793,26 +846,32 @@ let renderWrapperUserTypes (writer: IFormatWriter) (containsRefsMap: Map<string,
                         not info.FlagsMode
                     Primitive(Int(signed,Width32))
             if info.FlagsMode then
-                write 0 "inline void %s__push(%s value) {" name (typeToCppString typeMap widthType)
-                pushValue writer 1 widthType "value" NotApplicable
-                write 0 "}"
-                blank()
-                write 0 "inline %s %s__pop() {" (typeToCppString typeMap widthType) name
-                popValue writer 1 widthType Return
-                write 0 "}"
+                blankH()
+                writeH 0 "void %s__push(%s value);" name (typeToCppString typeMap widthType)
+                writeCpp 0 "inline void %s__push(%s value) {" name (typeToCppString typeMap widthType)
+                pushValue writerCpp 1 widthType "value" NotApplicable
+                writeCpp 0 "}"
+                writeH 0 "%s %s__pop();" (typeToCppString typeMap widthType) name
+                blankCpp()
+                writeCpp 0 "inline %s %s__pop() {" (typeToCppString typeMap widthType) name
+                popValue writerCpp 1 widthType Return
+                writeCpp 0 "}"
             else
-                write 0 "inline void %s__push(%s value) {" name name
+                blankH()
+                writeH 0 "void %s__push(%s value);" name name
+                writeCpp 0 "inline void %s__push(%s value) {" name name
                 let content =
                     sprintf "(%s)value" (typeToCppString typeMap widthType)
-                pushValue writer 1 widthType content NotApplicable
-                write 0 "}"
-                blank()
-                write 0 "inline %s %s__pop() {" name name
-                popValue writer 1 widthType (Variable "tag")
-                write 1 "return (%s)tag;" name
-                write 0 "}"
+                pushValue writerCpp 1 widthType content NotApplicable
+                writeCpp 0 "}"
+                writeH 0 "%s %s__pop();" name name
+                blankCpp()
+                writeCpp 0 "inline %s %s__pop() {" name name
+                popValue writerCpp 1 widthType (Variable "tag")
+                writeCpp 1 "return (%s)tag;" name
+                writeCpp 0 "}"
         | SumTypeDef values ->
-            renderWrapperSumType writer name values
+            renderWrapperSumType writerH writerCpp name values
 
 let getRelativePath (currentPath: string list) (targetPath: string list) =
     // remove common segments
@@ -823,7 +882,7 @@ let getRelativePath (currentPath: string list) (targetPath: string list) =
         ||> List.skipWhile2 (fun a b -> a = b)
     List.replicate current.Length ".." @ target
 
-let relativeIncludeFilename (maybeModulePrefix: string option) (targetModule: string) =
+let relativeIncludeFilenameNoExt (maybeModulePrefix: string option) (targetModule: string) =
     // for including other module paths
     let targetParts =
         targetModule.Split(".")
@@ -836,10 +895,10 @@ let relativeIncludeFilename (maybeModulePrefix: string option) (targetModule: st
     | None ->
         targetParts
         |> String.concat "/"
-    |> sprintf "%s.h"
 
-let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: string option) (className: string) =
-    let write, blank = writer.Write, writer.Blank
+let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (maybeModulePrefix: string option) (className: string) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank 
     // things we'll need to use a few times:
     let globals =
         m.Defs
@@ -867,23 +926,29 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: 
             | UserType(name, ExceptionDef fields) -> Some (name, fields)
             | _ -> None)
     // begin output: ===============================================
-    // prologue
-    write 0 "#include \"%s\"" (relativeIncludeFilename maybeModulePrefix "$PARENT.support.NativeImplServer")
-    write 0 "#include \"%s.h\"" className
+    // header
+    writeH 0 "#include \"%s.h\"" className
+    // cpp
+    writeCpp 0 "#include \"%s.h\"" (relativeIncludeFilenameNoExt maybeModulePrefix "$PARENT.support.NativeImplServer")
+    writeCpp 0 "#include \"%s_wrappers.h\"" className
+    writeCpp 0 "#include \"%s.h\"" className
+    // need to include wrappers for imports
+    for importName in m.Imports do
+        writeCpp 0 "#include \"%s_wrappers.h\"" (relativeIncludeFilenameNoExt maybeModulePrefix importName)
 
     // opaques + interface method + exception handles (for registration storage)
-    blank()
+    blankCpp()
     for name, userType in userTypes do
         let lowerName = lowerFirst name
         match userType with
         | OpaqueHandleDef ->
-            write 0 "NIHANDLE(%s);" lowerName
+            writeCpp 0 "NIHANDLE(%s);" lowerName
         | InterfaceDef namedFunctions ->
             namedFunctions
             |> List.iter (fun nf ->
-                write 0 "ni_InterfaceMethodRef %s_%s;" lowerName nf.Name)
+                writeCpp 0 "ni_InterfaceMethodRef %s_%s;" lowerName nf.Name)
         | ExceptionDef _ ->
-            write 0 "ni_ExceptionRef %s;" lowerName
+            writeCpp 0 "ni_ExceptionRef %s;" lowerName
         | _ ->
             ()
 
@@ -893,97 +958,107 @@ let generateWrappersCpp (m: Module) (writer: IFormatWriter) (maybeModulePrefix: 
     let containsRefsMap =
         createContainsRefsMap typeMap
     let renderFunc =
-        renderWrapperUserTypes writer containsRefsMap
+        renderWrapperUserTypes writerH writerCpp containsRefsMap
     renderUserTypes typeMap renderFunc
 
     // plain function wrappers
     for namedFunction in moduleMethods do
-        blank()
-        write 0 "void %s__wrapper() {" namedFunction.Name
+        blankH()
+        writeH 0 "void %s__wrapper();" namedFunction.Name
+        blankCpp()
+        writeCpp 0 "void %s__wrapper() {" namedFunction.Name
         for argName, argType in namedFunction.Args do
-            popValue writer 1 argType (Variable argName)
+            popValue writerCpp 1 argType (Variable argName)
         let invocation =
             sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
         if namedFunction.Throws.IsEmpty then
-            pushValue writer 1 namedFunction.Returns invocation (Direct true)
+            pushValue writerCpp 1 namedFunction.Returns invocation (Direct true)
         else
-            write 1 "try {"
-            pushValue writer 2 namedFunction.Returns invocation (Direct true)
-            write 1 "}"
+            writeCpp 1 "try {"
+            pushValue writerCpp 2 namedFunction.Returns invocation (Direct true)
+            writeCpp 1 "}"
             for exc in namedFunction.Throws do
                 match exc with
                 | Resolved (resolvedName, ExceptionType) ->
                     let exceptionName =
                         resolvedName.Flatten()
-                    write 1 "catch (const %s& e) {" exceptionName
-                    write 2 "ni_setException(%s);" (lowerFirst exceptionName)
-                    pushValue writer 2 exc "e" (Direct true)
-                    write 1 "}"
+                    writeCpp 1 "catch (const %s& e) {" exceptionName
+                    writeCpp 2 "ni_setException(%s);" (lowerFirst exceptionName)
+                    pushValue writerCpp 2 exc "e" (Direct true)
+                    writeCpp 1 "}"
                 | _ ->
                     failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
-        write 0 "}"
+        writeCpp 0 "}"
 
     // interface wrappers
     for name, namedFunctions in interfaces do
         namedFunctions
         |> List.iter (fun nf ->
-            blank()
-            write 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
-            write 1 "auto inst = Server%s::getByID(serverID);" name
+            blankH()
+            writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
+            blankCpp()
+            writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
+            writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
             for argName, argType in nf.Args do
-                popValue writer 1 argType (Variable argName)
+                popValue writerCpp 1 argType (Variable argName)
             let invocation =
                 sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
             if nf.Throws.IsEmpty then
-                pushValue writer 1 nf.Returns invocation (Direct true)
+                pushValue writerCpp 1 nf.Returns invocation (Direct true)
             else
-                write 1 "try {"
-                pushValue writer 2 nf.Returns invocation (Direct true)
-                write 1 "}"
+                writeCpp 1 "try {"
+                pushValue writerCpp 2 nf.Returns invocation (Direct true)
+                writeCpp 1 "}"
                 for exc in nf.Throws do
                     match exc with
                     | Resolved (resolvedName, ExceptionType) ->
                         let exceptionName =
                             resolvedName.Flatten()
-                        write 1 "catch (const %s& e) {" exceptionName
-                        write 2 "ni_setException(%s);" (lowerFirst exceptionName)
-                        write 2 "%s__push(e);" exceptionName
-                        write 1 "}"
+                        writeCpp 1 "catch (const %s& e) {" exceptionName
+                        writeCpp 2 "ni_setException(%s);" (lowerFirst exceptionName)
+                        writeCpp 2 "%s__push(e);" exceptionName
+                        writeCpp 1 "}"
                     | _ ->
                         failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
-            write 0 "}")
+            writeCpp 0 "}")
 
     // globals/constants func
     if globals.Length > 0 then
-        blank()
-        write 0 "void __constantsFunc() {"
+        blankH()
+        writeH 0 "void __constantsFunc();"
+        blankCpp()
+        writeCpp 0 "void __constantsFunc() {"
         // push in reverse order
         for globalName, globalType in globals |> List.rev do
-            pushValue writer 1 globalType globalName (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
-        write 0 "}"
+            pushValue writerCpp 1 globalType globalName (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
+        writeCpp 0 "}"
 
     // library registration method
-    blank()
-    write 0 "int %s__register() {" m.Name
-    write 1 "auto m = ni_registerModule(\"%s\");" m.Name
+    // header
+    blankH()
+    writeH 0 "int %s__register();" m.Name
+    // cpp
+    blankCpp()
+    writeCpp 0 "int %s__register() {" m.Name
+    writeCpp 1 "auto m = ni_registerModule(\"%s\");" m.Name
     if globals.Length > 0 then
-        write 1 "ni_registerModuleConstants(m, &__constantsFunc);"
+        writeCpp 1 "ni_registerModuleConstants(m, &__constantsFunc);"
     // module methods
     for namedFunction in moduleMethods do
-        write 1 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name
+        writeCpp 1 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name
     // interfaces + methods
     for name, methods in interfaces do
         let lowerName = lowerFirst name
-        write 1 "auto %s = ni_registerInterface(m, \"%s\");" lowerName name
+        writeCpp 1 "auto %s = ni_registerInterface(m, \"%s\");" lowerName name
         for method in methods do
-            write 1 "%s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
+            writeCpp 1 "%s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
     // exceptions
     for name, _ in exceptions do
         let lowerName = lowerFirst name
-        write 1 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" lowerName name name
+        writeCpp 1 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" lowerName name name
     // done
-    write 1 "return 0; // = OK"
-    write 0 "}"
+    writeCpp 1 "return 0; // = OK"
+    writeCpp 0 "}"
 
 let renderHeaderException (writer: IFormatWriter) (exName: string) (exFields: NamedField list) (typeMap: Map<string, UserOrGeneric>) =
     let write, blank = writer.Write, writer.Blank
@@ -1180,7 +1255,7 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
     // begin output: ===============================================
     write 0 "#pragma once"
     blank ()
-    write 0 "#include \"%s\"" (relativeIncludeFilename maybeModulePrefix "$PARENT.support.NativeImplServer")
+    write 0 "#include \"%s.h\"" (relativeIncludeFilenameNoExt maybeModulePrefix "$PARENT.support.NativeImplServer")
     write 0 "#include <functional>"
     write 0 "#include <memory>"
     write 0 "#include <string>"
@@ -1218,10 +1293,6 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
                         |> String.concat ", "
                     sprintf " // throws %s" joined
             write 0 "%s %s(%s);%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
-        
-    // registration method (called by Library.cpp or wherever we centralize this ...)
-    blank()
-    write 0 "int %s__register();" m.Name
 
 let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) (className: string) =
     let write, blank = writer.Write, writer.Blank
@@ -1283,7 +1354,7 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) = // (maybeMo
     let write, blank = writer.Write, writer.Blank
 
     for m in allModules do
-        write 0 "#include \"%s\"" (relativeIncludeFilename None m.Name)
+        write 0 "#include \"%s_wrappers.h\"" (relativeIncludeFilenameNoExt None m.Name)
     blank()
     write 0 "extern \"C\" int nativeLibraryInit() {"
     for m in allModules do
@@ -1359,8 +1430,8 @@ let generateModule (outParams: OutParams) (m: Module) =
         |> Option.defaultValue ""
     printfn "C++ writing (%s.%s%s)" baseNamespace modulePrefixString className
     
-    let wrappersFilename =
-        $"{generatedFilenameNoExt}_Wrappers.cpp"
+    let wrappersFilenameBase =
+        $"{generatedFilenameNoExt}_Wrappers"
     let implementationHeaderFilename =
         $"{generatedFilenameNoExt}.h"
     let implementationFilename =
@@ -1376,11 +1447,14 @@ let generateModule (outParams: OutParams) (m: Module) =
     let typeMap =
         userTypesAndGenerics m
         
-    printfn "  - %s" wrappersFilename
-    use wrappersOutput =
-        let writer = new StreamWriter(wrappersFilename)
+    printfn "  - %s.h/.cpp" wrappersFilenameBase
+    use wrappersOutputH =
+        let writer = new StreamWriter(wrappersFilenameBase + ".h")
         new SimpleFormatWriter(writer)
-    generateWrappersCpp m wrappersOutput maybeModulePrefix className
+    use wrappersOutputCpp =
+        let writer = new StreamWriter(wrappersFilenameBase + ".cpp")
+        new SimpleFormatWriter(writer)
+    generateWrappers m wrappersOutputH wrappersOutputCpp maybeModulePrefix className
 
     printfn "  - %s" implementationHeaderFilename
     use implHeaderOutput =

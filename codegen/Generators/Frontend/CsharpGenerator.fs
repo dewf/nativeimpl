@@ -645,12 +645,14 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "}"
             // push
             blank()
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
             write 2 "internal static void %s__Push(%s thing)" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);"
             write 2 "}"
             // pop
             blank()
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
             write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "var ptr = NativeImplClient.PopPtr();"

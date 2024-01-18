@@ -116,7 +116,7 @@ let rec defaultValueForType (typeMap: Map<string, UserOrGeneric>) = function
         let name =
             resolvedName.Flatten()
         match resolvedType with
-        | OpaqueHandleType ->
+        | OpaqueType ->
             sprintf "new __%s()" (upperFirst name)
         | InterfaceType ->
             sprintf "std::shared_ptr<%s>()" name
@@ -758,8 +758,19 @@ let renderWrapperUserTypes (writerH: IFormatWriter) (writerCpp: IFormatWriter) (
             writeCpp 0 "// push/pop for generic %s" (typeToCppString typeMap gType)
     | UserOrGeneric.User userType ->
         match userType with
-        | OpaqueHandleDef ->
-            ()
+        | OpaqueDef _ ->
+            // the methods are synthesized and rendered along with the top-level module methods
+            // here we just need push/pop
+            blankH()
+            writeH 0 "void %s__push(%s value);" name name
+            writeCpp 0 "void %s__push(%s value) {" name name
+            writeCpp 1 "ni_pushPtr(value);"
+            writeCpp 0 "}"
+            blankCpp()
+            writeH 0 "%s %s__pop();" name name
+            writeCpp 0 "%s %s__pop() {" name name
+            writeCpp 1 "return (%s)ni_popPtr();" name
+            writeCpp 0 "}"
         | StructDef namedFields ->
             blankH()
             writeH 0 "void %s__push(%s value, bool isReturn);" name name
@@ -895,6 +906,22 @@ let relativeIncludeFilenameNoExt (maybeModulePrefix: string option) (targetModul
     | None ->
         targetParts
         |> String.concat "/"
+        
+let synthesizeOpaqueMethods (defs: ModuleDefinition list) =
+    defs
+    |> List.collect (function
+        | UserType (opaqueName, OpaqueDef methods) ->
+            // synthesize new namedFunc with a "_this" parameter
+            methods
+            |> List.map (fun nf ->
+                let nextName =
+                    sprintf "%s_%s" opaqueName nf.Name
+                let nextArgs =
+                    let firstArg =
+                        "_this", Resolved (ThisModule opaqueName, OpaqueType)
+                    firstArg :: nf.Args
+                { nf with Name = nextName; Args = nextArgs })
+        | _ -> [])
 
 let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (maybeModulePrefix: string option) (className: string) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
@@ -910,11 +937,14 @@ let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWri
         |> List.choose (function
             | UserType(name, userType) -> Some (name, userType)
             | _ -> None)
+    let opaqueMethods =
+        synthesizeOpaqueMethods m.Defs
     let moduleMethods =
         m.Defs
         |> List.choose (function
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
+        |> List.append opaqueMethods
     let interfaces =
         m.Defs
         |> List.choose (function
@@ -941,7 +971,7 @@ let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWri
     for name, userType in userTypes do
         let lowerName = lowerFirst name
         match userType with
-        | OpaqueHandleDef ->
+        | OpaqueDef namedFunctions ->
             writeCpp 0 "NIHANDLE(%s);" lowerName
         | InterfaceDef namedFunctions ->
             namedFunctions
@@ -1192,7 +1222,7 @@ let renderHeaderUserTypes (writer: IFormatWriter) (name: string) (content: UserO
             failwithf "renderUserTypes: unsupported generic type %A" gType
     | UserOrGeneric.User userType ->
         match userType with
-        | OpaqueHandleDef ->
+        | OpaqueDef namedFunctions ->
             write 0 "struct __%s; typedef struct __%s* %s;" name name name
         | StructDef namedFields ->
             write 0 "struct %s {" name
@@ -1237,7 +1267,7 @@ let renderHeaderUserTypes (writer: IFormatWriter) (name: string) (content: UserO
                     write 1 "%s%s" value maybeComma
             write 0 "};"
         | SumTypeDef enumValues ->
-            renderHeaderSumType writer name enumValues typeMap 
+            renderHeaderSumType writer name enumValues typeMap
 
 let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank
@@ -1247,11 +1277,14 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
         |> List.choose (function
             | Global(name, niType) -> Some (name, niType)
             | _ -> None)
+    let opaqueMethods =
+        synthesizeOpaqueMethods m.Defs
     let moduleMethods =
         m.Defs
         |> List.choose (function
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
+        |> List.append opaqueMethods
     // begin output: ===============================================
     write 0 "#pragma once"
     blank ()
@@ -1305,13 +1338,16 @@ let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) 
     let opaqueHandles =
         m.Defs
         |> List.choose (function
-            | UserType(name, OpaqueHandleDef) -> Some name
+            | UserType(name, OpaqueDef _) -> Some name
             | _ -> None)
+    let opaqueMethods =
+        synthesizeOpaqueMethods m.Defs
     let moduleMethods =
         m.Defs
         |> List.choose (function
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
+        |> List.append opaqueMethods
     // begin output: ===============================================
     // right now this is hardcoded to the root level - we're not using any of the complex "outParams" stuff that the header/wrappers functions are using
     // it's quite a big chunk of code at this point and it needs to be extracted and cleaned up

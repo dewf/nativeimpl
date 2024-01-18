@@ -12,7 +12,6 @@
         <Compile Include="Parser.fs" />
         <Compile Include="Generators\Common.fs" />
         <Compile Include="Generators\Frontend\CsharpGenerator.fs" />
-        <Compile Include="Generators\Frontend\DlangGenerator.fs" />
         <Compile Include="Generators\Backend\CppGenerator.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>

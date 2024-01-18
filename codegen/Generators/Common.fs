@@ -102,18 +102,7 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
     module_.Defs
     |> List.collect (function
         | UserType(_, userType) ->
-            match userType with
-            | OpaqueHandleDef -> []
-            | StructDef namedFields ->
-                namedFields
-                |> List.collect (fun field -> typeAndSubTypes field.Type_)
-            | OptionsDef namedFields ->
-                namedFields
-                |> List.collect (fun field -> typeAndSubTypes field.Type_)
-            | ExceptionDef namedFields ->
-                namedFields
-                |> List.collect (fun field -> typeAndSubTypes field.Type_)
-            | InterfaceDef namedFunctions ->
+            let interfaceHandler (namedFunctions: NamedFunction list) =
                 namedFunctions
                 |> List.collect (fun nf ->
                     let retTypes =
@@ -126,6 +115,20 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                         nf.Throws
                         |> List.collect typeAndSubTypes
                     retTypes @ argTypes @ throwTypes)
+            match userType with
+            | OpaqueDef namedFunctions ->
+                interfaceHandler namedFunctions
+            | StructDef namedFields ->
+                namedFields
+                |> List.collect (fun field -> typeAndSubTypes field.Type_)
+            | OptionsDef namedFields ->
+                namedFields
+                |> List.collect (fun field -> typeAndSubTypes field.Type_)
+            | ExceptionDef namedFields ->
+                namedFields
+                |> List.collect (fun field -> typeAndSubTypes field.Type_)
+            | InterfaceDef namedFunctions ->
+                interfaceHandler namedFunctions
             | DelegateDef info ->
                 let retTypes =
                     typeAndSubTypes info.Returns
@@ -191,7 +194,7 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
             let name =
                 resolvedName.Flatten()
             match resolvedType with
-            | OpaqueHandleType ->
+            | OpaqueType ->
                 false, acc.Add(name, false)
             | StructType ->
                 processDeps name acc
@@ -267,9 +270,27 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                         failwithf "createContainsRefsMap: unsupported generic type (%A)" niType
                 | UserOrGeneric.User userType ->
                     match userType with
-                    | OpaqueHandleDef ->
-                        // never
-                        false, acc
+                    | OpaqueDef namedFunctions ->
+                        // guaranteed 'no' result by definition, but still run through deps to fill out acc map
+                        let nextAcc =
+                            (acc, namedFunctions)
+                            ||> List.fold (fun acc namedFunc ->
+                                let _, acc =
+                                    processType namedFunc.Returns acc
+                                let acc =
+                                    (acc, namedFunc.Args)
+                                    ||> List.fold (fun acc (_, argType) ->
+                                        let _, acc =
+                                            processType argType acc
+                                        acc)
+                                let acc =
+                                    (acc, namedFunc.Throws)
+                                    ||> List.fold (fun acc eType ->
+                                        let _, acc =
+                                            processType eType acc
+                                        acc)
+                                acc)
+                        false, nextAcc
                     | StructDef namedFields ->
                         // possibly
                         let subValues, nextAcc =
@@ -396,21 +417,23 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                 alreadyRendered
             | ThisModule name ->
                 match resolvedType with
-                | OpaqueHandleType ->
+                | OpaqueType ->
                     renderDeps name alreadyRendered
                 | StructType ->
                     renderDeps name alreadyRendered
                 | InterfaceType ->
-                    // special handling for interface dependencies! they need to emit forward references,
-                    // depending on context (either "class <whatever>" in the header, or push/pop prototypes in the wrapper)
-                    let checkName =
-                        // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
-                        sprintf "fwd:class %s" name
-                    if not (alreadyRendered.Contains(checkName)) then
-                        renderFunc name UserOrGeneric.FwdInterface typeMap
-                        alreadyRendered.Add(checkName)
-                    else
-                        alreadyRendered
+                    // can we skip the forward references now that we're generating _wrapper.h files?
+                    renderDeps name alreadyRendered
+                    // // special handling for interface dependencies! they need to emit forward references,
+                    // // depending on context (either "class <whatever>" in the header, or push/pop prototypes in the wrapper)
+                    // let checkName =
+                    //     // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
+                    //     sprintf "fwd:class %s" name
+                    // if not (alreadyRendered.Contains(checkName)) then
+                    //     renderFunc name UserOrGeneric.FwdInterface typeMap
+                    //     alreadyRendered.Add(checkName)
+                    // else
+                    //     alreadyRendered
                 | ExceptionType ->
                     renderDeps name alreadyRendered
                 | DelegateType ->
@@ -516,8 +539,18 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                         failwithf "renderUserTypes.renderDeps: unsupported generic type %A!" gType
                 | UserOrGeneric.User userType ->
                     match userType with
-                    | OpaqueHandleDef -> // no sub fields
-                        alreadyRendered
+                    | OpaqueDef namedFunctions ->
+                        (alreadyRendered, namedFunctions)
+                        ||> List.fold (fun already2 namedFunc ->
+                            let withReturn =
+                                renderType namedFunc.Returns already2
+                            let withThrows =
+                                (withReturn, namedFunc.Throws)
+                                ||> List.fold (fun already3 eType ->
+                                    renderType eType already3)
+                            (withThrows, namedFunc.Args)
+                            ||> List.fold (fun already3 (_, argType) ->
+                                renderType argType already3))
                     | StructDef namedFields ->
                         (alreadyRendered, namedFields)
                         ||> List.fold (fun already2 field -> renderType field.Type_ already2)

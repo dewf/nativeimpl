@@ -604,7 +604,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString typeMap gType)
     | UserOrGeneric.User userType ->
         match userType with
-        | OpaqueHandleDef ->
+        | OpaqueDef namedFunctions ->
             // definition
             write 2 "public class %s" (upperFirst name)
             write 2 "{"
@@ -613,6 +613,35 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 3 "{"
             write 4 "NativeHandle = nativeHandle;"
             write 3 "}"
+            // methods
+            for namedFunc in namedFunctions do
+                let throwsComment =
+                    if namedFunc.Throws.IsEmpty then
+                        ""
+                    else
+                        let joined =
+                            namedFunc.Throws
+                            |> List.map (typeToCsString typeMap)
+                            |> String.concat ", "
+                        sprintf " // throws %s" joined
+                blank()
+                write 3 "public %s %s(%s)%s" (typeToCsString typeMap namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined typeMap namedFunc.Args) throwsComment
+                write 3 "{"
+                // push args in reverse
+                for argName, argType in namedFunc.Args |> List.rev do
+                    pushValue writer 4 argType argName (Direct false)
+                // push self argument
+                let thisType =
+                    Resolved(ThisModule name, OpaqueType)
+                pushValue writer 4 thisType "this" (Direct false)
+                // invoke remote
+                if namedFunc.Throws.IsEmpty then
+                    write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.Name
+                else
+                    write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.Name
+                // return pop
+                popValue writer 3 namedFunc.Returns (if containsRefs namedFunc.Returns then SafeReturn else Return)
+                write 3 "}"
             write 2 "}"
             // push
             blank()
@@ -1013,6 +1042,13 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
         |> List.choose (function
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
+    let opaques =
+        m.Defs
+        |> List.choose (function
+            | UserType (name, OpaqueDef methods) ->
+                Some (name, methods)
+            | _ ->
+                None)
     let delegates =
         m.Defs
         |> List.choose (function
@@ -1067,6 +1103,11 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
     // top level functions
     for namedFunc in moduleMethods do
         write 2 "private static ModuleMethodHandle _%s;" namedFunc.Name
+        
+    // opaque methods
+    for name, methods in opaques do
+        for method in methods do
+            write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
 
     // interfaces
     for name, methods in interfaces do
@@ -1108,7 +1149,7 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
         // return pop
         popValue writer 3 namedFunc.Returns (if containsRefs namedFunc.Returns then SafeReturn else Return)
         write 2 "}"
-
+        
     // static init + shutdown ====================================================
     let maybeModuleInit =
         moduleMethods
@@ -1137,6 +1178,13 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
         blank()
         for namedFunc in moduleMethods do
             write 3 "_%s = NativeImplClient.GetModuleMethod(_module, \"%s\");" namedFunc.Name namedFunc.Name
+            
+    // opaque method handles
+    if not opaques.IsEmpty then
+        blank()
+        for name, methods in opaques do
+            for method in methods do
+                write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" (lowerFirst name) method.Name name method.Name
 
     // exceptions
     if not exceptions.IsEmpty then

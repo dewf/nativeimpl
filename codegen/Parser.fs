@@ -34,7 +34,7 @@ with
             // sprintf "%s.%s" (String.concat "." path) name
     
 type ResolvedType =
-    | OpaqueHandleType
+    | OpaqueType
     | StructType
     | InterfaceType
     | ExceptionType
@@ -249,7 +249,7 @@ let isValidEnumWidth (t: NIType) =
     | _ -> false
 
 type UserType =
-    | OpaqueHandleDef
+    | OpaqueDef of methods: NamedFunction list
     | StructDef of fields: NamedField list
     | ExceptionDef of fields: NamedField list      // created as an args list, although they are accessible fields
     | InterfaceDef of methods: NamedFunction list
@@ -472,26 +472,13 @@ let parseModuleDefs (input: TokenAndLocation list) =
         | Lookahead 2 ([OpaqueToken; Identifier opaqueName], loc, etc) ->
             match etc with
             | Lookahead 1 ([Semicolon], _, etc) ->
-                ([UserType (opaqueName, OpaqueHandleDef)], etc)
+                ([UserType (opaqueName, OpaqueDef [])], etc)
                 |> Some
             | Lookahead 1 ([LeftBrace], loc, etc) ->
                 // opaque with "methods" (expand to OOP-esque functions)
                 let methods, etc =
                     parseFunctionList loc etc
-                let thisName =
-                    "_this" //(upperOnly opaqueName).ToLowerInvariant()
-                let functions =
-                    methods
-                    |> List.map (fun nf ->
-                        // prefix the function name + add a 1st argument for 'this'
-                        let nextName =
-                            sprintf "%s%s" (lowerFirst opaqueName) (upperFirst nf.Name)
-                        let nextArgs =
-                            (thisName, Unresolved(opaqueName, loc)) :: nf.Args
-                        FunctionDef { nf with Name = nextName; Args = nextArgs })
-                let results =
-                    UserType (opaqueName, OpaqueHandleDef) :: functions
-                (results, etc)
+                ([UserType (opaqueName, OpaqueDef methods)], etc)
                 |> Some
             | _ ->
                 failwithf "error parsing opaque token at %s" (loc.ToString())
@@ -716,7 +703,7 @@ let rec resolveType (context: ModuleContext) (type_: NIType) =
         | resolvedName, resolvedDef ->
             let resolvedType =
                 match resolvedDef with
-                | OpaqueHandleDef -> OpaqueHandleType
+                | OpaqueDef _ -> OpaqueType
                 | StructDef _ -> StructType
                 | InterfaceDef _ -> InterfaceType
                 | DelegateDef _ -> DelegateType
@@ -796,8 +783,11 @@ let resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
                 let nextInfo =
                     resolveDelegateTypes context delegateInfo
                 DelegateDef nextInfo
-            | OpaqueHandleDef ->
-                OpaqueHandleDef
+            | OpaqueDef namedFunctions ->
+                let nextFunctions =
+                    namedFunctions
+                    |> List.map (resolveFunctionTypes context)
+                OpaqueDef nextFunctions
             | TypeDef niType ->
                 TypeDef (resolveType context niType)
             | EnumDef values ->

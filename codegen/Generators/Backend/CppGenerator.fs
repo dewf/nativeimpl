@@ -944,7 +944,8 @@ let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWri
         |> List.choose (function
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
-        |> List.append opaqueMethods
+        // append generated opaque methods
+        |> (fun x -> x @ opaqueMethods)
     let interfaces =
         m.Defs
         |> List.choose (function
@@ -1284,7 +1285,8 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
         |> List.choose (function
             | FunctionDef namedFunction -> Some namedFunction
             | _ -> None)
-        |> List.append opaqueMethods
+        // append generated opaque methods
+        |> (fun x -> x @ opaqueMethods)
     // begin output: ===============================================
     write 0 "#pragma once"
     blank ()

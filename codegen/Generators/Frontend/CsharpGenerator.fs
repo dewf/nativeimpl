@@ -1316,7 +1316,6 @@ let generateProject (outParams: OutParams) =
 let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespace: string) =
     let write, blank = writer.Write, writer.Blank
 
-    write 0 "using System.Diagnostics;"
     write 0 "using %s.Support;" baseNamespace
     blank()
     write 0 "namespace %s;" baseNamespace
@@ -1325,7 +1324,11 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespac
     write 0 "{"
     write 1 "public static void Init()"
     write 1 "{"
-    write 2 "Debug.Assert(NativeImplClient.Init() == 0);"
+    write 2 "if (NativeImplClient.Init() != 0)"
+    write 2 "{"
+    write 3 "Console.WriteLine(\"NativeImplClient.Init failed\");"
+    write 3 "return;"
+    write 2 "}"
     write 2 "// registrations, static module inits"
     for m in allModules do
         write 2 "%s.Init();" m.Name

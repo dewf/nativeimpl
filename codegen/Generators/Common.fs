@@ -418,22 +418,28 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
             | ThisModule name ->
                 match resolvedType with
                 | OpaqueType ->
-                    renderDeps name alreadyRendered
+                    // special handling for opaque dependencies! see interface notes below
+                    let checkName =
+                        // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
+                        sprintf "fwd:opaque %s" name
+                    if not (alreadyRendered.Contains(checkName)) then
+                        // don't emit anything at all for these
+                        alreadyRendered.Add(checkName)
+                    else
+                        alreadyRendered
                 | StructType ->
                     renderDeps name alreadyRendered
                 | InterfaceType ->
-                    // can we skip the forward references now that we're generating _wrapper.h files?
-                    renderDeps name alreadyRendered
-                    // // special handling for interface dependencies! they need to emit forward references,
-                    // // depending on context (either "class <whatever>" in the header, or push/pop prototypes in the wrapper)
-                    // let checkName =
-                    //     // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
-                    //     sprintf "fwd:class %s" name
-                    // if not (alreadyRendered.Contains(checkName)) then
-                    //     renderFunc name UserOrGeneric.FwdInterface typeMap
-                    //     alreadyRendered.Add(checkName)
-                    // else
-                    //     alreadyRendered
+                    // special handling for interface dependencies! they need to emit forward references,
+                    // depending on context (either "class <whatever>" in the header, or push/pop prototypes in the wrapper)
+                    let checkName =
+                        // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
+                        sprintf "fwd:class %s" name
+                    if not (alreadyRendered.Contains(checkName)) then
+                        renderFunc name UserOrGeneric.FwdInterface typeMap
+                        alreadyRendered.Add(checkName)
+                    else
+                        alreadyRendered
                 | ExceptionType ->
                     renderDeps name alreadyRendered
                 | DelegateType ->

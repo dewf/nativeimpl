@@ -30,11 +30,11 @@ let rec typeToName = function
         let name =
             resolvedName.Flatten()
         upperFirst name
-    | ArrayType niType -> sprintf "%sArray" (typeToName niType)
-    | MapType (keyType, valueType) -> sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
-    | TupleType tupleTypes -> sprintf "%sTuple" (tupleTypes |> List.map typeToName |> String.concat "")
-    | SetType niType -> sprintf "%sSet" (typeToName niType)
-    | BufferType elemType -> sprintf "Native%sBuffer" (typeToName elemType)
+    | ArrayType niType -> sprintf "%s_Array" (typeToName niType)
+    | MapType (keyType, valueType) -> sprintf "%s_%s_Map" (typeToName keyType) (typeToName valueType)
+    | TupleType tupleTypes -> sprintf "%s_Tuple" (tupleTypes |> List.map typeToName |> String.concat "")
+    | SetType niType -> sprintf "%s_Set" (typeToName niType)
+    | BufferType elemType -> sprintf "Native_%s_Buffer" (typeToName elemType)
     | x -> sprintf "(typeToName: not done yet [%A]" x
 
 let rec typeToCppString (typeMap: Map<string, UserOrGeneric>) = function
@@ -190,11 +190,11 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
             | Resolved (resolvedName, resolvedType) ->
                 let name =
                     resolvedName.Flatten()
-                sprintf "__%sArray__pop" name
-            | ArrayType _ -> sprintf "__%sArray__pop" (typeToName niType)
-            | TupleType _ -> sprintf "__%sArray__pop" (typeToName niType)
-            | SetType _ -> sprintf "__%sArray__pop" (typeToName niType)
-            | MapType _ -> sprintf "__%sArray__pop" (typeToName niType)
+                sprintf "__%s__pop" (typeToName (ArrayType niType))
+            | ArrayType _ -> sprintf "__%s__pop" (typeToName (ArrayType niType))
+            | TupleType _ -> sprintf "__%s__pop" (typeToName (ArrayType niType))
+            | SetType _ -> sprintf "__%s__pop" (typeToName (ArrayType niType))
+            | MapType _ -> sprintf "__%s__pop" (typeToName (ArrayType niType))
             | _ -> sprintf "// (pop not yet supported: %A)" type_
         write level "%s %s();" contextPrefix popFunc
     | MapType (keyType, valueType) ->
@@ -273,11 +273,11 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
         | Resolved(resolvedName, resolvedType) ->
             let name =
                 resolvedName.Flatten()
-            write level "__%sArray__push(%s, %s);" name content (isReturnString())
+            write level "__%s__push(%s, %s);" (typeToName (ArrayType niType)) content (isReturnString())
         | _ ->
             write level "// (push not yet supported: ArrayType %A)" niType
     | MapType (keyType, valueType) ->
-        write level "__%s%sMap__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
+        write level "__%s_%s_Map__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
     | TupleType _ ->
         write level "__%s__push(%s, %s);" (typeToName type_) content (isReturnString())
     | SetType _ ->
@@ -646,6 +646,19 @@ type ArrayOrSetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneri
                 write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString typeMap outerType)
                 write 0 "}"
             | _ -> failwith "!!!"
+        member this.Opaque () =
+            // push
+            write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
+            write 1 "ni_pushPtrArray((void**)items.data(), items.size());"
+            write 0 "}"
+            // pop
+            blank()
+            write 0 "%s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
+            write 1 "%s *values;" (typeToCppString typeMap elemType)
+            write 1 "size_t count;"
+            write 1 "ni_popPtrArray((void***)&values, &count);"
+            write 1 "return %s(values, values + count);" (typeToCppString typeMap outerType)
+            write 0 "}"
         member this.Other (t: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString typeMap outerType)
 

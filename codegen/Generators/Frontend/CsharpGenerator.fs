@@ -86,15 +86,15 @@ let rec typeToName = function
             tupleTypes
             |> List.map typeToName
             |> String.concat ""
-        sprintf "%sTuple" joined
+        sprintf "%s_Tuple" joined
     | ArrayType niType ->
-        sprintf "%sArray" (typeToName niType)
+        sprintf "%s_Array" (typeToName niType)
     | SetType niType ->
-        sprintf "%sSet" (typeToName niType)
+        sprintf "%s_Set" (typeToName niType)
     | MapType (keyType, valueType) ->
-        sprintf "%s%sMap" (typeToName keyType) (typeToName valueType)
+        sprintf "%s_%s_Map" (typeToName keyType) (typeToName valueType)
     | BufferType elemType ->
-        sprintf "Native%sBuffer" (typeToName elemType)
+        sprintf "Native_%s_Buffer" (typeToName elemType)
     | x -> sprintf "(typeToName: not yet supported: %A)" x
 
 let argsJoined (typeMap: Map<string, UserOrGeneric>) (args: (string * NIType) list) =
@@ -159,7 +159,7 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         | Resolved(resolvedName, resolvedType) ->
             let name =
                 resolvedName.Flatten()
-            write level "%s __%sArray__Pop();" contextPrefix (upperFirst name)
+            write level "%s __%s__Pop();" contextPrefix (typeToName (ArrayType niType))
         | ArrayType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType)) // sigh, normalize all these already - doing it so many different ways...
         | SetType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType))
         | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
@@ -231,9 +231,9 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
                 resolvedName.Flatten()
             match resolvedType with
             | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-                write level "__%sArray__Push(%s, %s);" (upperFirst name) content (isReturnString())
+                write level "__%s__Push(%s, %s);" (typeToName (ArrayType niType)) content (isReturnString())
             | _ ->
-                write level "__%sArray__Push(%s);" (upperFirst name) content
+                write level "__%s__Push(%s);" (typeToName (ArrayType niType)) content
         | ArrayType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | SetType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
         | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
@@ -393,6 +393,20 @@ type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, o
             arrayDefault()
         member this.Primitive (prim: NIPrimitive) =
             write 2 "// built-in array type: %s" (typeToCsString typeMap outerType)
+        member this.Opaque () =
+            // push
+            write 2 "internal static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "{"
+            write 3 "var ptrs = items.Select(item => item.NativeHandle).ToArray();"
+            write 3 "NativeImplClient.PushPtrArray(ptrs);"
+            write 2 "}"
+            // pop
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "{"
+            write 3 "return NativeImplClient.PopPtrArray()"
+            write 4 ".Select(ptr => ptr != IntPtr.Zero ? new %s(ptr) : null)" (typeToCsString typeMap elemType)
+            write 4 ".ToArray();"
+            write 2 "}"
         member this.Other (t: NIType) =
             write 2 "// TODO: push/pop for array of %s" (typeToCsString typeMap outerType)
 
@@ -496,6 +510,20 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
         member this.SumType () =
             setDefault()
         member this.Primitive (prim: NIPrimitive) =
+            // PUSH ==================
+            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
+            write 2 "{"
+            pushValue writer 3 (ArrayType elemType) "items.ToArray()" (Indirect "isReturn")
+            write 2 "}"
+            // POP ===================
+            blank()
+            write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap outerType) (typeToName outerType)
+            write 2 "{"
+            popValue writer 3 (ArrayType elemType) (NewVariable "items")
+            write 3 "return items.ToHashSet();"
+            write 2 "}"
+        member this.Opaque () =
+            // untested! haven't looked at this code in a long time, so just copied from above!
             // PUSH ==================
             write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName outerType) (typeToCsString typeMap outerType)
             write 2 "{"
@@ -624,7 +652,6 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
                             |> List.map (typeToCsString typeMap)
                             |> String.concat ", "
                         sprintf " // throws %s" joined
-                blank()
                 write 3 "public %s %s(%s)%s" (typeToCsString typeMap namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined typeMap namedFunc.Args) throwsComment
                 write 3 "{"
                 // push args in reverse
@@ -640,7 +667,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
                 else
                     write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.Name
                 // return pop
-                popValue writer 3 namedFunc.Returns (if containsRefs namedFunc.Returns then SafeReturn else Return)
+                popValue writer 4 namedFunc.Returns (if containsRefs namedFunc.Returns then SafeReturn else Return)
                 write 3 "}"
             write 2 "}"
             // push

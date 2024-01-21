@@ -624,6 +624,7 @@ type IArrayLikeRenderer =
     abstract SetType: unit -> unit
     abstract SumType: unit -> unit
     abstract Primitive: NIPrimitive -> unit
+    abstract Opaque: unit -> unit
     abstract Other: NIType -> unit
 
 let renderArrayLike (typeMap: Map<string, UserOrGeneric>) (elemType: NIType) (renderer: IArrayLikeRenderer) =
@@ -647,6 +648,8 @@ let renderArrayLike (typeMap: Map<string, UserOrGeneric>) (elemType: NIType) (re
                 renderer.StructType name namedFields
             | _ ->
                 failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+        | OpaqueType ->
+            renderer.Opaque ()
         | _ ->
             renderer.Other elemType
     | TupleType tupleTypes ->

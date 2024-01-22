@@ -634,13 +634,31 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
         match userType with
         | OpaqueDef namedFunctions ->
             // definition
-            write 2 "public class %s" (upperFirst name)
+            write 2 "public class %s : IDisposable" (upperFirst name)
             write 2 "{"
             write 3 "internal readonly IntPtr NativeHandle;"
+            write 3 "private bool _disposed;"
+            // ctor
             write 3 "internal %s(IntPtr nativeHandle)" (upperFirst name)
             write 3 "{"
             write 4 "NativeHandle = nativeHandle;"
             write 3 "}"
+            // finalizer
+            // write 3 "~%s()" (upperFirst name)
+            // write 3 "{"
+            // write 4 "if (!_disposed)"
+            // write 4 "{"
+            // write 5 "Dispose();"
+            // write 4 "}"
+            // write 3 "}"
+            // dipose
+            write 3 "public void Dispose()"
+            write 3 "{"
+            pushValue writer 4 (Resolved(ThisModule name,OpaqueType)) "this" (Direct false)
+            write 4 "NativeImplClient.InvokeModuleMethod(_%s_dispose);" name
+            write 4 "_disposed = true;"
+            write 3 "}"
+            
             // methods
             for namedFunc in namedFunctions do
                 let throwsComment =
@@ -1137,6 +1155,8 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
     for name, methods in opaques do
         for method in methods do
             write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
+        // synthesized dispose method
+        write 2 "private static ModuleMethodHandle _%s_dispose;" name
 
     // interfaces
     for name, methods in interfaces do
@@ -1214,6 +1234,8 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
         for name, methods in opaques do
             for method in methods do
                 write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" (lowerFirst name) method.Name name method.Name
+            // synthesized dipose method handle
+            write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" name name
 
     // exceptions
     if not exceptions.IsEmpty then

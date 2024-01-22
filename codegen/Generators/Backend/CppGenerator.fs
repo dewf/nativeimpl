@@ -924,14 +924,16 @@ let synthesizeOpaqueMethods (defs: ModuleDefinition list) =
     defs
     |> List.collect (function
         | UserType (opaqueName, OpaqueDef methods) ->
+            let methodsWithDispose =
+                { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] } :: methods
             // synthesize new namedFunc with a "_this" parameter
-            methods
+            methodsWithDispose
             |> List.map (fun nf ->
+                let firstArg =
+                    "_this", Resolved (ThisModule opaqueName, OpaqueType)
                 let nextName =
                     sprintf "%s_%s" opaqueName nf.Name
                 let nextArgs =
-                    let firstArg =
-                        "_this", Resolved (ThisModule opaqueName, OpaqueType)
                     firstArg :: nf.Args
                 { nf with Name = nextName; Args = nextArgs })
         | _ -> [])

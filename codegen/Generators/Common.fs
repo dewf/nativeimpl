@@ -402,6 +402,85 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
         let _, nextAcc =
             processDeps key acc
         nextAcc)
+    
+    
+let rec renderUserTypesV2 (typeMap: Map<string, UserOrGeneric>) (renderFunc: string -> UserOrGeneric -> Map<string, UserOrGeneric> -> unit) =
+    // process all keys (names) - renderDeps just skips anything it's seen before
+    let keys =
+        typeMap
+        |> Map.toList
+        |> List.map fst
+    let depsFunc (id: string) =
+        // return id list of dependencies
+        let typeList =
+            match typeMap[id] with
+            | UserOrGeneric.User userType ->
+                match userType with
+                | OpaqueDef methods ->
+                    methods
+                    |> List.collect (fun nf ->
+                        let argTypes =
+                            nf.Args
+                            |> List.map snd
+                        nf.Returns :: argTypes @ nf.Throws)
+                | StructDef fields ->
+                    fields
+                    |> List.map (_.Type_)
+                | ExceptionDef fields ->
+                    fields
+                    |> List.map (_.Type_)
+                | InterfaceDef methods ->
+                    methods
+                    |> List.collect (fun nf ->
+                        let argTypes =
+                            nf.Args
+                            |> List.map snd
+                        nf.Returns :: argTypes @ nf.Throws)
+                | DelegateDef info ->
+                    let argTypes =
+                        info.Args
+                        |> List.map snd
+                    info.Returns :: argTypes @ info.Throws
+                | TypeDef actual ->
+                    [ actual ]
+                | EnumDef info ->
+                    info.MaybeWidth
+                    |> Option.toList
+                | SumTypeDef values ->
+                    values
+                    |> List.collect (_.Args >> List.map snd)
+                | OptionsDef fields ->
+                    fields
+                    |> List.map (_.Type_)
+            | UserOrGeneric.Generic niType ->
+                match niType with
+                | ArrayType elem ->
+                    // todo: special array handling for certain types
+                    //   eg array of struct, implies struct of field arrays
+                    [ elem ]
+                | MapType(keyType, valueType) ->
+                    // implies array of keytype, array of valuetype etc
+                    [ keyType; valueType ]
+                | TupleType tupleTypes ->
+                    tupleTypes
+                | SetType elem ->
+                    [ elem ]
+                | BufferType elemType ->
+                    [ elemType ]
+                | _ ->
+                    failwithf "renderUserTypesV2: unsupported generic type: %A" niType
+            | UserOrGeneric.FwdInterface ->
+                failwith "blah not using these?"
+        // from raw types to (user-defined) keys
+        typeList
+        |> List.map typeToInternalKey
+        // we only want the user-defined types provided to this function (no need for primitives etc)
+        |> List.filter typeMap.ContainsKey
+    let ordered =
+        DepsResolver.depsOrderSolver keys id depsFunc
+    // TODO: render ordered list!
+    ordered
+        
 
 let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string -> UserOrGeneric -> Map<string, UserOrGeneric> -> unit) =
     let rec renderType (type_: NIType) (alreadyRendered: Set<string>) =

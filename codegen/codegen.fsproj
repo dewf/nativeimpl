@@ -10,6 +10,7 @@
         <Compile Include="Extensions.fs" />
         <Compile Include="Tokenizer.fs" />
         <Compile Include="Parser.fs" />
+        <Compile Include="Generators\DepsResolver.fs" />
         <Compile Include="Generators\Common.fs" />
         <Compile Include="Generators\Frontend\CsharpGenerator.fs" />
         <Compile Include="Generators\Backend\CppGenerator.fs" />

@@ -819,7 +819,7 @@ let renderWrapperUserTypes (writerH: IFormatWriter) (writerCpp: IFormatWriter) (
             writeCpp 1 "%s value = {};" name
             popValue writerCpp 1 flagsType (LeftAssign "value._usedFields")
             for field in namedFields do
-                writeCpp 1 "if (value._usedFields & %s::Fields::%s) {" name (upperFirst field.Name)
+                writeCpp 1 "if (value._usedFields & %s::Fields::%sField) {" name (upperFirst field.Name)
                 popValue writerCpp 2 field.Type_ (Variable "x")
                 writeCpp 2 "value.set%s(x);" (upperFirst field.Name)
                 writeCpp 1 "}"
@@ -1190,7 +1190,7 @@ let renderHeaderOptionsType (writer: IFormatWriter) (optionsTypeName: string) (n
     write 0 "private:"
     write 1 "enum Fields {"
     for (i, field), maybeComma in namedFields |> List.indexed |> withTrailingCommas do
-        write 2 "%s = %d%s" (upperFirst field.Name) (1 <<< i) maybeComma
+        write 2 "%sField = %d%s" (upperFirst field.Name) (1 <<< i) maybeComma
     write 1 "};"
     let usedFieldsType =
         Primitive (Int(true, Width32))
@@ -1208,10 +1208,10 @@ let renderHeaderOptionsType (writer: IFormatWriter) (optionsTypeName: string) (n
     for field in namedFields do
         write 1 "void set%s(%s value) {" (upperFirst field.Name) (typeToCppString typeMap field.Type_)
         write 2 "_%s = value;" field.Name
-        write 2 "_usedFields |= Fields::%s;" (upperFirst field.Name)
+        write 2 "_usedFields |= Fields::%sField;" (upperFirst field.Name)
         write 1 "}"
         write 1 "bool has%s(%s *value) {" (upperFirst field.Name) (typeToCppString typeMap field.Type_)
-        write 2 "if (_usedFields & Fields::%s) {" (upperFirst field.Name)
+        write 2 "if (_usedFields & Fields::%sField) {" (upperFirst field.Name)
         write 3 "*value = _%s;" field.Name
         write 3 "return true;"
         write 2 "}"

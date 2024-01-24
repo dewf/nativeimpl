@@ -654,9 +654,12 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             // dipose
             write 3 "public void Dispose()"
             write 3 "{"
-            pushValue writer 4 (Resolved(ThisModule name,OpaqueType)) "this" (Direct false)
-            write 4 "NativeImplClient.InvokeModuleMethod(_%s_dispose);" name
-            write 4 "_disposed = true;"
+            write 4 "if (!_disposed)"
+            write 4 "{"
+            pushValue writer 5 (Resolved(ThisModule name,OpaqueType)) "this" (Direct false)
+            write 5 "NativeImplClient.InvokeModuleMethod(_%s_dispose);" name
+            write 5 "_disposed = true;"
+            write 4 "}"
             write 3 "}"
             
             // methods

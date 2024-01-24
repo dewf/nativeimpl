@@ -987,8 +987,8 @@ let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWri
     for name, userType in userTypes do
         let lowerName = lowerFirst name
         match userType with
-        | OpaqueDef namedFunctions ->
-            writeCpp 0 "NIHANDLE(%s);" lowerName
+        // | OpaqueDef _ ->
+        //     writeCpp 0 "NIHANDLE(%s);" lowerName
         | InterfaceDef namedFunctions ->
             namedFunctions
             |> List.iter (fun nf ->
@@ -1006,6 +1006,11 @@ let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWri
     let renderFunc =
         renderWrapperUserTypes writerH writerCpp containsRefsMap
     renderUserTypes typeMap renderFunc
+    
+    // printfn "v2 testing!!!!!!!! ====================="
+    // for item in renderUserTypesV2 typeMap renderFunc do
+    //     printfn "- %A" item
+    // printfn "========================================"
 
     // plain function wrappers
     for namedFunction in moduleMethods do
@@ -1239,7 +1244,9 @@ let renderHeaderUserTypes (writer: IFormatWriter) (name: string) (content: UserO
     | UserOrGeneric.User userType ->
         match userType with
         | OpaqueDef namedFunctions ->
-            write 0 "struct __%s; typedef struct __%s* %s;" name name name
+            // we're emitting these all at the top of the file now
+            // write 0 "struct __%s; typedef struct __%s* %s;" name name name
+            ()
         | StructDef namedFields ->
             write 0 "struct %s {" name
             for field in namedFields do
@@ -1293,6 +1300,11 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
         |> List.choose (function
             | Global(name, niType) -> Some (name, niType)
             | _ -> None)
+    let opaques =
+        m.Defs
+        |> List.choose (function
+            | UserType(name, OpaqueDef _) -> Some name
+            | _ -> None)
     let opaqueMethods =
         synthesizeOpaqueMethods m.Defs
     let moduleMethods =
@@ -1319,6 +1331,12 @@ let generateImplementationH (m: Module) (typeMap: Map<string, UserOrGeneric>) (w
         blank()
         for importName in m.Imports do
             write 0 "#include \"%s.h\"" (importName.Replace(".", "/"))
+            
+    // opaque handles all at the top, so no ordering issues
+    if not opaques.IsEmpty then
+        blank()
+        for name in opaques do
+            write 0 "struct __%s; typedef struct __%s* %s;" name name name
 
     // all user types in dependency order
     renderUserTypes typeMap (renderHeaderUserTypes writer)

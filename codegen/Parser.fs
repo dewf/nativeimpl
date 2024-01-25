@@ -71,7 +71,7 @@ let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([token
         Some (tokens, front.Head.Location, etc)
     else
         None
-
+        
 let (|TakeWhile|_|) (pred: Token -> bool) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
     let front, etc =
         input
@@ -214,11 +214,15 @@ let rec parseType (input: TokenAndLocation list) =
     | {Location = loc; Token = token} :: _ ->
         failwithf "unexpected token %A at %s" token (loc.ToString())
 
+type FunctionModifiers =
+    | StaticModifier
+    
 type NamedFunction = {
     Name: string
     Args: (string * NIType) list
     Returns: NIType
     Throws: NIType list
+    Modifiers: Set<FunctionModifiers>
 }
 
 type NamedField = {
@@ -352,26 +356,42 @@ let parseIdentifierList (loc: Location) (input: TokenAndLocation list) (endToken
     | None ->
         failwithf "expected end of identifiers at %s" (loc.ToString())
 
-let parseNamedFunction (input: TokenAndLocation list) =
+let parseNamedFunction (allowStatic: bool) (input: TokenAndLocation list) =
     if input.IsEmpty then
         None
     else
+        // optional static
+        let isStatic, etc =
+            match input with
+            | Lookahead 1 ([StaticToken], loc, etc) ->
+                if allowStatic then
+                    true, etc
+                else
+                    failwithf "loc %s: no 'static' allowed in this context" (loc.ToString())
+            | _ ->
+                false, input
+        // normal processing
         let returnType, etc =
-            parseType input
+            parseType etc
         match etc with
         | Lookahead 2 ([Identifier funcName; LeftParen], loc, etc) ->
             let args, etc =
                 parseArgsList loc etc
+            let modifiers =
+                if isStatic then
+                    Set.empty.Add(StaticModifier)
+                else
+                    Set.empty
             match etc with
             | Lookahead 1 ([Semicolon], _, etc) ->
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty }, etc)
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty; Modifiers = modifiers }, etc)
             | Lookahead 1 ([ThrowsToken], loc, etc) ->
                 let identifiers, etc =
                     parseIdentifierList loc etc Semicolon
                 let throwsList =
                     identifiers
                     |> List.map (fun name -> Unresolved (name, loc))
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList }, etc)
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList; Modifiers = modifiers }, etc)
             | _ ->
                 failwithf "failed to parse function at %s" (loc.ToString())
         | { Location = loc } :: _ ->
@@ -384,11 +404,12 @@ let parseNamedFunction (input: TokenAndLocation list) =
             | _ ->
                 failwithf "parseNamedFunction: shouldn't happen"
 
-let parseFunctionList (loc: Location) (input: TokenAndLocation list) =
+let parseFunctionList (loc: Location) (input: TokenAndLocation list) (allowStatic: bool) =
     let content, etc =
         contentUntilMatching loc LeftBrace input
     let funcList =
-        List.unfold parseNamedFunction content
+        content
+        |> List.unfold (parseNamedFunction allowStatic)
     funcList, etc
 
 let parseOneEnumValue (input: TokenAndLocation list) =
@@ -477,7 +498,7 @@ let parseModuleDefs (input: TokenAndLocation list) =
             | Lookahead 1 ([LeftBrace], loc, etc) ->
                 // opaque with "methods" (expand to OOP-esque functions)
                 let methods, etc =
-                    parseFunctionList loc etc
+                    parseFunctionList loc etc true
                 ([UserType (opaqueName, OpaqueDef methods)], etc)
                 |> Some
             | _ ->
@@ -509,11 +530,11 @@ let parseModuleDefs (input: TokenAndLocation list) =
             |> Some
         | Lookahead 3 ([InterfaceToken; Identifier name; LeftBrace], loc, etc) ->
             let methods, etc2 =
-                parseFunctionList loc etc
+                parseFunctionList loc etc false
             ([UserType (name, InterfaceDef methods)], etc2)
             |> Some
         | Lookahead 1 ([DelegateToken], _, etc) ->
-            parseNamedFunction etc
+            parseNamedFunction false etc
             |> Option.map (fun (nf, etc2) ->
                 let result =
                     UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns; Throws = nf.Throws })
@@ -570,7 +591,7 @@ let parseModuleDefs (input: TokenAndLocation list) =
                 ([Global (name, t1)], etc3)
                 |> Some
             | Lookahead 2 ([Identifier _; LeftParen], _, _) ->
-                parseNamedFunction etc // note using 'etc' here (rewinding a bit because parseNamedFunction handles identifier etc too)
+                parseNamedFunction false etc // note using 'etc' here (rewinding a bit because parseNamedFunction handles identifier etc too)
                 |> Option.map (fun (namedFunc, etc3) -> [FunctionDef namedFunc], etc3)
                 // only way it returns 'None' is if its token list is empty, which we already know isn't the case
             | {Location = loc; Token = token} :: _ ->

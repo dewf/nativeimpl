@@ -925,16 +925,19 @@ let synthesizeOpaqueMethods (defs: ModuleDefinition list) =
     |> List.collect (function
         | UserType (opaqueName, OpaqueDef methods) ->
             let methodsWithDispose =
-                { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] } :: methods
-            // synthesize new namedFunc with a "_this" parameter
+                methods @ [ { Name = "dispose"; Args = []; Returns = UnitType; Throws = []; Modifiers = Set.empty } ] // seems better at the end of all methods
+            // for non-static methods, synthesize new namedFunc with a "_this" parameter
             methodsWithDispose
             |> List.map (fun nf ->
-                let firstArg =
-                    "_this", Resolved (ThisModule opaqueName, OpaqueType)
                 let nextName =
                     sprintf "%s_%s" opaqueName nf.Name
                 let nextArgs =
-                    firstArg :: nf.Args
+                    if not (nf.Modifiers.Contains(StaticModifier)) then
+                        let firstArg =
+                            "_this", Resolved (ThisModule opaqueName, OpaqueType)
+                        firstArg :: nf.Args
+                    else
+                        nf.Args
                 { nf with Name = nextName; Args = nextArgs })
         | _ -> [])
 

@@ -197,8 +197,8 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
             | MapType _ -> sprintf "__%s__pop" (typeToName (ArrayType niType))
             | _ -> sprintf "// (pop not yet supported: %A)" type_
         write level "%s %s();" contextPrefix popFunc
-    | MapType (keyType, valueType) ->
-        write level "%s __%s%sMap__pop();" contextPrefix (typeToName keyType) (typeToName valueType)
+    | MapType _ ->
+        write level "%s __%s__pop();" contextPrefix (typeToName type_)
     | TupleType _ ->
         write level "%s __%s__pop();" contextPrefix (typeToName type_)
     | SetType _ ->

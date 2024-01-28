@@ -458,10 +458,10 @@ let renderWrapperSumType (writerH: IFormatWriter) (writerCpp: IFormatWriter) (su
     popValue writerCpp 1 tagType (Variable "which")
     writeCpp 1 "switch ((%s::Tag)which) {" sumTypeName
     for value in values do
-        writeCpp 1 "case %s::Tag::%s: {" sumTypeName (upperFirst value.Name)
+        writeCpp 1 "case %s::Tag::%s: {" sumTypeName value.Name
         for argName, argType in value.Args do
             popValue writerCpp 2 argType (Variable argName)
-        writeCpp 2 "return %s::%s::make(%s); }" sumTypeName (upperFirst value.Name) (joinedArgNames value.Args)
+        writeCpp 2 "return %s::%s::make(%s); }" sumTypeName value.Name (joinedArgNames value.Args)
     writeCpp 1 "default:"
     writeCpp 2 "throw \"%s__pop(): unknown tag!\";" sumTypeName
     writeCpp 1 "}"
@@ -1197,7 +1197,7 @@ let renderHeaderOptionsType (writer: IFormatWriter) (optionsTypeName: string) (n
     write 1 "};"
     let usedFieldsType =
         Primitive (Int(true, Width32))
-    write 1 "%s _usedFields;" (typeToCppString typeMap usedFieldsType)
+    write 1 "%s _usedFields = %s;" (typeToCppString typeMap usedFieldsType) (defaultValueForType typeMap usedFieldsType)
     for field in namedFields do
         write 1 "%s _%s;" (typeToCppString typeMap field.Type_) field.Name
     write 0 "protected:"

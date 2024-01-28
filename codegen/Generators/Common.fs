@@ -727,6 +727,8 @@ let renderArrayLike (typeMap: Map<string, UserOrGeneric>) (elemType: NIType) (re
                 renderer.StructType name namedFields
             | _ ->
                 failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
+        | SumType ->
+            renderer.SumType ()
         | OpaqueType ->
             renderer.Opaque ()
         | _ ->

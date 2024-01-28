@@ -849,7 +849,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "private enum %s__Tag" (upperFirst name)
             write 2 "{"
             for value, maybeComma in sumTypeValues |> withTrailingCommas do
-                write 3 "%s%s" value.Name maybeComma
+                write 3 "%s%s" (upperFirst value.Name) maybeComma
             write 2 "}"
             let tagType =
                 Primitive(Int(true,Width32))

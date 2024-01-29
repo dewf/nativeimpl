@@ -704,6 +704,7 @@ type IArrayLikeRenderer =
     abstract SumType: unit -> unit
     abstract Primitive: NIPrimitive -> unit
     abstract Opaque: unit -> unit
+    abstract Options: unit -> unit
     abstract Other: NIType -> unit
 
 let renderArrayLike (typeMap: Map<string, UserOrGeneric>) (elemType: NIType) (renderer: IArrayLikeRenderer) =
@@ -731,6 +732,8 @@ let renderArrayLike (typeMap: Map<string, UserOrGeneric>) (elemType: NIType) (re
             renderer.SumType ()
         | OpaqueType ->
             renderer.Opaque ()
+        | OptionsType ->
+            renderer.Options ()
         | _ ->
             renderer.Other elemType
     | TupleType tupleTypes ->

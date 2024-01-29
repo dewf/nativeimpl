@@ -160,8 +160,8 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
             let name =
                 resolvedName.Flatten()
             write level "%s __%s__Pop();" contextPrefix (typeToName (ArrayType niType))
-        | ArrayType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType)) // sigh, normalize all these already - doing it so many different ways...
-        | SetType subType -> write level "%s __%sArray__Pop();" contextPrefix (typeToName (ArrayType subType))
+        | ArrayType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_) // sigh, normalize all these already - doing it so many different ways...
+        | SetType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
         | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
         | TupleType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
         | _ -> write level "// popValue not yet supported: array of %A" niType
@@ -234,8 +234,8 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
                 write level "__%s__Push(%s, %s);" (typeToName (ArrayType niType)) content (isReturnString())
             | _ ->
                 write level "__%s__Push(%s);" (typeToName (ArrayType niType)) content
-        | ArrayType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
-        | SetType subType -> write level "__%sArray__Push(%s, %s);" (typeToName (ArrayType subType)) content (isReturnString())
+        | ArrayType subType -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
+        | SetType subType -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | TupleType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
@@ -393,6 +393,8 @@ type ArrayRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, o
             arrayDefault()
         member this.Primitive (prim: NIPrimitive) =
             write 2 "// built-in array type: %s" (typeToCsString typeMap outerType)
+        member this.Options () =
+            arrayDefault()
         member this.Opaque () =
             // push
             write 2 "internal static void __%s__Push(%s items)" (typeToName outerType) (typeToCsString typeMap outerType)
@@ -536,6 +538,8 @@ type SetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneric>, out
             popValue writer 3 (ArrayType elemType) (NewVariable "items")
             write 3 "return items.ToHashSet();"
             write 2 "}"
+        member this.Options() =
+            setDefault()
         member this.Other (t: NIType) =
             write 2 "// TODO: push/pop for set of %s" (typeToCsString typeMap outerType)
 

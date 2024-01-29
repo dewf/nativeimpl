@@ -1,6 +1,7 @@
 ﻿module Generators.Backend.CppGenerator
 
 open System.IO
+open Generators.Frontend.CsharpGenerator
 open Parser
 
 open Util
@@ -263,7 +264,7 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
             | Float64 -> write level "pushDoubleArrayInternal(%s);" content
             | StringType -> write level "pushStringArrayInternal(%s);" content
         | ArrayType niType ->
-            write level "__%sArrayArray__push(%s, %s);" (typeToName niType) content (isReturnString())
+            write level "__%s__push(%s, %s);" (typeToName type_) content (isReturnString())
         | MapType (keyType, valueType) ->
             write level "__%s%sMapArray__push(%s, %s);" (typeToName keyType) (typeToName valueType) content (isReturnString())
         | TupleType _ ->
@@ -509,50 +510,59 @@ type ArrayOrSetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneri
             popValue writer 1 (ArrayType tt) Return
             write 0 "}"
         member this.EnumType (name: string) =
-            let widthType =
-                match typeMap[name] with
-                | UserOrGeneric.User (EnumDef info) ->
-                    let signed =
-                        not info.FlagsMode
-                    // what int size will we use to encode these?
-                    match info.MaybeWidth with
-                    | Some provided ->
-                        // use what the user asked for (currently no checking to verify it's big enough)
-                        provided
-                    | None ->
-                        // what's the smallest width that will accommodate the enum size?
-                        let iWidth =
-                            match info.Values.Length with
-                            | x when x < 128 -> Width8
-                            | x when x < 32768 -> Width16
-                            | _ -> Width32
-                        Primitive(Int(signed, iWidth))
-                | _ ->
-                    failwith "C++ ArrayOrSetRenderer: weirdness in this.EnumType"
-            // PUSH ================
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
-            write 1 "std::vector<%s> intValues;" (typeToCppString typeMap widthType)
-            write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
-            write 2 "intValues.push_back((%s)*i);" (typeToCppString typeMap widthType)
-            write 1 "}"
-            pushValue writer 1 (ArrayType widthType) "intValues" (Indirect "isReturn")
-            write 0 "}"
-            // POP ==================
-            blank()
-            write 0 "%s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
-            popValue writer 1 (ArrayType widthType) (Variable "intValues")
-            write 1 "%s __ret;" (typeToCppString typeMap outerType)
-            write 1 "for (auto i = intValues.begin(); i != intValues.end(); i++) {"
-            match outerType with
-            | ArrayType _ ->
-                write 2 "__ret.push_back((%s)*i);" name
-            | SetType _ ->
-                write 2 "__ret.insert((%s)*i);" name
+            match typeMap[name] with
+            | UserOrGeneric.User (EnumDef info) ->
+                if info.FlagsMode then
+                    // TODO: figure out the right width type to use - for now just relying on uint32_t
+                    // PUSH ===================================
+                    write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
+                    pushValue writer 1 (ArrayType (Primitive(Int(false,Width32)))) "values" NotApplicable
+                    write 0 "}"
+                    // POP =====================================
+                    write 0 "inline %s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
+                    popValue writer 1  (ArrayType (Primitive(Int(false,Width32)))) PopValueContext.Return
+                    write 0 "}"
+                else
+                    let widthType =
+                        // what int size will we use to encode these?
+                        match info.MaybeWidth with
+                        | Some provided ->
+                            // use what the user asked for (currently no checking to verify it's big enough)
+                            provided
+                        | None ->
+                            // what's the smallest width that will accommodate the enum size?
+                            let iWidth =
+                                match info.Values.Length with
+                                | x when x < 128 -> Width8
+                                | x when x < 32768 -> Width16
+                                | _ -> Width32
+                            Primitive(Int(true, iWidth))
+                    // PUSH ================
+                    write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
+                    write 1 "std::vector<%s> intValues;" (typeToCppString typeMap widthType)
+                    write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
+                    write 2 "intValues.push_back((%s)*i);" (typeToCppString typeMap widthType)
+                    write 1 "}"
+                    pushValue writer 1 (ArrayType widthType) "intValues" (Indirect "isReturn")
+                    write 0 "}"
+                    // POP ==================
+                    blank()
+                    write 0 "%s __%s__pop() {" (typeToCppString typeMap outerType) (typeToName outerType)
+                    popValue writer 1 (ArrayType widthType) (Variable "intValues")
+                    write 1 "%s __ret;" (typeToCppString typeMap outerType)
+                    write 1 "for (auto i = intValues.begin(); i != intValues.end(); i++) {"
+                    match outerType with
+                    | ArrayType _ ->
+                        write 2 "__ret.push_back((%s)*i);" name
+                    | SetType _ ->
+                        write 2 "__ret.insert((%s)*i);" name
+                    | _ ->
+                        failwith "!!!"
+                    write 1 "}"
+                    write 1 "return __ret;"
+                    write 0 "}"
             | _ ->
-                failwith "!!!"
-            write 1 "}"
-            write 1 "return __ret;"
-            write 0 "}"
+                failwith "C++ ArrayOrSetRenderer: weirdness in this.EnumType"
         member this.StructType (structName: string) (namedFields: NamedField list) =
             // PUSH ===========
             write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName outerType) (typeToCppString typeMap outerType)
@@ -659,6 +669,8 @@ type ArrayOrSetRenderer(writer: IFormatWriter, typeMap: Map<string, UserOrGeneri
             write 1 "ni_popPtrArray((void***)&values, &count);"
             write 1 "return %s(values, values + count);" (typeToCppString typeMap outerType)
             write 0 "}"
+        member this.Options () =
+            arrayDefault()
         member this.Other (t: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString typeMap outerType)
 

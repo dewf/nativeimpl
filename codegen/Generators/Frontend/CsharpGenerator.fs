@@ -797,7 +797,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
                 write 5 "UsedFields |= Fields.%s;" (upperFirst field.Name)
                 write 4 "}"
                 write 3 "}"
-                write 3 "public bool Has%s(out %s value)" (upperFirst field.Name) fieldTypeCsString
+                write 3 "public readonly bool Has%s(out %s value)" (upperFirst field.Name) fieldTypeCsString
                 write 3 "{"
                 write 4 "if (UsedFields.HasFlag(Fields.%s))" (upperFirst field.Name)
                 write 4 "{"

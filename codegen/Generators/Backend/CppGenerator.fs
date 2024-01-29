@@ -935,9 +935,9 @@ let relativeIncludeFilenameNoExt (maybeModulePrefix: string option) (targetModul
 let synthesizeOpaqueMethods (defs: ModuleDefinition list) =
     defs
     |> List.collect (function
-        | UserType (opaqueName, OpaqueDef methods) ->
+        | UserType (opaqueName, OpaqueDef info) ->
             let methodsWithDispose =
-                methods @ [ { Name = "dispose"; Args = []; Returns = UnitType; Throws = []; Modifiers = Set.empty } ] // seems better at the end of all methods
+                info.Methods @ [ { Name = "dispose"; Args = []; Returns = UnitType; Throws = []; Modifiers = Set.empty } ] // seems better at the end of all methods
             // for non-static methods, synthesize new namedFunc with a "_this" parameter
             methodsWithDispose
             |> List.map (fun nf ->

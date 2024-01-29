@@ -636,17 +636,41 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString typeMap gType)
     | UserOrGeneric.User userType ->
         match userType with
-        | OpaqueDef namedFunctions ->
-            // definition
-            write 2 "public class %s : IDisposable" (upperFirst name)
-            write 2 "{"
-            write 3 "internal readonly IntPtr NativeHandle;"
-            write 3 "private bool _disposed;"
+        | OpaqueDef info ->
+            let maybeInheritsFrom =
+                match info.MaybeParent with
+                | Some (Resolved(resolvedName, OpaqueType)) ->
+                    match resolvedName with
+                    | ThisModule name ->
+                        Some name
+                    | Imported(_, name) ->
+                        failwithf "opaques don't yet support cross-module inheritance (tried to inherit %s)" name
+                | _ ->
+                    None
+            // class definition
+            match maybeInheritsFrom with
+            | Some parentName ->
+                write 2 "public class %s : %s" (upperFirst name) (upperFirst parentName)
+                write 2 "{"
+                // no native handle required
+            | None ->
+                write 2 "public class %s : IDisposable" (upperFirst name)
+                write 2 "{"
+                write 3 "internal readonly IntPtr NativeHandle;"
+                write 3 "protected bool _disposed;"
             // ctor
-            write 3 "internal %s(IntPtr nativeHandle)" (upperFirst name)
-            write 3 "{"
-            write 4 "NativeHandle = nativeHandle;"
-            write 3 "}"
+            match maybeInheritsFrom with
+            | None ->
+                // normal ctor
+                write 3 "internal %s(IntPtr nativeHandle)" (upperFirst name)
+                write 3 "{"
+                write 4 "NativeHandle = nativeHandle;"
+                write 3 "}"
+            | Some _ ->
+                // inherited
+                write 3 "internal %s(IntPtr nativeHandle) : base(nativeHandle)" (upperFirst name)
+                write 3 "{"
+                write 3 "}"
             // finalizer
             // write 3 "~%s()" (upperFirst name)
             // write 3 "{"
@@ -656,7 +680,13 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             // write 4 "}"
             // write 3 "}"
             // dipose
-            write 3 "public void Dispose()"
+            let overrideOrVirtual =
+                match maybeInheritsFrom with
+                | Some _ -> "override"
+                | None -> "virtual"
+            // TODO: we get this C# linting error, look into it:
+            // CA1816: Change Drawing.MutableAttributedString.Dispose() to call GC.SuppressFinalize(object). This will prevent derived types that introduce a finalizer from needing to re-implement 'IDisposable' to call it.            
+            write 3 "public %s void Dispose()" overrideOrVirtual
             write 3 "{"
             write 4 "if (!_disposed)"
             write 4 "{"
@@ -666,7 +696,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 4 "}"
             write 3 "}"
             // methods
-            for namedFunc in namedFunctions do
+            for namedFunc in info.Methods do
                 let isStatic =
                     namedFunc.Modifiers.Contains(StaticModifier)
                 let throwsComment =
@@ -1161,8 +1191,8 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
         write 2 "private static ModuleMethodHandle _%s;" namedFunc.Name
         
     // opaque methods
-    for name, methods in opaques do
-        for method in methods do
+    for name, info in opaques do
+        for method in info.Methods do
             write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
         // synthesized dispose method
         write 2 "private static ModuleMethodHandle _%s_dispose;" name
@@ -1240,8 +1270,8 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
     // opaque method handles
     if not opaques.IsEmpty then
         blank()
-        for name, methods in opaques do
-            for method in methods do
+        for name, info in opaques do
+            for method in info.Methods do
                 write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" (lowerFirst name) method.Name name method.Name
             // synthesized dipose method handle
             write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" name name

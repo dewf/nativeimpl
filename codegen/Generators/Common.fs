@@ -116,8 +116,8 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                         |> List.collect typeAndSubTypes
                     retTypes @ argTypes @ throwTypes)
             match userType with
-            | OpaqueDef namedFunctions ->
-                interfaceHandler namedFunctions
+            | OpaqueDef info ->
+                interfaceHandler info.Methods
             | StructDef namedFields ->
                 namedFields
                 |> List.collect (fun field -> typeAndSubTypes field.Type_)
@@ -270,10 +270,10 @@ let createContainsRefsMap (typeMap: Map<string, UserOrGeneric>) =
                         failwithf "createContainsRefsMap: unsupported generic type (%A)" niType
                 | UserOrGeneric.User userType ->
                     match userType with
-                    | OpaqueDef namedFunctions ->
+                    | OpaqueDef info ->
                         // guaranteed 'no' result by definition, but still run through deps to fill out acc map
                         let nextAcc =
-                            (acc, namedFunctions)
+                            (acc, info.Methods)
                             ||> List.fold (fun acc namedFunc ->
                                 let _, acc =
                                     processType namedFunc.Returns acc
@@ -416,8 +416,8 @@ let rec renderUserTypesV2 (typeMap: Map<string, UserOrGeneric>) (renderFunc: str
             match typeMap[id] with
             | UserOrGeneric.User userType ->
                 match userType with
-                | OpaqueDef methods ->
-                    methods
+                | OpaqueDef info ->
+                    info.Methods
                     |> List.collect (fun nf ->
                         let argTypes =
                             nf.Args
@@ -624,8 +624,8 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                         failwithf "renderUserTypes.renderDeps: unsupported generic type %A!" gType
                 | UserOrGeneric.User userType ->
                     match userType with
-                    | OpaqueDef namedFunctions ->
-                        (alreadyRendered, namedFunctions)
+                    | OpaqueDef info ->
+                        (alreadyRendered, info.Methods)
                         ||> List.fold (fun already2 namedFunc ->
                             let withReturn =
                                 renderType namedFunc.Returns already2

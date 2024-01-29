@@ -33,6 +33,7 @@ type Token =
     | BufferToken
     | ThrowsToken
     | StaticToken
+    | ExtendsToken
     // symbols:
     | LeftBrace
     | RightBrace
@@ -229,6 +230,7 @@ let nextToken (loc: Location) (input: char[]) =
             | "typedef" -> TypedefToken
             | "throws" -> ThrowsToken
             | "static" -> StaticToken
+            | "extends" -> ExtendsToken
             // generic types (need specialization)
             | "Array" -> ArrayToken
             | "Map" -> MapToken

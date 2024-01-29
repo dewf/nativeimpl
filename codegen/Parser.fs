@@ -44,6 +44,11 @@ type ResolvedType =
     | SumType
     | OptionsType
     
+type TypeConstraint =
+    | NoConstraint        // needs to be "no exceptions" constraint, but seems like that's going to take some extra effort
+    | OpaqueConstraint
+    | ExceptionConstraint
+    
 type NIType =
     | UnitType
     | Primitive of prim: NIPrimitive
@@ -53,7 +58,8 @@ type NIType =
     | TupleType of tupleTypes: NIType list
     | SetType of elem: NIType
     | BufferType of elemType: NIType
-    | Unresolved of name: string * loc: Location
+    //
+    | Unresolved of name: string * loc: Location * mustBe: TypeConstraint
     | Resolved of name: ResolvedName * type_: ResolvedType
 
 let validBufferElementType = function
@@ -126,7 +132,7 @@ let contentUntilMatching (loc: Location) (startToken: Token) (input: TokenAndLoc
 let rec parseType (input: TokenAndLocation list) =
     match input with
     | Lookahead 1 ([Identifier name], loc, etc) -> // opaque handle, struct, interface
-        Unresolved (name, loc), etc
+        Unresolved (name, loc, NoConstraint), etc
     | Lookahead 1 ([UnitToken], _, etc) ->
         UnitType, etc
     | Lookahead 1 ([SizeTToken], _, etc) ->
@@ -247,13 +253,18 @@ type EnumInfo = {
     FlagsMode: bool
 }
 
+type OpaqueInfo = {
+    MaybeParent: NIType option   // must be an opaque, obviously
+    Methods: NamedFunction list
+}
+
 let isValidEnumWidth (t: NIType) =
     match t with
     | Primitive (Int _) -> true
     | _ -> false
 
 type UserType =
-    | OpaqueDef of methods: NamedFunction list
+    | OpaqueDef of OpaqueInfo
     | StructDef of fields: NamedField list
     | ExceptionDef of fields: NamedField list      // created as an args list, although they are accessible fields
     | InterfaceDef of methods: NamedFunction list
@@ -390,7 +401,7 @@ let parseNamedFunction (allowStatic: bool) (input: TokenAndLocation list) =
                     parseIdentifierList loc etc Semicolon
                 let throwsList =
                     identifiers
-                    |> List.map (fun name -> Unresolved (name, loc))
+                    |> List.map (fun name -> Unresolved (name, loc, ExceptionConstraint))
                 Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList; Modifiers = modifiers }, etc)
             | _ ->
                 failwithf "failed to parse function at %s" (loc.ToString())
@@ -491,15 +502,27 @@ let parseModuleDefs (input: TokenAndLocation list) =
     let parseNext (remaining: TokenAndLocation list) =
         match remaining with
         | Lookahead 2 ([OpaqueToken; Identifier opaqueName], loc, etc) ->
+            // inherits anything?
+            let maybeParent, loc, etc =
+                match etc with
+                | Lookahead 2 ([ExtendsToken; Identifier parentName], loc, etc) ->
+                    Some (Unresolved (parentName, loc, OpaqueConstraint)), loc, etc
+                | _ ->
+                    None, loc, etc
+            // continue as normal
             match etc with
-            | Lookahead 1 ([Semicolon], _, etc) ->
-                ([UserType (opaqueName, OpaqueDef [])], etc)
+            | Lookahead 1 ([Semicolon], loc, etc) ->
+                let info =
+                    { MaybeParent = maybeParent; Methods = [] }
+                ([UserType (opaqueName, OpaqueDef info)], etc)
                 |> Some
             | Lookahead 1 ([LeftBrace], loc, etc) ->
                 // opaque with "methods" (expand to OOP-esque functions)
                 let methods, etc =
                     parseFunctionList loc etc true
-                ([UserType (opaqueName, OpaqueDef methods)], etc)
+                let info =
+                    { MaybeParent = maybeParent; Methods = methods }
+                ([UserType (opaqueName, OpaqueDef info)], etc)
                 |> Some
             | _ ->
                 failwithf "error parsing opaque token at %s" (loc.ToString())
@@ -719,9 +742,24 @@ let rec resolveType (context: ModuleContext) (type_: NIType) =
         TupleType (tupleTypes |> List.map (resolveType context))
     | SetType niType ->
         SetType (resolveType context niType)
-    | Unresolved (name, loc) ->
+    | Unresolved (name, loc, typeConstraint) ->
         match resolveIdentifier context name loc with
         | resolvedName, resolvedDef ->
+            match typeConstraint with
+            | NoConstraint ->
+                ()
+            | OpaqueConstraint ->
+                match resolvedDef with
+                | OpaqueDef _ ->
+                    () // OK
+                | _ ->
+                    failwithf "type constraint failed @ %s - must be 'opaque' type" (loc.ToString())
+            | ExceptionConstraint ->
+                match resolvedDef with
+                | ExceptionDef _ ->
+                    () // OK
+                | _ ->
+                    failwithf "type constraint failed @ %s - must be 'exception' type" (loc.ToString())
             let resolvedType =
                 match resolvedDef with
                 | OpaqueDef _ -> OpaqueType
@@ -804,11 +842,16 @@ let resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
                 let nextInfo =
                     resolveDelegateTypes context delegateInfo
                 DelegateDef nextInfo
-            | OpaqueDef namedFunctions ->
-                let nextFunctions =
-                    namedFunctions
+            | OpaqueDef info ->
+                let nextMaybeParent =
+                    info.MaybeParent
+                    |> Option.map (resolveType context)
+                let nextMethods =
+                    info.Methods
                     |> List.map (resolveFunctionTypes context)
-                OpaqueDef nextFunctions
+                let nextInfo =
+                    { MaybeParent = nextMaybeParent; Methods = nextMethods }
+                OpaqueDef nextInfo
             | TypeDef niType ->
                 TypeDef (resolveType context niType)
             | EnumDef values ->

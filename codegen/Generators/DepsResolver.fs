@@ -1,7 +1,5 @@
 ﻿module Generators.DepsResolver
 
-open System
-
 type OpenGroup = {
     StopAt: string
     SoFar: string list

@@ -6,6 +6,7 @@ open System.Text.RegularExpressions
 type Token =
     | Identifier of string
     | Digits of string
+    | HexDigits of string
     // primitives
     | SizeTToken
     | BoolToken
@@ -253,8 +254,9 @@ let nextToken (loc: Location) (input: char[]) =
             | "float" | "float32" -> Float32Token
             | "double" | "float64" -> Float64Token
             | "string" -> StringToken
-            | text when Regex(@"[_a-zA-Z][_a-zA-Z0-9]*").IsMatch(text) -> Identifier text
-            | text when Regex(@"[0-9]+").IsMatch(text) -> Digits text
+            | text when Regex(@"^[_a-zA-Z][_a-zA-Z0-9]*$").IsMatch(text) -> Identifier text
+            | text when Regex(@"^[0-9]+$").IsMatch(text) -> Digits text
+            | text when Regex(@"^0x[0-9A-Fa-f]+$").IsMatch(text) -> HexDigits text
             | text ->
                 failwithf "failed to parse string '%s' at %s" text (loc.ToString())
         Some token, etc, loc.PlusCol(cols)

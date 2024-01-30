@@ -1,4 +1,5 @@
 ﻿module Parser
+open System
 open System.IO
 open Tokenizer
 open Util
@@ -247,8 +248,13 @@ type DelegateInfo = {
     Throws: NIType list
 }
 
+[<RequireQualifiedAccess>]
+type EnumValue =
+    | Decimal of value: int64 * leftShift: int
+    | Hex of value: int64 * leftShift: int
+    
 type EnumInfo = {
-    Values: (string * int64 option) list // name, specified value
+    Values: (string * EnumValue option) list // name, specified value
     MaybeWidth: NIType option
     FlagsMode: bool
 }
@@ -438,10 +444,20 @@ let parseOneEnumValue (input: TokenAndLocation list) =
                 | Lookahead 2 ([LeftShiftToken; Digits shiftDigits], _, etc) ->
                     // shifted value
                     let shift = int32 shiftDigits
-                    (name, (value <<< shift) |> Some), etc
+                    (name, EnumValue.Decimal (value, shift) |> Some), etc
                 | _ ->
                     // unshifted direct value
-                    (name, value |> Some), etc
+                    (name, EnumValue.Decimal (value, 0) |> Some), etc
+            | Lookahead 2 ([EqualsToken; HexDigits valueDigits], _, etc) ->
+                let value = Convert.ToInt64(valueDigits, 16)
+                match etc with
+                | Lookahead 2 ([LeftShiftToken; Digits shiftDigits], _, etc) ->
+                    // shifted value
+                    let shift = int32 shiftDigits
+                    (name, EnumValue.Hex (value, shift) |> Some), etc
+                | _ ->
+                    // unshifted direct value
+                    (name, EnumValue.Hex (value, 0) |> Some), etc
             | _ ->
                 (name, None), etc
         // comma -> more expected?

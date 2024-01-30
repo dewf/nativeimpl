@@ -1300,7 +1300,19 @@ let renderHeaderUserTypes (writer: IFormatWriter) (name: string) (content: UserO
             for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
                 match maybeSpecifiedValue with
                 | Some specValue ->
-                    write 1 "%s = %d%s" value specValue maybeComma
+                    let enumValueStr =
+                        match specValue with
+                        | EnumValue.Decimal(value, leftShift) ->
+                            if leftShift > 0 then
+                                sprintf "%d << %d" value leftShift
+                            else
+                                sprintf "%d" value
+                        | EnumValue.Hex(value, leftShift) ->
+                            if leftShift > 0 then
+                                sprintf "0x%X << %d" value leftShift
+                            else
+                                sprintf "0x%X" value
+                    write 1 "%s = %s%s" value enumValueStr maybeComma
                 | None ->
                     write 1 "%s%s" value maybeComma
             write 0 "};"

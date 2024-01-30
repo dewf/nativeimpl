@@ -671,21 +671,14 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
                 write 3 "internal %s(IntPtr nativeHandle) : base(nativeHandle)" (upperFirst name)
                 write 3 "{"
                 write 3 "}"
-            // finalizer
-            // write 3 "~%s()" (upperFirst name)
-            // write 3 "{"
-            // write 4 "if (!_disposed)"
-            // write 4 "{"
-            // write 5 "Dispose();"
-            // write 4 "}"
-            // write 3 "}"
-            // dipose
+            // dispose
             let overrideOrVirtual =
                 match maybeInheritsFrom with
                 | Some _ -> "override"
                 | None -> "virtual"
             // TODO: we get this C# linting error, look into it:
-            // CA1816: Change Drawing.MutableAttributedString.Dispose() to call GC.SuppressFinalize(object). This will prevent derived types that introduce a finalizer from needing to re-implement 'IDisposable' to call it.            
+            // CA1816: Change Drawing.MutableAttributedString.Dispose() to call GC.SuppressFinalize(object). This will prevent derived types that introduce a finalizer from needing to re-implement 'IDisposable' to call it.
+            // note that every opaque type has its own _dispose method on the server, so we intentionally don't call the parent type's .Dispose() here
             write 3 "public %s void Dispose()" overrideOrVirtual
             write 3 "{"
             write 4 "if (!_disposed)"
@@ -784,7 +777,19 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
                 match maybeSpecifiedValue with
                 | Some specValue ->
-                    write 3 "%s = %d%s" (upperFirst value) specValue maybeComma
+                    let enumValueStr =
+                        match specValue with
+                        | EnumValue.Decimal(value, leftShift) ->
+                            if leftShift > 0 then
+                                sprintf "%d << %d" value leftShift
+                            else
+                                sprintf "%d" value
+                        | EnumValue.Hex(value, leftShift) ->
+                            if leftShift > 0 then
+                                sprintf "0x%X << %d" value leftShift
+                            else
+                                sprintf "0x%X" value
+                    write 3 "%s = %s%s" (upperFirst value) enumValueStr maybeComma
                 | None ->
                     write 3 "%s%s" (upperFirst value) maybeComma
             write 2 "}"

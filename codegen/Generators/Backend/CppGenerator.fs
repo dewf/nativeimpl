@@ -1091,9 +1091,9 @@ let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWri
     // globals/constants func
     if globals.Length > 0 then
         blankH()
-        writeH 0 "void __constantsFunc();"
+        writeH 0 "void %s__constantsFunc();" m.Name
         blankCpp()
-        writeCpp 0 "void __constantsFunc() {"
+        writeCpp 0 "void %s__constantsFunc() {" m.Name
         // push in reverse order
         for globalName, globalType in globals |> List.rev do
             pushValue writerCpp 1 globalType globalName (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
@@ -1108,7 +1108,7 @@ let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWri
     writeCpp 0 "int %s__register() {" m.Name
     writeCpp 1 "auto m = ni_registerModule(\"%s\");" m.Name
     if globals.Length > 0 then
-        writeCpp 1 "ni_registerModuleConstants(m, &__constantsFunc);"
+        writeCpp 1 "ni_registerModuleConstants(m, &%s__constantsFunc);" m.Name
     // module methods
     for namedFunction in moduleMethods do
         writeCpp 1 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name

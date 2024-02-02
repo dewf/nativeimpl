@@ -568,7 +568,7 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             blank()
             write 2 "internal static %s __%s__Pop()" (typeToCsString typeMap gType) (typeToName gType)
             write 2 "{"
-            write 3 "NativeMethods.popBuffer(out var id, out var isClientId, out var inSafetyArea, out var bufferDescriptor);"
+            write 3 "NativeMethods.popBuffer(out var id, out var isClientId, out var bufferDescriptor);"
             write 3 "if (id != 0)"
             write 3 "{"
             write 4 "if (isClientId)"

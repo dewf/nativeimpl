@@ -1,4 +1,3 @@
-open System.Runtime.CompilerServices
 open Parser
 open Generators.Frontend
 open Generators.Backend

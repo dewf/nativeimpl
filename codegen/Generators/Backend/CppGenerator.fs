@@ -1,7 +1,6 @@
 ﻿module Generators.Backend.CppGenerator
 
 open System.IO
-open Generators.Frontend.CsharpGenerator
 open Parser
 
 open Util
@@ -937,19 +936,19 @@ let synthesizeOpaqueMethods (defs: ModuleDefinition list) =
     |> List.collect (function
         | UserType (opaqueName, OpaqueDef info) ->
             let methodsWithDispose =
-                info.Methods @ [ { Name = "dispose"; Args = []; Returns = UnitType; Throws = []; Modifiers = Set.empty } ] // seems better at the end of all methods
+                info.Methods @ [ { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] } ] // seems better at the end of all methods
             // for non-static methods, synthesize new namedFunc with a "_this" parameter
             methodsWithDispose
             |> List.map (fun nf ->
                 let nextName =
                     sprintf "%s_%s" opaqueName nf.Name
                 let nextArgs =
-                    if not (nf.Modifiers.Contains(StaticModifier)) then
+                    // if not (nf.Modifiers.Contains(StaticModifier)) then
                         let firstArg =
                             "_this", Resolved (ThisModule opaqueName, OpaqueType)
                         firstArg :: nf.Args
-                    else
-                        nf.Args
+                    // else
+                    //     nf.Args
                 { nf with Name = nextName; Args = nextArgs })
         | _ -> [])
 

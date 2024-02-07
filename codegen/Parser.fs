@@ -91,13 +91,51 @@ let (|TakeWhile|_|) (pred: Token -> bool) (input: TokenAndLocation list) = // re
         Some (tokens, h.Location, etc)
     | _ ->
         None
+        
+let splitTokensBefore (matcher: TokenAndLocation list -> bool) (input: TokenAndLocation list) =
+    let rec tryMatch (revBefore: TokenAndLocation list) (remaining: TokenAndLocation list) =
+        if matcher remaining then
+            (List.rev revBefore, remaining)
+            |> Some
+        else
+            match remaining with
+            | [] ->
+                None
+            | h :: etc ->
+                tryMatch (h :: revBefore) etc
+    tryMatch [] input
+
+// let whileDoesParse (tryParseOne: TokenAndLocation list -> Option<'a * TokenAndLocation list>) (input: TokenAndLocation list): 'a list * TokenAndLocation list =
+//     // apply the function 'f' to input until it fails, returning its generated elements and the remaining 'etc' list
+//     let rawParsed =
+//         input
+//         |> List.unfold (fun state ->
+//             let maybe =
+//                 tryParseOne state
+//             match maybe with
+//             | Some (item, etc) ->
+//                 Some ((item, etc), etc) // notice each item includes the remainder, because we need (the last emitted remainder) at the end
+//             | None ->
+//                 None)
+//     if rawParsed.IsEmpty then
+//         [], input
+//     else
+//         let parsed =
+//             rawParsed
+//             |> List.map fst
+//         let etc =
+//             rawParsed
+//             |> List.rev
+//             |> List.head
+//             |> snd
+//         parsed, etc
 
 type ContentUntilMatchingState = {
     LastLoc: Location
     NestLevel: int
     Remaining: TokenAndLocation list
 }
-
+    
 let contentUntilMatching (loc: Location) (startToken: Token) (input: TokenAndLocation list) =
     // return content, etc (excluding the end token)
     let endToken =
@@ -221,15 +259,11 @@ let rec parseType (input: TokenAndLocation list) =
     | {Location = loc; Token = token} :: _ ->
         failwithf "unexpected token %A at %s" token (loc.ToString())
 
-type FunctionModifiers =
-    | StaticModifier
-    
 type NamedFunction = {
     Name: string
     Args: (string * NIType) list
     Returns: NIType
     Throws: NIType list
-    Modifiers: Set<FunctionModifiers>
 }
 
 type NamedField = {
@@ -259,17 +293,17 @@ type EnumInfo = {
     FlagsMode: bool
 }
 
-type OpaqueInfo = {
-    MaybeParent: NIType option   // must be an opaque, obviously
-    Methods: NamedFunction list
-}
-
 let isValidEnumWidth (t: NIType) =
     match t with
     | Primitive (Int _) -> true
     | _ -> false
 
-type UserType =
+type OpaqueInfo = {
+    MaybeParent: NIType option          // must be an opaque, obviously
+    Methods: NamedFunction list
+    StaticDefs: ModuleDefinition list   // ie, just stuff namespace-prefixed by the opaque type
+}
+and UserType =
     | OpaqueDef of OpaqueInfo
     | StructDef of fields: NamedField list
     | ExceptionDef of fields: NamedField list      // created as an args list, although they are accessible fields
@@ -279,8 +313,7 @@ type UserType =
     | EnumDef of info: EnumInfo
     | SumTypeDef of values: SumTypeValue list
     | OptionsDef of fields: NamedField list
-
-type ModuleDefinition =
+and ModuleDefinition =
     | Global of name: string * type_: NIType
     | FunctionDef of NamedFunction
     | UserType of name: string * type_: UserType
@@ -373,42 +406,26 @@ let parseIdentifierList (loc: Location) (input: TokenAndLocation list) (endToken
     | None ->
         failwithf "expected end of identifiers at %s" (loc.ToString())
 
-let parseNamedFunction (allowStatic: bool) (input: TokenAndLocation list) =
+let parseNamedFunction (input: TokenAndLocation list) =
     if input.IsEmpty then
         None
     else
-        // optional static
-        let isStatic, etc =
-            match input with
-            | Lookahead 1 ([StaticToken], loc, etc) ->
-                if allowStatic then
-                    true, etc
-                else
-                    failwithf "loc %s: no 'static' allowed in this context" (loc.ToString())
-            | _ ->
-                false, input
-        // normal processing
         let returnType, etc =
-            parseType etc
+            parseType input
         match etc with
         | Lookahead 2 ([Identifier funcName; LeftParen], loc, etc) ->
             let args, etc =
                 parseArgsList loc etc
-            let modifiers =
-                if isStatic then
-                    Set.empty.Add(StaticModifier)
-                else
-                    Set.empty
             match etc with
             | Lookahead 1 ([Semicolon], _, etc) ->
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty; Modifiers = modifiers }, etc)
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty }, etc)
             | Lookahead 1 ([ThrowsToken], loc, etc) ->
                 let identifiers, etc =
                     parseIdentifierList loc etc Semicolon
                 let throwsList =
                     identifiers
                     |> List.map (fun name -> Unresolved (name, loc, ExceptionConstraint))
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList; Modifiers = modifiers }, etc)
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList }, etc)
             | _ ->
                 failwithf "failed to parse function at %s" (loc.ToString())
         | { Location = loc } :: _ ->
@@ -421,12 +438,12 @@ let parseNamedFunction (allowStatic: bool) (input: TokenAndLocation list) =
             | _ ->
                 failwithf "parseNamedFunction: shouldn't happen"
 
-let parseFunctionList (loc: Location) (input: TokenAndLocation list) (allowStatic: bool) =
+let parseFunctionList (loc: Location) (input: TokenAndLocation list) =
     let content, etc =
         contentUntilMatching loc LeftBrace input
     let funcList =
         content
-        |> List.unfold (parseNamedFunction allowStatic)
+        |> List.unfold parseNamedFunction
     funcList, etc
 
 let parseOneEnumValue (input: TokenAndLocation list) =
@@ -513,8 +530,8 @@ let parseSumTypeValues (loc: Location) (input: TokenAndLocation list) =
     let values =
         List.unfold parseOneSumTypeValue content
     values, etc
-
-let parseModuleDefs (input: TokenAndLocation list) =
+    
+let rec parseModuleDefs (input: TokenAndLocation list) =
     let parseNext (remaining: TokenAndLocation list) =
         match remaining with
         | Lookahead 2 ([OpaqueToken; Identifier opaqueName], loc, etc) ->
@@ -527,18 +544,49 @@ let parseModuleDefs (input: TokenAndLocation list) =
                     None, loc, etc
             // continue as normal
             match etc with
+            // empty opaque
             | Lookahead 1 ([Semicolon], loc, etc) ->
                 let info =
-                    { MaybeParent = maybeParent; Methods = [] }
+                    { MaybeParent = maybeParent; Methods = []; StaticDefs = [] }
                 ([UserType (opaqueName, OpaqueDef info)], etc)
                 |> Some
+            // opaque with content (methods + optional static {} block)
             | Lookahead 1 ([LeftBrace], loc, etc) ->
-                // opaque with "methods" (expand to OOP-esque functions)
-                let methods, etc =
-                    parseFunctionList loc etc true
+                // first, figure out the limits of the opaque content block as a whole
+                let contentBlock, afterBlock =
+                    contentUntilMatching loc LeftBrace etc
+                    
+                // split just before "static {", if any
+                let staticBlockMatcher = function
+                    | Lookahead 2 ([StaticToken; LeftBrace], _, _) -> true
+                    | _ -> false
+                let methodsTokens, afterMethods =
+                    match splitTokensBefore staticBlockMatcher contentBlock with
+                    | Some (before, after) ->
+                        before, after
+                    | None ->
+                        contentBlock, []
+                        
+                // parse the methods-only part
+                let methods =
+                    methodsTokens
+                    |> List.unfold parseNamedFunction
+                
+                // is there a static {} block?
+                let staticDefs =
+                    match afterMethods with
+                    | [] ->
+                        []
+                    | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
+                        let staticBlock, _ =
+                            contentUntilMatching loc LeftBrace etc
+                        // woot!
+                        parseModuleDefs staticBlock
+                    | { Location = loc } :: _ ->
+                        failwithf "unknown content after opaque methods @ %s" (loc.ToString())
                 let info =
-                    { MaybeParent = maybeParent; Methods = methods }
-                ([UserType (opaqueName, OpaqueDef info)], etc)
+                    { MaybeParent = maybeParent; Methods = methods; StaticDefs = staticDefs }
+                ([UserType (opaqueName, OpaqueDef info)], afterBlock)
                 |> Some
             | _ ->
                 failwithf "error parsing opaque token at %s" (loc.ToString())
@@ -569,11 +617,11 @@ let parseModuleDefs (input: TokenAndLocation list) =
             |> Some
         | Lookahead 3 ([InterfaceToken; Identifier name; LeftBrace], loc, etc) ->
             let methods, etc2 =
-                parseFunctionList loc etc false
+                parseFunctionList loc etc
             ([UserType (name, InterfaceDef methods)], etc2)
             |> Some
         | Lookahead 1 ([DelegateToken], _, etc) ->
-            parseNamedFunction false etc
+            parseNamedFunction etc
             |> Option.map (fun (nf, etc2) ->
                 let result =
                     UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns; Throws = nf.Throws })
@@ -630,7 +678,7 @@ let parseModuleDefs (input: TokenAndLocation list) =
                 ([Global (name, t1)], etc3)
                 |> Some
             | Lookahead 2 ([Identifier _; LeftParen], _, _) ->
-                parseNamedFunction false etc // note using 'etc' here (rewinding a bit because parseNamedFunction handles identifier etc too)
+                parseNamedFunction etc // note using 'etc' here (rewinding a bit because parseNamedFunction handles identifier etc too)
                 |> Option.map (fun (namedFunc, etc3) -> [FunctionDef namedFunc], etc3)
                 // only way it returns 'None' is if its token list is empty, which we already know isn't the case
             | {Location = loc; Token = token} :: _ ->
@@ -829,7 +877,7 @@ let resolveSumTypeTypes (context: ModuleContext) (values: SumTypeValue list) =
                 name, resolveType context type_)
         { value with Args = nextArgs })
 
-let resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
+let rec resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
     match def with
     | UserType (name, userType) ->
         let nextUserType =
@@ -865,8 +913,11 @@ let resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
                 let nextMethods =
                     info.Methods
                     |> List.map (resolveFunctionTypes context)
+                let nextStaticDefs =
+                    info.StaticDefs
+                    |> List.map (resolveModuleDef context)
                 let nextInfo =
-                    { MaybeParent = nextMaybeParent; Methods = nextMethods }
+                    { MaybeParent = nextMaybeParent; Methods = nextMethods; StaticDefs = nextStaticDefs }
                 OpaqueDef nextInfo
             | TypeDef niType ->
                 TypeDef (resolveType context niType)

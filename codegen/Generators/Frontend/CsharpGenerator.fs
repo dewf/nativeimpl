@@ -688,10 +688,9 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 5 "_disposed = true;"
             write 4 "}"
             write 3 "}"
-            // methods
+            // static methods (todo)
+            // instance methods
             for namedFunc in info.Methods do
-                let isStatic =
-                    namedFunc.Modifiers.Contains(StaticModifier)
                 let throwsComment =
                     if namedFunc.Throws.IsEmpty then
                         ""
@@ -701,16 +700,16 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
                             |> List.map (typeToCsString typeMap)
                             |> String.concat ", "
                         sprintf " // throws %s" joined
-                write 3 "public %s%s %s(%s)%s" (if isStatic then "static " else "") (typeToCsString typeMap namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined typeMap namedFunc.Args) throwsComment
+                write 3 "public %s %s(%s)%s" (typeToCsString typeMap namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined typeMap namedFunc.Args) throwsComment
                 write 3 "{"
                 // push args in reverse
                 for argName, argType in namedFunc.Args |> List.rev do
                     pushValue writer 4 argType argName (Direct false)
-                // push self argument (if not static)
-                if not isStatic then
-                    let thisType =
-                        Resolved(ThisModule name, OpaqueType)
-                    pushValue writer 4 thisType "this" (Direct false)
+                // // push self argument (if not static)
+                // if not isStatic then
+                //     let thisType =
+                //         Resolved(ThisModule name, OpaqueType)
+                //     pushValue writer 4 thisType "this" (Direct false)
                 // invoke remote
                 if namedFunc.Throws.IsEmpty then
                     write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.Name

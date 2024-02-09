@@ -102,7 +102,7 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
     module_.Defs
     |> List.collect (function
         | UserType(_, userType) ->
-            let interfaceHandler (namedFunctions: NamedFunction list) =
+            let namedFuncsHandler (namedFunctions: NamedFunction list) =
                 namedFunctions
                 |> List.collect (fun nf ->
                     let retTypes =
@@ -117,7 +117,12 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                     retTypes @ argTypes @ throwTypes)
             match userType with
             | OpaqueDef info ->
-                interfaceHandler info.Methods
+                let staticMethods =
+                    info.StaticDefs
+                    |> List.choose (function
+                        | FunctionDef nf -> Some nf
+                        | _ -> None)
+                namedFuncsHandler (info.Methods @ staticMethods)
             | StructDef namedFields ->
                 namedFields
                 |> List.collect (fun field -> typeAndSubTypes field.Type_)
@@ -128,7 +133,7 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
                 namedFields
                 |> List.collect (fun field -> typeAndSubTypes field.Type_)
             | InterfaceDef namedFunctions ->
-                interfaceHandler namedFunctions
+                namedFuncsHandler namedFunctions
             | DelegateDef info ->
                 let retTypes =
                     typeAndSubTypes info.Returns
@@ -557,7 +562,7 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                     typeMap[name]
                 with
                 | :? KeyNotFoundException ->
-                    printfn "contents of typemap: %A" typeMap
+                    // printfn "contents of typemap: %A" typeMap
                     failwithf "key %s not found" name
             let subRendered =
                 match content with
@@ -625,7 +630,15 @@ let renderUserTypes (typeMap: Map<string, UserOrGeneric>) (renderFunc: string ->
                 | UserOrGeneric.User userType ->
                     match userType with
                     | OpaqueDef info ->
-                        (alreadyRendered, info.Methods)
+                        // static methods
+                        // but how can we namespace-prefix these? and other static defs?
+                        let staticMethods =
+                            info.StaticDefs
+                            |> List.choose (function
+                                | FunctionDef nf -> Some nf
+                                | _ -> None)
+                        // static + instance method processing
+                        (alreadyRendered, info.Methods @ staticMethods)
                         ||> List.fold (fun already2 namedFunc ->
                             let withReturn =
                                 renderType namedFunc.Returns already2

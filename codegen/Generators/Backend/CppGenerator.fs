@@ -935,21 +935,28 @@ let synthesizeOpaqueMethods (defs: ModuleDefinition list) =
     defs
     |> List.collect (function
         | UserType (opaqueName, OpaqueDef info) ->
-            let methodsWithDispose =
-                info.Methods @ [ { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] } ] // seems better at the end of all methods
-            // for non-static methods, synthesize new namedFunc with a "_this" parameter
-            methodsWithDispose
+            let instanceMethods =
+                let disposeMethod =
+                    { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] }
+                (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
+                // add "_this" parameter
+                |> List.map (fun nf ->
+                    let nextArgs =
+                            let firstArg =
+                                "_this", Resolved (ThisModule opaqueName, OpaqueType)
+                            firstArg :: nf.Args
+                    { nf with Args = nextArgs })
+            let staticMethods =
+                info.StaticDefs
+                |> List.choose (function
+                    | FunctionDef nf -> Some nf
+                    | _ -> None)
+            // name prefix
+            (instanceMethods @ staticMethods)
             |> List.map (fun nf ->
                 let nextName =
                     sprintf "%s_%s" opaqueName nf.Name
-                let nextArgs =
-                    // if not (nf.Modifiers.Contains(StaticModifier)) then
-                        let firstArg =
-                            "_this", Resolved (ThisModule opaqueName, OpaqueType)
-                        firstArg :: nf.Args
-                    // else
-                    //     nf.Args
-                { nf with Name = nextName; Args = nextArgs })
+                { nf with Name = nextName })
         | _ -> [])
 
 let generateWrappers (m: Module) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (maybeModulePrefix: string option) (className: string) =

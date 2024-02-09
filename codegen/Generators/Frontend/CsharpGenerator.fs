@@ -688,7 +688,37 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
             write 5 "_disposed = true;"
             write 4 "}"
             write 3 "}"
-            // static methods (todo)
+            // static methods
+            let staticMethods =
+                info.StaticDefs
+                |> List.choose (function
+                    | FunctionDef namedFunction ->
+                        Some namedFunction
+                    | _ ->
+                        None)
+            for namedFunc in staticMethods do
+                let throwsComment =
+                    if namedFunc.Throws.IsEmpty then
+                        ""
+                    else
+                        let joined =
+                            namedFunc.Throws
+                            |> List.map (typeToCsString typeMap)
+                            |> String.concat ", "
+                        sprintf " // throws %s" joined
+                write 3 "public static %s %s(%s)%s" (typeToCsString typeMap namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined typeMap namedFunc.Args) throwsComment
+                write 3 "{"
+                // push args in reverse
+                for argName, argType in namedFunc.Args |> List.rev do
+                    pushValue writer 4 argType argName (Direct false)
+                // invoke remote
+                if namedFunc.Throws.IsEmpty then
+                    write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.Name
+                else
+                    write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.Name
+                // return pop
+                popValue writer 4 namedFunc.Returns (if containsRefs namedFunc.Returns then SafeReturn else Return)
+                write 3 "}"
             // instance methods
             for namedFunc in info.Methods do
                 let throwsComment =
@@ -705,11 +735,10 @@ let renderLibraryUserTypes (writer: IFormatWriter) (containsRefs: NIType -> bool
                 // push args in reverse
                 for argName, argType in namedFunc.Args |> List.rev do
                     pushValue writer 4 argType argName (Direct false)
-                // // push self argument (if not static)
-                // if not isStatic then
-                //     let thisType =
-                //         Resolved(ThisModule name, OpaqueType)
-                //     pushValue writer 4 thisType "this" (Direct false)
+                // push self argument
+                let thisType =
+                    Resolved(ThisModule name, OpaqueType)
+                pushValue writer 4 thisType "this" (Direct false)
                 // invoke remote
                 if namedFunc.Throws.IsEmpty then
                     write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.Name
@@ -1196,10 +1225,19 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
         
     // opaque methods
     for name, info in opaques do
+        // instance methods
         for method in info.Methods do
             write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
         // synthesized dispose method
         write 2 "private static ModuleMethodHandle _%s_dispose;" name
+        // static methods
+        let staticMethods =
+            info.StaticDefs
+            |> List.choose (function
+                | FunctionDef nf -> Some nf
+                | _ -> None )
+        for method in staticMethods do
+            write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
 
     // interfaces
     for name, methods in interfaces do
@@ -1275,10 +1313,19 @@ let writeModule (m: Module) (writer: IFormatWriter) (baseNamespace: string) (may
     if not opaques.IsEmpty then
         blank()
         for name, info in opaques do
+            // instance methods
             for method in info.Methods do
                 write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" (lowerFirst name) method.Name name method.Name
-            // synthesized dipose method handle
+            // synthesized dispose method handle
             write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" name name
+            // static methods
+            let staticMethods =
+                info.StaticDefs
+                |> List.choose (function
+                    | FunctionDef nf -> Some nf
+                    | _ -> None)
+            for method in staticMethods do
+                write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" (lowerFirst name) method.Name name method.Name
 
     // exceptions
     if not exceptions.IsEmpty then

@@ -2,7 +2,6 @@
 open System
 open System.IO
 open Tokenizer
-open Util
 open Extensions
 
 type IntWidth =
@@ -60,7 +59,7 @@ type NIType =
     | SetType of elem: NIType
     | BufferType of elemType: NIType
     //
-    | Unresolved of name: string * loc: Location * mustBe: TypeConstraint
+    | Unresolved of nameParts: string list * loc: Location * mustBe: TypeConstraint
     | Resolved of name: ResolvedName * type_: ResolvedType
 
 let validBufferElementType = function
@@ -74,7 +73,7 @@ let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([token
         List.safeSplit n input
     if front.Length = n then
         let tokens =
-            front |> List.map (fun tl -> tl.Token)
+            front |> List.map (_.Token)
         Some (tokens, front.Head.Location, etc)
     else
         None
@@ -87,10 +86,17 @@ let (|TakeWhile|_|) (pred: Token -> bool) (input: TokenAndLocation list) = // re
     | h :: _ ->
         // has at least 1 item
         let tokens =
-            front |> List.map (fun tl -> tl.Token)
+            front |> List.map (_.Token)
         Some (tokens, h.Location, etc)
     | _ ->
         None
+        
+// let (|TakeWhileAndVerify|_|) (pred: Token -> bool) (verify: Token list -> bool) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
+//     match input with
+//     | TakeWhile pred (tokens, loc, etc) when verify(tokens) ->
+//         Some (tokens, loc, etc)
+//     | _ ->
+//         None
         
 let splitTokensBefore (matcher: TokenAndLocation list -> bool) (input: TokenAndLocation list) =
     let rec tryMatch (revBefore: TokenAndLocation list) (remaining: TokenAndLocation list) =
@@ -105,30 +111,34 @@ let splitTokensBefore (matcher: TokenAndLocation list -> bool) (input: TokenAndL
                 tryMatch (h :: revBefore) etc
     tryMatch [] input
 
-// let whileDoesParse (tryParseOne: TokenAndLocation list -> Option<'a * TokenAndLocation list>) (input: TokenAndLocation list): 'a list * TokenAndLocation list =
-//     // apply the function 'f' to input until it fails, returning its generated elements and the remaining 'etc' list
-//     let rawParsed =
-//         input
-//         |> List.unfold (fun state ->
-//             let maybe =
-//                 tryParseOne state
-//             match maybe with
-//             | Some (item, etc) ->
-//                 Some ((item, etc), etc) // notice each item includes the remainder, because we need (the last emitted remainder) at the end
-//             | None ->
-//                 None)
-//     if rawParsed.IsEmpty then
-//         [], input
-//     else
-//         let parsed =
-//             rawParsed
-//             |> List.map fst
-//         let etc =
-//             rawParsed
-//             |> List.rev
-//             |> List.head
-//             |> snd
-//         parsed, etc
+let whileDoesParse (tryParseOne: TokenAndLocation list -> Option<'a * Location * TokenAndLocation list * bool>) (input: TokenAndLocation list) = // : 'a list * TokenAndLocation list =
+    // apply the function 'f' to input until it fails, returning its generated elements and the remaining 'etc' list
+    let rawParsed =
+        input
+        |> List.unfold (fun state ->
+            let maybe =
+                tryParseOne state
+            match maybe with
+            | Some (item, loc, etc, doContinue) ->
+                if doContinue then
+                    Some ((item, loc, etc), etc) // notice each item includes the remainder, because we need (the last emitted remainder) at the end
+                else
+                    Some ((item, loc, etc), List.Empty)
+            | None ->
+                None)
+    match rawParsed with
+    | [] ->
+        None
+    | (_, loc, _) :: _ ->
+        let parsed =
+            rawParsed
+            |> List.map (fun (thing, _, _) -> thing)
+        let etc =
+            rawParsed
+            |> List.rev
+            |> List.head
+            |> (fun (_, _, etc) -> etc)
+        Some (parsed, loc, etc)
 
 type ContentUntilMatchingState = {
     LastLoc: Location
@@ -168,10 +178,47 @@ let contentUntilMatching (loc: Location) (startToken: Token) (input: TokenAndLoc
         |> List.splitAt (content.Length + 1) // skip the closing <whatever>
     content, etc
 
+module NameStuff =
+    let (|NameParts|_|) (input: TokenAndLocation list) =
+        let tryParseOne = function
+            | Lookahead 1 ([Identifier id], loc, etc) ->
+                match etc with
+                | Lookahead 1 ([Dot], loc, etc) ->
+                    // got item, continue
+                    Some (id, loc, etc, true)
+                | _ ->
+                    // got item, was end
+                    Some (id, loc, etc, false)
+            | _ ->
+                // no item
+                None
+        whileDoesParse tryParseOne input
+    let parseList (delimiter: Token) (endToken: Token) (loc: Location) (input: TokenAndLocation list) =
+        // eg ns1.ns2.name, ns1.name, name, ns3.ns4.name;
+        let tryParseOne = function
+            | NameParts (parts, loc, etc) ->
+                match etc with
+                | Lookahead 1 ([delim], loc, etc) when delim = delimiter -> // more to come
+                    Some (parts, loc, etc, true)
+                | _ -> // last one (will check for endToken later)
+                    Some (parts, loc, etc, false)
+            | _ ->
+                None
+        match whileDoesParse tryParseOne input with
+        | Some (names, loc, etc) ->
+            // verify endToken in place
+            match etc with
+            | Lookahead 1 ([t], loc, etc) when t = endToken ->
+                names, loc, etc
+            | _ ->
+                failwithf "NameStuff.parseList: missing required terminator @ %A" loc
+        | _ ->
+            failwithf "NameStuff.parseList: expected name list @ %A" loc
+
 let rec parseType (input: TokenAndLocation list) =
     match input with
-    | Lookahead 1 ([Identifier name], loc, etc) -> // opaque handle, struct, interface
-        Unresolved (name, loc, DefaultConstraint), etc
+    | NameStuff.NameParts (nameParts, loc, etc) -> // opaque handle, struct, interface
+        Unresolved (nameParts, loc, DefaultConstraint), etc
     | Lookahead 1 ([UnitToken], _, etc) ->
         UnitType, etc
     | Lookahead 1 ([SizeTToken], _, etc) ->
@@ -202,7 +249,7 @@ let rec parseType (input: TokenAndLocation list) =
         | Lookahead 1 ([RightAngleBracket], _, etc3) ->
             ArrayType arrayType, etc3
         | _ ->
-            failwithf "failed to parse array type at %s" (loc.ToString())
+            failwithf "failed to parse array type at %A" loc
     | Lookahead 2 ([MapToken; LeftAngleBracket], loc, etc1) ->
         let keyType, etc2 =
             parseType etc1
@@ -214,19 +261,19 @@ let rec parseType (input: TokenAndLocation list) =
             | Lookahead 1 ([RightAngleBracket], _, etc5) ->
                 MapType (keyType, valueType), etc5
             | _ ->
-                failwithf "missing ] for array type at %s" (loc.ToString())
+                failwithf "missing ] for array type at %A" loc
         | _ ->
-            failwithf "missing comma for array type at %s" (loc.ToString())
+            failwithf "missing comma for array type at %A" loc
     | Lookahead 2 ([BufferToken; LeftAngleBracket], loc, etc) ->
         let elemType, etc =
             parseType etc
         if not (validBufferElementType elemType) then
-            failwithf "incorrect buffer element type [%A] at %s (must be primitive type)" elemType (loc.ToString())
+            failwithf "incorrect buffer element type [%A] at %A (must be primitive type)" elemType loc
         match etc with
         | Lookahead 1 ([RightAngleBracket], _, etc) ->
             BufferType elemType, etc
         | _ ->
-            failwithf "failed to parse buffer type at %s" (loc.ToString())
+            failwithf "failed to parse buffer type at %A" loc
     | Lookahead 2 ([SetToken; LeftAngleBracket], loc, etc) ->
         let elemType, etc =
             parseType etc
@@ -234,7 +281,7 @@ let rec parseType (input: TokenAndLocation list) =
         | Lookahead 1 ([RightAngleBracket], _, etc) ->
             SetType elemType, etc
         | _ ->
-            failwithf "expected closing > at %s" (loc.ToString())
+            failwithf "expected closing > at %A" loc
     | Lookahead 2 ([TupleToken; LeftAngleBracket], loc, etc) ->
         let content, etc =
             contentUntilMatching loc LeftAngleBracket etc
@@ -252,12 +299,12 @@ let rec parseType (input: TokenAndLocation list) =
                     | Lookahead 1 ([Comma], _, etc) -> // keep going
                         Some (t1, etc)
                     | _ ->
-                        failwithf "parsing tuple: unexpected input at %s" (loc.ToString()))
+                        failwithf "parsing tuple: unexpected input at %A" loc)
         TupleType typeList, etc
     | [] ->
         failwithf "parseType called on an empty list!"
     | {Location = loc; Token = token} :: _ ->
-        failwithf "unexpected token %A at %s" token (loc.ToString())
+        failwithf "parseType: unexpected token %A at %A" token loc
 
 type NamedFunction = {
     Name: string
@@ -358,6 +405,8 @@ let parseArg (input: TokenAndLocation list) =
     else
         let type_, etc =
             parseType input
+        // printfn "type_ %A" type_
+        // printfn "etc: %A" (etc |> List.safeTake 20)
         match etc with
         | Lookahead 2 ([Identifier name; Comma], _, etc2) ->
             Some ((name, type_), etc2)
@@ -378,34 +427,6 @@ let parseArgsList (loc: Location) (input: TokenAndLocation list) =
         List.unfold parseArg argTokens
     args, etc
 
-let parseIdentifierList (loc: Location) (input: TokenAndLocation list) (endToken: Token) =
-    let parseOneIdentifier (input': TokenAndLocation list) =
-        if input'.IsEmpty then
-            None
-        else
-            match input' with
-            | Lookahead 2 ([Identifier name; Comma], _, etc) ->
-                Some (name, etc)
-            | [{Location = _; Token = Identifier name}] ->
-                Some (name, List.empty)
-            | _ ->
-                failwithf "parseIdentifierList: expected identifier at %s (%A)" (loc.ToString()) input'
-    let maybeEndIndex =
-        input |> List.tryFindIndex (fun tl -> tl.Token = endToken)
-    match maybeEndIndex with
-    | Some index ->
-        let idTokens, etc =
-            input |> List.splitAt index
-        let identifiers =
-            idTokens |> List.unfold parseOneIdentifier
-        match etc with
-        | Lookahead 1 ([token], _, etc) when token = endToken ->
-            identifiers, etc
-        | _ ->
-            failwithf "expected end of identifiers at %s" (loc.ToString())
-    | None ->
-        failwithf "expected end of identifiers at %s" (loc.ToString())
-
 let parseNamedFunction (input: TokenAndLocation list) =
     if input.IsEmpty then
         None
@@ -420,10 +441,10 @@ let parseNamedFunction (input: TokenAndLocation list) =
             | Lookahead 1 ([Semicolon], _, etc) ->
                 Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty }, etc)
             | Lookahead 1 ([ThrowsToken], loc, etc) ->
-                let identifiers, etc =
-                    parseIdentifierList loc etc Semicolon
+                let names, loc, etc =
+                    NameStuff.parseList Comma Semicolon loc etc
                 let throwsList =
-                    identifiers
+                    names
                     |> List.map (fun name -> Unresolved (name, loc, ExceptionConstraint))
                 Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList }, etc)
             | _ ->
@@ -538,8 +559,14 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             // inherits anything?
             let maybeParent, loc, etc =
                 match etc with
-                | Lookahead 2 ([ExtendsToken; Identifier parentName], loc, etc) ->
-                    Some (Unresolved (parentName, loc, OpaqueConstraint)), loc, etc
+                | Lookahead 1 ([ExtendsToken], loc, etc) ->
+                    match etc with
+                    | NameStuff.NameParts (parts, loc, etc) ->
+                        let type_ =
+                            Unresolved (parts, loc, OpaqueConstraint)
+                        Some type_, loc, etc
+                    | _ ->
+                        failwithf "expected parent opaque name @ %A" loc
                 | _ ->
                     None, loc, etc
             // continue as normal
@@ -764,7 +791,11 @@ type SearchItem = {
     UserTypes: Map<string,UserType>
 }
 
-let resolveIdentifier (context: ModuleContext) (identifier: string) (loc: Location) =
+let resolveIdentifier (context: ModuleContext) (nameParts: string list) (loc: Location) =
+    // TODO: this needs to be completely rewritten!!
+    // dirty kludge here, for the moment:
+    let identifier =
+        nameParts.Head
     let modulesToSearch =
         let importedModules =
             context.Module.Imports
@@ -806,8 +837,8 @@ let rec resolveType (context: ModuleContext) (type_: NIType) =
         TupleType (tupleTypes |> List.map (resolveType context))
     | SetType niType ->
         SetType (resolveType context niType)
-    | Unresolved (name, loc, typeConstraint) ->
-        match resolveIdentifier context name loc with
+    | Unresolved (nameParts, loc, typeConstraint) ->
+        match resolveIdentifier context nameParts loc with
         | resolvedName, resolvedDef ->
             match typeConstraint with
             | DefaultConstraint ->

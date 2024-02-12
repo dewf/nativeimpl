@@ -321,7 +321,7 @@ and ModuleDefinition =
 type Module = {
     Name: string
     Imports: string list
-    UserTypes: Map<string, UserType> option
+    SymbolTable: Map<string, UserType> option
     Defs: ModuleDefinition list
 }
 
@@ -740,7 +740,7 @@ let parseModuleToplevel (input: TokenAndLocation list) (outerName: string) =
                     consumeImports etc
                 { Name = joinedName
                   Imports = imports
-                  UserTypes = None
+                  SymbolTable = None
                   Defs = parseModuleDefs etc }
             | _ ->
                 failwithf "expected semicolon after module definition @ %s" (loc.ToString())
@@ -768,8 +768,8 @@ let resolveIdentifier (context: ModuleContext) (identifier: string) (loc: Locati
     let modulesToSearch =
         let importedModules =
             context.Module.Imports
-            |> List.map (context.Loaded.TryFind >> Option.get >> (fun m -> { Kind = OtherModule m.Name; UserTypes = m.UserTypes.Value }))
-        { Kind = ThisModuleKind; UserTypes = context.Module.UserTypes.Value } :: importedModules
+            |> List.map (context.Loaded.TryFind >> Option.get >> (fun m -> { Kind = OtherModule m.Name; UserTypes = m.SymbolTable.Value }))
+        { Kind = ThisModuleKind; UserTypes = context.Module.SymbolTable.Value } :: importedModules
     let found =
         modulesToSearch
         |> List.choose (fun item ->
@@ -935,26 +935,33 @@ let rec resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
     | FunctionDef namedFunction ->
         FunctionDef (resolveFunctionTypes context namedFunction)
 
-let getUserTypes (module_: Module) =
-    module_.Defs
+let getUserTypes (defs: ModuleDefinition list) =
+    defs
     |> List.choose (function
-        | UserType (name, definition) -> Some (name, definition)
+        | UserType (name, definition) ->
+            // also need to descend into opaque static blocks
+            // but we also might need a hierarchical symbol table ... TODO
+            Some (name, definition)
         | _ -> None)
     |> Map.ofList
 
 let resolveUserTypes (loaded: Map<string, Module>) (module_: Module) =
     let nextModule =
         let symbols =
-            getUserTypes module_
-        { module_ with UserTypes = Some symbols }
+            getUserTypes module_.Defs
+        { module_ with SymbolTable = Some symbols }
     let context =
         { Loaded = loaded; Module = nextModule }
-    // go throughout whole tree and replace all Unresolved types with things from the table, if they even exist
+    // replace all Unresolved types with things from the table, if they even exist
     let nextDefs =
         nextModule.Defs
         |> List.map (resolveModuleDef context)
-    // now has both a symbol table and resolved definitions
-    { nextModule with Defs = nextDefs }
+    // the actual module definitions have been resolved, but the symbol table still contains only the original unresolved content
+    // ie, the bootstrap definitions (names -> original unresolved module defs)
+    // so this is a 2nd pass that will bring that up to date
+    let nextUserTypes =
+        getUserTypes nextDefs
+    { nextModule with Defs = nextDefs; SymbolTable = Some nextUserTypes }
     
 let moduleNameToFilename (rootPath: string) (name: string) =
     let parts =

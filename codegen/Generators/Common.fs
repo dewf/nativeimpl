@@ -171,16 +171,15 @@ let allGenericTypes (module_: Module) (userTypeMap: Map<string, UserType>) =
     |> List.distinct
 
 let userTypesAndGenerics (m: Module) =
-    // combined map
+    // create combined map
     let userTypes =
-        getUserTypes m
-    let m1 =
+        m.SymbolTable.Value
+    let map1 =
         (Map.empty, userTypes)
         ||> Map.fold (fun newMap name userType -> newMap.Add(name, UserOrGeneric.User userType))
     let allGenerics =
         allGenericTypes m userTypes
-//    printfn "all generics: %A" allGenerics
-    (m1, allGenerics)
+    (map1, allGenerics)
     ||> List.fold (fun newMap type_ ->
         let name =
             (typeToInternalKey type_)

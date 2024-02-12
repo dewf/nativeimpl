@@ -46,7 +46,7 @@ type ResolvedType =
     | OptionsType
     
 type TypeConstraint =
-    | NoConstraint        // needs to be "no exceptions" constraint, but seems like that's going to take some extra effort
+    | DefaultConstraint    // everything but exceptions allowed
     | OpaqueConstraint
     | ExceptionConstraint
     
@@ -171,7 +171,7 @@ let contentUntilMatching (loc: Location) (startToken: Token) (input: TokenAndLoc
 let rec parseType (input: TokenAndLocation list) =
     match input with
     | Lookahead 1 ([Identifier name], loc, etc) -> // opaque handle, struct, interface
-        Unresolved (name, loc, NoConstraint), etc
+        Unresolved (name, loc, DefaultConstraint), etc
     | Lookahead 1 ([UnitToken], _, etc) ->
         UnitType, etc
     | Lookahead 1 ([SizeTToken], _, etc) ->
@@ -810,20 +810,24 @@ let rec resolveType (context: ModuleContext) (type_: NIType) =
         match resolveIdentifier context name loc with
         | resolvedName, resolvedDef ->
             match typeConstraint with
-            | NoConstraint ->
-                ()
+            | DefaultConstraint ->
+                match resolvedDef with
+                | ExceptionDef _ ->
+                    failwithf "type constraint failed @ %A - exception type not allowed here" loc
+                | _ ->
+                    () // OK
             | OpaqueConstraint ->
                 match resolvedDef with
                 | OpaqueDef _ ->
                     () // OK
                 | _ ->
-                    failwithf "type constraint failed @ %s - must be 'opaque' type" (loc.ToString())
+                    failwithf "type constraint failed @ %A - must be 'opaque' type" loc
             | ExceptionConstraint ->
                 match resolvedDef with
                 | ExceptionDef _ ->
                     () // OK
                 | _ ->
-                    failwithf "type constraint failed @ %s - must be 'exception' type" (loc.ToString())
+                    failwithf "type constraint failed @ %A - must be 'exception' type" loc
             let resolvedType =
                 match resolvedDef with
                 | OpaqueDef _ -> OpaqueType
@@ -834,9 +838,7 @@ let rec resolveType (context: ModuleContext) (type_: NIType) =
                 | EnumDef _ -> EnumType
                 | SumTypeDef _ -> SumType
                 | OptionsDef _ -> OptionsType
-                | ExceptionDef _ ->
-                    // how do we enforce that this is only allowed in a "throws" context?
-                    ExceptionType
+                | ExceptionDef _ -> ExceptionType
             Resolved (resolvedName, resolvedType)
     | _ ->
         type_

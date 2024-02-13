@@ -1,13 +1,19 @@
 open Parser
-open Generators.Frontend
-open Generators.Backend
-open Generators.Common
+open AppCommon
+// open Generators.Frontend
+// open Generators.Backend
+// open Generators.Common
 
-let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
-let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
-let INPUTS = [ "Windowing"; "Drawing" ]
+// let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
+// let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
+// let INPUTS = [ "Windowing"; "Drawing" ]
+// let LIBRARY = "GuiBase"
+let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench"
+let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\output"
+let INPUTS = [ "First"; "Second" ]
+let LIBRARY = "TestBench"
+
 let NAMESPACE = "Org.Prefixed"
-let LIBRARY = "GuiBase"
 let FRONT_LANG = "csharp"
 let BACK_LANG = "cpp"
 
@@ -53,46 +59,48 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
         ||> List.fold (fun moduleMap name ->
             printfn "======= processing module [%s] =======" name
             let currentModule, nextMap = loadModule inputPath moduleMap name
-            // frontend
-            match frontLang.ToLower() with
-            | "csharp" | "c#" ->
-                printfn "rendering C# frontend code"
-                CsharpGenerator.generateModule currentModule outParams
-            | _ ->
-                failwithf "unsupported frontend language: %s" frontLang
-            // backend
-            match backLang.ToLower() with
-            | "cpp" | "c++" ->
-                printfn "rendering C++ backend code"
-                CppGenerator.generateModule outParams currentModule
-            | _ ->
-                failwithf "unsupported backend language: %s" backLang
+            
+            // // frontend
+            // match frontLang.ToLower() with
+            // | "csharp" | "c#" ->
+            //     printfn "rendering C# frontend code"
+            //     CsharpGenerator.generateModule currentModule outParams
+            // | _ ->
+            //     failwithf "unsupported frontend language: %s" frontLang
+            // // backend
+            // match backLang.ToLower() with
+            // | "cpp" | "c++" ->
+            //     printfn "rendering C++ backend code"
+            //     CppGenerator.generateModule outParams currentModule
+            // | _ ->
+            //     failwithf "unsupported backend language: %s" backLang
+            
             nextMap)
 
-    printfn "======= generating library files ======="
-    // get dependency order first
-    let depsOrder = getDependencyOrder moduleMap
-
-    // frontend
-    match frontLang.ToLower() with
-    | "csharp" | "c#" ->
-        printfn "rendering C# library file"
-        CsharpGenerator.generateLibraryFile depsOrder outParams
-    | _ ->
-        failwithf "unsupported frontend language: %s" frontLang
-        
-    // backend
-    match backLang.ToLower() with
-    | "cpp" | "c++" ->
-        printfn "rendering C++ library file"
-        CppGenerator.generateLibrary depsOrder outParams
-    | _ ->
-        failwithf "unsupported backend language: %s" backLang
+    // printfn "======= generating library files ======="
+    // // get dependency order first
+    // let depsOrder = getDependencyOrder moduleMap
+    // // frontend
+    // match frontLang.ToLower() with
+    // | "csharp" | "c#" ->
+    //     printfn "rendering C# library file"
+    //     CsharpGenerator.generateLibraryFile depsOrder outParams
+    // | _ ->
+    //     failwithf "unsupported frontend language: %s" frontLang
+    //     
+    // // backend
+    // match backLang.ToLower() with
+    // | "cpp" | "c++" ->
+    //     printfn "rendering C++ library file"
+    //     CppGenerator.generateLibrary depsOrder outParams
+    // | _ ->
+    //     failwithf "unsupported backend language: %s" backLang
+    //
+    // // generate project files:
+    // CsharpGenerator.generateProject outParams
+    // // generate project files for backend (eg cmake)
     
-    // generate project files:
-    CsharpGenerator.generateProject outParams
-    // generate project files for backend (eg cmake)
-    // printfn "moduleMap: %A" moduleMap
+    printfn "moduleMap: %A" moduleMap
 
 let outParams =
     { Path = OUTPUT_PATH; MaybeNamespace = Some NAMESPACE; LibraryName = LIBRARY }

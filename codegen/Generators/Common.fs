@@ -776,12 +776,6 @@ type SimpleFormatWriter(writer: TextWriter) =
         member this.Blank() =
             writer.WriteLine()
 
-type OutParams = {
-    Path: string
-    MaybeNamespace: string option
-    LibraryName: string
-}
-
 let namespaceSplitter (namespace': string) =
     let parts =
         namespace'.Split(".")

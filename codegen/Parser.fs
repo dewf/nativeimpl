@@ -364,11 +364,16 @@ and ModuleDefinition =
     | Global of name: string * type_: NIType
     | FunctionDef of NamedFunction
     | UserType of name: string * type_: UserType
-
+    
+type SymbolTableState =
+    | Init
+    | Bootstrap of table: Map<string, UserType>  // will contain Unresolved names
+    | Complete of table: Map<string, UserType>  // should only contain fully resolved things
+    
 type Module = {
     Name: string
     Imports: string list
-    SymbolTable: Map<string, UserType> option
+    SymbolTable: SymbolTableState
     Defs: ModuleDefinition list
 }
 
@@ -767,7 +772,7 @@ let parseModuleToplevel (input: TokenAndLocation list) (outerName: string) =
                     consumeImports etc
                 { Name = joinedName
                   Imports = imports
-                  SymbolTable = None
+                  SymbolTable = Init
                   Defs = parseModuleDefs etc }
             | _ ->
                 failwithf "expected semicolon after module definition @ %s" (loc.ToString())
@@ -788,23 +793,37 @@ type SearchItemKind =
     
 type SearchItem = {
     Kind: SearchItemKind
-    UserTypes: Map<string,UserType>
+    Symbols: Map<string,UserType>
 }
 
 let resolveIdentifier (context: ModuleContext) (nameParts: string list) (loc: Location) =
     // TODO: this needs to be completely rewritten!!
-    // dirty kludge here, for the moment:
     let identifier =
         nameParts.Head
     let modulesToSearch =
         let importedModules =
             context.Module.Imports
-            |> List.map (context.Loaded.TryFind >> Option.get >> (fun m -> { Kind = OtherModule m.Name; UserTypes = m.SymbolTable.Value }))
-        { Kind = ThisModuleKind; UserTypes = context.Module.SymbolTable.Value } :: importedModules
+            |> List.map (fun importName ->
+                match context.Loaded.TryFind importName with
+                | Some imported ->
+                    let symbols =
+                        match imported.SymbolTable with
+                        | Bootstrap table -> table
+                        | Complete table -> table
+                        | Init -> failwith "resolveIdentifier: import symbol table empty"
+                    { Kind = OtherModule imported.Name; Symbols = symbols }
+                | None ->
+                    failwithf "resolveIdentifier: import %s not found in context.Loaded" importName)
+        let symbols =
+            match context.Module.SymbolTable with
+            | Bootstrap table -> table
+            | Complete table -> table
+            | Init -> failwith "resolveIdentifier: this module symbol table not complete"
+        { Kind = ThisModuleKind; Symbols = symbols } :: importedModules
     let found =
         modulesToSearch
         |> List.choose (fun item ->
-            match item.UserTypes.TryFind identifier with
+            match item.Symbols.TryFind identifier with
             | Some value ->
                 let resolvedName =
                     match item.Kind with
@@ -980,7 +999,7 @@ let resolveUserTypes (loaded: Map<string, Module>) (module_: Module) =
     let nextModule =
         let symbols =
             getUserTypes module_.Defs
-        { module_ with SymbolTable = Some symbols }
+        { module_ with SymbolTable = Bootstrap symbols }
     let context =
         { Loaded = loaded; Module = nextModule }
     // replace all Unresolved types with things from the table, if they even exist
@@ -992,7 +1011,7 @@ let resolveUserTypes (loaded: Map<string, Module>) (module_: Module) =
     // so this is a 2nd pass that will bring that up to date
     let nextUserTypes =
         getUserTypes nextDefs
-    { nextModule with Defs = nextDefs; SymbolTable = Some nextUserTypes }
+    { nextModule with Defs = nextDefs; SymbolTable = Complete nextUserTypes }
     
 let moduleNameToFilename (rootPath: string) (name: string) =
     let parts =

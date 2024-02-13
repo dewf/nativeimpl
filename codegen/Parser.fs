@@ -24,14 +24,14 @@ type NIPrimitive =
     | StringType
     
 type ResolvedName =
-    | ThisModule of name: string
-    | Imported of path: string list * name: string
-with
-    member this.Flatten() =
-        match this with
-        | ThisModule name -> name
-        | Imported(path, name) -> name
-            // sprintf "%s.%s" (String.concat "." path) name
+    | ThisModule of nameParts: string list
+    | Imported of modulePath: string list * nameParts: string list
+// with
+//     member this.Flatten() =
+//         match this with
+//         | ThisModule name -> name
+//         | Imported(path, name) -> name
+//             // sprintf "%s.%s" (String.concat "." path) name
     
 type ResolvedType =
     | OpaqueType
@@ -720,28 +720,17 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
     List.unfold parseNext input
     |> List.collect id
 
-let moduleIdentifierTokenFilter = function
-    | Identifier _ | Dot -> true
-    | _ -> false
-    
-let moduleNamePartsToString (parts: Token list) =
-    parts
-    |> List.map (function
-        | Identifier id -> id
-        | Dot -> "."
-        | _ -> failwith "moduleNamePartsToString: shouldn't happen")
-    
 let consumeImports (input: TokenAndLocation list) =
     let rec nextImport (revImports: string list) (remaining: TokenAndLocation list) =
         match remaining with
         | Lookahead 1 ([ImportToken], loc, etc) ->
             match etc with
-            | TakeWhile moduleIdentifierTokenFilter (nameParts, loc, etc) ->
+            | NameStuff.NameParts (nameParts, loc, etc) ->
                 match etc with
                 | Lookahead 1 ([Semicolon], _, etc) ->
                     // OK!
                     let joinedName =
-                        moduleNamePartsToString nameParts
+                        nameParts
                         |> String.concat ""
                     nextImport (joinedName :: revImports) etc
                 | _ ->
@@ -758,12 +747,12 @@ let parseModuleToplevel (input: TokenAndLocation list) (outerName: string) =
     match input with
     | Lookahead 1 ([ModuleToken], loc, etc) ->
         match etc with
-        | TakeWhile moduleIdentifierTokenFilter (nameParts, loc, etc) ->
+        | NameStuff.NameParts (nameParts, loc, etc) ->
             match etc with
             | Lookahead 1 ([Semicolon], _, etc) ->
                 // OK!
                 let joinedName =
-                    moduleNamePartsToString nameParts
+                    nameParts
                     |> String.concat ""
                 if joinedName <> outerName then
                     failwithf "internal module name [%s] did not match outer name/location [%s]" joinedName outerName
@@ -828,11 +817,11 @@ let resolveIdentifier (context: ModuleContext) (nameParts: string list) (loc: Lo
                 let resolvedName =
                     match item.Kind with
                     | ThisModuleKind ->
-                        ThisModule identifier
+                        ThisModule [identifier]
                     | OtherModule name ->
                         let parts =
                             name.Split(".") |> List.ofArray
-                        Imported (parts, identifier)
+                        Imported (parts, [identifier])
                 Some (resolvedName, value)
             | None ->
                 None)

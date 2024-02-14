@@ -10,7 +10,7 @@ open AppCommon
 // let LIBRARY = "GuiBase"
 let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench"
 let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\output"
-let INPUTS = [ "First"; "Second" ]
+let INPUTS = [ "First"; "Second"; "SomePackage.Third" ]
 let LIBRARY = "TestBench"
 
 let NAMESPACE = "Org.Prefixed"

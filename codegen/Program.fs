@@ -17,7 +17,7 @@ let NAMESPACE = "Org.Prefixed"
 let FRONT_LANG = "csharp"
 let BACK_LANG = "cpp"
 
-let getDependencyOrder (moduleMap: Map<string, Module>) =
+let getDependencyOrder (moduleMap: Map<string list, Module>) =
     // create "imported by" map ('name' -> modules importing 'name')
     let nameAndImports =
         moduleMap
@@ -43,7 +43,7 @@ let getDependencyOrder (moduleMap: Map<string, Module>) =
             // start from modules that aren't used by others
             importedBy.ContainsKey name |> not)
         |> List.map fst
-    let rec innerRec (m: Module) (previous: string list) =
+    let rec innerRec (m: Module) (previous: string list list) =
         let nested =
             m.Imports
             |> List.collect (fun name -> innerRec moduleMap[name] [])
@@ -56,8 +56,11 @@ let getDependencyOrder (moduleMap: Map<string, Module>) =
 let appRunner (inputPath: string) (inputModules: string list) (outParams: OutParams) (frontLang: string) (backLang: string) =
     let moduleMap =
         (Map.empty, inputModules)
-        ||> List.fold (fun moduleMap name ->
-            printfn "======= processing module [%s] =======" name
+        ||> List.fold (fun moduleMap joinedName ->
+            let name =
+                joinedName.Split(".")
+                |> Array.toList
+            printfn "======= processing module %A =======" name
             let currentModule, nextMap = loadModule inputPath moduleMap name
             
             // // frontend

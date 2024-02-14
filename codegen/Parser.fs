@@ -26,12 +26,6 @@ type NIPrimitive =
 type ResolvedName =
     | ThisModule of nameParts: string list
     | Imported of modulePath: string list * nameParts: string list
-// with
-//     member this.Flatten() =
-//         match this with
-//         | ThisModule name -> name
-//         | Imported(path, name) -> name
-//             // sprintf "%s.%s" (String.concat "." path) name
     
 type ResolvedType =
     | OpaqueType
@@ -377,8 +371,8 @@ type SymbolTableState =
     | Complete of table: SymbolTable   // 2nd pass, everything should be resolved
     
 type Module = {
-    Name: string
-    Imports: string list
+    Name: string list             // full path + name
+    Imports: string list list
     SymbolTable: SymbolTableState
     Defs: ModuleDefinition list
 }
@@ -727,7 +721,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
     |> List.collect id
 
 let consumeImports (input: TokenAndLocation list) =
-    let rec nextImport (revImports: string list) (remaining: TokenAndLocation list) =
+    let rec nextImport (revImports: string list list) (remaining: TokenAndLocation list) =
         match remaining with
         | Lookahead 1 ([ImportToken], loc, etc) ->
             match etc with
@@ -735,21 +729,18 @@ let consumeImports (input: TokenAndLocation list) =
                 match etc with
                 | Lookahead 1 ([Semicolon], _, etc) ->
                     // OK!
-                    let joinedName =
-                        nameParts
-                        |> String.concat ""
-                    nextImport (joinedName :: revImports) etc
+                    nextImport (nameParts :: revImports) etc
                 | _ ->
-                    failwithf "expected semicolon after module identifier @ %s" (loc.ToString())
+                    failwithf "expected semicolon after module identifier @ %A" loc
             | _ ->
-                failwithf "expected module name identifier @ %s" (loc.ToString())
+                failwithf "expected module name identifier @ %A" loc
         | _ ->
             revImports, remaining
     let rev, etc =
         nextImport [] input
     List.rev rev, etc
     
-let parseModuleToplevel (input: TokenAndLocation list) (outerName: string) =
+let parseModuleToplevel (input: TokenAndLocation list) (outerName: string list) =
     match input with
     | Lookahead 1 ([ModuleToken], loc, etc) ->
         match etc with
@@ -757,15 +748,12 @@ let parseModuleToplevel (input: TokenAndLocation list) (outerName: string) =
             match etc with
             | Lookahead 1 ([Semicolon], _, etc) ->
                 // OK!
-                let joinedName =
-                    nameParts
-                    |> String.concat ""
-                if joinedName <> outerName then
-                    failwithf "internal module name [%s] did not match outer name/location [%s]" joinedName outerName
+                if nameParts <> outerName then
+                    failwithf "internal module name %A did not match outer name/location %A" nameParts outerName
                 // imports, if any must occur at top of file after "module"
                 let imports, etc =
                     consumeImports etc
-                { Name = joinedName
+                { Name = nameParts
                   Imports = imports
                   SymbolTable = Init
                   Defs = parseModuleDefs etc }
@@ -778,18 +766,18 @@ let parseModuleToplevel (input: TokenAndLocation list) (outerName: string) =
 
 // resolution stuff ===========================
 type ModuleContext = {
-    Loaded: Map<string, Module>
+    Loaded: Map<string list, Module>
     Module: Module
 }
 
-type SearchItemKind =
-    | ThisModuleKind
-    | OtherModule of name: string
-    
-type SearchItem = {
-    Kind: SearchItemKind
-    Symbols: Map<string,UserType>
-}
+// type SearchItemKind =
+//     | ThisModuleKind
+//     | OtherModule of name: string
+//     
+// type SearchItem = {
+//     Kind: SearchItemKind
+//     Symbols: Map<string,UserType>
+// }
 
 let findSymbolHere (table: SymbolTable) (nameParts: string list) =
     let rec recFind (currentTable: SymbolTable) (partsRemain: string list) =
@@ -864,7 +852,7 @@ let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: str
     findDepthFirst table [] nsPath
 
 type ImportResult = {
-    ImportName: string
+    ImportName: string list
     Result: string list * UserType
 }
 
@@ -890,11 +878,10 @@ let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: s
             let matchedNames =
                 importResults
                 |> List.map (fun { ImportName = name } -> name)
-            failwithf "resolveIdentifier: name [%A] in module %s matched symbols in multiple imports %A" nameParts context.Module.Name matchedNames
+            failwithf "resolveIdentifier: name %A in module %A matched symbols in multiple imports %A" nameParts context.Module.Name matchedNames
         | [ { ImportName = importName; Result = (nsPrefix, thing) } ] ->
             // single result, OK
-            // TODO: fix module prefix stuff, need module path or whatever I guess
-            (Imported ("@ MODULE PREFIX @" :: [importName], nsPrefix @ nameParts), thing)
+            (Imported (importName, nsPrefix @ nameParts), thing)
         | [] ->
             // not found at all!
             failwith "resolveIdentifier: name [%s] not found in module %s nor in any imports"
@@ -1063,7 +1050,7 @@ let rec getUserTypes (defs: ModuleDefinition list) =
         | _ -> None)
     |> Map.ofList
 
-let resolveUserTypes (loaded: Map<string, Module>) (module_: Module) =
+let resolveUserTypes (loaded: Map<string list, Module>) (module_: Module) =
     let nextModule =
         let symbols =
             getUserTypes module_.Defs
@@ -1081,18 +1068,18 @@ let resolveUserTypes (loaded: Map<string, Module>) (module_: Module) =
         getUserTypes nextDefs
     { nextModule with Defs = nextDefs; SymbolTable = Complete nextUserTypes }
     
-let moduleNameToFilename (rootPath: string) (name: string) =
-    let parts =
-        name.Replace(".", "/").ToLower()
-    $"{rootPath}/{parts}.nimpl"
+let moduleNameToFilename (rootPath: string) (nameParts: string list) =
+    let pathParts =
+        String.Join("/", nameParts).ToLower()
+    $"{rootPath}/{pathParts}.nimpl"
 
-let rec loadModule (rootPath: string) (moduleMap: Map<string, Module>) (name: string) =
+let rec loadModule (rootPath: string) (moduleMap: Map<string list, Module>) (name: string list) =
     match moduleMap.TryFind name with
     | Some m ->
         // already loaded!
         m, moduleMap
     | None ->
-        printfn "loading [%s]" name
+        printfn "loading %A" name
         let filename =
             moduleNameToFilename rootPath name
         let tokens =

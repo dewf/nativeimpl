@@ -62,7 +62,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
                 |> Array.toList
                 |> ModuleName
             printfn "======= processing module %A =======" name
-            let currentModule, nextMap = loadModule inputPath moduleMap name
+            let currentModule, nextMap = loadModule inputPath moduleMap name Set.empty
             
             // // frontend
             // match frontLang.ToLower() with

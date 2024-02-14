@@ -1092,7 +1092,7 @@ let moduleNameToFilename (rootPath: string) (ModuleName nameParts) =
         String.Join("/", nameParts).ToLower()
     $"{rootPath}/{pathParts}.nimpl"
 
-let rec loadModule (rootPath: string) (moduleMap: Map<ModuleName, Module>) (name: ModuleName) =
+let rec loadModule (rootPath: string) (moduleMap: Map<ModuleName, Module>) (name: ModuleName) (forbidden: Set<ModuleName>) =
     match moduleMap.TryFind name with
     | Some m ->
         // already loaded!
@@ -1108,8 +1108,17 @@ let rec loadModule (rootPath: string) (moduleMap: Map<ModuleName, Module>) (name
             parseModuleToplevel tokens name
         // load imports before performing resolution
         let nextMap =
+            let nextForbidden =
+                // add this module to the forbidden list, which will be passed to imports to prevent cycles
+                forbidden.Add name
             (moduleMap, parsed.Imports)
-            ||> List.fold (fun acc name -> loadModule rootPath acc name |> snd)
+            ||> List.fold (fun acc importName ->
+                // verify not in forbidden (to prevent circular dependencies)
+                if forbidden.Contains importName then
+                    failwithf "module %A cannot import %A - would create a dependency cycle" name importName
+                else
+                    loadModule rootPath acc importName nextForbidden
+                    |> snd)
         // perform resolution against our imports
         let resolved =
             parsed

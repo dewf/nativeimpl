@@ -26,9 +26,15 @@ type NIPrimitive =
 type ModuleName =
     | ModuleName of string list     // x.y.whatever
     
+type SymbolName =
+    | SymbolName of string list
+    
 type ResolvedName =
-    | ThisModule of name: string list
-    | Imported of name: ModuleName * nameParts: string list
+    | ThisModule of name: SymbolName
+    | Imported of moduleName: ModuleName * name: SymbolName
+    
+type UnresolvedIdentifier =
+    | UnresolvedIdentifier of string list   // could be relative, could be fully qualified, etc
     
 type ResolvedType =
     | OpaqueType
@@ -56,7 +62,7 @@ type NIType =
     | SetType of elem: NIType
     | BufferType of elemType: NIType
     //
-    | Unresolved of nameParts: string list * loc: Location * mustBe: TypeConstraint
+    | Unresolved of identifier: UnresolvedIdentifier * loc: Location * mustBe: TypeConstraint
     | Resolved of name: ResolvedName * type_: ResolvedType
 
 let validBufferElementType = function
@@ -215,7 +221,7 @@ module NameStuff =
 let rec parseType (input: TokenAndLocation list) =
     match input with
     | NameStuff.NameParts (nameParts, loc, etc) -> // opaque handle, struct, interface
-        Unresolved (nameParts, loc, DefaultConstraint), etc
+        Unresolved (UnresolvedIdentifier nameParts, loc, DefaultConstraint), etc
     | Lookahead 1 ([UnitToken], _, etc) ->
         UnitType, etc
     | Lookahead 1 ([SizeTToken], _, etc) ->
@@ -453,7 +459,7 @@ let parseNamedFunction (input: TokenAndLocation list) =
                     NameStuff.parseList Comma Semicolon loc etc
                 let throwsList =
                     names
-                    |> List.map (fun name -> Unresolved (name, loc, ExceptionConstraint))
+                    |> List.map (fun name -> Unresolved (UnresolvedIdentifier name, loc, ExceptionConstraint))
                 Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList }, etc)
             | _ ->
                 failwithf "failed to parse function at %s" (loc.ToString())
@@ -571,7 +577,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     match etc with
                     | NameStuff.NameParts (parts, loc, etc) ->
                         let type_ =
-                            Unresolved (parts, loc, OpaqueConstraint)
+                            Unresolved (UnresolvedIdentifier parts, loc, OpaqueConstraint)
                         Some type_, loc, etc
                     | _ ->
                         failwithf "expected parent opaque name @ %A" loc
@@ -852,11 +858,13 @@ type ImportResult = {
     Result: string list * UserType
 }
 
-let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: string list) (nameParts: string list) =
+let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: string list) (UnresolvedIdentifier nameParts) =
     // 1. try to find in the current module
     match findModuleSymbol context.Module namespacePath nameParts with
     | Some (nsPrefix, thing) ->
-        (ThisModule (nsPrefix @ nameParts), thing)
+        let symbolName =
+            SymbolName (nsPrefix @ nameParts)
+        (ThisModule symbolName, thing)
     | None ->
         // 2. not in this module, what about imports?
         let importResults =
@@ -874,13 +882,15 @@ let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: s
             let matchedNames =
                 importResults
                 |> List.map (fun { ImportName = name } -> name)
-            failwithf "resolveIdentifier: name %A in module %A matched symbols in multiple imports %A" nameParts context.Module.Name matchedNames
+            failwithf "resolveIdentifier: identifier %A in module %A matched symbols in multiple imports %A @ %A" nameParts context.Module.Name matchedNames loc
         | [ { ImportName = importName; Result = (nsPrefix, thing) } ] ->
             // single result, OK
-            (Imported (importName, nsPrefix @ nameParts), thing)
+            let symbolName =
+                SymbolName (nsPrefix @ nameParts)
+            (Imported (importName, symbolName), thing)
         | [] ->
             // not found at all!
-            failwith "resolveIdentifier: name [%s] not found in module %s nor in any imports"
+            failwithf "resolveIdentifier: identifier %A not found in containing module %A nor in any imports @ %A" nameParts context.Module.Name loc
 
 let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_: NIType) =
     match type_ with

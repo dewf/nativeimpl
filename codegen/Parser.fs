@@ -23,9 +23,12 @@ type NIPrimitive =
     | Float32 | Float64
     | StringType
     
+type ModuleName =
+    | ModuleName of string list     // x.y.whatever
+    
 type ResolvedName =
-    | ThisModule of nameParts: string list
-    | Imported of modulePath: string list * nameParts: string list
+    | ThisModule of name: string list
+    | Imported of name: ModuleName * nameParts: string list
     
 type ResolvedType =
     | OpaqueType
@@ -371,8 +374,8 @@ type SymbolTableState =
     | Complete of table: SymbolTable   // 2nd pass, everything should be resolved
     
 type Module = {
-    Name: string list             // full path + name
-    Imports: string list list
+    Name: ModuleName
+    Imports: ModuleName list
     SymbolTable: SymbolTableState
     Defs: ModuleDefinition list
 }
@@ -721,7 +724,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
     |> List.collect id
 
 let consumeImports (input: TokenAndLocation list) =
-    let rec nextImport (revImports: string list list) (remaining: TokenAndLocation list) =
+    let rec nextImport (revImports: ModuleName list) (remaining: TokenAndLocation list) =
         match remaining with
         | Lookahead 1 ([ImportToken], loc, etc) ->
             match etc with
@@ -729,7 +732,7 @@ let consumeImports (input: TokenAndLocation list) =
                 match etc with
                 | Lookahead 1 ([Semicolon], _, etc) ->
                     // OK!
-                    nextImport (nameParts :: revImports) etc
+                    nextImport (ModuleName nameParts :: revImports) etc
                 | _ ->
                     failwithf "expected semicolon after module identifier @ %A" loc
             | _ ->
@@ -740,7 +743,7 @@ let consumeImports (input: TokenAndLocation list) =
         nextImport [] input
     List.rev rev, etc
     
-let parseModuleToplevel (input: TokenAndLocation list) (outerName: string list) =
+let parseModuleToplevel (input: TokenAndLocation list) (outerName: ModuleName) =
     match input with
     | Lookahead 1 ([ModuleToken], loc, etc) ->
         match etc with
@@ -748,12 +751,14 @@ let parseModuleToplevel (input: TokenAndLocation list) (outerName: string list) 
             match etc with
             | Lookahead 1 ([Semicolon], _, etc) ->
                 // OK!
-                if nameParts <> outerName then
+                let internalName =
+                    ModuleName nameParts
+                if internalName <> outerName then
                     failwithf "internal module name %A did not match outer name/location %A" nameParts outerName
                 // imports, if any must occur at top of file after "module"
                 let imports, etc =
                     consumeImports etc
-                { Name = nameParts
+                { Name = internalName
                   Imports = imports
                   SymbolTable = Init
                   Defs = parseModuleDefs etc }
@@ -766,18 +771,9 @@ let parseModuleToplevel (input: TokenAndLocation list) (outerName: string list) 
 
 // resolution stuff ===========================
 type ModuleContext = {
-    Loaded: Map<string list, Module>
+    Loaded: Map<ModuleName, Module>
     Module: Module
 }
-
-// type SearchItemKind =
-//     | ThisModuleKind
-//     | OtherModule of name: string
-//     
-// type SearchItem = {
-//     Kind: SearchItemKind
-//     Symbols: Map<string,UserType>
-// }
 
 let findSymbolHere (table: SymbolTable) (nameParts: string list) =
     let rec recFind (currentTable: SymbolTable) (partsRemain: string list) =
@@ -852,7 +848,7 @@ let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: str
     findDepthFirst table [] nsPath
 
 type ImportResult = {
-    ImportName: string list
+    ImportName: ModuleName
     Result: string list * UserType
 }
 
@@ -1050,7 +1046,7 @@ let rec getUserTypes (defs: ModuleDefinition list) =
         | _ -> None)
     |> Map.ofList
 
-let resolveUserTypes (loaded: Map<string list, Module>) (module_: Module) =
+let resolveUserTypes (loaded: Map<ModuleName, Module>) (module_: Module) =
     let nextModule =
         let symbols =
             getUserTypes module_.Defs
@@ -1068,12 +1064,12 @@ let resolveUserTypes (loaded: Map<string list, Module>) (module_: Module) =
         getUserTypes nextDefs
     { nextModule with Defs = nextDefs; SymbolTable = Complete nextUserTypes }
     
-let moduleNameToFilename (rootPath: string) (nameParts: string list) =
+let moduleNameToFilename (rootPath: string) (ModuleName nameParts) =
     let pathParts =
         String.Join("/", nameParts).ToLower()
     $"{rootPath}/{pathParts}.nimpl"
 
-let rec loadModule (rootPath: string) (moduleMap: Map<string list, Module>) (name: string list) =
+let rec loadModule (rootPath: string) (moduleMap: Map<ModuleName, Module>) (name: ModuleName) =
     match moduleMap.TryFind name with
     | Some m ->
         // already loaded!

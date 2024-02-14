@@ -364,11 +364,17 @@ and ModuleDefinition =
     | Global of name: string * type_: NIType
     | FunctionDef of NamedFunction
     | UserType of name: string * type_: UserType
+
+type SymbolTableEntry =
+    | Direct of thing: UserType
+    | SubTable of maybeThing: UserType option * table: SymbolTable
+and SymbolTable =
+    Map<string, SymbolTableEntry>
     
 type SymbolTableState =
     | Init
-    | Bootstrap of table: Map<string, UserType>  // will contain Unresolved names
-    | Complete of table: Map<string, UserType>  // should only contain fully resolved things
+    | Bootstrap of table: SymbolTable  // 1st pass, will contain unresolved names
+    | Complete of table: SymbolTable   // 2nd pass, everything should be resolved
     
 type Module = {
     Name: string
@@ -785,68 +791,126 @@ type SearchItem = {
     Symbols: Map<string,UserType>
 }
 
-let resolveIdentifier (context: ModuleContext) (nameParts: string list) (loc: Location) =
-    // TODO: this needs to be completely rewritten!!
-    let identifier =
-        nameParts.Head
-    let modulesToSearch =
-        let importedModules =
-            context.Module.Imports
-            |> List.map (fun importName ->
-                match context.Loaded.TryFind importName with
-                | Some imported ->
-                    let symbols =
-                        match imported.SymbolTable with
-                        | Bootstrap table -> table
-                        | Complete table -> table
-                        | Init -> failwith "resolveIdentifier: import symbol table empty"
-                    { Kind = OtherModule imported.Name; Symbols = symbols }
-                | None ->
-                    failwithf "resolveIdentifier: import %s not found in context.Loaded" importName)
-        let symbols =
-            match context.Module.SymbolTable with
-            | Bootstrap table -> table
-            | Complete table -> table
-            | Init -> failwith "resolveIdentifier: this module symbol table not complete"
-        { Kind = ThisModuleKind; Symbols = symbols } :: importedModules
-    let found =
-        modulesToSearch
-        |> List.choose (fun item ->
-            match item.Symbols.TryFind identifier with
-            | Some value ->
-                let resolvedName =
-                    match item.Kind with
-                    | ThisModuleKind ->
-                        ThisModule [identifier]
-                    | OtherModule name ->
-                        let parts =
-                            name.Split(".") |> List.ofArray
-                        Imported (parts, [identifier])
-                Some (resolvedName, value)
+let findSymbolHere (table: SymbolTable) (nameParts: string list) =
+    let rec recFind (currentTable: SymbolTable) (partsRemain: string list) =
+        match partsRemain with
+        | name :: etc ->
+            match currentTable.TryFind name with
+            | Some entry ->
+                match etc, entry with
+                | [], Direct thing ->
+                    // direct hit, OK
+                    Some thing
+                | [], SubTable(maybeThing, _) ->
+                    // maybe direct hit, depends if there was an enclosing entity of the subtable
+                    maybeThing
+                | more, Direct thing ->
+                    // had more name parts, but found (the wrong thing) preventing deeper search
+                    None
+                | more, SubTable(maybeThing, subTable) ->
+                    // recurse to consume name parts
+                    recFind subTable more
             | None ->
-                None)
-    // must be only 1 result, otherwise it's ambiguous and we have a problem
-    match found with
-    | result :: etc ->
-        if etc.Length > 0 then
-            failwithf "error resolving identifier [%s] from module [%s] @ %s: ambiguous results (also present in an import?)" identifier context.Module.Name (loc.ToString())
-        else
-            result
-    | _ ->
-        failwithf "error resolving identifier [%s] from module [%s] @ %s: symbol not found, in module or its imports" identifier context.Module.Name (loc.ToString())
+                // current table label contained no such name, can't continue
+                None
+        | [] ->
+            failwith "findHere::recFind - empty partsLeft, shouldn't happen"
+    recFind table nameParts
+    
+let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: string list) =
+    let table =
+        match m.SymbolTable with
+        | Bootstrap table -> table
+        | Complete table -> table
+        | Init ->
+            failwith "findModuleSymbol: attempted to use a symbol table in Init state??"
+    // we iteratively search for [nameParts] from deeper to shallower (removing one element of revNamespacePath each time)
+    let nsPath =
+        revNamespacePath |> List.rev
+    let rec findDepthFirst (current: SymbolTable) (revConsumedPath: string list) (nsPathLeft: string list) =
+        // go deep first, exhausting the nsPath
+        match nsPathLeft with
+        | [] ->
+            // end of nsPath, see what we can find relative to current table
+            match findSymbolHere current nameParts with
+            | Some value ->
+                // return w/ consumed path prefix (needed for resolved names, want fully qualified path)
+                Some (List.rev revConsumedPath, value)
+            | None ->
+                None
+        | name :: etc ->
+            match current.TryFind name with
+            | Some entry ->
+                match etc, entry with
+                | _, SubTable(maybeThing, subTable) ->
+                    match findDepthFirst subTable (name :: revConsumedPath) etc with
+                    | Some value ->
+                        // found something deeper, great!
+                        Some value
+                    | None ->
+                        // didn't find anything at the deeper level - what about here?
+                        match findSymbolHere current nameParts with
+                        | Some value ->
+                            // return with consumed path prefix
+                            Some (List.rev revConsumedPath, value)
+                        | None ->
+                            // back out and keep searching
+                            None
+                | _, Direct _ ->
+                    // namespace path terminated in a direct symbol hit - shouldn't happen (namespace path always refers to enclosing table)
+                    failwithf "tryFindSymbol: namespace element '%s' terminated in direct symbol entry - shouldn't happen" name
+            | None ->
+                failwithf "tryFindSymbol: namespace element '%s' did not exist at current level of symbol table - shouldn't happen" name
+    findDepthFirst table [] nsPath
 
-let rec resolveType (context: ModuleContext) (type_: NIType) =
+type ImportResult = {
+    ImportName: string
+    Result: string list * UserType
+}
+
+let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: string list) (nameParts: string list) =
+    // 1. try to find in the current module
+    match findModuleSymbol context.Module namespacePath nameParts with
+    | Some (nsPrefix, thing) ->
+        (ThisModule (nsPrefix @ nameParts), thing)
+    | None ->
+        // 2. not in this module, what about imports?
+        let importResults =
+            context.Module.Imports
+            |> List.choose (fun importName ->
+                let import =
+                    context.Loaded[importName]
+                // TODO: strip off any common prefix between thing and full module path!!
+                findModuleSymbol import [] nameParts
+                |> Option.map (fun res ->
+                    { ImportName = importName; Result = res }))
+        match importResults with
+        | _ :: _ :: _ ->
+            // 2+ results, ambiguous = not OK
+            let matchedNames =
+                importResults
+                |> List.map (fun { ImportName = name } -> name)
+            failwithf "resolveIdentifier: name [%A] in module %s matched symbols in multiple imports %A" nameParts context.Module.Name matchedNames
+        | [ { ImportName = importName; Result = (nsPrefix, thing) } ] ->
+            // single result, OK
+            // TODO: fix module prefix stuff, need module path or whatever I guess
+            (Imported ("@ MODULE PREFIX @" :: [importName], nsPrefix @ nameParts), thing)
+        | [] ->
+            // not found at all!
+            failwith "resolveIdentifier: name [%s] not found in module %s nor in any imports"
+
+let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_: NIType) =
     match type_ with
     | ArrayType niType ->
-        ArrayType (resolveType context niType)
+        ArrayType (resolveType context namespacePath niType)
     | MapType (keyType, valueType) ->
-        MapType (resolveType context keyType, resolveType context valueType)
+        MapType (resolveType context namespacePath keyType, resolveType context namespacePath valueType)
     | TupleType tupleTypes ->
-        TupleType (tupleTypes |> List.map (resolveType context))
+        TupleType (tupleTypes |> List.map (resolveType context namespacePath))
     | SetType niType ->
-        SetType (resolveType context niType)
+        SetType (resolveType context namespacePath niType)
     | Unresolved (nameParts, loc, typeConstraint) ->
-        match resolveIdentifier context nameParts loc with
+        match resolveIdentifier context loc namespacePath nameParts with
         | resolvedName, resolvedDef ->
             match typeConstraint with
             | DefaultConstraint ->
@@ -882,43 +946,43 @@ let rec resolveType (context: ModuleContext) (type_: NIType) =
     | _ ->
         type_
 
-let resolveFieldType (context: ModuleContext) (ft: NamedField) =
+let resolveFieldType (context: ModuleContext) (namespacePath: string list) (ft: NamedField) =
     let nextType =
-        resolveType context ft.Type_
+        resolveType context namespacePath ft.Type_
     { ft with Type_ = nextType }
 
-let resolveFunctionTypes (context: ModuleContext) (nf: NamedFunction) =
+let resolveFunctionTypes (context: ModuleContext) (namespacePath: string list) (nf: NamedFunction) =
     let nextArgs =
         nf.Args
-        |> List.map (fun (name, argType) -> (name, resolveType context argType))
+        |> List.map (fun (name, argType) -> (name, resolveType context namespacePath argType))
     let nextReturns =
-        resolveType context nf.Returns
+        resolveType context namespacePath nf.Returns
     let nextThrows =
         nf.Throws
-        |> List.map (resolveType context)
+        |> List.map (resolveType context namespacePath)
     { nf with Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
-let resolveDelegateTypes (context: ModuleContext) (info: DelegateInfo) =
+let resolveDelegateTypes (context: ModuleContext) (namespacePath: string list) (info: DelegateInfo) =
     let nextArgs =
         info.Args
-        |> List.map (fun (name, argType) -> (name, resolveType context argType))
+        |> List.map (fun (name, argType) -> (name, resolveType context namespacePath argType))
     let nextReturns =
-        resolveType context info.Returns
+        resolveType context namespacePath info.Returns
     let nextThrows =
         info.Throws
-        |> List.map (resolveType context)
+        |> List.map (resolveType context namespacePath)
     { Args = nextArgs; Returns = nextReturns; Throws = nextThrows }
 
-let resolveSumTypeTypes (context: ModuleContext) (values: SumTypeValue list) =
+let resolveSumTypeTypes (context: ModuleContext) (namespacePath: string list) (values: SumTypeValue list) =
     values
     |> List.map (fun value ->
         let nextArgs =
             value.Args
             |> List.map (fun (name, type_) ->
-                name, resolveType context type_)
+                name, resolveType context namespacePath type_)
         { value with Args = nextArgs })
 
-let rec resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
+let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (def: ModuleDefinition) =
     match def with
     | UserType (name, userType) ->
         let nextUserType =
@@ -926,61 +990,76 @@ let rec resolveModuleDef (context: ModuleContext) (def: ModuleDefinition) =
             | StructDef fieldTypes ->
                 let nextFieldTypes =
                     fieldTypes
-                    |> List.map (resolveFieldType context)
+                    |> List.map (resolveFieldType context namespacePath)
                 StructDef nextFieldTypes
             | OptionsDef fieldTypes ->
                 let nextFieldTypes =
                     fieldTypes
-                    |> List.map (resolveFieldType context)
+                    |> List.map (resolveFieldType context namespacePath)
                 OptionsDef nextFieldTypes
             | ExceptionDef fieldTypes ->
                 let nextFieldTypes =
                     fieldTypes
-                    |> List.map (resolveFieldType context)
+                    |> List.map (resolveFieldType context namespacePath)
                 ExceptionDef nextFieldTypes
             | InterfaceDef namedFunctions ->
                 let nextFunctions =
                     namedFunctions
-                    |> List.map (resolveFunctionTypes context)
+                    |> List.map (resolveFunctionTypes context namespacePath)
                 InterfaceDef nextFunctions
             | DelegateDef delegateInfo ->
                 let nextInfo =
-                    resolveDelegateTypes context delegateInfo
+                    resolveDelegateTypes context namespacePath delegateInfo
                 DelegateDef nextInfo
             | OpaqueDef info ->
+                // if there's a static block, immediately push a deeper namespace in which to potentially evaluate
+                // (that way the containing opaque {} block can refer to anything in its static {} block directly - enums, structs, etc)
+                let subPath =
+                    match info.StaticDefs with
+                    | [] -> namespacePath       // no content, just keep using same NS
+                    | _ -> name :: namespacePath
                 let nextMaybeParent =
                     info.MaybeParent
-                    |> Option.map (resolveType context)
+                    |> Option.map (resolveType context namespacePath) // no point using subpath here, we can't inherit from something we define!
                 let nextMethods =
                     info.Methods
-                    |> List.map (resolveFunctionTypes context)
+                    |> List.map (resolveFunctionTypes context subPath)
                 let nextStaticDefs =
                     info.StaticDefs
-                    |> List.map (resolveModuleDef context)
+                    |> List.map (resolveModuleDef context subPath)
                 let nextInfo =
                     { MaybeParent = nextMaybeParent; Methods = nextMethods; StaticDefs = nextStaticDefs }
                 OpaqueDef nextInfo
             | TypeDef niType ->
-                TypeDef (resolveType context niType)
+                TypeDef (resolveType context namespacePath niType)
             | EnumDef values ->
                 EnumDef values
             | SumTypeDef enumValues ->
                 let nextValues =
-                    resolveSumTypeTypes context enumValues
+                    resolveSumTypeTypes context namespacePath enumValues
                 SumTypeDef nextValues
         UserType (name, nextUserType)
     | Global (name, niType) ->
-        Global (name, resolveType context niType)
+        Global (name, resolveType context namespacePath niType)
     | FunctionDef namedFunction ->
-        FunctionDef (resolveFunctionTypes context namedFunction)
+        FunctionDef (resolveFunctionTypes context namespacePath namedFunction)
 
-let getUserTypes (defs: ModuleDefinition list) =
+let rec getUserTypes (defs: ModuleDefinition list) =
     defs
     |> List.choose (function
         | UserType (name, definition) ->
-            // also need to descend into opaque static blocks
-            // but we also might need a hierarchical symbol table ... TODO
-            Some (name, definition)
+            match definition with
+            // currently only opaque type supports static block
+            | OpaqueDef opaqueInfo ->
+                match opaqueInfo.StaticDefs with
+                | [] ->
+                    Some (name, Direct definition)
+                | _ ->
+                    let subTable =
+                        getUserTypes opaqueInfo.StaticDefs
+                    Some (name, SubTable (Some definition, subTable))
+            | _ ->
+                Some (name, Direct definition)
         | _ -> None)
     |> Map.ofList
 
@@ -994,7 +1073,7 @@ let resolveUserTypes (loaded: Map<string, Module>) (module_: Module) =
     // replace all Unresolved types with things from the table, if they even exist
     let nextDefs =
         nextModule.Defs
-        |> List.map (resolveModuleDef context)
+        |> List.map (resolveModuleDef context [])
     // the actual module definitions have been resolved, but the symbol table still contains only the original unresolved content
     // ie, the bootstrap definitions (names -> original unresolved module defs)
     // so this is a 2nd pass that will bring that up to date

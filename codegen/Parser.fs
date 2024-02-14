@@ -852,18 +852,27 @@ let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: str
             | None ->
                 failwithf "tryFindSymbol: namespace element '%s' did not exist at current level of symbol table - shouldn't happen" name
     findDepthFirst table [] nsPath
+    |> Option.map (fun (consumed, thing) ->
+        // return name relative to module root
+        consumed @ nameParts, thing)
+        
 
 type ImportResult = {
     ImportName: ModuleName
     Result: string list * UserType
 }
 
+let removeModuleName (ModuleName moduleNameParts) (nameParts: string list) =
+    match List.skipWhile2 (fun a b -> a = b) moduleNameParts nameParts with
+    | _, remaining ->
+        remaining
+
 let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: string list) (UnresolvedIdentifier nameParts) =
     // 1. try to find in the current module
     match findModuleSymbol context.Module namespacePath nameParts with
-    | Some (nsPrefix, thing) ->
+    | Some (fullName, thing) ->
         let symbolName =
-            SymbolName (nsPrefix @ nameParts)
+            SymbolName fullName
         (ThisModule symbolName, thing)
     | None ->
         // 2. not in this module, what about imports?
@@ -872,10 +881,16 @@ let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: s
             |> List.choose (fun importName ->
                 let import =
                     context.Loaded[importName]
-                // TODO: strip off any common prefix between thing and full module path!!
-                findModuleSymbol import [] nameParts
-                |> Option.map (fun res ->
-                    { ImportName = importName; Result = res }))
+                // strip off any common prefix between identifier and full module path, if the user is trying to use a fully qualified name
+                match removeModuleName importName nameParts with
+                | [] ->
+                    // module name completely consumed nameParts, there would be nothing left to search for!
+                    // seems like an odd thing to happen, how could an identifier refer to something that starts with the name of a module, but doesn't refer to the module? seems like an error ...
+                    None
+                | relativeParts ->
+                    findModuleSymbol import [] relativeParts
+                    |> Option.map (fun res ->
+                        { ImportName = importName; Result = res }))
         match importResults with
         | _ :: _ :: _ ->
             // 2+ results, ambiguous = not OK
@@ -883,11 +898,9 @@ let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: s
                 importResults
                 |> List.map (fun { ImportName = name } -> name)
             failwithf "resolveIdentifier: identifier %A in module %A matched symbols in multiple imports %A @ %A" nameParts context.Module.Name matchedNames loc
-        | [ { ImportName = importName; Result = (nsPrefix, thing) } ] ->
+        | [ { ImportName = importName; Result = (fullName, thing) } ] ->
             // single result, OK
-            let symbolName =
-                SymbolName (nsPrefix @ nameParts)
-            (Imported (importName, symbolName), thing)
+            (Imported (importName, SymbolName fullName), thing)
         | [] ->
             // not found at all!
             failwithf "resolveIdentifier: identifier %A not found in containing module %A nor in any imports @ %A" nameParts context.Module.Name loc

@@ -351,7 +351,6 @@ let isValidEnumWidth (t: NIType) =
 type OpaqueInfo = {
     MaybeParent: NIType option          // must be an opaque, obviously
     Methods: NamedFunction list
-    StaticDefs: ModuleDefinition list   // ie, just stuff namespace-prefixed by the opaque type
 }
 and UserType =
     | OpaqueDef of OpaqueInfo
@@ -367,10 +366,11 @@ and ModuleDefinition =
     | Global of name: string * type_: NIType
     | FunctionDef of NamedFunction
     | UserType of name: string * type_: UserType
-
+    | Group of name: string * defs: ModuleDefinition list
+    
 type SymbolTableEntry =
     | Direct of thing: UserType
-    | SubTable of maybeThing: UserType option * table: SymbolTable
+    | SubTable of table: SymbolTable
 and SymbolTable =
     Map<string, SymbolTableEntry>
     
@@ -378,7 +378,7 @@ type SymbolTableState =
     | Init
     | Bootstrap of table: SymbolTable  // 1st pass, will contain unresolved names
     | Complete of table: SymbolTable   // 2nd pass, everything should be resolved
-    
+
 type Module = {
     Name: ModuleName
     Imports: ModuleName list
@@ -569,6 +569,13 @@ let parseSumTypeValues (loc: Location) (input: TokenAndLocation list) =
 let rec parseModuleDefs (input: TokenAndLocation list) =
     let parseNext (remaining: TokenAndLocation list) =
         match remaining with
+        | Lookahead 3 ([GroupToken; Identifier groupName; LeftBrace], loc, etc) ->
+            let contentBlock, etc =
+                contentUntilMatching loc LeftBrace etc
+            let groupDefs =
+                parseModuleDefs contentBlock
+            ([Group (groupName, groupDefs)], etc)
+            |> Some
         | Lookahead 2 ([OpaqueToken; Identifier opaqueName], loc, etc) ->
             // inherits anything?
             let maybeParent, loc, etc =
@@ -588,7 +595,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             // empty opaque
             | Lookahead 1 ([Semicolon], loc, etc) ->
                 let info =
-                    { MaybeParent = maybeParent; Methods = []; StaticDefs = [] }
+                    { MaybeParent = maybeParent; Methods = [] }
                 ([UserType (opaqueName, OpaqueDef info)], etc)
                 |> Some
             // opaque with content (methods + optional static {} block)
@@ -626,7 +633,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     | { Location = loc } :: _ ->
                         failwithf "unknown content after opaque methods @ %s" (loc.ToString())
                 let info =
-                    { MaybeParent = maybeParent; Methods = methods; StaticDefs = staticDefs }
+                    { MaybeParent = maybeParent; Methods = methods }
                 ([UserType (opaqueName, OpaqueDef info)], afterBlock)
                 |> Some
             | _ ->
@@ -791,13 +798,13 @@ let findSymbolHere (table: SymbolTable) (nameParts: string list) =
                 | [], Direct thing ->
                     // direct hit, OK
                     Some thing
-                | [], SubTable(maybeThing, _) ->
-                    // maybe direct hit, depends if there was an enclosing entity of the subtable
-                    maybeThing
-                | more, Direct thing ->
-                    // had more name parts, but found (the wrong thing) preventing deeper search
+                | [], SubTable _ ->
+                    // ran out of path parts, but at a group/subtable, not a specific symbol
                     None
-                | more, SubTable(maybeThing, subTable) ->
+                | _ :: _, Direct _ ->
+                    // had more name parts, but dead-ended (prevented from going further)
+                    None
+                | more, SubTable subTable ->
                     // recurse to consume name parts
                     recFind subTable more
             | None ->
@@ -832,7 +839,7 @@ let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: str
             match current.TryFind name with
             | Some entry ->
                 match etc, entry with
-                | _, SubTable(maybeThing, subTable) ->
+                | _, SubTable subTable ->
                     match findDepthFirst subTable (name :: revConsumedPath) etc with
                     | Some value ->
                         // found something deeper, great!
@@ -990,6 +997,13 @@ let resolveSumTypeTypes (context: ModuleContext) (namespacePath: string list) (v
 
 let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (def: ModuleDefinition) =
     match def with
+    | Group (name, defs) ->
+        let subPath =
+            name :: namespacePath
+        let nextDefs =
+            defs
+            |> List.map (fun md -> resolveModuleDef context subPath md)
+        Group (name, nextDefs)
     | UserType (name, userType) ->
         let nextUserType =
             match userType with
@@ -1018,23 +1032,14 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                     resolveDelegateTypes context namespacePath delegateInfo
                 DelegateDef nextInfo
             | OpaqueDef info ->
-                // if there's a static block, immediately push a deeper namespace in which to potentially evaluate
-                // (that way the containing opaque {} block can refer to anything in its static {} block directly - enums, structs, etc)
-                let subPath =
-                    match info.StaticDefs with
-                    | [] -> namespacePath       // no content, just keep using same NS
-                    | _ -> name :: namespacePath
                 let nextMaybeParent =
                     info.MaybeParent
-                    |> Option.map (resolveType context namespacePath) // no point using subpath here, we can't inherit from something we define!
+                    |> Option.map (resolveType context namespacePath)
                 let nextMethods =
                     info.Methods
-                    |> List.map (resolveFunctionTypes context subPath)
-                let nextStaticDefs =
-                    info.StaticDefs
-                    |> List.map (resolveModuleDef context subPath)
+                    |> List.map (resolveFunctionTypes context namespacePath)
                 let nextInfo =
-                    { MaybeParent = nextMaybeParent; Methods = nextMethods; StaticDefs = nextStaticDefs }
+                    { MaybeParent = nextMaybeParent; Methods = nextMethods }
                 OpaqueDef nextInfo
             | TypeDef niType ->
                 TypeDef (resolveType context namespacePath niType)
@@ -1053,19 +1058,12 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
 let rec getUserTypes (defs: ModuleDefinition list) =
     defs
     |> List.choose (function
+        | Group (name, defs) ->
+            let subTable =
+                getUserTypes defs
+            Some (name, SubTable subTable)
         | UserType (name, definition) ->
-            match definition with
-            // currently only opaque type supports static block
-            | OpaqueDef opaqueInfo ->
-                match opaqueInfo.StaticDefs with
-                | [] ->
-                    Some (name, Direct definition)
-                | _ ->
-                    let subTable =
-                        getUserTypes opaqueInfo.StaticDefs
-                    Some (name, SubTable (Some definition, subTable))
-            | _ ->
-                Some (name, Direct definition)
+            Some (name, Direct definition)
         | _ -> None)
     |> Map.ofList
 

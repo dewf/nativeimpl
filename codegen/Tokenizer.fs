@@ -17,6 +17,7 @@ type Token =
     // etc
     | ModuleToken
     | ImportToken
+    | GroupToken
     | OpaqueToken
     | StructToken
     | ArrayToken
@@ -219,6 +220,7 @@ let nextToken (loc: Location) (input: char[]) =
             match String(_match) with
             | "module" -> ModuleToken
             | "import" -> ImportToken
+            | "group" -> GroupToken
             | "opaque" -> OpaqueToken
             | "struct" -> StructToken
             | "exception" -> ExceptionToken

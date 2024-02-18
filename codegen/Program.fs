@@ -1,3 +1,4 @@
+open Generators.Frontend
 open Parser
 open AppCommon
 // open Generators.Frontend
@@ -64,14 +65,18 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             printfn "======= processing module %A =======" name
             let currentModule, nextMap = loadModule inputPath moduleMap name Set.empty
             
-            // // frontend
-            // match frontLang.ToLower() with
-            // | "csharp" | "c#" ->
-            //     printfn "rendering C# frontend code"
-            //     CsharpGenerator.generateModule currentModule outParams
-            // | _ ->
-            //     failwithf "unsupported frontend language: %s" frontLang
-            // // backend
+            let context =
+                { Module = currentModule; Loaded = moduleMap }
+            
+            // frontend
+            match frontLang.ToLower() with
+            | "csharp" | "c#" ->
+                printfn "rendering C# frontend code"
+                CsharpGenerator.generateModule context outParams
+            | _ ->
+                failwithf "unsupported frontend language: %s" frontLang
+                
+            // backend
             // match backLang.ToLower() with
             // | "cpp" | "c++" ->
             //     printfn "rendering C++ backend code"
@@ -81,17 +86,17 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             
             nextMap)
 
-    // printfn "======= generating library files ======="
-    // // get dependency order first
-    // let depsOrder = getDependencyOrder moduleMap
-    // // frontend
-    // match frontLang.ToLower() with
-    // | "csharp" | "c#" ->
-    //     printfn "rendering C# library file"
-    //     CsharpGenerator.generateLibraryFile depsOrder outParams
-    // | _ ->
-    //     failwithf "unsupported frontend language: %s" frontLang
-    //     
+    printfn "======= generating library files ======="
+    // get dependency order first
+    let depsOrder = getDependencyOrder moduleMap
+    // frontend
+    match frontLang.ToLower() with
+    | "csharp" | "c#" ->
+        printfn "rendering C# library file"
+        CsharpGenerator.generateLibraryFile depsOrder outParams
+    | _ ->
+        failwithf "unsupported frontend language: %s" frontLang
+        
     // // backend
     // match backLang.ToLower() with
     // | "cpp" | "c++" ->
@@ -100,11 +105,11 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     // | _ ->
     //     failwithf "unsupported backend language: %s" backLang
     //
-    // // generate project files:
-    // CsharpGenerator.generateProject outParams
-    // // generate project files for backend (eg cmake)
+    // generate project files:
+    CsharpGenerator.generateProject outParams
+    // generate project files for backend (eg cmake)
     
-    printfn "moduleMap: %A" moduleMap
+    // printfn "moduleMap: %A" moduleMap
 
 let outParams =
     { Path = OUTPUT_PATH; MaybeNamespace = Some NAMESPACE; LibraryName = LIBRARY }

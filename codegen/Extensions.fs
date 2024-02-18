@@ -44,11 +44,25 @@ module List =
                 arem, brem
         inner xa xb
         
-    let allButLast (xs: 'a list) =
-        if xs.IsEmpty then
-            failwith "List.allButLast - list was empty!"
-        else
-            xs
-            |> List.rev
-            |> List.skip 1
-            |> List.rev
+    let splitAtLast (xs: 'a list) =
+        match List.rev xs with
+        | h :: etc ->
+            List.rev etc, h
+        | [] ->
+            failwith "List.splitAtLast - list was empty"
+            
+    let removePrefix (prefix: 'a list) (xs: 'a list) =
+        let rec removeWhileEqual (pRemain: 'a list) (xRemain: 'a list) =
+            match pRemain, xRemain with
+            | pHead :: pEtc, xHead :: xEtc when pHead = xHead ->
+                removeWhileEqual pEtc xEtc
+            | [], xEtc ->
+                // xEtc might be empty, but we did exhaust the prefix as asked
+                Some xEtc
+            | _ :: _, [] ->
+                // ran out of target list before consuming prefix
+                None
+            | _ ->
+                // heads exist but not equal, fail
+                None
+        removeWhileEqual prefix xs

@@ -862,7 +862,23 @@ let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: str
     |> Option.map (fun (consumed, thing) ->
         // return name relative to module root
         consumed @ nameParts, thing)
-        
+    
+let symbolIsUnambiguous (context: ModuleContext) (SymbolName nameParts) =
+    let imported =
+        context.Module.Imports
+        |> List.map (fun moduleName ->
+            match context.Loaded.TryFind moduleName with
+            | Some value ->
+                value
+            | None ->
+                failwithf "symbolIsUnambiguous: couldn't find modulename %A in the 'Loaded' module map ??" moduleName)
+    let toSearch =
+        context.Module :: imported
+    let found =
+        toSearch
+        |> List.choose (fun m ->
+            findModuleSymbol m [] nameParts)
+    found.Length < 2
 
 type ImportResult = {
     ImportName: ModuleName

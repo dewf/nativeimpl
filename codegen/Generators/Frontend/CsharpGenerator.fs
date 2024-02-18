@@ -8,14 +8,23 @@ open Generators.Common
 
 open AppCommon
 
-let resolvedNameToString (name: ResolvedName) =
-    match name with
-    | ThisModule (SymbolName nameParts) ->
-        joinNameParts (nameParts |> List.map upperFirst)
-    | Imported(ModuleName moduleNameParts, SymbolName nameParts) ->
-        let x =
-            (moduleNameParts @ nameParts) |> List.map upperFirst
-        joinNameParts x
+let resolvedNameToString (context: ModuleContext) (name: ResolvedName) =
+    let moduleName, symbolName =
+        match name with
+        | ThisModule symbolName ->
+            context.Module.Name, symbolName
+        | Imported(moduleName, symbolName) ->
+            moduleName, symbolName
+    match symbolName with
+    | SymbolName symbolParts ->
+        // we want to use the shortest UNAMBIGUOUS name
+        // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
+        if symbolIsUnambiguous context symbolName then
+            joinNameParts (symbolParts |> List.map upperFirst)
+        else
+            match moduleName with
+            | ModuleName moduleParts ->
+                joinNameParts ((moduleParts @ symbolParts) |> List.map upperFirst)
         
 let typeToCsString (context: ModuleContext) (outerType: NIType) =
     let rec recInner = function
@@ -49,7 +58,7 @@ let typeToCsString (context: ModuleContext) (outerType: NIType) =
                 | _ ->
                     failwithf "typeToCsString: failed to find typedef definition"
             | _ ->
-                resolvedNameToString resolvedName
+                resolvedNameToString context resolvedName
         | ArrayType elemType -> sprintf "%s[]" (recInner elemType)
         | SetType elemType -> sprintf "HashSet<%s>" (recInner elemType)
         | BufferType elemType -> sprintf "INativeBuffer<%s>" (recInner elemType)
@@ -73,7 +82,7 @@ let rec newCsArray (context: ModuleContext) (ofType: NIType) (countVar: string) 
     | _ ->
         sprintf "new %s[%s]" (typeToCsString context ofType) countVar
 
-let rec typeToName = function
+let rec typeToName (context: ModuleContext) = function
     | UnitType -> failwith "typeToName: 'unit' type as name?"
     | Primitive prim ->
         match prim with
@@ -93,21 +102,21 @@ let rec typeToName = function
         | Float64 -> "Double"
         | StringType -> "String"
     | Resolved (resolvedName, _) ->
-        resolvedNameToString resolvedName
+        resolvedNameToString context resolvedName
     | TupleType tupleTypes ->
         let joined =
             tupleTypes
-            |> List.map typeToName
+            |> List.map (typeToName context)
             |> String.concat ""
         sprintf "%s_Tuple" joined
     | ArrayType niType ->
-        sprintf "%s_Array" (typeToName niType)
+        sprintf "%s_Array" (typeToName context niType)
     | SetType niType ->
-        sprintf "%s_Set" (typeToName niType)
+        sprintf "%s_Set" (typeToName context niType)
     | MapType (keyType, valueType) ->
-        sprintf "%s_%s_Map" (typeToName keyType) (typeToName valueType)
+        sprintf "%s_%s_Map" (typeToName context keyType) (typeToName context valueType)
     | BufferType elemType ->
-        sprintf "Native_%s_Buffer" (typeToName elemType)
+        sprintf "Native_%s_Buffer" (typeToName context elemType)
     | x -> sprintf "(typeToName: not yet supported: %A)" x
 
 let argsJoined (context: ModuleContext) (args: (string * NIType) list) =
@@ -132,17 +141,17 @@ type PopValueContext =
     | Return
     | SafeReturn
 
-let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopValueContext) =
+let popValue (context: ModuleContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
     let write = writer.Write
     let contextPrefix =
-        match context with
+        match popContext with
         | NewVariable name -> sprintf "var %s =" name
         | ExistingVar name -> sprintf "%s =" name
         | Return -> "return"
         | SafeReturn -> "var __ret ="
     match type_ with
     | UnitType ->
-        match context with
+        match popContext with
         | Return -> () // nothing'
         | _ -> failwith "tried to pop a Unit value in a non-Return context, why?"
     | Primitive prim ->
@@ -156,7 +165,7 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
         | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
     | Resolved (resolvedName, _) ->
         let name =
-            resolvedNameToString resolvedName
+            resolvedNameToString context resolvedName
         write level "%s %s__Pop();" contextPrefix name
     | ArrayType niType ->
         match niType with
@@ -170,23 +179,23 @@ let popValue (writer: IFormatWriter) (level: int) (type_: NIType) (context: PopV
             | StringType -> write level "%s NativeImplClient.PopStringArray();" contextPrefix
             | _ -> write level "// popValue not yet supported: array of prim %A" prim
         | Resolved _ ->
-            write level "%s __%s__Pop();" contextPrefix (typeToName (ArrayType niType))
-        | ArrayType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_) // sigh, normalize all these already - doing it so many different ways...
-        | SetType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
-        | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
-        | TupleType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName type_)
+            write level "%s __%s__Pop();" contextPrefix (typeToName context (ArrayType niType))
+        | ArrayType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_) // sigh, normalize all these already - doing it so many different ways...
+        | SetType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
+        | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
+        | TupleType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
         | _ -> write level "// popValue not yet supported: array of %A" niType
     | MapType _ ->
-        write level "%s __%s__Pop();" contextPrefix (typeToName type_)
+        write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
     | TupleType _ ->
-        write level "%s __%s__Pop();" contextPrefix (typeToName type_)
+        write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
     | SetType _ ->
-        write level "%s __%s__Pop();" contextPrefix (typeToName type_)
+        write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
     | BufferType _ ->
-        write level "%s __%s__Pop();" contextPrefix (typeToName type_)
+        write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
     | _ ->
         write level "// popValue %A not yet supported" type_
-    match context with
+    match popContext with
     | SafeReturn ->
         write level "NativeImplClient.ServerClearSafetyArea();"
         write level "return __ret;"
@@ -198,7 +207,7 @@ type PushIsReturn =
     | Indirect of name: string
     | NotApplicable
 
-let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
+let pushValue (context: ModuleContext) (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
     let write = writer.Write
     let isReturnString() =
         match isReturn with
@@ -219,7 +228,7 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
         | StringType -> write level "NativeImplClient.PushString(%s);" content
     | Resolved(resolvedName, resolvedType) ->
         let name =
-            resolvedNameToString resolvedName
+            resolvedNameToString context resolvedName
         match resolvedType with
         | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
             // types that potentially contain refs, need to honor isReturn
@@ -240,22 +249,22 @@ let pushValue (writer: IFormatWriter) (level: int) (type_: NIType) (content: str
         | Resolved (_, resolvedType) ->
             match resolvedType with
             | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-                write level "__%s__Push(%s, %s);" (typeToName (ArrayType niType)) content (isReturnString())
+                write level "__%s__Push(%s, %s);" (typeToName context (ArrayType niType)) content (isReturnString())
             | _ ->
-                write level "__%s__Push(%s);" (typeToName (ArrayType niType)) content
-        | ArrayType subType -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
-        | SetType subType -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
-        | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
-        | TupleType _ -> write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
+                write level "__%s__Push(%s);" (typeToName context (ArrayType niType)) content
+        | ArrayType subType -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+        | SetType subType -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+        | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+        | TupleType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
     | TupleType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
+        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | SetType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
+        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | BufferType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
+        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | MapType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName type_) content (isReturnString())
+        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | _ ->
         write level "// pushValue %A not yet supported" type_
 
@@ -1277,14 +1286,14 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
         write 2 "{"
         // push args in reverse
         for argName, argType in namedFunc.Args |> List.rev do
-            pushValue writer 3 argType argName (Direct false)
+            pushValue context writer 3 argType argName (Direct false)
         // invoke remote
         if namedFunc.Throws.IsEmpty then
             write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.Name
         else
             write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.Name
         // return pop
-        popValue writer 3 namedFunc.Returns (if containsRefs context namedFunc.Returns then SafeReturn else Return)
+        popValue context writer 3 namedFunc.Returns (if containsRefs context namedFunc.Returns then SafeReturn else Return)
         write 2 "}"
         
     // static init + shutdown ====================================================
@@ -1308,7 +1317,7 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
         blank()
         write 3 "NativeImplClient.PushModuleConstants(_module);"
         for name, type_ in globals do
-            popValue writer 3 type_ (ExistingVar (upperFirst name))
+            popValue context writer 3 type_ (ExistingVar (upperFirst name))
     
     // module method handles
     if not moduleMethods.IsEmpty then
@@ -1350,16 +1359,16 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
                 write 4 "var inst = (Client%s) obj;" ifaceName
                 // pop args
                 for argName, argType in method.Args do
-                    popValue writer 4 argType (NewVariable argName)
+                    popValue context writer 4 argType (NewVariable argName)
                 // exec + return
                 let invocation =
                     sprintf "inst.%s(%s)" (upperFirst method.Name) (argNamesJoined method.Args)
                 if method.Throws.IsEmpty then
-                    pushValue writer 4 method.Returns invocation (Direct true)
+                    pushValue context writer 4 method.Returns invocation (Direct true)
                 else
                     write 4 "try"
                     write 4 "{"
-                    pushValue writer 5 method.Returns invocation (Direct true)
+                    pushValue context writer 5 method.Returns invocation (Direct true)
                     write 4 "}"
                     for exc in method.Throws do
                         match exc with

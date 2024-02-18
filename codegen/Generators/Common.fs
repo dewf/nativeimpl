@@ -4,7 +4,6 @@ open System
 open System.IO
 open Parser
 open Extensions
-open Util
 open AppCommon
 
 let joinNameParts (parts: string list) =
@@ -48,13 +47,6 @@ type UserOrGeneric =
     | Generic of NIType
     | FwdInterface      // just a special case for rendering, really - won't be in the type map or anything
     
-// let localSymbolLookup (table: SymbolTable) (SymbolName nameParts) =
-//     match findSymbolHere table nameParts with
-//     | Some value ->
-//         value
-//     | None ->
-//         failwithf "requiredSymbolLookup for %A failed" nameParts
-        
 let requiredSymbolLookup (context: ModuleContext) (name: ResolvedName) =
     match name with
     | ThisModule (SymbolName nameParts) ->
@@ -82,12 +74,6 @@ let requiredSymbolLookup (context: ModuleContext) (name: ResolvedName) =
         | None -> failwith "todo"
         
 let allGenericTypes (context: ModuleContext) =
-    let symbolTable =
-        match context.Module.SymbolTable with
-        | Bootstrap table -> table
-        | Complete table -> table
-        | Init ->
-            failwith "allGenericTypes: module symbolTable was in 'Init' state"
     let rec typeAndSubTypes (t: NIType) =
         let tupleHandling (tupleOuter: NIType) =
             match tupleOuter with

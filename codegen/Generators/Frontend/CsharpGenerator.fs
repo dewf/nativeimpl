@@ -1233,60 +1233,60 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
 
     // let typeMap =
     //     userTypesAndGenerics m
-    //
-    // // top level functions
-    // for namedFunc in moduleMethods do
-    //     write 2 "private static ModuleMethodHandle _%s;" namedFunc.Name
-    //     
-    // // opaque methods
-    // for name, info in opaques do
-    //     // instance methods
-    //     for method in info.Methods do
-    //         write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
-    //     // synthesized dispose method
-    //     write 2 "private static ModuleMethodHandle _%s_dispose;" name
-    //
-    // // interfaces
-    // for name, methods in interfaces do
-    //     write 2 "private static InterfaceHandle _%s;" (lowerFirst name)
-    //     for method in methods do
-    //         write 2 "private static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
-    //
-    // // exceptions
-    // for name, _ in exceptions do
-    //     write 2 "private static ExceptionHandle _%s;" (lowerFirst name)
-    //
-    // // globals declaration
-    // for name, type_ in globals do
-    //     write 2 "public static %s %s { get; private set; }" (typeToCsString typeMap type_) (upperFirst name)
-    //
-    // // // user types ====================
-    // // let containsRefsMap =
-    // //     createContainsRefsMap typeMap
-    // // let containsRefs (type_: NIType) =
-    // //     containsRefsMap.TryFind(typeToInternalKey type_)
-    // //     |> Option.defaultValue false
-    // // let renderFunc =
-    // //     renderLibraryUserTypes writer containsRefs
-    // // renderUserTypes typeMap renderFunc
-    //
-    // // top-level functions ===========
-    // for namedFunc in moduleMethods do
-    //     blank()
-    //     write 2 "public static %s %s(%s)" (typeToCsString typeMap namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined typeMap namedFunc.Args)
-    //     write 2 "{"
-    //     // push args in reverse
-    //     for argName, argType in namedFunc.Args |> List.rev do
-    //         pushValue writer 3 argType argName (Direct false)
-    //     // invoke remote
-    //     if namedFunc.Throws.IsEmpty then
-    //         write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.Name
-    //     else
-    //         write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.Name
-    //     // return pop
-    //     popValue writer 3 namedFunc.Returns (if containsRefs namedFunc.Returns then SafeReturn else Return)
-    //     write 2 "}"
-    //     
+    
+    // top level functions
+    for namedFunc in moduleMethods do
+        write 2 "private static ModuleMethodHandle _%s;" namedFunc.Name
+        
+    // opaque methods
+    for name, info in opaques do
+        // instance methods
+        for method in info.Methods do
+            write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
+        // synthesized dispose method
+        write 2 "private static ModuleMethodHandle _%s_dispose;" name
+    
+    // interfaces
+    for name, methods in interfaces do
+        write 2 "private static InterfaceHandle _%s;" (lowerFirst name)
+        for method in methods do
+            write 2 "private static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
+    
+    // exceptions
+    for name, _ in exceptions do
+        write 2 "private static ExceptionHandle _%s;" (lowerFirst name)
+    
+    // globals declaration
+    for name, type_ in globals do
+        write 2 "public static %s %s { get; private set; }" (typeToCsString context type_) (upperFirst name)
+    
+    // user types ====================
+    // let containsRefsMap =
+    //     createContainsRefsMap typeMap
+    // let containsRefs (type_: NIType) =
+    //     containsRefsMap.TryFind(typeToInternalKey type_)
+    //     |> Option.defaultValue false
+    // let renderFunc =
+    //     renderLibraryUserTypes writer containsRefs
+    // renderUserTypes typeMap renderFunc
+    
+    // top-level functions ===========
+    for namedFunc in moduleMethods do
+        blank()
+        write 2 "public static %s %s(%s)" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args)
+        write 2 "{"
+        // push args in reverse
+        for argName, argType in namedFunc.Args |> List.rev do
+            pushValue writer 3 argType argName (Direct false)
+        // invoke remote
+        if namedFunc.Throws.IsEmpty then
+            write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.Name
+        else
+            write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.Name
+        // return pop
+        popValue writer 3 namedFunc.Returns (if containsRefs context namedFunc.Returns then SafeReturn else Return)
+        write 2 "}"
+        
     // static init + shutdown ====================================================
     let maybeModuleInit =
         moduleMethods
@@ -1316,70 +1316,62 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
         for namedFunc in moduleMethods do
             write 3 "_%s = NativeImplClient.GetModuleMethod(_module, \"%s\");" namedFunc.Name namedFunc.Name
             
-    // // opaque method handles
-    // if not opaques.IsEmpty then
-    //     blank()
-    //     for name, info in opaques do
-    //         // instance methods
-    //         for method in info.Methods do
-    //             write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" (lowerFirst name) method.Name name method.Name
-    //         // synthesized dispose method handle
-    //         write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" name name
-    //         // static methods
-    //         let staticMethods =
-    //             info.StaticDefs
-    //             |> List.choose (function
-    //                 | FunctionDef nf -> Some nf
-    //                 | _ -> None)
-    //         for method in staticMethods do
-    //             write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" (lowerFirst name) method.Name name method.Name
-    //
-    // // exceptions
-    // if not exceptions.IsEmpty then
-    //     blank()
-    //     for name, _ in exceptions do
-    //         write 3 "_%s = NativeImplClient.GetException(_module, \"%s\");" (lowerFirst name) name
-    //         write 3 "NativeImplClient.SetExceptionBuilder(_%s, %s.BuildAndThrow);" (lowerFirst name) name
-    //
-    // // interface method handles, wrappers
-    // if not interfaces.IsEmpty then
-    //     for ifaceName, methods in interfaces do
-    //         blank()
-    //         write 3 "_%s = NativeImplClient.GetInterface(_module, \"%s\");" (lowerFirst ifaceName) ifaceName
-    //         // methods
-    //         if not methods.IsEmpty then
-    //             for method in methods do
-    //                 write 3 "_%s_%s = NativeImplClient.GetInterfaceMethod(_%s, \"%s\");" (lowerFirst ifaceName) (lowerFirst method.Name) (lowerFirst ifaceName) method.Name
-    //         // method wrappers
-    //         for method in methods do
-    //             blank()
-    //             write 3 "NativeImplClient.SetClientMethodWrapper(_%s_%s, delegate(ClientObject obj)" (lowerFirst ifaceName) method.Name
-    //             write 3 "{"
-    //             write 4 "var inst = (Client%s) obj;" ifaceName
-    //             // pop args
-    //             for argName, argType in method.Args do
-    //                 popValue writer 4 argType (NewVariable argName)
-    //             // exec + return
-    //             let invocation =
-    //                 sprintf "inst.%s(%s)" (upperFirst method.Name) (argNamesJoined method.Args)
-    //             if method.Throws.IsEmpty then
-    //                 pushValue writer 4 method.Returns invocation (Direct true)
-    //             else
-    //                 write 4 "try"
-    //                 write 4 "{"
-    //                 pushValue writer 5 method.Returns invocation (Direct true)
-    //                 write 4 "}"
-    //                 for exc in method.Throws do
-    //                     match exc with
-    //                     | Resolved (_, ExceptionType) ->
-    //                         write 4 "catch (%s e)" (typeToCsString typeMap exc)
-    //                         write 4 "{"
-    //                         write 5 "NativeImplClient.SetException(_%s);" (lowerFirst (typeToCsString typeMap exc))
-    //                         write 5 "e.PushAndSet();"
-    //                         write 4 "}"
-    //                     | _ ->
-    //                         failwith "C# interface wrappers: 'throws' contained non-exception type"
-    //             write 3 "});"
+    // opaque method handles
+    if not opaques.IsEmpty then
+        blank()
+        for name, info in opaques do
+            // instance methods
+            for method in info.Methods do
+                write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" (lowerFirst name) method.Name name method.Name
+            // synthesized dispose method handle
+            write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" name name
+    
+    // exceptions
+    if not exceptions.IsEmpty then
+        blank()
+        for name, _ in exceptions do
+            write 3 "_%s = NativeImplClient.GetException(_module, \"%s\");" (lowerFirst name) name
+            write 3 "NativeImplClient.SetExceptionBuilder(_%s, %s.BuildAndThrow);" (lowerFirst name) name
+    
+    // interface method handles, wrappers
+    if not interfaces.IsEmpty then
+        for ifaceName, methods in interfaces do
+            blank()
+            write 3 "_%s = NativeImplClient.GetInterface(_module, \"%s\");" (lowerFirst ifaceName) ifaceName
+            // methods
+            if not methods.IsEmpty then
+                for method in methods do
+                    write 3 "_%s_%s = NativeImplClient.GetInterfaceMethod(_%s, \"%s\");" (lowerFirst ifaceName) (lowerFirst method.Name) (lowerFirst ifaceName) method.Name
+            // method wrappers
+            for method in methods do
+                blank()
+                write 3 "NativeImplClient.SetClientMethodWrapper(_%s_%s, delegate(ClientObject obj)" (lowerFirst ifaceName) method.Name
+                write 3 "{"
+                write 4 "var inst = (Client%s) obj;" ifaceName
+                // pop args
+                for argName, argType in method.Args do
+                    popValue writer 4 argType (NewVariable argName)
+                // exec + return
+                let invocation =
+                    sprintf "inst.%s(%s)" (upperFirst method.Name) (argNamesJoined method.Args)
+                if method.Throws.IsEmpty then
+                    pushValue writer 4 method.Returns invocation (Direct true)
+                else
+                    write 4 "try"
+                    write 4 "{"
+                    pushValue writer 5 method.Returns invocation (Direct true)
+                    write 4 "}"
+                    for exc in method.Throws do
+                        match exc with
+                        | Resolved (_, ExceptionType) ->
+                            write 4 "catch (%s e)" (typeToCsString context exc)
+                            write 4 "{"
+                            write 5 "NativeImplClient.SetException(_%s);" (lowerFirst (typeToCsString context exc))
+                            write 5 "e.PushAndSet();"
+                            write 4 "}"
+                        | _ ->
+                            failwith "C# interface wrappers: 'throws' contained non-exception type"
+                write 3 "});"
     
     // invoke user's ModuleInit, if it exists
     match maybeModuleInit with

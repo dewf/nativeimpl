@@ -238,7 +238,7 @@ let userTypesAndGenerics (context: ModuleContext) =
             (typeToInternalKey type_)
         newMap.Add(name, RenderableDirect (UserOrGeneric.Generic type_)))
     
-let containsRefs (context: ModuleContext) (thing: UserOrGeneric) =
+let containsRefs (context: ModuleContext) (thing: NIType) =
     let rec processType (t: NIType) =
         match t with
         | UnitType -> false
@@ -287,13 +287,7 @@ let containsRefs (context: ModuleContext) (thing: UserOrGeneric) =
         | OptionsDef fields ->
             fields
             |> List.exists (fun f -> processType f.Type_)
-    match thing with
-    | UserOrGeneric.FwdInterface ->
-        failwith "containsRefs .FwdInterface case - uhhhh"
-    | UserOrGeneric.User userType ->
-        processUserType userType
-    | UserOrGeneric.Generic niType ->
-        processType niType
+    processType thing
     
 type NamespaceRelation =
     | NSEqual

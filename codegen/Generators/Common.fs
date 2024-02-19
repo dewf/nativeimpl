@@ -6,8 +6,8 @@ open Parser
 open Extensions
 open AppCommon
 
-let joinNameParts (parts: string list) =
-    String.Join(".", parts)
+let joinNameParts (separator: string) (parts: string list) =
+    String.Join(separator, parts)
 
 let rec typeToInternalKey = function
     | UnitType -> "void"
@@ -32,9 +32,9 @@ let rec typeToInternalKey = function
     | Resolved (name, _) ->
         match name with
         | ThisModule (SymbolName nameParts) ->
-            joinNameParts nameParts
+            joinNameParts "." nameParts
         | Imported(ModuleName moduleNameParts, SymbolName nameParts) ->
-            joinNameParts (moduleNameParts @ nameParts)
+            joinNameParts "." (moduleNameParts @ nameParts)
     | ArrayType niType -> sprintf "array[%s]" (typeToInternalKey niType)
     | MapType (keyType, valueType) -> sprintf "map[%s,%s]" (typeToInternalKey keyType) (typeToInternalKey valueType)
     | BufferType niType -> sprintf "buffer[%s]" (typeToInternalKey niType)

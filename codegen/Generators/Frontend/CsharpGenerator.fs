@@ -8,7 +8,15 @@ open Generators.Common
 
 open AppCommon
 
-let resolvedNameToString (context: ModuleContext) (name: ResolvedName) =
+type ResolveNameStringMode =
+    | TypeMode
+    | IdentifierMode
+    
+let resolvedNameToString (context: ModuleContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+    let separator =
+        match mode with
+        | TypeMode -> "."
+        | IdentifierMode -> "_"
     let moduleName, symbolName =
         match name with
         | ThisModule symbolName ->
@@ -20,11 +28,11 @@ let resolvedNameToString (context: ModuleContext) (name: ResolvedName) =
         // we want to use the shortest UNAMBIGUOUS name
         // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
         if symbolIsUnambiguous context symbolName then
-            joinNameParts (symbolParts |> List.map upperFirst)
+            joinNameParts separator (symbolParts |> List.map upperFirst)
         else
             match moduleName with
             | ModuleName moduleParts ->
-                joinNameParts ((moduleParts @ symbolParts) |> List.map upperFirst)
+                joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
         
 let typeToCsString (context: ModuleContext) (outerType: NIType) =
     let rec recInner = function
@@ -58,7 +66,7 @@ let typeToCsString (context: ModuleContext) (outerType: NIType) =
                 | _ ->
                     failwithf "typeToCsString: failed to find typedef definition"
             | _ ->
-                resolvedNameToString context resolvedName
+                resolvedNameToString context resolvedName TypeMode
         | ArrayType elemType -> sprintf "%s[]" (recInner elemType)
         | SetType elemType -> sprintf "HashSet<%s>" (recInner elemType)
         | BufferType elemType -> sprintf "INativeBuffer<%s>" (recInner elemType)
@@ -102,7 +110,7 @@ let rec typeToName (context: ModuleContext) = function
         | Float64 -> "Double"
         | StringType -> "String"
     | Resolved (resolvedName, _) ->
-        resolvedNameToString context resolvedName
+        resolvedNameToString context resolvedName IdentifierMode
     | TupleType tupleTypes ->
         let joined =
             tupleTypes
@@ -165,7 +173,7 @@ let popValue (context: ModuleContext) (writer: IFormatWriter) (level: int) (type
         | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
     | Resolved (resolvedName, _) ->
         let name =
-            resolvedNameToString context resolvedName
+            resolvedNameToString context resolvedName TypeMode
         write level "%s %s__Pop();" contextPrefix name
     | ArrayType niType ->
         match niType with
@@ -228,7 +236,7 @@ let pushValue (context: ModuleContext) (writer: IFormatWriter) (level: int) (typ
         | StringType -> write level "NativeImplClient.PushString(%s);" content
     | Resolved(resolvedName, resolvedType) ->
         let name =
-            resolvedNameToString context resolvedName
+            resolvedNameToString context resolvedName TypeMode
         match resolvedType with
         | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
             // types that potentially contain refs, need to honor isReturn
@@ -680,7 +688,7 @@ let renderUserType (context: ModuleContext) (writer: IFormatWriter) (name: strin
         // class definition
         match maybeInheritsFrom with
         | Some parentName ->
-            write 2 "public class %s : %s" (upperFirst name) (resolvedNameToString context parentName)
+            write 2 "public class %s : %s" (upperFirst name) (resolvedNameToString context parentName TypeMode)
             write 2 "{"
             // no native handle required
         | None ->
@@ -1118,14 +1126,10 @@ let renderUserType (context: ModuleContext) (writer: IFormatWriter) (name: strin
             pushValue context writer 5 info.Returns invocation (Direct true)
             write 4 "}"
             for exc in info.Throws do
-                match exc with
-                | Resolved (resolvedName, ExceptionType) ->
-                    write 4 "catch (%s e)" (resolvedNameToString context resolvedName)
-                    write 4 "{"
-                    write 5 "e.PushAndSet();"
-                    write 4 "}"
-                | _ ->
-                    failwithf "C# writing delegate: 'throws' contained non-exception type"
+                write 4 "catch (%s e)" (typeToCsString context exc)
+                write 4 "{"
+                write 5 "e.PushAndSet();"
+                write 4 "}"
         write 3 "}"
         write 3 "NativeImplClient.PushClientFuncVal(CallbackWrapper, Marshal.GetFunctionPointerForDelegate(callback));"
         write 2 "}"
@@ -1149,7 +1153,7 @@ let renderUserType (context: ModuleContext) (writer: IFormatWriter) (name: strin
         write 2 "}"
 
 let joinModuleName (ModuleName nameParts) =
-    joinNameParts nameParts
+    joinNameParts "." nameParts
 
 type GroupContext = {
     Name: string

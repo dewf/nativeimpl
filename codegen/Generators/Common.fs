@@ -689,17 +689,20 @@ let renderArrayLike (table: RenderableTable) (currentNamespace: string list) (el
 type IFormatWriter =
     abstract Write : int -> FSharp.Core.Printf.TextWriterFormat<'T> -> 'T
     abstract Blank : unit -> unit
+    abstract WithExtraIndent : int -> IFormatWriter
 
-type SimpleFormatWriter(writer: TextWriter) =
+type SimpleFormatWriter(writer: TextWriter, baseIndent: int) =
     interface IDisposable with
         member this.Dispose() =
             writer.Dispose()
     interface IFormatWriter with
         member this.Write indent fmt =
-            writer.Write(String.replicate indent "    ")
+            writer.Write(String.replicate (baseIndent + indent) "    ")
             fprintfn writer fmt
         member this.Blank() =
             writer.WriteLine()
+        member this.WithExtraIndent value =
+            new SimpleFormatWriter(writer, baseIndent + value)
 
 let namespaceSplitter (namespace': string) =
     let parts =

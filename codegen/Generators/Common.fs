@@ -619,8 +619,8 @@ let renderUserTypes (currentNamespace: string list) (table: RenderableTable) (re
 
 type IArrayLikeRenderer =
     abstract TypedefTuple: NIType -> unit
-    abstract EnumType: name: string -> unit
-    abstract StructType: name: string -> NamedField list -> unit
+    abstract EnumType: name: ResolvedName -> unit
+    abstract StructType: name: ResolvedName -> NamedField list -> unit
     abstract TupleType: NIType list -> unit
     abstract ArrayType: unit -> unit
     abstract MapType: unit -> unit
@@ -632,37 +632,25 @@ type IArrayLikeRenderer =
     abstract Options: unit -> unit
     abstract Other: NIType -> unit
 
-let renderArrayLike (table: RenderableTable) (currentNamespace: string list) (elemType: NIType) (renderer: IArrayLikeRenderer) =
+let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArrayLikeRenderer) =
     match elemType with
     | Resolved(resolvedName, resolvedType) ->
-        let name, content =
-            match resolvedName with
-            | ThisModule name ->
-                match symbolToRenderableKey name currentNamespace with
-                | Some name ->
-                    match table[name] with
-                    | RenderableDirect thing ->
-                        name, thing
-                    | RenderableContainer sub ->
-                        failwith "renderArrayLike: uhhh problems"
-                | None ->
-                    failwithf "renderArrayLike: symbolToRenderableKey returned nothing for %A (current namespace: %A)" resolvedName currentNamespace
-            | Imported(moduleName, name) ->
-                failwith "renderArrayLike: Imported content not yet handled"
+        let content =
+            requiredSymbolLookup context resolvedName
         match resolvedType with
         | TypedefType ->
             match content with
-            | UserOrGeneric.User (TypeDef (TupleType _ as tt)) ->
+            | TypeDef (TupleType _ as tt) ->
                 renderer.TypedefTuple tt
             | _ ->
-                failwithf "array of typedef %A: TODO (basic array treatment)" name
+                failwithf "array of typedef %A: TODO (basic array treatment)" resolvedName
         | EnumType ->
-            renderer.EnumType name
+            renderer.EnumType resolvedName
         | StructType ->
             // fetch the fields so we can make a struct-of-arrays
             match content with
-            | UserOrGeneric.User (StructDef namedFields) ->
-                renderer.StructType name namedFields
+            | StructDef namedFields ->
+                renderer.StructType resolvedName namedFields
             | _ ->
                 failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
         | SumType ->

@@ -28,6 +28,7 @@ let resolvedNameToString (context: ModuleContext) (name: ResolvedName) (mode: Re
         // we want to use the shortest UNAMBIGUOUS name
         // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
         if symbolIsUnambiguous context symbolName then
+            // TODO: it would be nice if we could shorten it even further, by taking account of which group/namespace we're currently in (vs. the symbol)
             joinNameParts separator (symbolParts |> List.map upperFirst)
         else
             match moduleName with

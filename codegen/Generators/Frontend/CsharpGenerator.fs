@@ -1156,7 +1156,7 @@ let joinModuleName (ModuleName nameParts) =
     joinNameParts "." nameParts
 
 type GroupContext = {
-    Name: string
+    RevPath: string list
     Defs: ModuleDefinition list
     // broken down for easy use:
     ModuleMethods: NamedFunction list
@@ -1165,9 +1165,15 @@ type GroupContext = {
     Exceptions: (string * NamedField list) list
     Globals: (string * NIType) list
     Groups: (string * ModuleDefinition list) list
-}
+} with
+    member this.Name =
+        match this.RevPath with
+        | name :: _ -> name
+        | _ -> failwith "nope"
+    member this.Path =
+        List.rev this.RevPath
 
-let createGroupContext (name: string) (groupDefs: ModuleDefinition list) =
+let createGroupContext (groupDefs: ModuleDefinition list) (revPath: string list) =
     let moduleMethods =
         groupDefs
         |> List.choose (function
@@ -1200,7 +1206,7 @@ let createGroupContext (name: string) (groupDefs: ModuleDefinition list) =
         |> List.choose (function
             | Group(name, defs) -> Some (name, defs)
             | _ -> None)
-    { Name = name
+    { RevPath = revPath
       Defs = groupDefs
       ModuleMethods = moduleMethods
       Opaques = opaques
@@ -1212,10 +1218,24 @@ let createGroupContext (name: string) (groupDefs: ModuleDefinition list) =
 let renderInitCommon (context: ModuleContext) (writer: IFormatWriter) (group: GroupContext) =
     let write, blank = writer.Write, writer.Blank
     
-    // fetch globals
+    // initialize nested groups
+    // AFAIK there's no kind of dependency among groups, so it really doesn't matter where in the .Init this occurs ... probably
+    if not group.Groups.IsEmpty then
+        blank()
+        write 3 "// nested groups init"
+        for name, _ in group.Groups do
+            write 3 "%s.Init();" name
+            
+    let groupNamePrefix =
+        if group.RevPath.IsEmpty then
+            ""
+        else
+            (joinNameParts "." (group.RevPath |> List.rev)) + "."
+    
+    // pop any globals for this group (pushed all at once at root level)
     if not group.Globals.IsEmpty then
         blank()
-        write 3 "NativeImplClient.PushModuleConstants(_module);"
+        // write 3 "NativeImplClient.PushModuleConstants(_module);"
         for name, type_ in group.Globals do
             popValue context writer 3 type_ (ExistingVar (upperFirst name))
     
@@ -1223,7 +1243,7 @@ let renderInitCommon (context: ModuleContext) (writer: IFormatWriter) (group: Gr
     if not group.ModuleMethods.IsEmpty then
         blank()
         for namedFunc in group.ModuleMethods do
-            write 3 "_%s = NativeImplClient.GetModuleMethod(_module, \"%s\");" namedFunc.Name namedFunc.Name
+            write 3 "_%s = NativeImplClient.GetModuleMethod(_module, \"%s%s\");" namedFunc.Name groupNamePrefix namedFunc.Name
             
     // opaque method handles
     if not group.Opaques.IsEmpty then
@@ -1231,22 +1251,22 @@ let renderInitCommon (context: ModuleContext) (writer: IFormatWriter) (group: Gr
         for name, info in group.Opaques do
             // instance methods
             for method in info.Methods do
-                write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" (lowerFirst name) method.Name name method.Name
+                write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s%s_%s\");" (lowerFirst name) method.Name groupNamePrefix name method.Name
             // synthesized dispose method handle
-            write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" name name
+            write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s%s_dispose\");" name groupNamePrefix name
     
     // exceptions
     if not group.Exceptions.IsEmpty then
         blank()
         for name, _ in group.Exceptions do
-            write 3 "_%s = NativeImplClient.GetException(_module, \"%s\");" (lowerFirst name) name
+            write 3 "_%s = NativeImplClient.GetException(_module, \"%s%s\");" (lowerFirst name) groupNamePrefix name
             write 3 "NativeImplClient.SetExceptionBuilder(_%s, %s.BuildAndThrow);" (lowerFirst name) name
     
     // interface method handles, wrappers
     if not group.Interfaces.IsEmpty then
         for ifaceName, methods in group.Interfaces do
             blank()
-            write 3 "_%s = NativeImplClient.GetInterface(_module, \"%s\");" (lowerFirst ifaceName) ifaceName
+            write 3 "_%s = NativeImplClient.GetInterface(_module, \"%s%s\");" (lowerFirst ifaceName) groupNamePrefix ifaceName
             // methods
             if not methods.IsEmpty then
                 for method in methods do
@@ -1281,13 +1301,6 @@ let renderInitCommon (context: ModuleContext) (writer: IFormatWriter) (group: Gr
                         | _ ->
                             failwith "C# interface wrappers: 'throws' contained non-exception type"
                 write 3 "});"
-
-    // initialize nested groups
-    if not group.Groups.IsEmpty then
-        blank()
-        write 3 "// nested groups init"
-        for name, _ in group.Groups do
-            write 3 "%s.Init();" name
         
                 
 let rec renderNestedGroup (context: ModuleContext) (writer: IFormatWriter) (group: GroupContext) =
@@ -1315,15 +1328,15 @@ let rec renderNestedGroup (context: ModuleContext) (writer: IFormatWriter) (grou
     // close group
     write 1 "}"
     
-and renderGroupCommon (context: ModuleContext) (writer: IFormatWriter) (group: GroupContext) =
+and renderGroupCommon (context: ModuleContext) (writer: IFormatWriter) (groupContext: GroupContext) =
     let write, blank = writer.Write, writer.Blank
     
     // declare top level function handles
-    for namedFunc in group.ModuleMethods do
+    for namedFunc in groupContext.ModuleMethods do
         write 2 "private static ModuleMethodHandle _%s;" namedFunc.Name
 
     // opaque method handles
-    for name, info in group.Opaques do
+    for name, info in groupContext.Opaques do
         // instance methods
         for method in info.Methods do
             write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
@@ -1331,21 +1344,21 @@ and renderGroupCommon (context: ModuleContext) (writer: IFormatWriter) (group: G
         write 2 "private static ModuleMethodHandle _%s_dispose;" name
     
     // interfaces
-    for name, methods in group.Interfaces do
+    for name, methods in groupContext.Interfaces do
         write 2 "private static InterfaceHandle _%s;" (lowerFirst name)
         for method in methods do
             write 2 "private static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
     
     // exceptions
-    for name, _ in group.Exceptions do
+    for name, _ in groupContext.Exceptions do
         write 2 "private static ExceptionHandle _%s;" (lowerFirst name)
     
     // globals declaration
-    for name, type_ in group.Globals do
+    for name, type_ in groupContext.Globals do
         write 2 "public static %s %s { get; private set; }" (typeToCsString context type_) (upperFirst name)
     
     // top-level functions ===========
-    for namedFunc in group.ModuleMethods do
+    for namedFunc in groupContext.ModuleMethods do
         blank()
         write 2 "public static %s %s(%s)" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args)
         write 2 "{"
@@ -1364,13 +1377,15 @@ and renderGroupCommon (context: ModuleContext) (writer: IFormatWriter) (group: G
     // TODO: render synthetic types (generics etc)
     
     // render user types + nested groups in order of declaration
-    for def in group.Defs do
+    for def in groupContext.Defs do
         match def with
         | UserType(name, userType) ->
             renderUserType context writer name userType
         | Group(name, defs) ->
             let group =
-                createGroupContext name defs
+                let nextPath =
+                    name :: groupContext.RevPath
+                createGroupContext defs nextPath
             renderNestedGroup context writer group
         | _ ->
             ()
@@ -1417,7 +1432,7 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
 
     // now with the common group stuff:
     let rootGroup =
-        createGroupContext "##ROOT##" m.Defs
+        createGroupContext m.Defs []
         
     renderGroupCommon context writer rootGroup
     
@@ -1437,6 +1452,11 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     write 2 "{"
     write 3 "_module = NativeImplClient.GetModule(\"%s\");" (joinModuleName m.Name)
     
+    // right now we're just pushing the module constants once, and hoping that nothing else uses push/pop during the entire nested .Init process
+    // feels like a bad idea, though. perhaps it ought to be a separate, simpler recursive process that does ONLY that, so we know nothing else is ever going to use the vstack
+    // immediately after this call?
+    // alternatively the server could perform it per namespace: .PushModuleConstants(_module, "ns1.ns2.groupname")
+    write 3 "NativeImplClient.PushModuleConstants(_module);"
     renderInitCommon context writer rootGroup
     
     // invoke user's ModuleInit, if it exists

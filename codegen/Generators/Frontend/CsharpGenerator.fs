@@ -8,11 +8,75 @@ open Generators.Common
 
 open AppCommon
 
+type GroupContext = {
+    RevPath: string list
+    Defs: ModuleDefinition list
+    // broken down for easy use:
+    ModuleMethods: NamedFunction list
+    Opaques: (string * OpaqueInfo) list
+    Interfaces: (string * NamedFunction list) list
+    Exceptions: (string * NamedField list) list
+    Globals: (string * NIType) list
+    Groups: (string * ModuleDefinition list) list
+} with
+    member this.Name =
+        match this.RevPath with
+        | name :: _ -> name
+        | _ -> failwith "nope"
+    member this.Path =
+        List.rev this.RevPath
+
+type RenderContext = {
+    ModuleContext: ModuleContext
+    GroupContext: GroupContext
+}
+
+let createGroupContext (groupDefs: ModuleDefinition list) (revPath: string list) =
+    let moduleMethods =
+        groupDefs
+        |> List.choose (function
+            | FunctionDef namedFunction -> Some namedFunction
+            | _ -> None)
+    let opaques =
+        groupDefs
+        |> List.choose (function
+            | UserType (name, OpaqueDef info) ->
+                Some (name, info)
+            | _ ->
+                None)
+    let interfaces =
+        groupDefs
+        |> List.choose (function
+            | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
+            | _ -> None)
+    let exceptions =
+        groupDefs
+        |> List.choose (function
+            | UserType(name, ExceptionDef fields) -> Some (name, fields)
+            | _ -> None)
+    let globals =
+        groupDefs
+        |> List.choose (function
+            | Global(name, niType) -> Some (name, niType)
+            | _ -> None)
+    let groups =
+        groupDefs
+        |> List.choose (function
+            | Group(name, defs) -> Some (name, defs)
+            | _ -> None)
+    { RevPath = revPath
+      Defs = groupDefs
+      ModuleMethods = moduleMethods
+      Opaques = opaques
+      Interfaces = interfaces
+      Exceptions = exceptions
+      Globals = globals
+      Groups = groups }
+
 type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
-    
-let resolvedNameToString (context: ModuleContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+let resolvedNameToString (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
     let separator =
         match mode with
         | TypeMode -> "."
@@ -20,14 +84,14 @@ let resolvedNameToString (context: ModuleContext) (name: ResolvedName) (mode: Re
     let moduleName, symbolName =
         match name with
         | ThisModule symbolName ->
-            context.Module.Name, symbolName
+            context.ModuleContext.Module.Name, symbolName
         | Imported(moduleName, symbolName) ->
             moduleName, symbolName
     match symbolName with
     | SymbolName symbolParts ->
         // we want to use the shortest UNAMBIGUOUS name
         // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
-        if symbolIsUnambiguous context symbolName then
+        if symbolIsUnambiguous context.ModuleContext symbolName then
             // TODO: it would be nice if we could shorten it even further, by taking account of which group/namespace we're currently in (vs. the symbol)
             joinNameParts separator (symbolParts |> List.map upperFirst)
         else
@@ -35,7 +99,7 @@ let resolvedNameToString (context: ModuleContext) (name: ResolvedName) (mode: Re
             | ModuleName moduleParts ->
                 joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
         
-let typeToCsString (context: ModuleContext) (outerType: NIType) =
+let typeToCsString (context: RenderContext) (outerType: NIType) =
     let rec recInner = function
         | UnitType -> "void"
         | Primitive prim ->
@@ -60,7 +124,7 @@ let typeToCsString (context: ModuleContext) (outerType: NIType) =
             | TypedefType ->
                 // no C# typedefs so we just render the type directly
                 let content =
-                    requiredSymbolLookup context resolvedName
+                    requiredSymbolLookup context.ModuleContext resolvedName
                 match content with
                 | TypeDef actual ->
                     recInner actual
@@ -84,14 +148,14 @@ let typeToCsString (context: ModuleContext) (outerType: NIType) =
     // go
     recInner outerType
 
-let rec newCsArray (context: ModuleContext) (ofType: NIType) (countVar: string) =
+let rec newCsArray (context: RenderContext) (ofType: NIType) (countVar: string) =
     match ofType with
     | ArrayType niType ->
         sprintf "%s[]" (newCsArray context niType countVar)
     | _ ->
         sprintf "new %s[%s]" (typeToCsString context ofType) countVar
 
-let rec typeToName (context: ModuleContext) = function
+let rec typeToName (context: RenderContext) = function
     | UnitType -> failwith "typeToName: 'unit' type as name?"
     | Primitive prim ->
         match prim with
@@ -128,7 +192,7 @@ let rec typeToName (context: ModuleContext) = function
         sprintf "Native_%s_Buffer" (typeToName context elemType)
     | x -> sprintf "(typeToName: not yet supported: %A)" x
 
-let argsJoined (context: ModuleContext) (args: (string * NIType) list) =
+let argsJoined (context: RenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCsString context type_) name]
     |> String.concat ", "
 
@@ -136,7 +200,7 @@ let argNamesJoined (args: (string * NIType) list) =
     [for name, _ in args -> name]
     |> String.concat ", "
 
-let fieldsJoined (context: ModuleContext) (fields: NamedField list) =
+let fieldsJoined (context: RenderContext) (fields: NamedField list) =
     [for f in fields -> sprintf "%s %s" (typeToCsString context f.Type_) f.Name]
     |> String.concat ", "
 
@@ -150,7 +214,7 @@ type PopValueContext =
     | Return
     | SafeReturn
 
-let popValue (context: ModuleContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
+let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
     let write = writer.Write
     let contextPrefix =
         match popContext with
@@ -216,7 +280,7 @@ type PushIsReturn =
     | Indirect of name: string
     | NotApplicable
 
-let pushValue (context: ModuleContext) (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
+let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
     let write = writer.Write
     let isReturnString() =
         match isReturn with
@@ -280,7 +344,7 @@ let pushValue (context: ModuleContext) (writer: IFormatWriter) (level: int) (typ
 type ArrayOrSetMode =
     | ArrayMode
     | SetMode
-type ArrayOrSetRenderer(context: ModuleContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
+type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
     let write, blank = writer.Write, writer.Blank
     let renderDefault () =
         if mode = ArrayMode then
@@ -352,7 +416,7 @@ type ArrayOrSetRenderer(context: ModuleContext, writer: IFormatWriter, outerType
                 failwith "ArrayOrSetRenderer: TypedefTuple (set mode) not yet implemented"
         member this.EnumType (name: ResolvedName) =
             let widthType =
-                match requiredSymbolLookup context name with
+                match requiredSymbolLookup context.ModuleContext name with
                 | EnumDef info ->
                     let signed =
                         not info.FlagsMode
@@ -511,7 +575,7 @@ type ArrayOrSetRenderer(context: ModuleContext, writer: IFormatWriter, outerType
                 if mode = ArrayMode then "array" else "set"
             write 2 "// TODO: push/pop for %s of %s" str (typeToCsString context outerType)
 
-let renderGeneric (context: ModuleContext) (writer: IFormatWriter) (gType: NIType) =
+let renderGeneric (context: RenderContext) (writer: IFormatWriter) (gType: NIType) =
     let write, blank = writer.Write, writer.Blank
     //
     blank()
@@ -571,11 +635,11 @@ let renderGeneric (context: ModuleContext) (writer: IFormatWriter) (gType: NITyp
     | ArrayType elemType ->
         let renderer =
             ArrayOrSetRenderer(context, writer, gType, elemType, ArrayMode)
-        renderArrayLike context elemType renderer
+        renderArrayLike context.ModuleContext elemType renderer
     | SetType elemType ->
         let renderer =
             ArrayOrSetRenderer(context, writer, gType, elemType, SetMode)
-        renderArrayLike context elemType renderer
+        renderArrayLike context.ModuleContext elemType renderer
     | MapType (keyType, valueType) ->
         // push
         write 2 "internal static void __%s__Push(Dictionary<%s, %s> map, bool isReturn)" (typeToName context gType) (typeToCsString context keyType) (typeToCsString context valueType)
@@ -599,7 +663,7 @@ let renderGeneric (context: ModuleContext) (writer: IFormatWriter) (gType: NITyp
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
         
-let renderUserType (context: ModuleContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
+let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
     
     match userType with
@@ -677,7 +741,7 @@ let renderUserType (context: ModuleContext) (writer: IFormatWriter) (name: strin
             else
                 write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.Name
             // return pop
-            popValue context writer 4 namedFunc.Returns (if containsRefs context namedFunc.Returns then SafeReturn else Return)
+            popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
             write 3 "}"
         write 2 "}"
         // push
@@ -997,7 +1061,7 @@ let renderUserType (context: ModuleContext) (writer: IFormatWriter) (name: strin
             else
                 write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.Name
             // return (mindful of safety area nonsense)
-            if containsRefs context method.Returns then
+            if containsRefs context.ModuleContext method.Returns then
                 popValue context writer 4 method.Returns SafeReturn
             else
                 popValue context writer 4 method.Returns Return
@@ -1081,69 +1145,12 @@ let renderUserType (context: ModuleContext) (writer: IFormatWriter) (name: strin
 
 let joinModuleName (ModuleName nameParts) =
     joinNameParts "." nameParts
-
-type GroupContext = {
-    RevPath: string list
-    Defs: ModuleDefinition list
-    // broken down for easy use:
-    ModuleMethods: NamedFunction list
-    Opaques: (string * OpaqueInfo) list
-    Interfaces: (string * NamedFunction list) list
-    Exceptions: (string * NamedField list) list
-    Globals: (string * NIType) list
-    Groups: (string * ModuleDefinition list) list
-} with
-    member this.Name =
-        match this.RevPath with
-        | name :: _ -> name
-        | _ -> failwith "nope"
-    member this.Path =
-        List.rev this.RevPath
-
-let createGroupContext (groupDefs: ModuleDefinition list) (revPath: string list) =
-    let moduleMethods =
-        groupDefs
-        |> List.choose (function
-            | FunctionDef namedFunction -> Some namedFunction
-            | _ -> None)
-    let opaques =
-        groupDefs
-        |> List.choose (function
-            | UserType (name, OpaqueDef info) ->
-                Some (name, info)
-            | _ ->
-                None)
-    let interfaces =
-        groupDefs
-        |> List.choose (function
-            | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
-            | _ -> None)
-    let exceptions =
-        groupDefs
-        |> List.choose (function
-            | UserType(name, ExceptionDef fields) -> Some (name, fields)
-            | _ -> None)
-    let globals =
-        groupDefs
-        |> List.choose (function
-            | Global(name, niType) -> Some (name, niType)
-            | _ -> None)
-    let groups =
-        groupDefs
-        |> List.choose (function
-            | Group(name, defs) -> Some (name, defs)
-            | _ -> None)
-    { RevPath = revPath
-      Defs = groupDefs
-      ModuleMethods = moduleMethods
-      Opaques = opaques
-      Interfaces = interfaces
-      Exceptions = exceptions
-      Globals = globals
-      Groups = groups }
     
-let renderInitCommon (context: ModuleContext) (writer: IFormatWriter) (group: GroupContext) =
+let renderInitCommon (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
+    
+    let group =
+        context.GroupContext
     
     // initialize nested groups
     // AFAIK there's no kind of dependency among groups, so it really doesn't matter where in the .Init this occurs ... probably
@@ -1230,7 +1237,10 @@ let renderInitCommon (context: ModuleContext) (writer: IFormatWriter) (group: Gr
                 write 3 "});"
         
                 
-let rec renderNestedGroup (context: ModuleContext) (writer: IFormatWriter) (group: GroupContext) =
+let rec renderNestedGroup (context: RenderContext) (writer: IFormatWriter) =
+    let group =
+        context.GroupContext
+        
     // increase base indent
     let writer =
         writer.WithExtraIndent 1
@@ -1243,20 +1253,23 @@ let rec renderNestedGroup (context: ModuleContext) (writer: IFormatWriter) (grou
     write 1 "{"
     
     // TODO: figure out how we're going to coalesce struct, interface, opaque things (something like: 1st item, same name, name '*', etc)
-    renderGroupCommon context writer group
+    renderGroupCommon context writer
     
     // group init / assignment stuff
     blank()
     write 2 "internal static void Init()"
     write 2 "{"
-    renderInitCommon context writer group
+    renderInitCommon context writer
     write 2 "}"
     
     // close group
     write 1 "}"
     
-and renderGroupCommon (context: ModuleContext) (writer: IFormatWriter) (groupContext: GroupContext) =
+and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
+    
+    let groupContext =
+        context.GroupContext
     
     // declare top level function handles
     for namedFunc in groupContext.ModuleMethods do
@@ -1298,10 +1311,8 @@ and renderGroupCommon (context: ModuleContext) (writer: IFormatWriter) (groupCon
         else
             write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.Name
         // return pop
-        popValue context writer 3 namedFunc.Returns (if containsRefs context namedFunc.Returns then SafeReturn else Return)
+        popValue context writer 3 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
         write 2 "}"
-    
-    // TODO: render synthetic types (generics etc)
     
     // render user types + nested groups in order of declaration
     for def in groupContext.Defs do
@@ -1313,7 +1324,9 @@ and renderGroupCommon (context: ModuleContext) (writer: IFormatWriter) (groupCon
                 let nextPath =
                     name :: groupContext.RevPath
                 createGroupContext defs nextPath
-            renderNestedGroup context writer group
+            let nextContext =
+                { context with GroupContext = group }
+            renderNestedGroup nextContext writer
         | _ ->
             ()
             
@@ -1323,6 +1336,10 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     
     let m =
         context.Module
+    let rootGroup =
+        createGroupContext m.Defs []
+    let renderContext =
+        { ModuleContext = context; GroupContext = rootGroup }
         
     // handles for methods etc
     write 0 "using System;"
@@ -1355,13 +1372,10 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     
     // render all the generics at the root level only
     for generic in allGenericTypes context do
-        renderGeneric context writer generic
+        renderGeneric renderContext writer generic
 
     // now with the common group stuff:
-    let rootGroup =
-        createGroupContext m.Defs []
-        
-    renderGroupCommon context writer rootGroup
+    renderGroupCommon renderContext writer
     
     // static init + shutdown ====================================================
     let maybeModuleInit =
@@ -1373,7 +1387,7 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     blank()
     match maybeModuleInit with
     | Some initFunc ->
-        write 2 "internal static %s Init(%s)" (typeToCsString context initFunc.Returns) (argsJoined context initFunc.Args)
+        write 2 "internal static %s Init(%s)" (typeToCsString renderContext initFunc.Returns) (argsJoined renderContext initFunc.Args)
     | None ->
         write 2 "internal static void Init()"
     write 2 "{"
@@ -1384,7 +1398,7 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     // immediately after this call?
     // alternatively the server could perform it per namespace: .PushModuleConstants(_module, "ns1.ns2.groupname")
     write 3 "NativeImplClient.PushModuleConstants(_module);"
-    renderInitCommon context writer rootGroup
+    renderInitCommon renderContext writer
     
     // invoke user's ModuleInit, if it exists
     match maybeModuleInit with

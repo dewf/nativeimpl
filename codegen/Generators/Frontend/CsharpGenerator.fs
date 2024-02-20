@@ -276,49 +276,80 @@ let pushValue (context: ModuleContext) (writer: IFormatWriter) (level: int) (typ
         write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | _ ->
         write level "// pushValue %A not yet supported" type_
-
-type ArrayRenderer(context: ModuleContext, writer: IFormatWriter, outerType: NIType, elemType: NIType) =
+        
+type ArrayOrSetMode =
+    | ArrayMode
+    | SetMode
+type ArrayOrSetRenderer(context: ModuleContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
     let write, blank = writer.Write, writer.Blank
-    let arrayDefault () =
-        // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
-        // PUSH ========
-        write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
-        write 2 "{"
-        write 3 "foreach (var value in values.Reverse())"
-        write 3 "{"
-        pushValue context writer 4 elemType "value" (Indirect "isReturn")
-        write 3 "}"
-        write 3 "NativeImplClient.PushSizeT((IntPtr)values.Length);"
-        write 2 "}"
-        // POP =========
-        blank()
-        write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
-        write 2 "{"
-        write 3 "var count = (int)NativeImplClient.PopSizeT();"
-        write 3 "var ret = %s;" (newCsArray context elemType "count")
-        write 3 "for (var i = 0; i < count; i++)"
-        write 3 "{"
-        popValue context writer 4 elemType (ExistingVar "ret[i]")
-        write 3 "}"
-        write 3 "return ret;"
-        write 2 "}"
-    interface IArrayLikeRenderer with
-        member this.TypedefTuple (tt: NIType) =
-            // new, flattened outer (minus the typedef middleman)
-            // then the thin (inlined) wrappers around it
-            // push ==================
-            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+    let renderDefault () =
+        if mode = ArrayMode then
+            // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
+            // PUSH ========
             write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
             write 2 "{"
-            pushValue context writer 3 (ArrayType tt) "values" (Indirect "isReturn")
+            write 3 "foreach (var value in values.Reverse())"
+            write 3 "{"
+            pushValue context writer 4 elemType "value" (Indirect "isReturn")
+            write 3 "}"
+            write 3 "NativeImplClient.PushSizeT((IntPtr)values.Length);"
             write 2 "}"
-            // pop ===================
+            // POP =========
             blank()
-            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
             write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
             write 2 "{"
-            popValue context writer 3 (ArrayType tt) Return
+            write 3 "var count = (int)NativeImplClient.PopSizeT();"
+            write 3 "var ret = %s;" (newCsArray context elemType "count")
+            write 3 "for (var i = 0; i < count; i++)"
+            write 3 "{"
+            popValue context writer 4 elemType (ExistingVar "ret[i]")
+            write 3 "}"
+            write 3 "return ret;"
             write 2 "}"
+        else
+            // use this for any element types with no particular specializations (typedefs, delegates, arrays -- everything but structs and tuples, basically)
+            // PUSH ========
+            write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+            write 2 "{"
+            write 3 "foreach (var value in values)"
+            write 3 "{"
+            pushValue context writer 4 elemType "value" (Indirect "isReturn")
+            write 3 "}"
+            write 3 "NativeImplClient.PushSizeT((IntPtr)values.Count);"
+            write 2 "}"
+            // POP =========
+            blank()
+            write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+            write 2 "{"
+            write 3 "var count = (int)NativeImplClient.PopSizeT();"
+            write 3 "var __ret = new %s();" (typeToCsString context outerType)
+            write 3 "for (var i = 0; i < count; i++)"
+            write 3 "{"
+            popValue context writer 4 elemType (NewVariable "item")
+            write 4 "__ret.Add(item);"
+            write 3 "}"
+            write 3 "return __ret;"
+            write 2 "}"
+    interface IArrayLikeRenderer with
+        member this.TypedefTuple (tt: NIType) =
+            if mode = ArrayMode then
+                // new, flattened outer (minus the typedef middleman)
+                // then the thin (inlined) wrappers around it
+                // push ==================
+                write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+                write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "{"
+                pushValue context writer 3 (ArrayType tt) "values" (Indirect "isReturn")
+                write 2 "}"
+                // pop ===================
+                blank()
+                write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+                write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+                write 2 "{"
+                popValue context writer 3 (ArrayType tt) Return
+                write 2 "}"
+            else
+                failwith "ArrayOrSetRenderer: TypedefTuple (set mode) not yet implemented"
         member this.EnumType (name: ResolvedName) =
             let widthType =
                 match requiredSymbolLookup context name with
@@ -352,89 +383,112 @@ type ArrayRenderer(context: ModuleContext, writer: IFormatWriter, outerType: NIT
             write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
             write 2 "{"
             popValue context writer 3 (ArrayType widthType) (NewVariable "intValues")
-            write 3 "return intValues.Select(i => (%s)i).ToArray();" (typeToCsString context elemType)
+            if mode = ArrayMode then
+                write 3 "return intValues.Select(i => (%s)i).ToArray();" (typeToCsString context elemType)
+            else
+                write 3 "return intValues.Select(i => (%s)i).ToHashSet();" (typeToCsString context elemType)
             write 2 "}"
         member this.StructType (structName: ResolvedName) (namedFields: NamedField list) =
-            // push
-            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
-            write 2 "{"
-            write 3 "var count = items.Length;"
-            for i, field in namedFields |> List.indexed do
-                write 3 "var f%dValues = %s;" i (newCsArray context field.Type_ "count")
-            write 3 "for (var i = 0; i < count; i++)"
-            write 3 "{"
-            for i, field in namedFields |> List.indexed do
-                write 4 "f%dValues[i] = items[i].%s;" i (upperFirst field.Name)
-            write 3 "}"
-            // push in reverse order
-            for i, field in namedFields |> List.indexed |> List.rev do
-                pushValue context writer 3 (ArrayType field.Type_) (sprintf "f%dValues" i) (Indirect "isReturn")
-            write 2 "}"
-            // pop
-            blank()
-            write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
-            write 2 "{"
-            for i, field in namedFields |> List.indexed do
-                popValue context writer 3 (ArrayType field.Type_) (NewVariable (sprintf "f%dValues" i))
-            write 3 "var count = f0Values.Length;"
-            write 3 "var ret = new %s[count];" (typeToCsString context elemType)
-            write 3 "for (var i = 0; i < count; i++)"
-            write 3 "{"
-            for i, _ in namedFields |> List.indexed do
-                write 4 "var f%d = f%dValues[i];" i i
-            let fieldVarsJoined =
-                namedFields |> List.indexed |> List.map (fun (i, _) -> sprintf "f%d" i) |> String.concat ", "
-            write 4 "ret[i] = new %s(%s);" (typeToCsString context elemType) fieldVarsJoined
-            write 3 "}"
-            write 3 "return ret;"
-            write 2 "}"
+            if mode = ArrayMode then
+                // push
+                write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "{"
+                write 3 "var count = items.Length;"
+                for i, field in namedFields |> List.indexed do
+                    write 3 "var f%dValues = %s;" i (newCsArray context field.Type_ "count")
+                write 3 "for (var i = 0; i < count; i++)"
+                write 3 "{"
+                for i, field in namedFields |> List.indexed do
+                    write 4 "f%dValues[i] = items[i].%s;" i (upperFirst field.Name)
+                write 3 "}"
+                // push in reverse order
+                for i, field in namedFields |> List.indexed |> List.rev do
+                    pushValue context writer 3 (ArrayType field.Type_) (sprintf "f%dValues" i) (Indirect "isReturn")
+                write 2 "}"
+                // pop
+                blank()
+                write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+                write 2 "{"
+                for i, field in namedFields |> List.indexed do
+                    popValue context writer 3 (ArrayType field.Type_) (NewVariable (sprintf "f%dValues" i))
+                write 3 "var count = f0Values.Length;"
+                write 3 "var ret = new %s[count];" (typeToCsString context elemType)
+                write 3 "for (var i = 0; i < count; i++)"
+                write 3 "{"
+                for i, _ in namedFields |> List.indexed do
+                    write 4 "var f%d = f%dValues[i];" i i
+                let fieldVarsJoined =
+                    namedFields |> List.indexed |> List.map (fun (i, _) -> sprintf "f%d" i) |> String.concat ", "
+                write 4 "ret[i] = new %s(%s);" (typeToCsString context elemType) fieldVarsJoined
+                write 3 "}"
+                write 3 "return ret;"
+                write 2 "}"
+            else
+                failwith "ArrayOrSetRenderer StructType - 'set' mode not yet implemented"
         member this.TupleType (tupleTypes: NIType list) =
-            // PUSH ====================
-            write 2 "internal static void __%s__Push(%s things, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
-            write 2 "{"
-            write 3 "var count = things.Length;"
-            for i, type_ in tupleTypes |> List.indexed do
-                write 3 "var _%dvalues = new %s[count];" i (typeToCsString context type_)
-            write 3 "for (var i = 0; i < count; i++)"
-            write 3 "{"
-            for i, _ in tupleTypes |> List.indexed do
-                write 4 "_%dvalues[i] = things[i].Item%d;" i (i + 1)
-            write 3 "}"
-            for i, type_ in tupleTypes |> List.indexed |> List.rev do
-                pushValue context writer 3 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
-            write 2 "}"
-            // POP =====================
-            blank()
-            write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
-            write 2 "{"
-            for i, type_ in tupleTypes |> List.indexed do
-                popValue context writer 3 (ArrayType type_) (NewVariable (sprintf "_%dvalues" i))
-            write 3 "var count = _0values.Length;"
-            write 3 "var ret = new %s[count];" (typeToCsString context elemType)
-            write 3 "for (var i = 0; i < count; i++)"
-            write 3 "{"
-            for i, _ in tupleTypes |> List.indexed do
-                write 4 "var _%d = _%dvalues[i];" i i
-            let joinedVars =
-                tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
-            write 4 "ret[i] = (%s);" joinedVars
-            write 3 "}"
-            write 3 "return ret;"
-            write 2 "}"
+            if mode = ArrayMode then
+                // PUSH ====================
+                write 2 "internal static void __%s__Push(%s things, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "{"
+                write 3 "var count = things.Length;"
+                for i, type_ in tupleTypes |> List.indexed do
+                    write 3 "var _%dvalues = new %s[count];" i (typeToCsString context type_)
+                write 3 "for (var i = 0; i < count; i++)"
+                write 3 "{"
+                for i, _ in tupleTypes |> List.indexed do
+                    write 4 "_%dvalues[i] = things[i].Item%d;" i (i + 1)
+                write 3 "}"
+                for i, type_ in tupleTypes |> List.indexed |> List.rev do
+                    pushValue context writer 3 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
+                write 2 "}"
+                // POP =====================
+                blank()
+                write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+                write 2 "{"
+                for i, type_ in tupleTypes |> List.indexed do
+                    popValue context writer 3 (ArrayType type_) (NewVariable (sprintf "_%dvalues" i))
+                write 3 "var count = _0values.Length;"
+                write 3 "var ret = new %s[count];" (typeToCsString context elemType)
+                write 3 "for (var i = 0; i < count; i++)"
+                write 3 "{"
+                for i, _ in tupleTypes |> List.indexed do
+                    write 4 "var _%d = _%dvalues[i];" i i
+                let joinedVars =
+                    tupleTypes |> List.indexed |> List.map (fun (i, _) -> sprintf "_%d" i) |> String.concat ", "
+                write 4 "ret[i] = (%s);" joinedVars
+                write 3 "}"
+                write 3 "return ret;"
+                write 2 "}"
+            else
+                failwith "ArrayOrSetRenderer .TupleType - set mode not yet implemented"
         member this.ArrayType () =
-            arrayDefault()
+            renderDefault()
         member this.MapType () =
-            arrayDefault()
+            renderDefault()
         member this.DelegateType () =
-            arrayDefault()
+            renderDefault()
         member this.SetType () =
-            arrayDefault()
+            renderDefault()
         member this.SumType () =
-            arrayDefault()
+            renderDefault()
         member this.Primitive (prim: NIPrimitive) =
-            write 2 "// built-in array type: %s" (typeToCsString context outerType)
+            if mode = ArrayMode then
+                write 2 "// built-in array type: %s" (typeToCsString context outerType)
+            else
+                // PUSH ==================
+                write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "{"
+                pushValue context writer 3 (ArrayType elemType) "items.ToArray()" (Indirect "isReturn")
+                write 2 "}"
+                // POP ===================
+                blank()
+                write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+                write 2 "{"
+                popValue context writer 3 (ArrayType elemType) (NewVariable "items")
+                write 3 "return items.ToHashSet();"
+                write 2 "}"
         member this.Options () =
-            arrayDefault()
+            renderDefault()
         member this.Opaque () =
             // push
             write 2 "internal static void __%s__Push(%s items)" (typeToName context outerType) (typeToCsString context outerType)
@@ -447,143 +501,15 @@ type ArrayRenderer(context: ModuleContext, writer: IFormatWriter, outerType: NIT
             write 2 "{"
             write 3 "return NativeImplClient.PopPtrArray()"
             write 4 ".Select(ptr => ptr != IntPtr.Zero ? new %s(ptr) : null)" (typeToCsString context elemType)
-            write 4 ".ToArray();"
+            if mode = ArrayMode then
+                write 4 ".ToArray();"
+            else
+                write 4 ".ToHashSet();"
             write 2 "}"
         member this.Other (t: NIType) =
-            write 2 "// TODO: push/pop for array of %s" (typeToCsString context outerType)
-
-type SetRenderer(context: ModuleContext, writer: IFormatWriter, outerType: NIType, elemType: NIType) =
-    let write, blank = writer.Write, writer.Blank
-    let setDefault () =
-        // use this for any element types with no particular specializations (typedefs, delegates, arrays -- everything but structs and tuples, basically)
-        // PUSH ========
-        write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
-        write 2 "{"
-        write 3 "foreach (var value in values)"
-        write 3 "{"
-        pushValue context writer 4 elemType "value" (Indirect "isReturn")
-        write 3 "}"
-        write 3 "NativeImplClient.PushSizeT((IntPtr)values.Count);"
-        write 2 "}"
-        // POP =========
-        blank()
-        write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
-        write 2 "{"
-        write 3 "var count = (int)NativeImplClient.PopSizeT();"
-        write 3 "var __ret = new %s();" (typeToCsString context outerType)
-        write 3 "for (var i = 0; i < count; i++)"
-        write 3 "{"
-        popValue context writer 4 elemType (NewVariable "item")
-        write 4 "__ret.Add(item);"
-        write 3 "}"
-        write 3 "return __ret;"
-        write 2 "}"
-    interface IArrayLikeRenderer with
-        member this.TypedefTuple (tt: NIType) =
-            // new, flattened outer (minus the typedef middleman)
-            let newOuter =
-                ArrayType tt
-            // PUSH ====================
-            write 2 "internal static void __%s__Push(%s things, bool isReturn)" (typeToName context newOuter) (typeToCsString context newOuter)
-            write 2 "{"
-            write 3 "// ???"
-            write 2 "}"
-            // POP =====================
-            blank()
-            write 2 "internal static %s __%s__Pop()" (typeToCsString context newOuter) (typeToName context newOuter)
-            write 2 "{"
-            write 3 "// ???"
-            write 2 "}"
-        member this.EnumType (name: ResolvedName) =
-            let widthType =
-                match requiredSymbolLookup context name with
-                | EnumDef info ->
-                    let signed =
-                        not info.FlagsMode
-                    // what int size will we use to encode these?
-                    match info.MaybeWidth with
-                    | Some provided ->
-                        // use what the user asked for (currently no checking to verify it's big enough)
-                        provided
-                    | None ->
-                        // what's the smallest width that will accommodate the enum size?
-                        // TODO: this really need to occur in common code somewhere, so that both sides are guaranteed to be using the same types,
-                        // otherwise we're going to get some very annoying-to-debug crashes
-                        let iWidth =
-                            match info.Values.Length with
-                            | x when x < 128 -> Width8
-                            | x when x < 32768 -> Width16
-                            | _ -> Width32
-                        Primitive(Int(signed, iWidth))
-                | _ -> failwith "C# SetRenderer this.EnumType passed non-enum type name"
-            // push
-            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
-            write 2 "{"
-            write 3 "var intValues = items.Select(i => (%s)i).ToArray();" (typeToCsString context widthType)
-            pushValue context writer 3 (ArrayType widthType) "intValues" NotApplicable
-            write 2 "}"
-            // pop
-            blank()
-            write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
-            write 2 "{"
-            popValue context writer 3 (ArrayType widthType) (NewVariable "intValues")
-            write 3 "return intValues.Select(i => (%s)i).ToHashSet();" (typeToCsString context elemType)
-            write 2 "}"
-        member this.StructType (structName: ResolvedName) (namedFields: NamedField list) =
-            // PUSH ===================
-            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
-            write 2 "{"
-            write 3 "// ???"
-            write 2 "}"
-            // POP ====================
-            blank()
-            write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
-            write 2 "{"
-            write 3 "// ???"
-            write 2 "}"
-        member this.TupleType (tupleTypes: NIType list) =
-            write 2 "// IArrayRenderer.tupleType not yet handled (SetRenderer)"
-        member this.ArrayType () =
-            setDefault()
-        member this.MapType () =
-            setDefault()
-        member this.DelegateType () =
-            setDefault()
-        member this.SetType () =
-            setDefault()
-        member this.SumType () =
-            setDefault()
-        member this.Primitive (prim: NIPrimitive) =
-            // PUSH ==================
-            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
-            write 2 "{"
-            pushValue context writer 3 (ArrayType elemType) "items.ToArray()" (Indirect "isReturn")
-            write 2 "}"
-            // POP ===================
-            blank()
-            write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
-            write 2 "{"
-            popValue context writer 3 (ArrayType elemType) (NewVariable "items")
-            write 3 "return items.ToHashSet();"
-            write 2 "}"
-        member this.Opaque () =
-            // untested! haven't looked at this code in a long time, so just copied from above!
-            // PUSH ==================
-            write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
-            write 2 "{"
-            pushValue context writer 3 (ArrayType elemType) "items.ToArray()" (Indirect "isReturn")
-            write 2 "}"
-            // POP ===================
-            blank()
-            write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
-            write 2 "{"
-            popValue context writer 3 (ArrayType elemType) (NewVariable "items")
-            write 3 "return items.ToHashSet();"
-            write 2 "}"
-        member this.Options() =
-            setDefault()
-        member this.Other (t: NIType) =
-            write 2 "// TODO: push/pop for set of %s" (typeToCsString context outerType)
+            let str =
+                if mode = ArrayMode then "array" else "set"
+            write 2 "// TODO: push/pop for %s of %s" str (typeToCsString context outerType)
 
 let renderGeneric (context: ModuleContext) (writer: IFormatWriter) (gType: NIType) =
     let write, blank = writer.Write, writer.Blank
@@ -644,11 +570,11 @@ let renderGeneric (context: ModuleContext) (writer: IFormatWriter) (gType: NITyp
         write 2 "}"
     | ArrayType elemType ->
         let renderer =
-            ArrayRenderer(context, writer, gType, elemType)
+            ArrayOrSetRenderer(context, writer, gType, elemType, ArrayMode)
         renderArrayLike context elemType renderer
     | SetType elemType ->
         let renderer =
-            SetRenderer(context, writer, gType, elemType)
+            ArrayOrSetRenderer(context, writer, gType, elemType, SetMode)
         renderArrayLike context elemType renderer
     | MapType (keyType, valueType) ->
         // push

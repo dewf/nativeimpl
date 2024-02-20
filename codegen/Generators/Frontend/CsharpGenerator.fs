@@ -6,6 +6,7 @@ open Parser
 open Util
 open Generators.Common
 
+open Extensions
 open AppCommon
 
 type GroupContext = {
@@ -81,23 +82,45 @@ let resolvedNameToString (context: RenderContext) (name: ResolvedName) (mode: Re
         match mode with
         | TypeMode -> "."
         | IdentifierMode -> "_"
-    let moduleName, symbolName =
+    if mode = TypeMode then
+        // type mode behaves a bit differently, we want to remove the current namespace prefix if possible for ThisModule names
         match name with
-        | ThisModule symbolName ->
-            context.ModuleContext.Module.Name, symbolName
+        | ThisModule (SymbolName parts) ->
+            // strip current namespace prefix if possible
+            let parts2 =
+                match List.removePrefix context.GroupContext.Path parts with
+                | Some remaining -> remaining
+                | None -> parts
+            joinNameParts separator (parts2 |> List.map upperFirst)
         | Imported(moduleName, symbolName) ->
-            moduleName, symbolName
-    match symbolName with
-    | SymbolName symbolParts ->
-        // we want to use the shortest UNAMBIGUOUS name
-        // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
-        if symbolIsUnambiguous context.ModuleContext symbolName then
-            // TODO: it would be nice if we could shorten it even further, by taking account of which group/namespace we're currently in (vs. the symbol)
-            joinNameParts separator (symbolParts |> List.map upperFirst)
-        else
-            match moduleName with
-            | ModuleName moduleParts ->
-                joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
+            let symbolParts =
+                match symbolName with
+                | SymbolName parts -> parts
+            if symbolIsUnambiguous context.ModuleContext symbolName then
+                joinNameParts separator (symbolParts |> List.map upperFirst)
+            else
+                match moduleName with
+                | ModuleName moduleParts ->
+                    joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
+    else
+        // in identifier mode, we just use the full symbol name prefix unless imported and ambiguous,
+        // then use full module + symbol name
+        let moduleName, symbolName =
+            match name with
+            | ThisModule symbolName ->
+                context.ModuleContext.Module.Name, symbolName
+            | Imported(moduleName, symbolName) ->
+                moduleName, symbolName
+        match symbolName with
+        | SymbolName symbolParts ->
+            // we want to use the shortest UNAMBIGUOUS name
+            // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
+            if symbolIsUnambiguous context.ModuleContext symbolName then
+                joinNameParts separator (symbolParts |> List.map upperFirst)
+            else
+                match moduleName with
+                | ModuleName moduleParts ->
+                    joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
         
 let typeToCsString (context: RenderContext) (outerType: NIType) =
     let rec recInner = function

@@ -573,7 +573,11 @@ let renderGeneric (context: RenderContext) (writer: IFormatWriter) (gType: NITyp
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
         
-let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) (coalescedContentFunc: (unit -> unit) option) =
+type UserTypeMode =
+    | Normal
+    | Coalesced of contentFunc: (unit -> unit)
+        
+let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) (mode: UserTypeMode) =
     let write, blank = writer.Write, writer.Blank
     
     match userType with
@@ -656,12 +660,12 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
             popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
             write 3 "}"
         // optional coalesced content
-        match coalescedContentFunc with
-        | Some contentFunc ->
+        match mode with
+        | Normal ->
+            ()
+        | Coalesced contentFunc ->
             write 3 "// coalesced group definitions =================="
             contentFunc()
-        | None ->
-            ()
         // end class definition
         write 2 "}"
         // push
@@ -1179,12 +1183,11 @@ let rec renderNestedGroup (context: RenderContext) (writer: IFormatWriter) =
         renderInitCommon context writer
         write 2 "}"
     
-    match context.GroupContext.Coalesced with
+    match context.GroupContext.MaybeCoalesced with
     | Some userType ->
         let name =
             context.GroupContext.Name
-        printfn "render coalesced name: [%s]" name
-        renderUserType context (writer.WithExtraIndent -1) name userType (Some commonContentFunc)
+        renderUserType context (writer.WithExtraIndent -1) name userType (Coalesced commonContentFunc)
     | None ->
         // open group
         blank()
@@ -1205,14 +1208,6 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     for namedFunc in groupContext.ModuleMethods do
         write 2 "private static ModuleMethodHandle _%s;" namedFunc.Name
 
-    // // opaque method handles
-    // // ... taking into account the possibility of a coalesced one, that is currently missing from the group
-    // let allOpaques =
-    //     match context.GroupContext.Coalesced with
-    //     | Some (OpaqueDef info) ->
-    //         (context.GroupContext.Name, info) :: groupContext.Opaques
-    //     | _ ->
-    //         groupContext.Opaques
     for name, info in groupContext.Opaques do
         // instance methods
         for method in info.Methods do
@@ -1255,8 +1250,14 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     for def in groupContext.Defs do
         match def with
         | UserType(name, userType) ->
-            // writer needs to be un-indented a bit
-            renderUserType context writer name userType None
+            // exclude coalesced, because it's still here in the group definitions (but it's already been rendered as the enclosure of this group)
+            match groupContext.MaybeCoalesced with
+            | Some coalescedType when name = groupContext.Name && userType = coalescedType ->
+                // excluded
+                ()
+            | _ ->
+                // normal rendering
+                renderUserType context writer name userType Normal
         | Group(name, _) ->
             let group =
                 groupContext.SubGroups[name]

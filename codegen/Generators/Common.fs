@@ -5,6 +5,7 @@ open System.IO
 open Parser
 open Extensions
 open AppCommon
+open Util
 
 let joinNameParts (separator: string) (parts: string list) =
     String.Join(separator, parts)
@@ -32,7 +33,9 @@ let rec typeToInternalKey = function
     | Resolved (name, _) ->
         match name with
         | ThisModule (SymbolName nameParts) ->
-            joinNameParts "." nameParts
+            // special prefix for these for now, because for dependency resolution we'd like
+            // to filter / adjust things based on their relative namespaces
+            "$THIS:" + joinNameParts "." nameParts
         | Imported(ModuleName moduleNameParts, SymbolName nameParts) ->
             joinNameParts "." (moduleNameParts @ nameParts)
     | ArrayType niType -> sprintf "array[%s]" (typeToInternalKey niType)
@@ -716,3 +719,116 @@ let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
     let modulePrefix, className =
         List.splitAtLast nameParts
     baseNamespace, maybeJoinedPrefix modulePrefix, className
+
+type GroupContext = {
+    RevPath: string list
+    Defs: ModuleDefinition list
+    // broken down for easy use:
+    ModuleMethods: NamedFunction list
+    Opaques: (string * OpaqueInfo) list
+    Interfaces: (string * NamedFunction list) list
+    Exceptions: (string * NamedField list) list
+    Globals: (string * NIType) list
+    Groups: (string * ModuleDefinition list) list
+} with
+    member this.Name =
+        match this.RevPath with
+        | name :: _ -> name
+        | _ -> failwith "nope"
+    member this.Path =
+        List.rev this.RevPath
+
+type RenderContext = {
+    ModuleContext: ModuleContext
+    GroupContext: GroupContext
+}
+
+let createGroupContext (groupDefs: ModuleDefinition list) (revPath: string list) =
+    let moduleMethods =
+        groupDefs
+        |> List.choose (function
+            | FunctionDef namedFunction -> Some namedFunction
+            | _ -> None)
+    let opaques =
+        groupDefs
+        |> List.choose (function
+            | UserType (name, OpaqueDef info) ->
+                Some (name, info)
+            | _ ->
+                None)
+    let interfaces =
+        groupDefs
+        |> List.choose (function
+            | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
+            | _ -> None)
+    let exceptions =
+        groupDefs
+        |> List.choose (function
+            | UserType(name, ExceptionDef fields) -> Some (name, fields)
+            | _ -> None)
+    let globals =
+        groupDefs
+        |> List.choose (function
+            | Global(name, niType) -> Some (name, niType)
+            | _ -> None)
+    let groups =
+        groupDefs
+        |> List.choose (function
+            | Group(name, defs) -> Some (name, defs)
+            | _ -> None)
+    { RevPath = revPath
+      Defs = groupDefs
+      ModuleMethods = moduleMethods
+      Opaques = opaques
+      Interfaces = interfaces
+      Exceptions = exceptions
+      Globals = globals
+      Groups = groups }
+
+type ResolveNameStringMode =
+    | TypeMode
+    | IdentifierMode
+let resolvedNameToString (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+    let separator =
+        match mode with
+        | TypeMode -> "."
+        | IdentifierMode -> "_"
+    if mode = TypeMode then
+        // type mode behaves a bit differently, we want to remove the current namespace prefix if possible for ThisModule names
+        match name with
+        | ThisModule (SymbolName parts) ->
+            // strip current namespace prefix if possible
+            let parts2 =
+                match List.removePrefix context.GroupContext.Path parts with
+                | Some remaining -> remaining
+                | None -> parts
+            joinNameParts separator (parts2 |> List.map upperFirst)
+        | Imported(moduleName, symbolName) ->
+            let symbolParts =
+                match symbolName with
+                | SymbolName parts -> parts
+            if symbolIsUnambiguous context.ModuleContext symbolName then
+                joinNameParts separator (symbolParts |> List.map upperFirst)
+            else
+                match moduleName with
+                | ModuleName moduleParts ->
+                    joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
+    else
+        // in identifier mode, we just use the full symbol name prefix unless imported and ambiguous,
+        // then use full module + symbol name
+        let moduleName, symbolName =
+            match name with
+            | ThisModule symbolName ->
+                context.ModuleContext.Module.Name, symbolName
+            | Imported(moduleName, symbolName) ->
+                moduleName, symbolName
+        match symbolName with
+        | SymbolName symbolParts ->
+            // we want to use the shortest UNAMBIGUOUS name
+            // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
+            if symbolIsUnambiguous context.ModuleContext symbolName then
+                joinNameParts separator (symbolParts |> List.map upperFirst)
+            else
+                match moduleName with
+                | ModuleName moduleParts ->
+                    joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)

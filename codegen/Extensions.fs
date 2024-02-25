@@ -1,5 +1,13 @@
 module Extensions
 
+module String =
+    let tryRemovePrefix (prefix: string) (str: string) =
+        if str.StartsWith(prefix) then
+            str.Substring(prefix.Length)
+            |> Some
+        else
+            None
+            
 module List =
 //    let safeTake (n: int) (xs: 'a list) =
 //        if xs.Length >= n then
@@ -66,3 +74,11 @@ module List =
                 // heads exist but not equal, fail
                 None
         removeWhileEqual prefix xs
+
+    let partitionAndMap (partFunc: 'a -> bool * 'b) (xs: 'a list): 'b list * 'b list =
+        xs
+        |> List.map partFunc
+        |> List.partition fst
+        |> (fun (left, right) ->
+            left |> List.map snd, right |> List.map snd)
+         

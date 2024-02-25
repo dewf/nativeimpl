@@ -1,9 +1,7 @@
 open Generators.Frontend
 open Parser
 open AppCommon
-// open Generators.Frontend
 // open Generators.Backend
-// open Generators.Common
 
 // let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
 // let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
@@ -11,7 +9,7 @@ open AppCommon
 // let LIBRARY = "GuiBase"
 let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench"
 let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\output"
-let INPUTS = [ "First"; "Second"; "SomePackage.Third" ]
+let INPUTS = [ "First" ] // ; "Second"; "SomePackage.Third" ]
 let LIBRARY = "TestBench"
 
 let NAMESPACE = "Org.Prefixed"

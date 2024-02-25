@@ -1248,7 +1248,7 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     let m =
         context.Module
     let root =
-        createGroups m.Defs
+        createGroups m.Defs true
     let renderContext =
         { ModuleContext = context; GroupContext = root }
         

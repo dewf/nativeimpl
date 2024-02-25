@@ -725,6 +725,8 @@ type GroupContext = {
     Name: string
     Path: string list
     Defs: ModuleDefinition list
+    // if a definition had the same name as the group, coalesce with it (if the language supports it)
+    Coalesced: UserType option
     // broken down for easy use:
     ModuleMethods: NamedFunction list
     Opaques: (string * OpaqueInfo) list
@@ -739,8 +741,25 @@ type RenderContext = {
     GroupContext: GroupContext
 }
 
-let createGroups (rootDefs: ModuleDefinition list) =
+let createGroups (rootDefs: ModuleDefinition list) (allowCoalesced: bool) =
     let rec recInner (name: string) (groupDefs: ModuleDefinition list) (revPath: string list) =
+        // notice we are immediately rebinding groupDefs to exclude anything found
+        let toCoalesce, groupDefs =
+            if allowCoalesced then
+                groupDefs
+                |> List.partition (function
+                    | UserType (typeName, _) when typeName = name -> true // any user-defined things with the same name as group (obviously more than 1 is a problem)
+                    | _ -> false)
+            else
+                [], groupDefs
+        let coalesced =
+            match toCoalesce with
+            | [ UserType (_, userType) ] ->
+                match userType with
+                | OpaqueDef _ | StructDef _ | InterfaceDef _ -> Some userType
+                | _ -> None
+            | [] -> None
+            | _ -> failwith "createGroups: found too many same-named usertypes in the group (checking for something to coalesce)"
         let moduleMethods =
             groupDefs
             |> List.choose (function
@@ -784,6 +803,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
         { Name = name
           Path = List.rev revPath
           Defs = groupDefs
+          Coalesced = coalesced
           ModuleMethods = moduleMethods
           Opaques = opaques
           Interfaces = interfaces

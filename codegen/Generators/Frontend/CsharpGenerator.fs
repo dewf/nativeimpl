@@ -573,13 +573,15 @@ let renderGeneric (context: RenderContext) (writer: IFormatWriter) (gType: NITyp
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
         
-let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
+let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) (coalescedContentFunc: (unit -> unit) option) =
     let write, blank = writer.Write, writer.Blank
     
     match userType with
     | OpaqueDef info ->
         let fakeThis =
-            Resolved (ThisModule (SymbolName [name]), OpaqueType)
+            let namePath =
+                context.GroupContext.Path @ [ name ]
+            Resolved (ThisModule (SymbolName namePath), OpaqueType)
         let maybeInheritsFrom =
             match info.MaybeParent with
             | Some (Resolved(resolvedName, OpaqueType)) ->
@@ -653,6 +655,14 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
             // return pop
             popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
             write 3 "}"
+        // optional coalesced content
+        match coalescedContentFunc with
+        | Some contentFunc ->
+            write 3 "// coalesced group definitions =================="
+            contentFunc()
+        | None ->
+            ()
+        // end class definition
         write 2 "}"
         // push
         blank()
@@ -1160,23 +1170,30 @@ let rec renderNestedGroup (context: RenderContext) (writer: IFormatWriter) =
     let write, blank =
         writer.Write, writer.Blank
     
-    // open group
-    blank()
-    write 1 "public static class %s" group.Name
-    write 1 "{"
+    let commonContentFunc () =
+        renderGroupCommon context writer
+        // group init / assignment stuff
+        blank()
+        write 2 "internal static void Init()"
+        write 2 "{"
+        renderInitCommon context writer
+        write 2 "}"
     
-    // TODO: figure out how we're going to coalesce struct, interface, opaque things (something like: 1st item, same name, name '*', etc)
-    renderGroupCommon context writer
-    
-    // group init / assignment stuff
-    blank()
-    write 2 "internal static void Init()"
-    write 2 "{"
-    renderInitCommon context writer
-    write 2 "}"
-    
-    // close group
-    write 1 "}"
+    match context.GroupContext.Coalesced with
+    | Some userType ->
+        let name =
+            context.GroupContext.Name
+        printfn "render coalesced name: [%s]" name
+        renderUserType context (writer.WithExtraIndent -1) name userType (Some commonContentFunc)
+    | None ->
+        // open group
+        blank()
+        write 1 "public static class %s" group.Name
+        write 1 "{"
+        // common stuff
+        commonContentFunc()
+        // close group
+        write 1 "}"
     
 and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
@@ -1188,7 +1205,14 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     for namedFunc in groupContext.ModuleMethods do
         write 2 "private static ModuleMethodHandle _%s;" namedFunc.Name
 
-    // opaque method handles
+    // // opaque method handles
+    // // ... taking into account the possibility of a coalesced one, that is currently missing from the group
+    // let allOpaques =
+    //     match context.GroupContext.Coalesced with
+    //     | Some (OpaqueDef info) ->
+    //         (context.GroupContext.Name, info) :: groupContext.Opaques
+    //     | _ ->
+    //         groupContext.Opaques
     for name, info in groupContext.Opaques do
         // instance methods
         for method in info.Methods do
@@ -1231,7 +1255,8 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     for def in groupContext.Defs do
         match def with
         | UserType(name, userType) ->
-            renderUserType context writer name userType
+            // writer needs to be un-indented a bit
+            renderUserType context writer name userType None
         | Group(name, _) ->
             let group =
                 groupContext.SubGroups[name]

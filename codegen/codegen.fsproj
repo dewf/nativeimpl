@@ -11,8 +11,9 @@
         <Compile Include="Tokenizer.fs" />
         <Compile Include="Parser.fs" />
         <Compile Include="AppCommon.fs" />
-<!--        <Compile Include="Generators\DepsResolver.fs" />-->
         <Compile Include="Generators\Common.fs" />
+<!--        <Compile Include="Generators\DepsResolver.fs" />-->
+<!--        <Compile Include="Generators\Ordering.fs" />-->
         <Compile Include="Generators\Frontend\CsharpGenerator.fs" />
 <!--        <Compile Include="Generators\Backend\CppGenerator.fs" />-->
         <Compile Include="Program.fs" />

@@ -2,6 +2,7 @@
 
 open System
 open System.IO
+open System.Reflection.Metadata
 open Parser
 open Extensions
 open AppCommon
@@ -721,7 +722,8 @@ let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
     baseNamespace, maybeJoinedPrefix modulePrefix, className
 
 type GroupContext = {
-    RevPath: string list
+    Name: string
+    Path: string list
     Defs: ModuleDefinition list
     // broken down for easy use:
     ModuleMethods: NamedFunction list
@@ -729,62 +731,68 @@ type GroupContext = {
     Interfaces: (string * NamedFunction list) list
     Exceptions: (string * NamedField list) list
     Globals: (string * NIType) list
-    Groups: (string * ModuleDefinition list) list
-} with
-    member this.Name =
-        match this.RevPath with
-        | name :: _ -> name
-        | _ -> failwith "nope"
-    member this.Path =
-        List.rev this.RevPath
-
+    SubOrder: string list                
+    SubGroups: Map<string, GroupContext> // will be rendered in definition order, interleaved with user types, so better to have a name-keyed Map ... but we also store order for when we are dealing only with groups
+}
 type RenderContext = {
     ModuleContext: ModuleContext
     GroupContext: GroupContext
 }
 
-let createGroupContext (groupDefs: ModuleDefinition list) (revPath: string list) =
-    let moduleMethods =
-        groupDefs
-        |> List.choose (function
-            | FunctionDef namedFunction -> Some namedFunction
-            | _ -> None)
-    let opaques =
-        groupDefs
-        |> List.choose (function
-            | UserType (name, OpaqueDef info) ->
-                Some (name, info)
-            | _ ->
-                None)
-    let interfaces =
-        groupDefs
-        |> List.choose (function
-            | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
-            | _ -> None)
-    let exceptions =
-        groupDefs
-        |> List.choose (function
-            | UserType(name, ExceptionDef fields) -> Some (name, fields)
-            | _ -> None)
-    let globals =
-        groupDefs
-        |> List.choose (function
-            | Global(name, niType) -> Some (name, niType)
-            | _ -> None)
-    let groups =
-        groupDefs
-        |> List.choose (function
-            | Group(name, defs) -> Some (name, defs)
-            | _ -> None)
-    { RevPath = revPath
-      Defs = groupDefs
-      ModuleMethods = moduleMethods
-      Opaques = opaques
-      Interfaces = interfaces
-      Exceptions = exceptions
-      Globals = globals
-      Groups = groups }
-
+let createGroups (rootDefs: ModuleDefinition list) =
+    let rec recInner (name: string) (groupDefs: ModuleDefinition list) (revPath: string list) =
+        let moduleMethods =
+            groupDefs
+            |> List.choose (function
+                | FunctionDef namedFunction -> Some namedFunction
+                | _ -> None)
+        let opaques =
+            groupDefs
+            |> List.choose (function
+                | UserType (name, OpaqueDef info) ->
+                    Some (name, info)
+                | _ ->
+                    None)
+        let interfaces =
+            groupDefs
+            |> List.choose (function
+                | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
+                | _ -> None)
+        let exceptions =
+            groupDefs
+            |> List.choose (function
+                | UserType(name, ExceptionDef fields) -> Some (name, fields)
+                | _ -> None)
+        let globals =
+            groupDefs
+            |> List.choose (function
+                | Global(name, niType) -> Some (name, niType)
+                | _ -> None)
+        let subOrder, subGroups =
+            let pairs = 
+                groupDefs
+                |> List.choose (function
+                    | Group(name, defs) ->
+                        let group =
+                            name, recInner name defs (name :: revPath)
+                        Some group
+                    | _ -> None)
+            let order =
+                pairs
+                |> List.map fst
+            order, pairs |> Map.ofList
+        { Name = name
+          Path = List.rev revPath
+          Defs = groupDefs
+          ModuleMethods = moduleMethods
+          Opaques = opaques
+          Interfaces = interfaces
+          Exceptions = exceptions
+          Globals = globals
+          SubOrder = subOrder
+          SubGroups = subGroups }
+    recInner "$ROOT$" rootDefs []
+    
 type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode

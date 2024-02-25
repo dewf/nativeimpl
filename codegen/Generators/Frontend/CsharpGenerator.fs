@@ -1064,17 +1064,20 @@ let renderInitCommon (context: RenderContext) (writer: IFormatWriter) =
     
     // initialize nested groups
     // AFAIK there's no kind of dependency among groups, so it really doesn't matter where in the .Init this occurs ... probably
-    if not group.Groups.IsEmpty then
+    if not group.SubGroups.IsEmpty then
         blank()
         write 3 "// nested groups init"
-        for name, _ in group.Groups do
-            write 3 "%s.Init();" name
+        let groups =
+            group.SubOrder
+            |> List.map (fun k -> group.SubGroups[k])
+        for group in groups do
+            write 3 "%s.Init();" group.Name
             
     let groupNamePrefix =
-        if group.RevPath.IsEmpty then
+        if group.Path.IsEmpty then
             ""
         else
-            (joinNameParts "." (group.RevPath |> List.rev)) + "."
+            (joinNameParts "." group.Path) + "."
     
     // pop any globals for this group (pushed all at once at root level)
     if not group.Globals.IsEmpty then
@@ -1229,11 +1232,9 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
         match def with
         | UserType(name, userType) ->
             renderUserType context writer name userType
-        | Group(name, defs) ->
+        | Group(name, _) ->
             let group =
-                let nextPath =
-                    name :: groupContext.RevPath
-                createGroupContext defs nextPath
+                groupContext.SubGroups[name]
             let nextContext =
                 { context with GroupContext = group }
             renderNestedGroup nextContext writer
@@ -1246,10 +1247,10 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     
     let m =
         context.Module
-    let rootGroup =
-        createGroupContext m.Defs []
+    let root =
+        createGroups m.Defs
     let renderContext =
-        { ModuleContext = context; GroupContext = rootGroup }
+        { ModuleContext = context; GroupContext = root }
         
     // handles for methods etc
     write 0 "using System;"
@@ -1289,10 +1290,10 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     
     // static init + shutdown ====================================================
     let maybeModuleInit =
-        rootGroup.ModuleMethods
+        root.ModuleMethods
         |> List.tryFind (fun nf -> nf.Name = "moduleInit")
     let maybeModuleShutdown =
-        rootGroup.ModuleMethods
+        root.ModuleMethods
         |> List.tryFind (fun nf -> nf.Name = "moduleShutdown")
     blank()
     match maybeModuleInit with

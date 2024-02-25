@@ -760,6 +760,7 @@ let createGroups (rootDefs: ModuleDefinition list) (allowCoalesced: bool) =
                 | _ -> None
             | [] -> None
             | _ -> failwith "createGroups: found too many same-named usertypes in the group (checking for something to coalesce)"
+        // proceed as normal
         let moduleMethods =
             groupDefs
             |> List.choose (function

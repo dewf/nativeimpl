@@ -25,6 +25,11 @@ type NIPrimitive =
     
 type ModuleName =
     | ModuleName of string list     // x.y.whatever
+with
+    member this.LastPart =
+        match this with
+        | ModuleName parts ->
+            parts |> List.rev |> List.head
     
 type SymbolName =
     | SymbolName of string list

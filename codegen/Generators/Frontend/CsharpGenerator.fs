@@ -8,6 +8,9 @@ open Generators.Common
 
 open Extensions
 open AppCommon
+
+let resolvedNameToString =
+    resolvedNameToStringAbstract "." true
         
 let typeToCsString (context: RenderContext) (outerType: NIType) =
     let rec recInner = function

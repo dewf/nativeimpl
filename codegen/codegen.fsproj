@@ -15,7 +15,7 @@
 <!--        <Compile Include="Generators\DepsResolver.fs" />-->
 <!--        <Compile Include="Generators\Ordering.fs" />-->
         <Compile Include="Generators\Frontend\CsharpGenerator.fs" />
-<!--        <Compile Include="Generators\Backend\CppGenerator.fs" />-->
+        <Compile Include="Generators\Backend\CppGenerator.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>
     

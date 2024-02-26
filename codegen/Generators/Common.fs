@@ -822,10 +822,10 @@ let createGroups (rootDefs: ModuleDefinition list) (allowCoalesced: bool) =
 type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
-let resolvedNameToString (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+let resolvedNameToStringAbstract (languageNsDelim: string) (doCoalesce: bool) (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
     let separator =
         match mode with
-        | TypeMode -> "."
+        | TypeMode -> languageNsDelim
         | IdentifierMode -> "_"
     if mode = TypeMode then
         // type mode behaves a bit differently, we want to remove the current namespace prefix if possible for ThisModule names

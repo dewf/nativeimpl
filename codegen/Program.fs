@@ -1,3 +1,4 @@
+open Generators.Backend
 open Generators.Frontend
 open Parser
 open AppCommon
@@ -8,7 +9,7 @@ open AppCommon
 // let INPUTS = [ "Windowing"; "Drawing" ]
 // let LIBRARY = "GuiBase"
 let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench"
-let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\output"
+let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\_output"
 let INPUTS = [ "First" ] // ; "Second"; "SomePackage.Third" ]
 let LIBRARY = "TestBench"
 
@@ -75,12 +76,12 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
                 failwithf "unsupported frontend language: %s" frontLang
                 
             // backend
-            // match backLang.ToLower() with
-            // | "cpp" | "c++" ->
-            //     printfn "rendering C++ backend code"
-            //     CppGenerator.generateModule outParams currentModule
-            // | _ ->
-            //     failwithf "unsupported backend language: %s" backLang
+            match backLang.ToLower() with
+            | "cpp" | "c++" ->
+                printfn "rendering C++ backend code"
+                CppGenerator.generateModule context outParams
+            | _ ->
+                failwithf "unsupported backend language: %s" backLang
             
             nextMap)
 
@@ -95,14 +96,14 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     | _ ->
         failwithf "unsupported frontend language: %s" frontLang
         
-    // // backend
-    // match backLang.ToLower() with
-    // | "cpp" | "c++" ->
-    //     printfn "rendering C++ library file"
-    //     CppGenerator.generateLibrary depsOrder outParams
-    // | _ ->
-    //     failwithf "unsupported backend language: %s" backLang
-    //
+    // backend
+    match backLang.ToLower() with
+    | "cpp" | "c++" ->
+        printfn "rendering C++ library file"
+        CppGenerator.generateLibrary depsOrder outParams
+    | _ ->
+        failwithf "unsupported backend language: %s" backLang
+    
     // generate project files:
     CsharpGenerator.generateProject outParams
     // generate project files for backend (eg cmake)

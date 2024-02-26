@@ -576,11 +576,7 @@ let renderGeneric (context: RenderContext) (writer: IFormatWriter) (gType: NITyp
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
         
-type UserTypeMode =
-    | Normal
-    | Coalesced of contentFunc: (unit -> unit)
-        
-let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) (mode: UserTypeMode) =
+let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
     
     match userType with
@@ -662,13 +658,6 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
             // return pop
             popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
             write 3 "}"
-        // optional coalesced content
-        match mode with
-        | Normal ->
-            ()
-        | Coalesced contentFunc ->
-            write 3 "// coalesced group definitions =================="
-            contentFunc()
         // end class definition
         write 2 "}"
         // push
@@ -1177,29 +1166,20 @@ let rec renderNestedGroup (context: RenderContext) (writer: IFormatWriter) =
     let write, blank =
         writer.Write, writer.Blank
     
-    let commonContentFunc () =
-        renderGroupCommon context writer
-        // group init / assignment stuff
-        blank()
-        write 2 "internal static void Init()"
-        write 2 "{"
-        renderInitCommon context writer
-        write 2 "}"
-    
-    match context.GroupContext.MaybeCoalesced with
-    | Some userType ->
-        let name =
-            context.GroupContext.Name
-        renderUserType context (writer.WithExtraIndent -1) name userType (Coalesced commonContentFunc)
-    | None ->
-        // open group
-        blank()
-        write 1 "public static class %s" group.Name
-        write 1 "{"
-        // common stuff
-        commonContentFunc()
-        // close group
-        write 1 "}"
+    // open group
+    blank()
+    write 1 "public static class %s" group.Name
+    write 1 "{"
+    // common stuff
+    renderGroupCommon context writer
+    // group init / assignment stuff
+    blank()
+    write 2 "internal static void Init()"
+    write 2 "{"
+    renderInitCommon context writer
+    write 2 "}"
+    // close group
+    write 1 "}"
     
 and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
@@ -1253,14 +1233,7 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     for def in groupContext.Defs do
         match def with
         | UserType(name, userType) ->
-            // exclude coalesced, because it's still here in the group definitions (but it's already been rendered as the enclosure of this group)
-            match groupContext.MaybeCoalesced with
-            | Some coalescedType when name = groupContext.Name && userType = coalescedType ->
-                // excluded
-                ()
-            | _ ->
-                // normal rendering
-                renderUserType context writer name userType Normal
+            renderUserType context writer name userType
         | Group(name, _) ->
             let group =
                 groupContext.SubGroups[name]

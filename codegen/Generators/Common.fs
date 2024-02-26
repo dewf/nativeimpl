@@ -725,8 +725,6 @@ type GroupContext = {
     Name: string
     Path: string list
     Defs: ModuleDefinition list
-    // if a definition had the same name as the group, coalesce with it (if the language supports it)
-    MaybeCoalesced: UserType option
     // broken down for easy use:
     ModuleMethods: NamedFunction list
     Opaques: (string * OpaqueInfo) list
@@ -743,29 +741,6 @@ type RenderContext = {
 
 let createGroups (rootDefs: ModuleDefinition list) (allowCoalesced: bool) =
     let rec recInner (name: string) (groupDefs: ModuleDefinition list) (revPath: string list) =
-        // we used to partition groupDefs to exclude the coalesced usertype
-        // but that turned out to be more effort when rendering, to have to either re-inject it into the appropriate thing list (eg opaques),
-        // or start thinking about having the eg. opaque be responsible for its own method handles, handle init, etc
-        // far easier and cleaner to just leave it where it resides in the groupDefs, and simply exclude that 1 thing when rendering the user types for the group!
-        let maybeCoalesced =
-            if allowCoalesced then
-                let withSameName =
-                    groupDefs
-                    |> List.choose (function
-                        | UserType (userTypeName, userType) when userTypeName = name ->
-                            Some userType
-                        | _ ->
-                            None)
-                match withSameName with
-                | [ userType ] ->
-                    match userType with
-                    | OpaqueDef _ | StructDef _ | InterfaceDef _ -> Some userType
-                    | _ -> None
-                | [] -> None
-                | _ -> failwith "createGroups: found too many same-named usertypes in the group (checking for something to coalesce)"
-            else
-                None
-        // proceed as normal
         let moduleMethods =
             groupDefs
             |> List.choose (function
@@ -809,7 +784,6 @@ let createGroups (rootDefs: ModuleDefinition list) (allowCoalesced: bool) =
         { Name = name
           Path = List.rev revPath
           Defs = groupDefs
-          MaybeCoalesced = maybeCoalesced
           ModuleMethods = moduleMethods
           Opaques = opaques
           Interfaces = interfaces

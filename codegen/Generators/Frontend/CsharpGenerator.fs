@@ -628,7 +628,7 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
         write 4 "if (!_disposed)"
         write 4 "{"
         pushValue context writer 5 fakeThis "this" (Direct false)
-        write 5 "NativeImplClient.InvokeModuleMethod(_%s_dispose);" name
+        write 5 "NativeImplClient.InvokeModuleMethod(_%s_dispose);" (lowerFirst name)
         write 5 "_disposed = true;"
         write 4 "}"
         write 3 "}"
@@ -1106,7 +1106,7 @@ let renderInitCommon (context: RenderContext) (writer: IFormatWriter) =
             for method in info.Methods do
                 write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s%s_%s\");" (lowerFirst name) method.Name groupNamePrefix name method.Name
             // synthesized dispose method handle
-            write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s%s_dispose\");" name groupNamePrefix name
+            write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s%s_dispose\");" (lowerFirst name) groupNamePrefix name
     
     // exceptions
     if not group.Exceptions.IsEmpty then
@@ -1196,7 +1196,7 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
         for method in info.Methods do
             write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
         // synthesized dispose method
-        write 2 "private static ModuleMethodHandle _%s_dispose;" name
+        write 2 "private static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
     
     // interfaces
     for name, methods in groupContext.Interfaces do

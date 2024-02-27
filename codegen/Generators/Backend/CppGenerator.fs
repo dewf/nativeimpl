@@ -10,6 +10,26 @@ open Extensions
 
 let resolvedNameToString =
     resolvedNameToStringAbstract "::"
+    
+let getRelativePath (currentPath: string list) (targetPath: string list) =
+    // remove common segments
+    // prefix (currentPath.count) segments with ".."
+    // then remainder of targetPath
+    let current, target =
+        (currentPath, targetPath)
+        ||> List.skipWhile2 (fun a b -> a = b)
+    List.replicate current.Length ".." @ target
+    
+let moduleNameToPathNoExt (current: ModuleName option) (target: ModuleName) =
+    let currentParts =
+        match current with
+        | Some (ModuleName parts) -> parts
+        | None -> []
+    match target with
+    | ModuleName targetParts ->
+        let relative =
+            getRelativePath currentParts targetParts
+        String.concat "/" relative
 
 let typeToName (context: RenderContext) (outerType: NIType) =
     let rec recInner = function
@@ -309,7 +329,7 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
         write level "// (pushValue not supported yet: %A)" type_
 
 
-let renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) (typeContainsRefs: NIType -> bool) =
+let renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     // push
@@ -360,7 +380,7 @@ let renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (wri
         writeCpp 2 "cf->remoteExec();"
     else
         writeCpp 2 "cf->remoteExecWithExceptions();"
-    if typeContainsRefs info.Returns then
+    if containsRefs context.ModuleContext info.Returns then
         popValue context writerCpp 2 info.Returns SafeReturn
     else
         popValue context writerCpp 2 info.Returns Return
@@ -368,7 +388,7 @@ let renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (wri
     writeCpp 1 "return wrapper;"
     writeCpp 0 "}"
 
-let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (outerType: NIType) (name: string) (methods: NamedFunction list) (typeContainsRefs: NIType -> bool) =
+let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (outerType: NIType) (name: string) (methods: NamedFunction list) = // (typeContainsRefs: NIType -> bool) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     // client wrapper
@@ -387,7 +407,7 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
         else
             writeCpp 2 "invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
         // pop result
-        if typeContainsRefs namedFunc.Returns then
+        if containsRefs context.ModuleContext namedFunc.Returns then
             // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
             // this is to prevent premature deref which could free the instance before we've gotten ahold of it
             popValue context writerCpp 2 namedFunc.Returns SafeReturn
@@ -696,6 +716,140 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
         member this.Other (t: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context outerType)
 
+let renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (userType: UserType) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
+    match userType with
+    | OpaqueDef _ ->
+        // the methods are synthesized and rendered along with the top-level module methods
+        // here we just need push/pop
+        blankH()
+        writeH 0 "void %s__push(%s value);" name name
+        writeCpp 0 "void %s__push(%s value) {" name name
+        writeCpp 1 "ni_pushPtr(value);"
+        writeCpp 0 "}"
+        blankCpp()
+        writeH 0 "%s %s__pop();" name name
+        writeCpp 0 "%s %s__pop() {" name name
+        writeCpp 1 "return (%s)ni_popPtr();" name
+        writeCpp 0 "}"
+    | StructDef namedFields ->
+        blankH()
+        writeH 0 "void %s__push(%s value, bool isReturn);" name name
+        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
+        for field in namedFields |> List.rev do
+            pushValue context writerCpp 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
+        writeCpp 0 "}"
+        blankCpp()
+        writeH 0 "%s %s__pop();" name name
+        writeCpp 0 "%s %s__pop() {" name name
+        for field in namedFields do
+            popValue context writerCpp 1 field.Type_ (Variable field.Name)
+        writeCpp 1 "return %s { %s };" name (joinedFieldNames namedFields)
+        writeCpp 0 "}"
+    | OptionsDef namedFields ->
+        let flagsType =
+            Primitive(Int(true,Width32))
+        // push
+        blankH()
+        writeH 0 "void %s__push(%s value, bool isReturn);" name name
+        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
+        for field in namedFields |> List.rev do
+            writeCpp 1 "%s %s;" (typeToCppString context field.Type_) field.Name
+            writeCpp 1 "if (value.has%s(&%s)) {" (upperFirst field.Name) field.Name
+            pushValue context writerCpp 2 field.Type_ field.Name (Indirect "isReturn")
+            writeCpp 1 "}"
+        pushValue context writerCpp 1 flagsType "value.getUsedFields()" NotApplicable
+        writeCpp 0 "}"
+        // pop
+        blankCpp()
+        writeH 0 "%s %s__pop();" name name
+        writeCpp 0 "%s %s__pop() {" name name
+        writeCpp 1 "%s value = {};" name
+        popValue context writerCpp 1 flagsType (LeftAssign "value._usedFields")
+        for field in namedFields do
+            writeCpp 1 "if (value._usedFields & %s::Fields::%sField) {" name (upperFirst field.Name)
+            popValue context writerCpp 2 field.Type_ (Variable "x")
+            writeCpp 2 "value.set%s(x);" (upperFirst field.Name)
+            writeCpp 1 "}"
+        writeCpp 1 "return value;"
+        writeCpp 0 "}"
+    | ExceptionDef exFields ->
+        blankH()
+        writeH 0 "void %s__push(%s e);" name name
+        blankCpp()
+        writeCpp 0 "void %s__push(%s e) {" name name
+        // push field values (reverse order)
+        for namedField in exFields |> List.rev do
+            let memberVar =
+                sprintf "e.%s" namedField.Name
+            pushValue context writerCpp 1 namedField.Type_ memberVar (Direct true) // true = exceptions are always returned by definition, so any references in their fields need to be kept safe ... right?
+        writeCpp 0 "}"
+        // build and throw
+        writeH 0 "void %s__buildAndThrow();" name
+        blankCpp()
+        writeCpp 0 "void %s__buildAndThrow() {" name
+        for field in exFields do
+            popValue context writerCpp 1 field.Type_ (Variable field.Name)
+        // joined variables (_0, _1, etc)
+        writeCpp 1 "throw %s(%s);" name (joinedFieldNames exFields)
+        writeCpp 0 "}"
+    | InterfaceDef methods ->
+        let outerType =
+            let symbolName =
+                SymbolName (context.GroupContext.Path @ [ name ])
+            Resolved (ThisModule symbolName, InterfaceType)
+        renderWrapperInterface context writerH writerCpp outerType name methods
+    | DelegateDef info ->
+        renderWrapperDelegate context writerH writerCpp name info
+    | TypeDef niType ->
+        // ghetto, but for now instead of flattening, just write an inline wrapper
+        blankH()
+        writeH 0 "%s %s__pop();" name name
+        writeCpp 0 "inline %s %s__pop() {" name name
+        popValue context writerCpp 1 niType Return
+        writeCpp 0 "}"
+        writeH 0 "void %s__push(%s value, bool isReturn);" name name
+        blankCpp()
+        writeCpp 0 "inline void %s__push(%s value, bool isReturn) {" name name
+        pushValue context writerCpp 1 niType "value" (Indirect "isReturn")
+        writeCpp 0 "}"
+    | EnumDef info ->
+        let widthType =
+            match info.MaybeWidth with
+            | Some widthType -> widthType
+            | None ->
+                let signed =
+                    not info.FlagsMode
+                Primitive(Int(signed,Width32))
+        if info.FlagsMode then
+            blankH()
+            writeH 0 "void %s__push(%s value);" name (typeToCppString context widthType)
+            writeCpp 0 "inline void %s__push(%s value) {" name (typeToCppString context widthType)
+            pushValue context writerCpp 1 widthType "value" NotApplicable
+            writeCpp 0 "}"
+            writeH 0 "%s %s__pop();" (typeToCppString context widthType) name
+            blankCpp()
+            writeCpp 0 "inline %s %s__pop() {" (typeToCppString context widthType) name
+            popValue context writerCpp 1 widthType Return
+            writeCpp 0 "}"
+        else
+            blankH()
+            writeH 0 "void %s__push(%s value);" name name
+            writeCpp 0 "inline void %s__push(%s value) {" name name
+            let content =
+                sprintf "(%s)value" (typeToCppString context widthType)
+            pushValue context writerCpp 1 widthType content NotApplicable
+            writeCpp 0 "}"
+            writeH 0 "%s %s__pop();" name name
+            blankCpp()
+            writeCpp 0 "inline %s %s__pop() {" name name
+            popValue context writerCpp 1 widthType (Variable "tag")
+            writeCpp 1 "return (%s)tag;" name
+            writeCpp 0 "}"
+    | SumTypeDef values ->
+        renderWrapperSumType context writerH writerCpp name values
+
 // let renderWrapperUserTypes (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (containsRefsMap: Map<string,bool>) (name: string) (content: UserOrGeneric) =
 //     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
 //     let writeH, blankH = writerH.Write, writerH.Blank
@@ -933,15 +1087,6 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
 //         | SumTypeDef values ->
 //             renderWrapperSumType context writerH writerCpp name values
 
-let getRelativePath (currentPath: string list) (targetPath: string list) =
-    // remove common segments
-    // prefix (currentPath.count) segments with ".."
-    // then remainder of targetPath
-    let current, target =
-        (currentPath, targetPath)
-        ||> List.skipWhile2 (fun a b -> a = b)
-    List.replicate current.Length ".." @ target
-
 // let relativeIncludeFilenameNoExt (targetModule: ModuleName) =
 //     // for including other module paths
 //     let targetParts =
@@ -979,209 +1124,187 @@ let synthesizeOpaqueMethods2 (context: RenderContext) (opaqueName: string) (info
         let nextName =
             sprintf "%s_%s" opaqueName nf.Name
         { nf with Name = nextName })
+    
+let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
+    let group =
+        context.GroupContext
         
-// let synthesizeOpaqueMethods (context: RenderContext) (defs: ModuleDefinition list) =
-//     defs
-//     |> List.collect (function
-//         | UserType (opaqueName, OpaqueDef info) ->
-//             let instanceMethods =
-//                 let disposeMethod =
-//                     { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] }
-//                 (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
-//                 // add "_this" parameter
-//                 |> List.map (fun nf ->
-//                     let nextArgs =
-//                         let firstArg =
-//                             let nameParts =
-//                                 (opaqueName :: revNamespace) |> List.rev
-//                             "_this", Resolved (ThisModule (SymbolName nameParts), OpaqueType)
-//                         firstArg :: nf.Args
-//                     { nf with Args = nextArgs })
-//             // name prefix
-//             instanceMethods
-//             |> List.map (fun nf ->
-//                 let nextName =
-//                     sprintf "%s_%s" opaqueName nf.Name
-//                 { nf with Name = nextName })
-//         | _ -> [])
+    let renderNamedFunc (namedFunction: NamedFunction) =
+        blankH()
+        writeH 0 "void %s__wrapper();" namedFunction.Name
+        blankCpp()
+        writeCpp 0 "void %s__wrapper() {" namedFunction.Name
+        for argName, argType in namedFunction.Args do
+            popValue context writerCpp 1 argType (Variable argName)
+        let invocation =
+            sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
+        if namedFunction.Throws.IsEmpty then
+            pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
+        else
+            writeCpp 1 "try {"
+            pushValue context writerCpp 2 namedFunction.Returns invocation (Direct true)
+            writeCpp 1 "}"
+            for exc in namedFunction.Throws do
+                match exc with
+                | Resolved (resolvedName, ExceptionType) ->
+                    let typeName =
+                        resolvedNameToString context resolvedName TypeMode
+                    writeCpp 1 "catch (const %s& e) {" typeName
+                    writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
+                    pushValue context writerCpp 2 exc "e" (Direct true)
+                    writeCpp 1 "}"
+                | _ ->
+                    failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
+        writeCpp 0 "}"
+        
+    for def in group.Defs do
+        match def with
+        | Global _ ->
+            ()
+        | FunctionDef namedFunction ->
+            renderNamedFunc namedFunction
+        | UserType(name, userType) ->
+            // push/pop etc
+            renderWrapperUserType context writerH writerCpp name userType
+            // other type-specific stuff
+            // why is this even separate to begin with? I guess something to do with the old dependency-based rendering, which was a prior/separate step? 
+            match userType with
+            | OpaqueDef info ->
+                for nf in synthesizeOpaqueMethods2 context name info do
+                    renderNamedFunc nf
+            | InterfaceDef namedFunctions ->
+                for nf in namedFunctions do
+                    writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
+                    blankH()
+                    writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
+                    blankCpp()
+                    writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
+                    writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
+                    for argName, argType in nf.Args do
+                        popValue context writerCpp 1 argType (Variable argName)
+                    let invocation =
+                        sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
+                    if nf.Throws.IsEmpty then
+                        pushValue context writerCpp 1 nf.Returns invocation (Direct true)
+                    else
+                        writeCpp 1 "try {"
+                        pushValue context writerCpp 2 nf.Returns invocation (Direct true)
+                        writeCpp 1 "}"
+                        for exc in nf.Throws do
+                            match exc with
+                            | Resolved (resolvedName, ExceptionType) ->
+                                let typeName =
+                                    resolvedNameToString context resolvedName TypeMode
+                                writeCpp 1 "catch (const %s& e) {" typeName
+                                writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
+                                writeCpp 2 "%s__push(e);" typeName
+                                writeCpp 1 "}"
+                            | _ ->
+                                failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
+                    writeCpp 0 "}"
+            | ExceptionDef _ ->
+                writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
+            | _ ->
+                ()
+        | Group(groupName, _) ->
+            let nextGroup =
+                context.GroupContext.SubGroups[groupName]
+            let nextContext =
+                { context with GroupContext = nextGroup }
+            writeH 0 "namespace %s" groupName
+            writeCpp 0 "namespace %s" groupName
+            writeH 0 "{"
+            writeCpp 0 "{"
+            renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
+            writeH 0 "}"
+            writeCpp 0 "}"
+        
+let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) = // (maybeModulePrefix: string option) (className: string) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
+    let m =
+        context.ModuleContext.Module
 
-// let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (maybeModulePrefix: string option) (className: string) =
-//     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
-//     let writeH, blankH = writerH.Write, writerH.Blank
-//     
-//     let m =
-//         context.ModuleContext.Module
-//         
-//     // things we'll need to use a few times:
-//     let globals =
-//         m.Defs
-//         |> List.choose (function
-//             | Global(name, niType) -> Some (name, niType)
-//             | _ -> None)
-//     let userTypes =
-//         m.Defs
-//         |> List.choose (function
-//             | UserType(name, userType) -> Some (name, userType)
-//             | _ -> None)
-//     let opaqueMethods =
-//         synthesizeOpaqueMethods m.Defs
-//     let moduleMethods =
-//         m.Defs
-//         |> List.choose (function
-//             | FunctionDef namedFunction -> Some namedFunction
-//             | _ -> None)
-//         // append generated opaque methods
-//         |> (fun x -> x @ opaqueMethods)
-//     let interfaces =
-//         m.Defs
-//         |> List.choose (function
-//             | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
-//             | _ -> None)
-//     let exceptions =
-//         m.Defs
-//         |> List.choose (function
-//             | UserType(name, ExceptionDef fields) -> Some (name, fields)
-//             | _ -> None)
-//     
-//     // begin output: ===============================================
-//     // header
-//     writeH 0 "#include \"%s.h\"" className
-//     // cpp
-//     writeCpp 0 "#include \"%s.h\"" (relativeIncludeFilenameNoExt maybeModulePrefix "$PARENT.support.NativeImplServer")
-//     writeCpp 0 "#include \"%s_wrappers.h\"" className
-//     writeCpp 0 "#include \"%s.h\"" className
-//     // need to include wrappers for imports
-//     for importName in m.Imports do
-//         writeCpp 0 "#include \"%s_wrappers.h\"" (relativeIncludeFilenameNoExt maybeModulePrefix importName)
-//
-//     // opaques + interface method + exception handles (for registration storage)
-//     blankCpp()
-//     for name, userType in userTypes do
-//         let lowerName = lowerFirst name
-//         match userType with
-//         // | OpaqueDef _ ->
-//         //     writeCpp 0 "NIHANDLE(%s);" lowerName
-//         | InterfaceDef namedFunctions ->
-//             namedFunctions
-//             |> List.iter (fun nf ->
-//                 writeCpp 0 "ni_InterfaceMethodRef %s_%s;" lowerName nf.Name)
-//         | ExceptionDef _ ->
-//             writeCpp 0 "ni_ExceptionRef %s;" lowerName
-//         | _ ->
-//             ()
-//
-//     // // user types and generics in dependency order
-//     // let typeMap =
-//     //     userTypesAndGenerics m
-//     // let containsRefsMap =
-//     //     createContainsRefsMap typeMap
-//     // let renderFunc =
-//     //     renderWrapperUserTypes writerH writerCpp containsRefsMap
-//     // renderUserTypes typeMap renderFunc
-//     
-//     // printfn "v2 testing!!!!!!!! ====================="
-//     // for item in renderUserTypesV2 typeMap renderFunc do
-//     //     printfn "- %A" item
-//     // printfn "========================================"
-//
-//     // plain function wrappers
-//     for namedFunction in moduleMethods do
-//         blankH()
-//         writeH 0 "void %s__wrapper();" namedFunction.Name
-//         blankCpp()
-//         writeCpp 0 "void %s__wrapper() {" namedFunction.Name
-//         for argName, argType in namedFunction.Args do
-//             popValue context writerCpp 1 argType (Variable argName)
-//         let invocation =
-//             sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
-//         if namedFunction.Throws.IsEmpty then
-//             pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
-//         else
-//             writeCpp 1 "try {"
-//             pushValue context writerCpp 2 namedFunction.Returns invocation (Direct true)
-//             writeCpp 1 "}"
-//             for exc in namedFunction.Throws do
-//                 match exc with
-//                 | Resolved (resolvedName, ExceptionType) ->
-//                     let typeName =
-//                         resolvedNameToString context resolvedName TypeMode
-//                     writeCpp 1 "catch (const %s& e) {" typeName
-//                     writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
-//                     pushValue context writerCpp 2 exc "e" (Direct true)
-//                     writeCpp 1 "}"
-//                 | _ ->
-//                     failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
-//         writeCpp 0 "}"
-//
-//     // interface wrappers
-//     for name, namedFunctions in interfaces do
-//         namedFunctions
-//         |> List.iter (fun nf ->
-//             blankH()
-//             writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
-//             blankCpp()
-//             writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
-//             writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
-//             for argName, argType in nf.Args do
-//                 popValue context writerCpp 1 argType (Variable argName)
-//             let invocation =
-//                 sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
-//             if nf.Throws.IsEmpty then
-//                 pushValue context writerCpp 1 nf.Returns invocation (Direct true)
-//             else
-//                 writeCpp 1 "try {"
-//                 pushValue context writerCpp 2 nf.Returns invocation (Direct true)
-//                 writeCpp 1 "}"
-//                 for exc in nf.Throws do
-//                     match exc with
-//                     | Resolved (resolvedName, ExceptionType) ->
-//                         let typeName =
-//                             resolvedNameToString context resolvedName TypeMode
-//                         writeCpp 1 "catch (const %s& e) {" typeName
-//                         writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
-//                         writeCpp 2 "%s__push(e);" typeName
-//                         writeCpp 1 "}"
-//                     | _ ->
-//                         failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
-//             writeCpp 0 "}")
-//
-//     // globals/constants func
-//     if globals.Length > 0 then
-//         blankH()
-//         writeH 0 "void %s__constantsFunc();" m.Name
-//         blankCpp()
-//         writeCpp 0 "void %s__constantsFunc() {" m.Name
-//         // push in reverse order
-//         for globalName, globalType in globals |> List.rev do
-//             pushValue context writerCpp 1 globalType globalName (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
-//         writeCpp 0 "}"
-//
-//     // library registration method
-//     // header
-//     blankH()
-//     writeH 0 "int %s__register();" m.Name
-//     // cpp
-//     blankCpp()
-//     writeCpp 0 "int %s__register() {" m.Name
-//     writeCpp 1 "auto m = ni_registerModule(\"%s\");" m.Name
-//     if globals.Length > 0 then
-//         writeCpp 1 "ni_registerModuleConstants(m, &%s__constantsFunc);" m.Name
-//     // module methods
-//     for namedFunction in moduleMethods do
-//         writeCpp 1 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name
-//     // interfaces + methods
-//     for name, methods in interfaces do
-//         let lowerName = lowerFirst name
-//         writeCpp 1 "auto %s = ni_registerInterface(m, \"%s\");" lowerName name
-//         for method in methods do
-//             writeCpp 1 "%s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
-//     // exceptions
-//     for name, _ in exceptions do
-//         let lowerName = lowerFirst name
-//         writeCpp 1 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" lowerName name name
-//     // done
-//     writeCpp 1 "return 0; // = OK"
-//     writeCpp 0 "}"
+    // begin output: ===============================================
+    // header
+    writeH 0 "#include \"%s.h\"" m.Name.LastPart
+    // cpp
+    writeCpp 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "NativeImplServer"])) // (relativeIncludeFilenameNoExt maybeModulePrefix "$PARENT.support.NativeImplServer")
+    writeCpp 0 "#include \"%s_wrappers.h\"" m.Name.LastPart
+    writeCpp 0 "#include \"%s.h\"" m.Name.LastPart
+    // need to include wrappers for imports
+    for importName in m.Imports do
+        writeCpp 0 "#include \"%s_wrappers.h\"" (moduleNameToPathNoExt (Some m.Name) importName) // (relativeIncludeFilenameNoExt maybeModulePrefix importName)
+
+    // kick off the group rendering
+    writeH 0 "namespace %s" m.Name.LastPart
+    writeCpp 0 "namespace %s" m.Name.LastPart
+    writeH 0 "{"
+    writeCpp 0 "{"
+    renderWrappersGroup context (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
+    writeH 0 "}"
+    writeCpp 0 "}"
+
+    // globals/constants func
+    let allGlobalsCount =
+        let rec groupCount (group: GroupContext) =
+            group.Defs
+            |> List.sumBy (function
+                | Global _ -> 1
+                | Group(name, _) ->
+                   let sub =
+                       group.SubGroups[name]
+                   groupCount sub
+                | _ -> 0)
+        groupCount context.GroupContext
+        
+    if allGlobalsCount > 0 then
+        blankH()
+        writeH 0 "void %s__constantsFunc();" m.Name.LastPart
+        blankCpp()
+        writeCpp 0 "void %s__constantsFunc() {" m.Name.LastPart
+        // push in reverse order
+        // TODO: fix for subgroups
+        // just a recursive push of everything in the file, relative to root?
+        writeCpp 1 "// TODO! fix for subgroups"
+        // for globalName, globalType in globals |> List.rev do
+        //     pushValue context writerCpp 1 globalType globalName (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
+        writeCpp 0 "}"
+
+    // library registration method
+    // header
+    blankH()
+    writeH 0 "int %s__register();" m.Name.LastPart
+
+    // cpp
+    blankCpp()
+    writeCpp 0 "int %s__register() {" m.Name.LastPart
+    writeCpp 1 "auto m = ni_registerModule(\"%s\");" m.Name.LastPart
+    if allGlobalsCount > 0 then
+        writeCpp 1 "ni_registerModuleConstants(m, &%s__constantsFunc);" m.Name.LastPart
+        
+    // TODO: call .Init() for all subgroups
+    // er, how about just a recursive thing like we're doing with the global constants? why wait until library runtime when we have all that information now?
+
+    // // module methods
+    // for namedFunction in moduleMethods do
+    //     writeCpp 1 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name
+    // // interfaces + methods
+    // for name, methods in interfaces do
+    //     let lowerName = lowerFirst name
+    //     writeCpp 1 "auto %s = ni_registerInterface(m, \"%s\");" lowerName name
+    //     for method in methods do
+    //         writeCpp 1 "%s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
+    // // exceptions
+    // for name, _ in exceptions do
+    //     let lowerName = lowerFirst name
+    //     writeCpp 1 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" lowerName name name
+
+    // done
+    writeCpp 1 "return 0; // = OK"
+    writeCpp 0 "}"
 
 let renderHeaderException (context: RenderContext) (writer: IFormatWriter) (exName: string) (exFields: NamedField list) =
     let write, blank = writer.Write, writer.Blank
@@ -1452,17 +1575,6 @@ let renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (name:
 //         | SumTypeDef enumValues ->
 //             renderHeaderSumType context writer name enumValues
             
-let moduleNameToPathNoExt (current: ModuleName option) (target: ModuleName) =
-    let currentParts =
-        match current with
-        | Some (ModuleName parts) -> parts
-        | None -> []
-    match target with
-    | ModuleName targetParts ->
-        let relative =
-            getRelativePath currentParts targetParts
-        String.concat "/" relative
-        
 let rec renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     
@@ -1660,14 +1772,14 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
     let context =
         { ModuleContext = moduleContext; GroupContext = root }
         
-    // printfn "  - %s.h/.cpp" wrappersFilenameBase
-    // use wrappersOutputH =
-    //     let writer = new StreamWriter(wrappersFilenameBase + ".h")
-    //     new SimpleFormatWriter(writer, 0)
-    // use wrappersOutputCpp =
-    //     let writer = new StreamWriter(wrappersFilenameBase + ".cpp")
-    //     new SimpleFormatWriter(writer, 0)
-    // generateWrappers context wrappersOutputH wrappersOutputCpp maybeModulePrefix className
+    printfn "  - %s.h/.cpp" wrappersFilenameBase
+    use wrappersOutputH =
+        let writer = new StreamWriter(wrappersFilenameBase + ".h")
+        new SimpleFormatWriter(writer, 0)
+    use wrappersOutputCpp =
+        let writer = new StreamWriter(wrappersFilenameBase + ".cpp")
+        new SimpleFormatWriter(writer, 0)
+    generateWrappers context wrappersOutputH wrappersOutputCpp // maybeModulePrefix className
 
     printfn "  - %s" implementationHeaderFilename
     use implHeaderOutput =

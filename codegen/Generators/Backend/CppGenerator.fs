@@ -214,7 +214,7 @@ let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type
         | StringType -> write level "%s popStringInternal();" contextPrefix
     | Resolved(resolvedName, resolvedType) ->
         let name =
-            resolvedNameToString context resolvedName IdentifierMode
+            resolvedNameToString context resolvedName TypeMode
         match resolvedType with
         | ExceptionType ->
             write level "%s__buildAndThrow();" name
@@ -284,7 +284,7 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
         | StringType -> write level "pushStringInternal(%s);" content
     | Resolved (resolvedName, resolvedType) ->
         let name =
-            resolvedNameToString context resolvedName IdentifierMode
+            resolvedNameToString context resolvedName TypeMode
         // switch on type for return param?
         match resolvedType with
         | ExceptionType ->
@@ -849,6 +849,104 @@ let renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (wri
             writeCpp 0 "}"
     | SumTypeDef values ->
         renderWrapperSumType context writerH writerCpp name values
+        
+let renderWrapperGeneric (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (gType: NIType) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
+    match gType with
+    | BufferType elemType ->
+        // PUSH =====
+        blankH()
+        writeH 0 "inline void __%s__push(%s buf, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
+        writeCpp 0 "inline void __%s__push(%s buf, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
+        writeCpp 1 "if (buf != nullptr) {"
+        writeCpp 2 "auto pushable = std::dynamic_pointer_cast<Pushable>(buf);"
+        writeCpp 2 "pushable->push(pushable, isReturn);"
+        writeCpp 1 "}"
+        writeCpp 1 "else {"
+        writeCpp 2 "ni_pushNull();"
+        writeCpp 1 "}"
+        writeCpp 0 "}"
+        // POP ======
+        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        blankCpp()
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
+        writeCpp 1 "int id;"
+        writeCpp 1 "bool isClientId;"
+        writeCpp 1 "ni_BufferDescriptor descriptor;"
+        writeCpp 1 "ni_popBuffer(&id, &isClientId, &descriptor);"
+        writeCpp 1 "if (id != 0) {"
+        writeCpp 2 "if (isClientId) {"
+        writeCpp 3 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString context elemType)
+        writeCpp 3 "return %s(buf);" (typeToCppString context gType)
+        writeCpp 2 "}"
+        writeCpp 2 "else {"
+        writeCpp 3 "return ServerBuffer<%s>::getByID(id);" (typeToCppString context elemType)
+        writeCpp 2 "}"
+        writeCpp 1 "}"
+        writeCpp 1 "else {"
+        writeCpp 2 "return %s();" (typeToCppString context gType)
+        writeCpp 1 "}"
+        writeCpp 0 "}"
+    | TupleType tupleTypes ->
+        // PUSH =====
+        blankH()
+        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
+        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
+        for i, type_ in tupleTypes |> List.indexed |> List.rev do
+            pushValue context writerCpp 1 type_ (sprintf "std::get<%d>(value)" i) (Indirect "isReturn")
+        writeCpp 0 "}"
+        // POP ======
+        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        blankCpp()
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
+        for i, type_ in tupleTypes |> List.indexed do
+            popValue context writerCpp 1 type_ (Variable (sprintf "_%d" i))
+        let itemsJoined =
+            tupleTypes
+            |> List.indexed
+            |> List.map (fun (i, _) -> sprintf "_%d" i)
+            |> String.concat ", "
+        writeCpp 1 "return %s{ %s };" (typeToCppString context gType) itemsJoined
+        writeCpp 0 "}"
+    | MapType (keyType, valueType) ->
+        // PUSH =====
+        blankH()
+        writeH 0 "void __%s__push(%s _map, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
+        writeCpp 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
+        writeCpp 1 "std::vector<%s> keys;" (typeToCppString context keyType)
+        writeCpp 1 "std::vector<%s> values;" (typeToCppString context valueType)
+        writeCpp 1 "for (auto i = _map.begin(); i != _map.end(); i++) {"
+        writeCpp 2 "keys.push_back(i->first);"
+        writeCpp 2 "values.push_back(i->second);"
+        writeCpp 1 "}"
+        pushValue context writerCpp 1 (ArrayType valueType) "values" (Indirect "isReturn")
+        pushValue context writerCpp 1 (ArrayType keyType) "keys" (Indirect "isReturn")
+        writeCpp 0 "}"
+        // POP =====
+        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        blankCpp()
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
+        writeCpp 1 "%s __ret;" (typeToCppString context gType)
+        popValue context writerCpp 1 (ArrayType keyType) (Variable "keys")
+        popValue context writerCpp 1 (ArrayType valueType) (Variable "values")
+        writeCpp 1 "for (auto i = 0; i < keys.size(); i++) {"
+        writeCpp 2 "__ret[keys[i]] = values[i];"
+        writeCpp 1 "}"
+        writeCpp 1 "return __ret;"
+        writeCpp 0 "}"
+    | ArrayType niType ->
+        let renderer =
+            ArrayOrSetRenderer(context, writerCpp, gType, niType)
+        renderArrayLike context.ModuleContext niType renderer
+    | SetType niType ->
+        let renderer =
+            ArrayOrSetRenderer(context, writerCpp, gType, niType)
+        renderArrayLike context.ModuleContext niType renderer
+    | _ ->
+        writeCpp 0 "// push/pop for generic %s" (typeToCppString context gType)
+    
+    
 
 // let renderWrapperUserTypes (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (containsRefsMap: Map<string,bool>) (name: string) (content: UserOrGeneric) =
 //     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
@@ -1243,6 +1341,10 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     writeCpp 0 "namespace %s" m.Name.LastPart
     writeH 0 "{"
     writeCpp 0 "{"
+    // first render all generic stuff in the root group
+    for gType in allGenericTypes context.ModuleContext do
+        renderWrapperGeneric context writerH writerCpp gType
+    // then the group content
     renderWrappersGroup context (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
     writeH 0 "}"
     writeCpp 0 "}"

@@ -801,7 +801,8 @@ let resolvedNameToStringAbstract (languageNsDelim: string) (context: RenderConte
         match mode with
         | TypeMode -> languageNsDelim
         | IdentifierMode -> "_"
-    if mode = TypeMode then
+    match mode with
+    | TypeMode ->
         // type mode behaves a bit differently, we want to remove the current namespace prefix if possible for ThisModule names
         match name with
         | ThisModule (SymbolName parts) ->
@@ -821,7 +822,7 @@ let resolvedNameToStringAbstract (languageNsDelim: string) (context: RenderConte
                 match moduleName with
                 | ModuleName moduleParts ->
                     joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
-    else
+    | IdentifierMode ->
         // in identifier mode, we just use the full symbol name prefix unless imported and ambiguous,
         // then use full module + symbol name
         let moduleName, symbolName =
@@ -835,7 +836,12 @@ let resolvedNameToStringAbstract (languageNsDelim: string) (context: RenderConte
             // we want to use the shortest UNAMBIGUOUS name
             // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
             if symbolIsUnambiguous context.ModuleContext symbolName then
-                joinNameParts separator (symbolParts |> List.map upperFirst)
+                // strip current namespace prefix if possible
+                let parts2 =
+                    match List.removePrefix context.GroupContext.Path symbolParts with
+                    | Some remaining -> remaining
+                    | None -> symbolParts
+                joinNameParts separator (parts2 |> List.map upperFirst)
             else
                 match moduleName with
                 | ModuleName moduleParts ->

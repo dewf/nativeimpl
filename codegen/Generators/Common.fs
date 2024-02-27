@@ -796,7 +796,7 @@ let createGroups (rootDefs: ModuleDefinition list) (allowCoalesced: bool) =
 type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
-let resolvedNameToStringAbstract (languageNsDelim: string) (doCoalesce: bool) (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+let resolvedNameToStringAbstract (languageNsDelim: string) (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
     let separator =
         match mode with
         | TypeMode -> languageNsDelim

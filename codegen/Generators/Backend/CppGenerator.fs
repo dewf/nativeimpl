@@ -9,7 +9,7 @@ open Generators.Common
 open Extensions
 
 let resolvedNameToString =
-    resolvedNameToStringAbstract "::" false
+    resolvedNameToStringAbstract "::"
 
 let typeToName (context: RenderContext) (outerType: NIType) =
     let rec recInner = function
@@ -108,6 +108,18 @@ let joinedArgNames (args: (string * NIType) list) =
     args
     |> List.map fst
     |> String.concat ", "
+    
+let prefixLastNameSegment (name: string) (prefix: string) =
+    let x =
+        name.Split("::")
+        |> Array.toList
+        |> List.rev
+    match x with
+    | last :: etc ->
+        (prefix + last) :: etc
+    | _ -> failwith "bleh"
+    |> List.rev
+    |> String.concat "::"
 
 let defaultValueForType (context: RenderContext) (outerType: NIType) =
     let rec recInner = function
@@ -125,7 +137,11 @@ let defaultValueForType (context: RenderContext) (outerType: NIType) =
                 resolvedNameToString context resolvedName TypeMode
             match resolvedType with
             | OpaqueType ->
-                sprintf "new __%s()" name // TODO! TypeMode above is going to make this incorrect. I think we actually want the type name but with __%s() for the very last segment?
+                // the final segment actually needs __ in front of it, since the opaque struct defs are defined with that
+                // silly kludge for now, because AFAIK we don't need to directly deal with the default opaque structs (prefixed with __) anywhere else in the generation
+                let replaced =
+                    prefixLastNameSegment name "__"
+                sprintf "new %s()" replaced
             | InterfaceType ->
                 sprintf "std::shared_ptr<%s>()" name
             | DelegateType ->
@@ -1488,29 +1504,8 @@ let rec renderImplementationHeaderGroup (context: RenderContext) (writer: IForma
         
 let generateImplementationH (context: RenderContext) (writer: IFormatWriter) = // (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank
-    //
     let m =
         context.ModuleContext.Module
-    // let globals =
-    //     m.Defs
-    //     |> List.choose (function
-    //         | Global(name, niType) -> Some (name, niType)
-    //         | _ -> None)
-    // let opaques =
-    //     m.Defs
-    //     |> List.choose (function
-    //         | UserType(name, OpaqueDef _) -> Some name
-    //         | _ -> None)
-    // let opaqueMethods =
-    //     synthesizeOpaqueMethods m.Defs
-    // let moduleMethods =
-    //     m.Defs
-    //     |> List.choose (function
-    //         | FunctionDef namedFunction -> Some namedFunction
-    //         | _ -> None)
-    //     // append generated opaque methods
-    //     |> (fun x -> x @ opaqueMethods)
-    // begin output: ===============================================
     write 0 "#pragma once"
     blank ()
     write 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "NativeImplServer"]))
@@ -1534,103 +1529,64 @@ let generateImplementationH (context: RenderContext) (writer: IFormatWriter) = /
     renderImplementationHeaderGroup context (writer.WithExtraIndent 1)
     write 0 "}"
     
-    // let moduleNamespace =
-    //     maybeModulePrefix
-    //     |> Option.map (fun mp -> sprintf "%s.%s" baseNamespace mp)
-    //     |> Option.defaultValue baseNamespace
-    // write 0 "namespace %s" moduleNamespace
-    // write 0 "{"
-    //
-    // // render root group
-    // write 1 "public static class %s" className
-    // write 1 "{"
-    // write 2 "private static ModuleHandle _module;"
-            
-    // // opaque handles all at the top, so no ordering issues
-    // if not opaques.IsEmpty then
-    //     blank()
-    //     for name in opaques do
-    //         write 0 "struct __%s; typedef struct __%s* %s;" name name name
-    //
-    // // all user types in dependency order
-    // renderUserTypes typeMap (renderHeaderUserTypes writer)
-    //
-    // // global externs
-    // if globals.Length > 0 then
-    //     blank()
-    //     for globalName, globalType in globals do
-    //         write 0 "extern const %s %s;" (typeToCppString typeMap globalType) globalName
-    //
-    // // function prototypes
-    // if moduleMethods.Length > 0 then
-    //     blank()
-    //     for namedFunc in moduleMethods do
-    //         let throwsComment =
-    //             if namedFunc.Throws.IsEmpty then
-    //                 ""
-    //             else
-    //                 let joined =
-    //                     namedFunc.Throws
-    //                     |> List.map (typeToCppString typeMap)
-    //                     |> String.concat ", "
-    //                 sprintf " // throws %s" joined
-    //         write 0 "%s %s(%s);%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
+let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWriter) =
+    let write, blank = writer.Write, writer.Blank
+    let group =
+        context.GroupContext
+        
+    let renderFunc (namedFunc: NamedFunction) =
+        let throwsComment =
+            if namedFunc.Throws.IsEmpty then
+                ""
+            else
+                let joined =
+                    namedFunc.Throws
+                    |> List.map (typeToCppString context)
+                    |> String.concat ", "
+                sprintf " // throws %s" joined
+        write 0 "%s %s(%s) {%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+        if namedFunc.Returns <> UnitType then
+            write 1 "return %s;" (defaultValueForType context namedFunc.Returns)
+        write 0 "}"
+        
+    for def in group.Defs do
+        match def with
+        | Global(globalName, globalType) ->
+            write 0 "const %s %s = %s;" (typeToCppString context globalType) globalName (defaultValueForType context globalType)
+        | FunctionDef namedFunc ->
+            renderFunc namedFunc
+        | UserType(name, userType) ->
+            match userType with
+            | OpaqueDef info ->
+                write 0 "struct __%s {" (upperFirst name)
+                write 1 "// your content here"
+                write 0 "};"
+                for namedFunc in synthesizeOpaqueMethods2 context name info do
+                    renderFunc namedFunc
+            | _ ->
+                write 0 "// userType: %s" name
+        | Group(groupName, _) ->
+            let nextGroup =
+                context.GroupContext.SubGroups[groupName]
+            let nextContext =
+                { context with GroupContext = nextGroup }
+            write 0 "namespace %s" groupName
+            write 0 "{"
+            renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
+            write 0 "}"
 
-// let generateImplementationCpp (m: Module) (typeMap: Map<string, UserOrGeneric>) (writer: IFormatWriter) (className: string) =
-//     let write, blank = writer.Write, writer.Blank
-//     //
-//     let globals =
-//         m.Defs
-//         |> List.choose (function
-//             | Global(name, niType) -> Some (name, niType)
-//             | _ -> None)
-//     let opaqueHandles =
-//         m.Defs
-//         |> List.choose (function
-//             | UserType(name, OpaqueDef _) -> Some name
-//             | _ -> None)
-//     let opaqueMethods =
-//         synthesizeOpaqueMethods m.Defs
-//     let moduleMethods =
-//         m.Defs
-//         |> List.choose (function
-//             | FunctionDef namedFunction -> Some namedFunction
-//             | _ -> None)
-//         |> List.append opaqueMethods
-//     // begin output: ===============================================
-//     // right now this is hardcoded to the root level - we're not using any of the complex "outParams" stuff that the header/wrappers functions are using
-//     // it's quite a big chunk of code at this point and it needs to be extracted and cleaned up
-//     // but that's a day's worth of trouble, so not right now ...
-//     write 0 "#include \"generated/%s.h\"" className
-//
-//     // globals
-//     if globals.Length > 0 then
-//         blank()
-//         for globalName, globalType in globals do
-//             write 0 "const %s %s = %s;" (typeToCppString typeMap globalType) globalName (defaultValueForType typeMap globalType)
-//     // opaque handles
-//     if opaqueHandles.Length > 0 then
-//         blank()
-//         for name in opaqueHandles do
-//             write 0 "struct __%s {" (upperFirst name)
-//             write 1 "// your content here"
-//             write 0 "};"
-//     // functions
-//     for namedFunc in moduleMethods do
-//         blank()
-//         let throwsComment =
-//             if namedFunc.Throws.IsEmpty then
-//                 ""
-//             else
-//                 let joined =
-//                     namedFunc.Throws
-//                     |> List.map (typeToCppString typeMap)
-//                     |> String.concat ", "
-//                 sprintf " // throws %s" joined
-//         write 0 "%s %s(%s) {%s" (typeToCppString typeMap namedFunc.Returns) namedFunc.Name (joinedArgs typeMap namedFunc.Args) throwsComment
-//         if namedFunc.Returns <> UnitType then
-//             write 1 "return %s;" (defaultValueForType typeMap namedFunc.Returns)
-//         write 0 "}"
+let generateImplementationCpp (context: RenderContext) (writer: IFormatWriter) = // (className: string) =
+    let write, blank = writer.Write, writer.Blank
+    let m =
+        context.ModuleContext.Module
+        
+    write 0 "#include \"generated/%s.h\"" m.Name.LastPart
+    blank()
+    write 0 "namespace %s" m.Name.LastPart
+    write 0 "{"
+    renderImplementationCppGroup context (writer.WithExtraIndent 1)
+    write 0 "}"
+    
         
 let projectDir (outParams: OutParams) =
     sprintf "%s/server/cpp/%sImpl" outParams.Path outParams.LibraryName
@@ -1719,11 +1675,11 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
         new SimpleFormatWriter(writer, 0)
     generateImplementationH context implHeaderOutput // maybeModulePrefix
     
-    // printfn "  - %s" implementationFilename
-    // use implementationOutput =
-    //     let writer = new StreamWriter(implementationFilename)
-    //     new SimpleFormatWriter(writer, 0)
-    // generateImplementationCpp m typeMap implementationOutput className
+    printfn "  - %s" implementationFilename
+    use implementationOutput =
+        let writer = new StreamWriter(implementationFilename)
+        new SimpleFormatWriter(writer, 0)
+    generateImplementationCpp context implementationOutput // className
 
 let generateLibrary (allModules: Module list) (outParams: OutParams) =
     let baseNamespace, maybeModulePrefix, className =

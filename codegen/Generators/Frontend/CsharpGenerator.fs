@@ -10,7 +10,7 @@ open Extensions
 open AppCommon
 
 let resolvedNameToString =
-    resolvedNameToStringAbstract "." true
+    resolvedNameToStringAbstract "."
         
 let typeToCsString (context: RenderContext) (outerType: NIType) =
     let rec recInner = function

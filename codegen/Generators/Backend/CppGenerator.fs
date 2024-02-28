@@ -1336,7 +1336,7 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     for importName in m.Imports do
         writeCpp 0 "#include \"%s_wrappers.h\"" (moduleNameToPathNoExt (Some m.Name) importName) // (relativeIncludeFilenameNoExt maybeModulePrefix importName)
 
-    // kick off the group rendering
+    // begin root group: ===========================================
     writeH 0 "namespace %s" m.Name.LastPart
     writeCpp 0 "namespace %s" m.Name.LastPart
     writeH 0 "{"
@@ -1348,9 +1348,7 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
         
     // then the group content
     renderWrappersGroup context (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
-    writeH 0 "}"
-    writeCpp 0 "}"
-
+    
     // globals/constants func
     let allGlobalsCount =
         let rec groupCount (group: GroupContext) =
@@ -1365,49 +1363,64 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
         groupCount context.GroupContext
         
     if allGlobalsCount > 0 then
-        blankH()
-        writeH 0 "void %s__constantsFunc();" m.Name.LastPart
         blankCpp()
-        writeCpp 0 "void %s__constantsFunc() {" m.Name.LastPart
-        // push in reverse order
-        // TODO: fix for subgroups
-        // just a recursive push of everything in the file, relative to root?
-        writeCpp 1 "// TODO! fix for subgroups"
-        // for globalName, globalType in globals |> List.rev do
-        //     pushValue context writerCpp 1 globalType globalName (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
-        writeCpp 0 "}"
-
-    // library registration method
-    // header
-    blankH()
-    writeH 0 "int %s__register();" m.Name.LastPart
-
-    // cpp
-    blankCpp()
-    writeCpp 0 "int %s__register() {" m.Name.LastPart
-    writeCpp 1 "auto m = ni_registerModule(\"%s\");" m.Name.LastPart
-    if allGlobalsCount > 0 then
-        writeCpp 1 "ni_registerModuleConstants(m, &%s__constantsFunc);" m.Name.LastPart
+        writeCpp 1 "void __constantsFunc() {"
+        // push all subgroups at once
+        let rec pushGroupConstants (group: GroupContext) (writer: IFormatWriter) =
+            for subName in group.SubOrder |> List.rev do
+                let sub = group.SubGroups[subName]
+                pushGroupConstants sub writer
+            for globalName, globalType in group.Globals |> List.rev do
+                let content =
+                    joinNameParts "::" (group.Path @ [ globalName ])
+                pushValue context writer 2 globalType content (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
+        pushGroupConstants context.GroupContext writerCpp
+        writeCpp 1 "}"
         
-    // TODO: call .Init() for all subgroups
-    // er, how about just a recursive thing like we're doing with the global constants? why wait until library runtime when we have all that information now?
+    // library registration method
+    blankH()
+    writeH 1 "int __register();"
+    blankCpp()
+    writeCpp 1 "int __register() {"
+    writeCpp 2 "auto m = ni_registerModule(\"%s\");" m.Name.LastPart
+    if allGlobalsCount > 0 then
+        writeCpp 2 "ni_registerModuleConstants(m, &__constantsFunc);"
+    // register all nested group methods/interfaces/etc
+    let rec registerGroupMethods (group: GroupContext) (writer: IFormatWriter) =
+        // module methods (+ synthesized opaque)
+        let opaqueMethods =
+            group.Opaques
+            |> List.collect (fun (name, info) -> synthesizeOpaqueMethods2 context name info)
+        let allMethods =
+            group.ModuleMethods @ opaqueMethods
+        for namedFunction in allMethods do
+            let parts =
+                group.Path @ [ namedFunction.Name ]
+            writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" parts)
+        // interfaces + methods
+        for name, methods in group.Interfaces do
+            let lowerName =
+                lowerFirst name
+            writeCpp 2 "auto %s = ni_registerInterface(m, \"%s\");" lowerName name
+            for method in methods do
+                writeCpp 2 "%s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
+        // exceptions
+        for name, _ in group.Exceptions do
+            let parts =
+                group.Path @ [ name ]
+            let lowerName =
+                lowerFirst name
+            writeCpp 2 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" lowerName (joinNameParts "." parts) (joinNameParts "::" parts)
+        // subgroups
+        for subName in group.SubOrder do
+            let sub = group.SubGroups[subName]
+            registerGroupMethods sub writer
+    registerGroupMethods context.GroupContext writerCpp
+    writeCpp 2 "return 0; // = OK"
+    writeCpp 1 "}"
 
-    // // module methods
-    // for namedFunction in moduleMethods do
-    //     writeCpp 1 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" namedFunction.Name namedFunction.Name
-    // // interfaces + methods
-    // for name, methods in interfaces do
-    //     let lowerName = lowerFirst name
-    //     writeCpp 1 "auto %s = ni_registerInterface(m, \"%s\");" lowerName name
-    //     for method in methods do
-    //         writeCpp 1 "%s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
-    // // exceptions
-    // for name, _ in exceptions do
-    //     let lowerName = lowerFirst name
-    //     writeCpp 1 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" lowerName name name
-
-    // done
-    writeCpp 1 "return 0; // = OK"
+    // end root group: ===========================================
+    writeH 0 "}"
     writeCpp 0 "}"
 
 let renderHeaderException (context: RenderContext) (writer: IFormatWriter) (exName: string) (exFields: NamedField list) =
@@ -1816,7 +1829,7 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) = // (maybeMo
     blank()
     write 0 "extern \"C\" int nativeLibraryInit() {"
     for m in allModules do
-        write 1 "%s__register();" m.Name.LastPart // er, shouldn't everything be namespaced?
+        write 1 "%s::__register();" m.Name.LastPart // er, shouldn't everything be namespaced?
     write 1 "// should we do module inits here as well?"
     write 1 "// currently they are manually done on the C# side inside the <module>.Init methods (which perform registration first) - and those are individually called by Library.Init, which first calls nativeImplInit"
     write 1 "return 0;"

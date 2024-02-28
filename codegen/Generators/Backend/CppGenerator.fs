@@ -52,7 +52,7 @@ let typeToName (context: RenderContext) (outerType: NIType) =
             | Float64 -> "Double"
             | StringType -> "String"
         | Resolved (resolvedName, resolvedType) ->
-            resolvedNameToString context resolvedName TypeMode
+            resolvedNameToString context resolvedName IdentifierMode
         | ArrayType niType -> sprintf "%s_Array" (recInner niType)
         | MapType (keyType, valueType) -> sprintf "%s_%s_Map" (recInner keyType) (recInner valueType)
         | TupleType tupleTypes -> sprintf "%s_Tuple" (tupleTypes |> List.map recInner |> String.concat "")

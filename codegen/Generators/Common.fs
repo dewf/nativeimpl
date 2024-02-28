@@ -33,9 +33,7 @@ let rec typeToInternalKey = function
     | Resolved (name, _) ->
         match name with
         | ThisModule (SymbolName nameParts) ->
-            // special prefix for these for now, because for dependency resolution we'd like
-            // to filter / adjust things based on their relative namespaces
-            "$THIS:" + joinNameParts "." nameParts
+            joinNameParts "." nameParts
         | Imported(ModuleName moduleNameParts, SymbolName nameParts) ->
             joinNameParts "." (moduleNameParts @ nameParts)
     | ArrayType niType -> sprintf "array[%s]" (typeToInternalKey niType)
@@ -839,12 +837,8 @@ let resolvedNameToStringAbstract (languageNsDelim: string) (context: RenderConte
             // we want to use the shortest UNAMBIGUOUS name
             // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
             if symbolIsUnambiguous context.ModuleContext symbolName then
-                // strip current namespace prefix if possible
-                let parts2 =
-                    match List.removePrefix context.GroupContext.Path symbolParts with
-                    | Some remaining -> remaining
-                    | None -> symbolParts
-                joinNameParts separator (parts2 |> List.map upperFirst)
+                // DON'T strip the common namespace in identifier mode, we need the full thing for eg generics push/pop
+                joinNameParts separator (symbolParts |> List.map upperFirst)
             else
                 match moduleName with
                 | ModuleName moduleParts ->

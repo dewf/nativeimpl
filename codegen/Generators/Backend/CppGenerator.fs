@@ -1341,9 +1341,11 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     writeCpp 0 "namespace %s" m.Name.LastPart
     writeH 0 "{"
     writeCpp 0 "{"
+    
     // first render all generic stuff in the root group
     for gType in allGenericTypes context.ModuleContext do
-        renderWrapperGeneric context writerH writerCpp gType
+        renderWrapperGeneric context (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1) gType
+        
     // then the group content
     renderWrappersGroup context (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
     writeH 0 "}"

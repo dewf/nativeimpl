@@ -2,7 +2,6 @@
 
 open System
 open System.IO
-open System.Reflection.Metadata
 open Parser
 open Extensions
 open AppCommon
@@ -207,6 +206,8 @@ let allGenericTypes (context: ModuleContext) =
     // go
     processDefs context.Module.Defs
     |> List.distinct
+    // is this sufficient/correct for dependency order? (we want smaller primitives to be rendered before the composites they comprise)
+    |> List.rev
 
 type RenderableEntry =
     | RenderableDirect of thing: UserOrGeneric
@@ -673,6 +674,8 @@ let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArra
         renderer.MapType ()
     | Primitive prim ->
         renderer.Primitive prim
+    | SetType _ ->
+        renderer.SetType ()
     | _ ->
         renderer.Other elemType
 

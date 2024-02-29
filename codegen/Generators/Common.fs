@@ -740,7 +740,7 @@ type RenderContext = {
     GroupContext: GroupContext
 }
 
-let createGroups (rootDefs: ModuleDefinition list) (allowCoalesced: bool) =
+let createGroups (rootDefs: ModuleDefinition list) =
     let rec recInner (name: string) (groupDefs: ModuleDefinition list) (revPath: string list) =
         let moduleMethods =
             groupDefs
@@ -793,6 +793,11 @@ let createGroups (rootDefs: ModuleDefinition list) (allowCoalesced: bool) =
           SubOrder = subOrder
           SubGroups = subGroups }
     recInner "$ROOT$" rootDefs []
+    
+let createRenderContext (moduleContext: ModuleContext) =
+    let root =
+        createGroups moduleContext.Module.Defs
+    { ModuleContext = moduleContext; GroupContext = root }
     
 type ResolveNameStringMode =
     | TypeMode

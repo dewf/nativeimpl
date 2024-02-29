@@ -1062,72 +1062,65 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
 let joinModuleName (ModuleName nameParts) =
     joinNameParts "." nameParts
     
-let renderInitCommon (context: RenderContext) (writer: IFormatWriter) =
+// let renderInitCommon (context: RenderContext) (writer: IFormatWriter) =
+let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     
     let group =
         context.GroupContext
     
-    // initialize nested groups
-    // AFAIK there's no kind of dependency among groups, so it really doesn't matter where in the .Init this occurs ... probably
-    if not group.SubGroups.IsEmpty then
-        blank()
-        write 3 "// nested groups init"
-        let groups =
-            group.SubOrder
-            |> List.map (fun k -> group.SubGroups[k])
-        for group in groups do
-            write 3 "%s.Init();" group.Name
-            
-    let groupNamePrefix =
-        if group.Path.IsEmpty then
-            ""
-        else
-            (joinNameParts "." group.Path) + "."
-    
-    // pop any globals for this group (pushed all at once at root level)
-    if not group.Globals.IsEmpty then
-        blank()
-        // write 3 "NativeImplClient.PushModuleConstants(_module);"
-        for name, type_ in group.Globals do
-            popValue context writer 3 type_ (ExistingVar (upperFirst name))
+    let mkSourceHandle name =
+        joinNameParts "." (group.Path @ [ name ])
+    let mkTargetHandle name =
+        joinNameParts "." (group.Path @ [ "_" + lowerFirst name ])
     
     // module method handles
     if not group.ModuleMethods.IsEmpty then
-        blank()
         for namedFunc in group.ModuleMethods do
-            write 3 "_%s = NativeImplClient.GetModuleMethod(_module, \"%s%s\");" namedFunc.Name groupNamePrefix namedFunc.Name
+            let source = mkSourceHandle namedFunc.Name
+            let target = mkTargetHandle namedFunc.Name
+            write 3 "%s = NativeImplClient.GetModuleMethod(_module, \"%s\");" target source
             
     // opaque method handles
     if not group.Opaques.IsEmpty then
-        blank()
         for name, info in group.Opaques do
+            let sourceBase =
+                mkSourceHandle name
+            let targetBase =
+                mkTargetHandle name
             // instance methods
             for method in info.Methods do
-                write 3 "_%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s%s_%s\");" (lowerFirst name) method.Name groupNamePrefix name method.Name
+                write 3 "%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" targetBase method.Name sourceBase method.Name
             // synthesized dispose method handle
-            write 3 "_%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s%s_dispose\");" (lowerFirst name) groupNamePrefix name
+            write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
     
     // exceptions
     if not group.Exceptions.IsEmpty then
-        blank()
         for name, _ in group.Exceptions do
-            write 3 "_%s = NativeImplClient.GetException(_module, \"%s%s\");" (lowerFirst name) groupNamePrefix name
-            write 3 "NativeImplClient.SetExceptionBuilder(_%s, %s.BuildAndThrow);" (lowerFirst name) name
+            let source =
+                mkSourceHandle name
+            let target =
+                mkTargetHandle name
+            write 3 "%s = NativeImplClient.GetException(_module, \"%s\");" target source
+            write 3 "NativeImplClient.SetExceptionBuilder(%s, %s.BuildAndThrow);" target source
     
     // interface method handles, wrappers
     if not group.Interfaces.IsEmpty then
         for ifaceName, methods in group.Interfaces do
-            blank()
-            write 3 "_%s = NativeImplClient.GetInterface(_module, \"%s%s\");" (lowerFirst ifaceName) groupNamePrefix ifaceName
+            let sourceIface =
+                mkSourceHandle ifaceName
+            let targetIface =
+                mkTargetHandle ifaceName
+            write 3 "%s = NativeImplClient.GetInterface(_module, \"%s\");" targetIface sourceIface
             // methods
             if not methods.IsEmpty then
                 for method in methods do
-                    write 3 "_%s_%s = NativeImplClient.GetInterfaceMethod(_%s, \"%s\");" (lowerFirst ifaceName) (lowerFirst method.Name) (lowerFirst ifaceName) method.Name
+                    let sourceMethod =
+                        sprintf "%s.%s" sourceIface method.Name
+                    write 3 "_%s_%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetIface method.Name targetIface sourceMethod
             // method wrappers
             for method in methods do
-                blank()
-                write 3 "NativeImplClient.SetClientMethodWrapper(_%s_%s, delegate(ClientObject obj)" (lowerFirst ifaceName) method.Name
+                write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject obj)" targetIface method.Name
                 write 3 "{"
                 write 4 "var inst = (Client%s) obj;" ifaceName
                 // pop args
@@ -1154,34 +1147,34 @@ let renderInitCommon (context: RenderContext) (writer: IFormatWriter) =
                         | _ ->
                             failwith "C# interface wrappers: 'throws' contained non-exception type"
                 write 3 "});"
-        
+    
+    for groupName in group.SubOrder do
+        let sub =
+            group.SubGroups[groupName]
+        let nextContext =
+            { context with GroupContext = sub }
+        assignModuleHandles nextContext writer
                 
-let rec renderNestedGroup (context: RenderContext) (writer: IFormatWriter) =
-    let group =
-        context.GroupContext
-        
-    // increase base indent
-    let writer =
-        writer.WithExtraIndent 1
-    let write, blank =
-        writer.Write, writer.Blank
-    
-    // open group
-    blank()
-    write 1 "public static class %s" group.Name
-    write 1 "{"
-    // common stuff
-    renderGroupCommon context writer
-    // group init / assignment stuff
-    blank()
-    write 2 "internal static void Init()"
-    write 2 "{"
-    renderInitCommon context writer
-    write 2 "}"
-    // close group
-    write 1 "}"
-    
-and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
+// let rec renderNestedGroup (context: RenderContext) (writer: IFormatWriter) =
+//     let group =
+//         context.GroupContext
+//         
+//     // increase base indent
+//     let writer =
+//         writer.WithExtraIndent 1
+//     let write, blank =
+//         writer.Write, writer.Blank
+//     
+//     // open group
+//     blank()
+//     write 1 "public static class %s" group.Name
+//     write 1 "{"
+//     // common stuff
+//     renderGroupCommon context writer
+//     write 1 "}"
+//
+
+let rec renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     
     let groupContext =
@@ -1189,28 +1182,28 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     
     // declare top level function handles
     for namedFunc in groupContext.ModuleMethods do
-        write 2 "private static ModuleMethodHandle _%s;" namedFunc.Name
+        write 2 "internal static ModuleMethodHandle _%s;" namedFunc.Name
 
     for name, info in groupContext.Opaques do
         // instance methods
         for method in info.Methods do
-            write 2 "private static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
+            write 2 "internal static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
         // synthesized dispose method
-        write 2 "private static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
+        write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
     
     // interfaces
     for name, methods in groupContext.Interfaces do
-        write 2 "private static InterfaceHandle _%s;" (lowerFirst name)
+        write 2 "internal static InterfaceHandle _%s;" (lowerFirst name)
         for method in methods do
-            write 2 "private static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
+            write 2 "internal static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
     
     // exceptions
     for name, _ in groupContext.Exceptions do
-        write 2 "private static ExceptionHandle _%s;" (lowerFirst name)
+        write 2 "internal static ExceptionHandle _%s;" (lowerFirst name)
     
     // globals declaration
     for name, type_ in groupContext.Globals do
-        write 2 "public static %s %s { get; private set; }" (typeToCsString context type_) (upperFirst name)
+        write 2 "public static %s %s { get; internal set; }" (typeToCsString context type_) (upperFirst name)
     
     // top-level functions ===========
     for namedFunc in groupContext.ModuleMethods do
@@ -1239,20 +1232,23 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
                 groupContext.SubGroups[name]
             let nextContext =
                 { context with GroupContext = group }
-            renderNestedGroup nextContext writer
+            write 2 "public static class %s" group.Name
+            write 2 "{"
+            renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            write 2 "}"
+            // renderNestedGroup nextContext writer
         | _ ->
             ()
             
-            
-let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace: string) (maybeModulePrefix: string option) (className: string) =
+let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseNamespace: string) (maybeModulePrefix: string option) (className: string) =
     let write, blank = writer.Write, writer.Blank
     
     let m =
-        context.Module
-    let root =
-        createGroups m.Defs true
+        moduleContext.Module
     let renderContext =
-        { ModuleContext = context; GroupContext = root }
+        createRenderContext moduleContext
+    let root =
+        renderContext.GroupContext
         
     // handles for methods etc
     write 0 "using System;"
@@ -1284,7 +1280,7 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     write 2 "private static ModuleHandle _module;"
     
     // render all the generics at the root level only
-    for generic in allGenericTypes context do
+    for generic in allGenericTypes moduleContext do
         renderGeneric renderContext writer generic
 
     // now with the common group stuff:
@@ -1300,18 +1296,42 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
     blank()
     match maybeModuleInit with
     | Some initFunc ->
-        write 2 "internal static %s Init(%s)" (typeToCsString renderContext initFunc.Returns) (argsJoined renderContext initFunc.Args)
+        write 2 "internal static %s __Init(%s)" (typeToCsString renderContext initFunc.Returns) (argsJoined renderContext initFunc.Args)
     | None ->
-        write 2 "internal static void Init()"
+        write 2 "internal static void __Init()"
     write 2 "{"
     write 3 "_module = NativeImplClient.GetModule(\"%s\");" (joinModuleName m.Name)
     
-    // right now we're just pushing the module constants once, and hoping that nothing else uses push/pop during the entire nested .Init process
-    // feels like a bad idea, though. perhaps it ought to be a separate, simpler recursive process that does ONLY that, so we know nothing else is ever going to use the vstack
-    // immediately after this call?
-    // alternatively the server could perform it per namespace: .PushModuleConstants(_module, "ns1.ns2.groupname")
-    write 3 "NativeImplClient.PushModuleConstants(_module);"
-    renderInitCommon renderContext writer
+    // pop module constants, if any
+    let allGlobalsCount =
+        let rec groupCount (group: GroupContext) =
+            group.Defs
+            |> List.sumBy (function
+                | Global _ -> 1
+                | Group(name, _) ->
+                   let sub =
+                       group.SubGroups[name]
+                   groupCount sub
+                | _ -> 0)
+        groupCount root
+    if allGlobalsCount > 0 then
+        write 3 "// assign module constants"
+        write 3 "NativeImplClient.PushModuleConstants(_module);"
+        // recursively pop and assign module constants
+        let rec popConstants (group: GroupContext) =
+            for name, type_ in group.Globals do
+                let target =
+                    joinNameParts "." (group.Path @ [ upperFirst name ])
+                popValue renderContext writer 3 type_ (ExistingVar target)
+            for subName in group.SubOrder do
+                let sub = group.SubGroups[subName]
+                popConstants sub
+        popConstants root
+        
+    // assign all the other method handles etc
+    // no sense creating a bunch of nested .Init() methods since we have all that information now!
+    write 3 "// assign module handles"
+    assignModuleHandles renderContext writer
     
     // invoke user's ModuleInit, if it exists
     match maybeModuleInit with
@@ -1329,7 +1349,7 @@ let writeModule (context: ModuleContext) (writer: IFormatWriter) (baseNamespace:
         write 3 "// no static init"
     write 2 "}" // end of Init()
     blank()
-    write 2 "internal static void Shutdown()"
+    write 2 "internal static void __Shutdown()"
     write 2 "{"
     match maybeModuleShutdown with
     | Some _ ->
@@ -1409,14 +1429,14 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespac
     write 2 "}"
     write 2 "// registrations, static module inits"
     for m in allModules do
-        write 2 "%s.Init();" (joinModuleName m.Name)
+        write 2 "%s.__Init();" (joinModuleName m.Name)
     write 1 "}"
     blank()
     write 1 "public static void Shutdown()"
     write 1 "{"
     write 2 "// module static shutdowns (if any, might be empty)"
     for m in allModules |> List.rev do
-        write 2 "%s.Shutdown();" (joinModuleName m.Name)
+        write 2 "%s.__Shutdown();" (joinModuleName m.Name)
     write 2 "// bye"
     write 2 "NativeImplClient.Shutdown();"
     write 1 "}"

@@ -1366,15 +1366,15 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
         blankCpp()
         writeCpp 1 "void __constantsFunc() {"
         // push all subgroups at once
-        let rec pushGroupConstants (group: GroupContext) (writer: IFormatWriter) =
+        let rec pushGroupConstants (group: GroupContext) =
             for subName in group.SubOrder |> List.rev do
                 let sub = group.SubGroups[subName]
-                pushGroupConstants sub writer
+                pushGroupConstants sub
             for globalName, globalType in group.Globals |> List.rev do
                 let content =
                     joinNameParts "::" (group.Path @ [ globalName ])
-                pushValue context writer 2 globalType content (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
-        pushGroupConstants context.GroupContext writerCpp
+                pushValue context writerCpp 2 globalType content (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
+        pushGroupConstants context.GroupContext
         writeCpp 1 "}"
         
     // library registration method
@@ -1884,10 +1884,8 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
         else
             default'
             
-    let root =
-        createGroups m.Defs true
     let context =
-        { ModuleContext = moduleContext; GroupContext = root }
+        createRenderContext moduleContext
         
     printfn "  - %s.h/.cpp" wrappersFilenameBase
     use wrappersOutputH =

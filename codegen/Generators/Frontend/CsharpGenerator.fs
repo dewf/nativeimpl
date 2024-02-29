@@ -1155,25 +1155,6 @@ let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
             { context with GroupContext = sub }
         assignModuleHandles nextContext writer
                 
-// let rec renderNestedGroup (context: RenderContext) (writer: IFormatWriter) =
-//     let group =
-//         context.GroupContext
-//         
-//     // increase base indent
-//     let writer =
-//         writer.WithExtraIndent 1
-//     let write, blank =
-//         writer.Write, writer.Blank
-//     
-//     // open group
-//     blank()
-//     write 1 "public static class %s" group.Name
-//     write 1 "{"
-//     // common stuff
-//     renderGroupCommon context writer
-//     write 1 "}"
-//
-
 let rec renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     

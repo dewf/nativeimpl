@@ -30,6 +30,29 @@ let moduleNameToPathNoExt (current: ModuleName option) (target: ModuleName) =
         let relative =
             getRelativePath currentParts targetParts
         String.concat "/" relative
+        
+type ModulePaths = {
+    ModuleDir: string             // base/
+    GeneratedDir: string          // base/generated/
+    ModuleHeader: string          // base/generated/module.h
+    ModuleWrappersHeader: string  // base/generated/module_wrappers.h
+    ModuleWrappersCpp: string     // base/generated/module_wrappers.cpp
+    ModuleCpp: string             // base/module.cpp
+}
+
+let getModulePaths (relativeTo: string list) (ModuleName nameParts) =
+    let modulePath, name =
+        List.splitAtLast nameParts
+    let relativeRoot =
+        getRelativePath relativeTo modulePath
+    let relativeGenerated =
+        getRelativePath relativeTo (modulePath @ ["generated"])
+    { ModuleDir = joinNameParts "/" relativeRoot
+      GeneratedDir = joinNameParts "/" relativeGenerated
+      ModuleHeader = joinNameParts "/" (relativeGenerated @ [ name + ".h" ])
+      ModuleWrappersHeader = joinNameParts "/" (relativeGenerated @ [ name + "_wrappers.h" ])
+      ModuleWrappersCpp = joinNameParts "/" (relativeGenerated @ [ name + "_wrappers.cpp" ])
+      ModuleCpp = joinNameParts "/" (relativeRoot @ [ name + ".cpp" ]) }
 
 let typeToName (context: RenderContext) (outerType: NIType) =
     let rec recInner = function
@@ -825,25 +848,25 @@ let renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (wri
         if info.FlagsMode then
             blankH()
             writeH 0 "void %s__push(%s value);" name (typeToCppString context widthType)
-            writeCpp 0 "inline void %s__push(%s value) {" name (typeToCppString context widthType)
+            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context widthType)
             pushValue context writerCpp 1 widthType "value" NotApplicable
             writeCpp 0 "}"
             writeH 0 "%s %s__pop();" (typeToCppString context widthType) name
             blankCpp()
-            writeCpp 0 "inline %s %s__pop() {" (typeToCppString context widthType) name
+            writeCpp 0 "%s %s__pop() {" (typeToCppString context widthType) name
             popValue context writerCpp 1 widthType Return
             writeCpp 0 "}"
         else
             blankH()
             writeH 0 "void %s__push(%s value);" name name
-            writeCpp 0 "inline void %s__push(%s value) {" name name
+            writeCpp 0 "void %s__push(%s value) {" name name
             let content =
                 sprintf "(%s)value" (typeToCppString context widthType)
             pushValue context writerCpp 1 widthType content NotApplicable
             writeCpp 0 "}"
             writeH 0 "%s %s__pop();" name name
             blankCpp()
-            writeCpp 0 "inline %s %s__pop() {" name name
+            writeCpp 0 "%s %s__pop() {" name name
             popValue context writerCpp 1 widthType (Variable "tag")
             writeCpp 1 "return (%s)tag;" name
             writeCpp 0 "}"
@@ -1319,7 +1342,7 @@ let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (w
             writeH 0 "}"
             writeCpp 0 "}"
         
-let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) = // (maybeModulePrefix: string option) (className: string) =
+let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (currentDir: string list) = // (maybeModulePrefix: string option) (className: string) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     let m =
@@ -1327,6 +1350,7 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
 
     // begin output: ===============================================
     // header
+    writeH 0 "#pragma once"
     writeH 0 "#include \"%s.h\"" m.Name.LastPart
     // cpp
     writeCpp 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "NativeImplServer"])) // (relativeIncludeFilenameNoExt maybeModulePrefix "$PARENT.support.NativeImplServer")
@@ -1334,11 +1358,21 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     writeCpp 0 "#include \"%s.h\"" m.Name.LastPart
     // need to include wrappers for imports
     for importName in m.Imports do
-        writeCpp 0 "#include \"%s_wrappers.h\"" (moduleNameToPathNoExt (Some m.Name) importName) // (relativeIncludeFilenameNoExt maybeModulePrefix importName)
+        blankCpp()
+        let importPaths =
+            getModulePaths currentDir importName
+        writeCpp 0 "#include \"%s\"" importPaths.ModuleWrappersHeader
+        match importName with
+        | ModuleName nameParts ->
+            writeCpp 0 "using namespace %s;" (joinNameParts "::" nameParts)
 
     // begin root group: ===========================================
-    writeH 0 "namespace %s" m.Name.LastPart
-    writeCpp 0 "namespace %s" m.Name.LastPart
+    blankH();
+    blankCpp()
+    match m.Name with
+    | ModuleName nameParts ->
+        writeH 0 "namespace %s" (joinNameParts "::" nameParts)
+        writeCpp 0 "namespace %s" (joinNameParts "::" nameParts)
     writeH 0 "{"
     writeCpp 0 "{"
     
@@ -1731,7 +1765,7 @@ let rec renderImplementationHeaderGroup (context: RenderContext) (writer: IForma
             renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
             write 0 "}"
         
-let generateImplementationH (context: RenderContext) (writer: IFormatWriter) = // (maybeModulePrefix: string option) =
+let generateImplementationH (context: RenderContext) (writer: IFormatWriter) (currentDir: string list) = // (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank
     let m =
         context.ModuleContext.Module
@@ -1750,10 +1784,17 @@ let generateImplementationH (context: RenderContext) (writer: IFormatWriter) = /
     if not m.Imports.IsEmpty then
         blank()
         for importName in m.Imports do
-            write 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) importName) // (importName.Replace(".", "/"))
-            
+            let paths =
+                getModulePaths currentDir importName
+            write 0 "#include \"%s\"" paths.ModuleHeader
+            match importName with
+            | ModuleName nameParts ->
+                write 0 "using namespace %s;" (joinNameParts "::" nameParts)
+                // (moduleNameToPathNoExt (Some m.Name) importName) // (importName.Replace(".", "/"))
     blank()
-    write 0 "namespace %s" m.Name.LastPart
+    match m.Name with
+    | ModuleName nameParts ->
+        write 0 "namespace %s" (joinNameParts "::" nameParts)
     write 0 "{"
     renderImplementationHeaderGroup context (writer.WithExtraIndent 1)
     write 0 "}"
@@ -1811,7 +1852,9 @@ let generateImplementationCpp (context: RenderContext) (writer: IFormatWriter) =
         
     write 0 "#include \"generated/%s.h\"" m.Name.LastPart
     blank()
-    write 0 "namespace %s" m.Name.LastPart
+    match m.Name with
+    | ModuleName nameParts ->
+        write 0 "namespace %s" (joinNameParts "::" nameParts)
     write 0 "{"
     renderImplementationCppGroup context (writer.WithExtraIndent 1)
     write 0 "}"
@@ -1820,16 +1863,20 @@ let generateImplementationCpp (context: RenderContext) (writer: IFormatWriter) =
 let projectDir (outParams: OutParams) =
     sprintf "%s/server/cpp/%sImpl" outParams.Path outParams.LibraryName
     
-let writeLibrary (allModules: Module list) (writer: IFormatWriter) = // (maybeModulePrefix: string option) =
+let writeLibrary (allModules: Module list) (writer: IFormatWriter) (currentDir: string list) = // (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank
     
     for m in allModules do
-        write 0 "#include \"%s_wrappers.h\"" (moduleNameToPathNoExt None m.Name) // (relativeIncludeFilenameNoExt None m.Name)
+        let paths =
+            getModulePaths currentDir m.Name
+        write 0 "#include \"%s\"" paths.ModuleWrappersHeader // (moduleNameToPathNoExt None m.Name) // (relativeIncludeFilenameNoExt None m.Name)
             
     blank()
     write 0 "extern \"C\" int nativeLibraryInit() {"
     for m in allModules do
-        write 1 "%s::__register();" m.Name.LastPart // er, shouldn't everything be namespaced?
+        match m.Name with
+        | ModuleName nameParts ->
+            write 1 "%s::__register();" (joinNameParts "::" nameParts)
     write 1 "// should we do module inits here as well?"
     write 1 "// currently they are manually done on the C# side inside the <module>.Init methods (which perform registration first) - and those are individually called by Library.Init, which first calls nativeImplInit"
     write 1 "return 0;"
@@ -1842,6 +1889,9 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) = // (maybeMo
 let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
     let m =
         moduleContext.Module
+    let paths =
+        getModulePaths [] m.Name
+        
     let baseNamespace, maybeModulePrefix, className =
         namespaceParts outParams m.Name
     let moduleDir =
@@ -1887,6 +1937,10 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
     let context =
         createRenderContext moduleContext
         
+    let generatedDirParts =
+        paths.GeneratedDir.Split("/")
+        |> Array.toList
+        
     printfn "  - %s.h/.cpp" wrappersFilenameBase
     use wrappersOutputH =
         let writer = new StreamWriter(wrappersFilenameBase + ".h")
@@ -1894,13 +1948,13 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
     use wrappersOutputCpp =
         let writer = new StreamWriter(wrappersFilenameBase + ".cpp")
         new SimpleFormatWriter(writer, 0)
-    generateWrappers context wrappersOutputH wrappersOutputCpp // maybeModulePrefix className
+    generateWrappers context wrappersOutputH wrappersOutputCpp generatedDirParts
 
     printfn "  - %s" implementationHeaderFilename
     use implHeaderOutput =
         let writer = new StreamWriter(implementationHeaderFilename)
         new SimpleFormatWriter(writer, 0)
-    generateImplementationH context implHeaderOutput // maybeModulePrefix
+    generateImplementationH context implHeaderOutput generatedDirParts
     
     printfn "  - %s" implementationFilename
     use implementationOutput =
@@ -1938,6 +1992,6 @@ let generateLibrary (allModules: Module list) (outParams: OutParams) =
     use libraryWriter =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
-    writeLibrary allModules libraryWriter
+    writeLibrary allModules libraryWriter ["generated"]
     
   

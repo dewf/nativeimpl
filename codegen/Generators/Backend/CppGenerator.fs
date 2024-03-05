@@ -1254,6 +1254,15 @@ let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (w
     let group =
         context.GroupContext
         
+    // declare various module handles etc at top of group
+    for name, methods in group.Interfaces do
+        for method in methods do
+            writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.Name
+            
+    for name, _ in group.Exceptions do
+        writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
+        
+    // common render func, used for top-level functions and opaque methods
     let renderNamedFunc (namedFunction: NamedFunction) =
         blankH()
         writeH 0 "void %s__wrapper();" namedFunction.Name
@@ -1281,7 +1290,8 @@ let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (w
                 | _ ->
                     failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
         writeCpp 0 "}"
-        
+    
+    // go!
     for def in group.Defs do
         match def with
         | Global _ ->
@@ -1299,7 +1309,7 @@ let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (w
                     renderNamedFunc nf
             | InterfaceDef namedFunctions ->
                 for nf in namedFunctions do
-                    writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
+                    // writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
                     blankH()
                     writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
                     blankCpp()
@@ -1327,8 +1337,8 @@ let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (w
                             | _ ->
                                 failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
                     writeCpp 0 "}"
-            | ExceptionDef _ ->
-                writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
+            // | ExceptionDef _ ->
+            //     writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
             | _ ->
                 ()
         | Group(groupName, _) ->
@@ -1435,11 +1445,19 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
             writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" parts)
         // interfaces + methods
         for name, methods in group.Interfaces do
-            let lowerName =
+            let lowerIfaceName =
                 lowerFirst name
-            writeCpp 2 "auto %s = ni_registerInterface(m, \"%s\");" lowerName name
+            let parts =
+                group.Path @ [ name ]
+            let lowerParts =
+                group.Path @ [ lowerIfaceName ]
+            writeCpp 2 "auto %s = ni_registerInterface(m, \"%s\");" lowerIfaceName (joinNameParts "." parts)
             for method in methods do
-                writeCpp 2 "%s_%s = ni_registerInterfaceMethod(%s, \"%s\", &%s_%s__wrapper);" lowerName method.Name lowerName method.Name name method.Name
+                let targetVarName =
+                    sprintf "%s_%s" (joinNameParts "::" lowerParts) method.Name
+                let wrapperName =
+                    sprintf "%s_%s__wrapper" (joinNameParts "::" parts) method.Name
+                writeCpp 2 "%s = ni_registerInterfaceMethod(%s, \"%s\", &%s);" targetVarName lowerIfaceName method.Name wrapperName
         // exceptions
         for name, _ in group.Exceptions do
             let parts =

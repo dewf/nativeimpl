@@ -55,7 +55,7 @@ let getModulePaths (relativeTo: string list) (ModuleName nameParts) =
       ModuleCpp = joinNameParts "/" (relativeRoot @ [ name + ".cpp" ]) }
 
 let typeToName (context: RenderContext) (outerType: NIType) =
-    let rec recInner = function
+    let rec recInner (inGeneric: bool) = function
         | UnitType -> "Unit"
         | Primitive prim ->
             match prim with
@@ -75,14 +75,14 @@ let typeToName (context: RenderContext) (outerType: NIType) =
             | Float64 -> "Double"
             | StringType -> "String"
         | Resolved (resolvedName, resolvedType) ->
-            resolvedNameToString context resolvedName IdentifierMode
-        | ArrayType niType -> sprintf "%s_Array" (recInner niType)
-        | MapType (keyType, valueType) -> sprintf "%s_%s_Map" (recInner keyType) (recInner valueType)
-        | TupleType tupleTypes -> sprintf "%s_Tuple" (tupleTypes |> List.map recInner |> String.concat "")
-        | SetType niType -> sprintf "%s_Set" (recInner niType)
-        | BufferType elemType -> sprintf "Native_%s_Buffer" (recInner elemType)
+            resolvedNameToString context resolvedName (if inGeneric then GenericIdentifierMode else IdentifierMode)
+        | ArrayType niType -> sprintf "%s_Array" (recInner true niType)
+        | MapType (keyType, valueType) -> sprintf "%s_%s_Map" (recInner true keyType) (recInner true valueType)
+        | TupleType tupleTypes -> sprintf "%s_Tuple" (tupleTypes |> List.map (recInner true) |> String.concat "")
+        | SetType niType -> sprintf "%s_Set" (recInner true niType)
+        | BufferType elemType -> sprintf "Native_%s_Buffer" (recInner true elemType)
         | x -> sprintf "(typeToName: not done yet [%A]" x
-    recInner outerType
+    recInner false outerType
 
 let typeToCppString (context: RenderContext) (outerType: NIType) =
     let rec recInner = function
@@ -189,6 +189,8 @@ let defaultValueForType (context: RenderContext) (outerType: NIType) =
                 sprintf "std::shared_ptr<%s>()" name
             | DelegateType ->
                 sprintf "std::function<%s>()" name
+            | StructType ->
+                sprintf "%s{}" name
             | _ ->
                 "(defaultValueForType: not yet supported)"
         | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString context niType)
@@ -743,7 +745,7 @@ let renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (wri
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     match userType with
-    | OpaqueDef _ ->
+    | OpaqueDef info ->
         // the methods are synthesized and rendered along with the top-level module methods
         // here we just need push/pop
         blankH()

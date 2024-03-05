@@ -2,16 +2,24 @@ open Generators.Backend
 open Generators.Frontend
 open Parser
 open AppCommon
-// open Generators.Backend
 
+// GUIBASE
 // let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
 // let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
 // let INPUTS = [ "Windowing"; "Drawing" ]
 // let LIBRARY = "GuiBase"
-let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench"
-let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\_output"
-let INPUTS = [ "First"; "Second"; "SomePackage.Third" ]
-let LIBRARY = "TestBench"
+
+// TESTBENCH
+// let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench"
+// let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\_output"
+// let INPUTS = [ "First"; "Second"; "SomePackage.Third" ]
+// let LIBRARY = "TestBench"
+
+// KITCHENSINK
+let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\kitchensink"
+let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\kitchensink\_output"
+let INPUTS = [ "First" ]
+let LIBRARY = "KitchenSink"
 
 let NAMESPACE = "Org.Prefixed"
 let FRONT_LANG = "csharp"

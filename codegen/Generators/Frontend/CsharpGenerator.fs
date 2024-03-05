@@ -68,42 +68,44 @@ let rec newCsArray (context: RenderContext) (ofType: NIType) (countVar: string) 
     | _ ->
         sprintf "new %s[%s]" (typeToCsString context ofType) countVar
 
-let rec typeToName (context: RenderContext) = function
-    | UnitType -> failwith "typeToName: 'unit' type as name?"
-    | Primitive prim ->
-        match prim with
-        | SizeT -> "SizeT"
-        | Bool -> "Bool"
-        | Int(signed, width) ->
-            match signed, width with
-            | true, Width8 -> "SByte"
-            | false, Width8 -> "Byte"
-            | true, Width16 -> "Short"
-            | false, Width16 -> "UShort"
-            | true, Width32 -> "Int"
-            | false, Width32 -> "UInt"
-            | true, Width64 -> "Long"
-            | false, Width64 -> "ULong"
-        | Float32 -> "Float"
-        | Float64 -> "Double"
-        | StringType -> "String"
-    | Resolved (resolvedName, _) ->
-        resolvedNameToString context resolvedName IdentifierMode
-    | TupleType tupleTypes ->
-        let joined =
-            tupleTypes
-            |> List.map (typeToName context)
-            |> String.concat ""
-        sprintf "%s_Tuple" joined
-    | ArrayType niType ->
-        sprintf "%s_Array" (typeToName context niType)
-    | SetType niType ->
-        sprintf "%s_Set" (typeToName context niType)
-    | MapType (keyType, valueType) ->
-        sprintf "%s_%s_Map" (typeToName context keyType) (typeToName context valueType)
-    | BufferType elemType ->
-        sprintf "Native_%s_Buffer" (typeToName context elemType)
-    | x -> sprintf "(typeToName: not yet supported: %A)" x
+let typeToName (context: RenderContext) (outerType: NIType) =
+    let rec recInner (inGeneric: bool) = function
+        | UnitType -> failwith "typeToName: 'unit' type as name?"
+        | Primitive prim ->
+            match prim with
+            | SizeT -> "SizeT"
+            | Bool -> "Bool"
+            | Int(signed, width) ->
+                match signed, width with
+                | true, Width8 -> "SByte"
+                | false, Width8 -> "Byte"
+                | true, Width16 -> "Short"
+                | false, Width16 -> "UShort"
+                | true, Width32 -> "Int"
+                | false, Width32 -> "UInt"
+                | true, Width64 -> "Long"
+                | false, Width64 -> "ULong"
+            | Float32 -> "Float"
+            | Float64 -> "Double"
+            | StringType -> "String"
+        | Resolved (resolvedName, _) ->
+            resolvedNameToString context resolvedName (if inGeneric then GenericIdentifierMode else IdentifierMode)
+        | TupleType tupleTypes ->
+            let joined =
+                tupleTypes
+                |> List.map (recInner true)
+                |> String.concat ""
+            sprintf "%s_Tuple" joined
+        | ArrayType niType ->
+            sprintf "%s_Array" (recInner true niType)
+        | SetType niType ->
+            sprintf "%s_Set" (recInner true niType)
+        | MapType (keyType, valueType) ->
+            sprintf "%s_%s_Map" (recInner true keyType) (recInner true valueType)
+        | BufferType elemType ->
+            sprintf "Native_%s_Buffer" (recInner true elemType)
+        | x -> sprintf "(typeToName: not yet supported: %A)" x
+    recInner false outerType
 
 let argsJoined (context: RenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCsString context type_) name]
@@ -1115,14 +1117,18 @@ let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
             // methods
             if not methods.IsEmpty then
                 for method in methods do
-                    let sourceMethod =
-                        sprintf "%s.%s" sourceIface method.Name
-                    write 3 "_%s_%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetIface method.Name targetIface sourceMethod
+                    // let sourceMethod =
+                    //     sprintf "%s.%s" sourceIface method.Name
+                    let targetMethodHandle =
+                        mkTargetHandle (sprintf "%s_%s" ifaceName method.Name)
+                    write 3 "%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetMethodHandle targetIface method.Name
             // method wrappers
             for method in methods do
                 write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject obj)" targetIface method.Name
                 write 3 "{"
-                write 4 "var inst = (Client%s) obj;" ifaceName
+                let clientBaseClass =
+                    joinNameParts "." (group.Path @ [ $"Client{ifaceName}" ])
+                write 4 "var inst = (%s) obj;" clientBaseClass
                 // pop args
                 for argName, argType in method.Args do
                     popValue context writer 4 argType (NewVariable argName)

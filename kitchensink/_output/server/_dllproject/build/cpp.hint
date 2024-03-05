@@ -1,0 +1,2 @@
+#define KITCHENSINKSERVER_API __declspec(dllexport)
+#define KITCHENSINKSERVER_API __declspec(dllimport)

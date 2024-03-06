@@ -1,3 +1,13 @@
 module First;
 
+interface WhateverThing {
+    int someMethod(string s);
+}
+
+void operateOnThing(WhateverThing thing);
+
 string doSomething(int a, int b);
+
+exception CoolException(string reason);
+
+void throwException(string content) throws CoolException;

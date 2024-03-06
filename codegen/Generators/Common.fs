@@ -124,7 +124,7 @@ let allGenericTypes (context: ModuleContext) =
             let v = typeAndSubTypes valueType
             let ks = typeAndSubTypes (ArrayType keyType)
             let vs = typeAndSubTypes (ArrayType valueType)
-            t :: k @ v @ ks @ vs
+            t :: (k @ v @ ks @ vs)
         | ArrayType niType ->
             t :: arrayOrSetHandling niType
         | BufferType _ ->
@@ -203,9 +203,9 @@ let allGenericTypes (context: ModuleContext) =
                 retTypes @ argTypes @ throwTypes)
     // go
     processDefs context.Module.Defs
-    |> List.distinct
     // is this sufficient/correct for dependency order? (we want smaller primitives to be rendered before the composites they comprise)
     |> List.rev
+    |> List.distinct
 
 type RenderableEntry =
     | RenderableDirect of thing: UserOrGeneric

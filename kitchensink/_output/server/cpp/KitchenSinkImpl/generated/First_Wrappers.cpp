@@ -4,89 +4,32 @@
 
 namespace First
 {
-    ni_InterfaceMethodRef whateverThing_someMethod;
-    ni_ExceptionRef coolException;
-    class ClientWhateverThing : public ClientObject, public WhateverThing {
-    public:
-        ClientWhateverThing(int id) : ClientObject(id) {}
-        int32_t someMethod(std::string s) override {
-            pushStringInternal(s);
-            invokeMethod(whateverThing_someMethod);
-            return ni_popInt32();
+    namespace WhateverThing {
+        void __push(Opaque value) {
+            ni_pushPtr(value);
         }
-    };
-
-    void WhateverThing__push(std::shared_ptr<WhateverThing> inst, bool isReturn) {
-        if (inst != nullptr) {
-            auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-            pushable->push(pushable, isReturn);
+        Opaque __pop() {
+            return (Opaque)ni_popPtr();
         }
-        else {
-            ni_pushNull();
+        void _method_someMethod__wrapper() {
+            auto _this = __pop();
+            auto x = ni_popInt32();
+            _method_someMethod(_this, x);
+        }
+        void _method_dispose__wrapper() {
+            auto _this = __pop();
+            _method_dispose(_this);
         }
     }
-
-    std::shared_ptr<WhateverThing> WhateverThing__pop() {
-        bool isClientID;
-        auto id = ni_popInstance(&isClientID);
-        if (id != 0) {
-            if (isClientID) {
-                return std::shared_ptr<WhateverThing>(new ClientWhateverThing(id));
-            }
-            else {
-                return ServerWhateverThing::getByID(id);
-            }
-        }
-        else {
-            return std::shared_ptr<WhateverThing>();
-        }
-    }
-
-    void WhateverThing_someMethod__wrapper(int serverID) {
-        auto inst = ServerWhateverThing::getByID(serverID);
-        auto s = popStringInternal();
-        ni_pushInt32(inst->someMethod(s));
-    }
-
-    void operateOnThing__wrapper() {
-        auto thing = WhateverThing__pop();
-        operateOnThing(thing);
-    }
-
-    void doSomething__wrapper() {
-        auto a = ni_popInt32();
-        auto b = ni_popInt32();
-        pushStringInternal(doSomething(a, b));
-    }
-
-    void CoolException__push(CoolException e) {
-        pushStringInternal(e.reason);
-    }
-
-    void CoolException__buildAndThrow() {
-        auto reason = popStringInternal();
-        throw CoolException(reason);
-    }
-
-    void throwException__wrapper() {
-        auto content = popStringInternal();
-        try {
-            throwException(content);
-        }
-        catch (const CoolException& e) {
-            ni_setException(coolException);
-            CoolException__push(e);
-        }
+    void createThing__wrapper() {
+        WhateverThing::__push(createThing());
     }
 
     int __register() {
         auto m = ni_registerModule("First");
-        ni_registerModuleMethod(m, "operateOnThing", &operateOnThing__wrapper);
-        ni_registerModuleMethod(m, "doSomething", &doSomething__wrapper);
-        ni_registerModuleMethod(m, "throwException", &throwException__wrapper);
-        auto whateverThing = ni_registerInterface(m, "WhateverThing");
-        whateverThing_someMethod = ni_registerInterfaceMethod(whateverThing, "someMethod", &WhateverThing_someMethod__wrapper);
-        coolException = ni_registerException(m, "CoolException", &CoolException__buildAndThrow);
+        ni_registerModuleMethod(m, "createThing", &createThing__wrapper);
+        ni_registerModuleMethod(m, "WhateverThing_someMethod", &WhateverThing::_method_someMethod__wrapper);
+        ni_registerModuleMethod(m, "WhateverThing_dispose", &WhateverThing::_method_dispose__wrapper);
         return 0; // = OK
     }
 }

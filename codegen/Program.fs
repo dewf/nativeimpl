@@ -3,13 +3,13 @@ open Generators.Frontend
 open Parser
 open AppCommon
 
-// GUIBASE
+// // GUIBASE
 // let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
 // let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
 // let INPUTS = [ "Windowing"; "Drawing" ]
 // let LIBRARY = "GuiBase"
 
-// TESTBENCH
+// // TESTBENCH
 // let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench"
 // let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\_output"
 // let INPUTS = [ "First"; "Second"; "SomePackage.Third" ]

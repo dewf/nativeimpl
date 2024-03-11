@@ -5,7 +5,7 @@ namespace First
     namespace WhateverThing {
         struct __OpaquePrivate {
             // your content here
-            int x;
+            // (or simply cast your existing pointer to 'Opaque')
         };
         void _method_someMethod(Opaque _this, int32_t x) {
         }

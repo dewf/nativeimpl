@@ -108,6 +108,18 @@ let typeToCppString (context: RenderContext) (outerType: NIType) =
             let name =
                 resolvedNameToString context resolvedName TypeMode
             match resolvedType with
+            | OpaqueType ->
+                // if we're in the opaque's virtual/synthesized namespace (not a proper group),
+                // omit the path prefix entirely
+                // big hacky mess :((((
+                match resolvedName with
+                | ThisModule (SymbolName parts) ->
+                    if context.Flags.Contains (InOpaquePath parts) then
+                        "Opaque"
+                    else
+                        sprintf "%s::Opaque" name
+                | _ ->
+                    sprintf "%s::Opaque" name
             | InterfaceType ->
                 sprintf "std::shared_ptr<%s>" name
             | DelegateType ->
@@ -182,9 +194,9 @@ let defaultValueForType (context: RenderContext) (outerType: NIType) =
             | OpaqueType ->
                 // the final segment actually needs __ in front of it, since the opaque struct defs are defined with that
                 // silly kludge for now, because AFAIK we don't need to directly deal with the default opaque structs (prefixed with __) anywhere else in the generation
-                let replaced =
-                    prefixLastNameSegment name "__"
-                sprintf "new %s()" replaced
+                // let replaced =
+                //     prefixLastNameSegment name "__"
+                sprintf "new %s::__OpaquePrivate()" name // replaced
             | InterfaceType ->
                 sprintf "std::shared_ptr<%s>()" name
             | DelegateType ->
@@ -968,7 +980,7 @@ let synthesizeOpaqueMethods2 (context: RenderContext) (opaqueName: string) (info
     instanceMethods
     |> List.map (fun nf ->
         let nextName =
-            sprintf "%s_%s" opaqueName nf.Name
+            sprintf "_method_%s" nf.Name
         { nf with Name = nextName })
     
 let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) =
@@ -1315,6 +1327,16 @@ let renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (name:
     blank()
     match userType with
     | OpaqueDef info ->
+        // opaques are tricky, because they're nested under a namespace even though the AST doesn't reflect that ...
+        write 0 "namespace %s {" name
+        write 1 "struct __OpaquePrivate; typedef struct __OpaquePrivate* Opaque;"
+        let context =
+            let opaquePath =
+                context.GroupContext.Path @ [ name ]
+            { context with Flags = context.Flags.Add (InOpaquePath opaquePath) }
+        // any static definitions will appear here (eg enums, structs, etc)
+        // order is important because of C++ rules :(
+        // ...
         let synthesized =
             synthesizeOpaqueMethods2 context name info
         for namedFunc in synthesized do
@@ -1327,7 +1349,9 @@ let renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (name:
                         |> List.map (typeToCppString context)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
-            write 0 "%s %s(%s);%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+            write 1 "%s %s(%s);%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+        // close namespace
+        write 0 "}"
     | StructDef namedFields ->
         write 0 "struct %s {" name
         for field in namedFields do
@@ -1391,11 +1415,11 @@ let rec renderImplementationHeaderGroup (context: RenderContext) (writer: IForma
     let group =
         context.GroupContext
     
-    // opaque handles all at the top, so no (group-internal) ordering issues
-    if not group.Opaques.IsEmpty then
-        blank()
-        for name, _ in group.Opaques do
-            write 0 "struct __%s; typedef struct __%s* %s;" name name name
+    // // opaque handles all at the top, so no (group-internal) ordering issues
+    // if not group.Opaques.IsEmpty then
+    //     blank()
+    //     for name, _ in group.Opaques do
+    //         write 0 "struct __%s; typedef struct __%s* %s;" name name name
     
     for def in context.GroupContext.Defs do
         match def with
@@ -1463,7 +1487,7 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
     let group =
         context.GroupContext
         
-    let renderFunc (namedFunc: NamedFunction) =
+    let renderFunc (context: RenderContext) (namedFunc: NamedFunction) (extraIndent: int) =
         let throwsComment =
             if namedFunc.Throws.IsEmpty then
                 ""
@@ -1473,25 +1497,33 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                     |> List.map (typeToCppString context)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
-        write 0 "%s %s(%s) {%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+        write (0 + extraIndent) "%s %s(%s) {%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
         if namedFunc.Returns <> UnitType then
-            write 1 "return %s;" (defaultValueForType context namedFunc.Returns)
-        write 0 "}"
+            write (1 + extraIndent) "return %s;" (defaultValueForType context namedFunc.Returns)
+        write (0 + extraIndent) "}"
         
     for def in group.Defs do
         match def with
         | Global(globalName, globalType) ->
             write 0 "const %s %s = %s;" (typeToCppString context globalType) globalName (defaultValueForType context globalType)
         | FunctionDef namedFunc ->
-            renderFunc namedFunc
+            renderFunc context namedFunc 0
         | UserType(name, userType) ->
             match userType with
             | OpaqueDef info ->
-                write 0 "struct __%s {" (upperFirst name)
-                write 1 "// your content here"
-                write 0 "};"
+                write 0 "namespace %s {" (upperFirst name)
+                let context =
+                    let flag =
+                        InOpaquePath (group.Path @ [ name ])
+                    { context with Flags = context.Flags.Add flag }
+                write 1 "struct __OpaquePrivate {"
+                write 2 "// your content here"
+                write 2 "// (or simply cast your existing pointer to 'Opaque')"
+                write 1 "};"
                 for namedFunc in synthesizeOpaqueMethods2 context name info do
-                    renderFunc namedFunc
+                    renderFunc context namedFunc 1
+                // end opaque namespace
+                write 0 "}"
             | _ ->
                 write 0 "// userType: %s" name
         | Group(groupName, _) ->
@@ -1600,15 +1632,6 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
         paths.GeneratedDir.Split("/")
         |> Array.toList
         
-    printfn "  - %s.h/.cpp" wrappersFilenameBase
-    use wrappersOutputH =
-        let writer = new StreamWriter(wrappersFilenameBase + ".h")
-        new SimpleFormatWriter(writer, 0)
-    use wrappersOutputCpp =
-        let writer = new StreamWriter(wrappersFilenameBase + ".cpp")
-        new SimpleFormatWriter(writer, 0)
-    generateWrappers context wrappersOutputH wrappersOutputCpp generatedDirParts
-
     printfn "  - %s" implementationHeaderFilename
     use implHeaderOutput =
         let writer = new StreamWriter(implementationHeaderFilename)
@@ -1620,6 +1643,15 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
         let writer = new StreamWriter(implementationFilename)
         new SimpleFormatWriter(writer, 0)
     generateImplementationCpp context implementationOutput // className
+        
+    printfn "  - %s.h/.cpp" wrappersFilenameBase
+    use wrappersOutputH =
+        let writer = new StreamWriter(wrappersFilenameBase + ".h")
+        new SimpleFormatWriter(writer, 0)
+    use wrappersOutputCpp =
+        let writer = new StreamWriter(wrappersFilenameBase + ".cpp")
+        new SimpleFormatWriter(writer, 0)
+    generateWrappers context wrappersOutputH wrappersOutputCpp generatedDirParts
 
 let generateLibrary (allModules: Module list) (outParams: OutParams) =
     let baseNamespace, maybeModulePrefix, className =

@@ -74,7 +74,7 @@ let typeToName (context: RenderContext) (outerType: NIType) =
             | Float32 -> "Float"
             | Float64 -> "Double"
             | StringType -> "String"
-        | Resolved (resolvedName, resolvedType) ->
+        | Resolved (resolvedName, _) ->
             resolvedNameToString context resolvedName (if inGeneric then GenericIdentifierMode else IdentifierMode)
         | ArrayType niType -> sprintf "%s_Array" (recInner true niType)
         | MapType (keyType, valueType) -> sprintf "%s_%s_Map" (recInner true keyType) (recInner true valueType)
@@ -257,7 +257,7 @@ let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type
                 | Float32 -> "popFloatArrayInternal"
                 | Float64 -> "popDoubleArrayInternal"
                 | StringType -> "popStringArrayInternal"
-            | Resolved (resolvedName, resolvedType) ->
+            | Resolved _ ->
                 sprintf "__%s__pop" (typeToName context (ArrayType niType))
             | ArrayType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
             | TupleType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
@@ -330,7 +330,7 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
             | Float32 -> write level "pushFloatArrayInternal(%s);" content
             | Float64 -> write level "pushDoubleArrayInternal(%s);" content
             | StringType -> write level "pushStringArrayInternal(%s);" content
-        | ArrayType niType ->
+        | ArrayType _ ->
             write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
         | MapType (keyType, valueType) ->
             write level "__%s%sMapArray__push(%s, %s);" (typeToName context keyType) (typeToName context valueType) content (isReturnString())
@@ -338,7 +338,7 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
             write level "__%sArray__push(%s, %s);" (typeToName context niType) content (isReturnString())
         | SetType _ ->
             write level "__%sArray__push(%s, %s);" (typeToName context niType) content (isReturnString())
-        | Resolved(resolvedName, resolvedType) ->
+        | Resolved _ ->
             write level "__%s__push(%s, %s);" (typeToName context (ArrayType niType)) content (isReturnString())
         | _ ->
             write level "// (push not yet supported: ArrayType %A)" niType
@@ -682,7 +682,7 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
             arrayDefault()
         member this.SumType () =
             arrayDefault()
-        member this.Primitive (prim: NIPrimitive) =
+        member this.Primitive (_: NIPrimitive) =
             // primitve arrays are built in, but not sets!
             match outerType with
             | ArrayType _ ->
@@ -715,14 +715,14 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
             write 0 "}"
         member this.Options () =
             arrayDefault()
-        member this.Other (t: NIType) =
+        member this.Other (_: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context outerType)
 
 let renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (userType: UserType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     match userType with
-    | OpaqueDef info ->
+    | OpaqueDef _ ->
         // the methods are synthesized and rendered along with the top-level module methods
         // here we just need push/pop
         blankH()

@@ -1,7 +1,8 @@
 module First;
 
-opaque WhateverThing {
-    void someMethod(int x);
+group Nested {
+    opaque WhateverThing {
+        void someMethod(int x);
+    }
 }
-
-WhateverThing createThing();
+Nested.WhateverThing createThing();

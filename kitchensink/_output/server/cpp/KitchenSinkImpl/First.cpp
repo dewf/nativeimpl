@@ -2,17 +2,24 @@
 
 namespace First
 {
-    namespace WhateverThing {
-        struct __OpaquePrivate {
-            // your content here
-            // (or simply cast your existing pointer to 'Opaque')
-        };
-        void _method_someMethod(Opaque _this, int32_t x) {
-        }
-        void _method_dispose(Opaque _this) {
+    namespace Nested
+    {
+        namespace WhateverThing
+        {
+            struct __OpaquePrivate {
+                // your content here
+                // (or simply cast your existing pointer to 'Opaque')
+                int x;
+            };
+            void someMethod(Opaque _this, int32_t x) {
+                _this->x += x;
+            }
+            void dispose(Opaque _this) {
+                printf("C++ disposing WhateverThing, inner value: %d\n", _this->x);
+            }
         }
     }
-    WhateverThing::Opaque createThing() {
-        return new WhateverThing::__OpaquePrivate;
+    Nested::WhateverThing::Opaque createThing() {
+        return new Nested::WhateverThing::__OpaquePrivate{ 0 };
     }
 }

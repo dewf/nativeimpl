@@ -12,60 +12,67 @@ namespace Org.Prefixed.KitchenSink
     public static class First
     {
         private static ModuleHandle _module;
-        private static ModuleMethodHandle _createThing;
-        
-        public static WhateverThing CreateThing()
+        internal static ModuleMethodHandle _createThing;
+
+        public static Nested.WhateverThing CreateThing()
         {
             NativeImplClient.InvokeModuleMethod(_createThing);
-            return WhateverThing.__Pop();
+            return Nested.WhateverThing__Pop();
         }
-        
-        public class WhateverThing : IDisposable
+        public static class Nested
         {
-            private readonly IntPtr _nativeHandle;
-            protected bool _disposed;
-            
-            internal static ModuleMethodHandle _methodSomeMethod;
-            internal static ModuleMethodHandle _methodDispose;
-            internal WhateverThing(IntPtr nativeHandle)
+            internal static ModuleMethodHandle _whateverThing_someMethod;
+            internal static ModuleMethodHandle _whateverThing_dispose;
+            public class WhateverThing : IDisposable
             {
-                _nativeHandle = nativeHandle;
-            }
-            public virtual void Dispose()
-            {
-                if (!_disposed)
+                internal readonly IntPtr NativeHandle;
+                protected bool _disposed;
+                internal WhateverThing(IntPtr nativeHandle)
                 {
-                    __Push(this);
-                    NativeImplClient.InvokeModuleMethod(_methodDispose);
-                    _disposed = true;
+                    NativeHandle = nativeHandle;
+                }
+                public virtual void Dispose()
+                {
+                    if (!_disposed)
+                    {
+                        WhateverThing__Push(this);
+                        NativeImplClient.InvokeModuleMethod(_whateverThing_dispose);
+                        _disposed = true;
+                    }
+                }
+                public void SomeMethod(int x)
+                {
+                    NativeImplClient.PushInt32(x);
+                    WhateverThing__Push(this);
+                    NativeImplClient.InvokeModuleMethod(_whateverThing_someMethod);
                 }
             }
-            public void SomeMethod(int x)
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static void WhateverThing__Push(WhateverThing thing)
             {
-                NativeImplClient.PushInt32(x);
-                __Push(this);
-                NativeImplClient.InvokeModuleMethod(_methodSomeMethod);
+                NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
             }
-            internal static void __Push(WhateverThing thing)
-            {
-                NativeImplClient.PushPtr(thing?._nativeHandle ?? IntPtr.Zero);
-            }
-            internal static WhateverThing __Pop()
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static WhateverThing WhateverThing__Pop()
             {
                 var ptr = NativeImplClient.PopPtr();
                 return ptr != IntPtr.Zero ? new WhateverThing(ptr) : null;
             }
         }
+
         internal static void __Init()
         {
             _module = NativeImplClient.GetModule("First");
             // assign module handles
             _createThing = NativeImplClient.GetModuleMethod(_module, "createThing");
-            WhateverThing._methodSomeMethod = NativeImplClient.GetModuleMethod(_module, "WhateverThing_someMethod");
-            WhateverThing._methodDispose = NativeImplClient.GetModuleMethod(_module, "WhateverThing_dispose");
-            
+            Nested._whateverThing_someMethod = NativeImplClient.GetModuleMethod(_module, "Nested.WhateverThing.someMethod");
+            Nested._whateverThing_dispose = NativeImplClient.GetModuleMethod(_module, "Nested.WhateverThing.dispose");
+
             // no static init
         }
+
         internal static void __Shutdown()
         {
             // no static shutdown

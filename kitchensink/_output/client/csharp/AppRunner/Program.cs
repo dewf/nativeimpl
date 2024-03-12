@@ -10,6 +10,7 @@ internal static class Program
         using (var wut = First.CreateThing())
         {
             wut.SomeMethod(101);
+            wut.SomeMethod(202);
         }
         
         Library.Shutdown();

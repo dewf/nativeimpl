@@ -508,6 +508,36 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
     writeCpp 2 "return %s();" (typeToCppString context outerType)
     writeCpp 1 "}"
     writeCpp 0 "}"
+    // server method wrappers ==================
+    for nf in methods do
+        // writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
+        blankH()
+        writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
+        blankCpp()
+        writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
+        writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
+        for argName, argType in nf.Args do
+            popValue context writerCpp 1 argType (Variable argName)
+        let invocation =
+            sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
+        if nf.Throws.IsEmpty then
+            pushValue context writerCpp 1 nf.Returns invocation (Direct true)
+        else
+            writeCpp 1 "try {"
+            pushValue context writerCpp 2 nf.Returns invocation (Direct true)
+            writeCpp 1 "}"
+            for exc in nf.Throws do
+                match exc with
+                | Resolved (resolvedName, ExceptionType) ->
+                    let typeName =
+                        resolvedNameToString context resolvedName TypeMode
+                    writeCpp 1 "catch (const %s& e) {" typeName
+                    writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
+                    writeCpp 2 "%s__push(e);" typeName
+                    writeCpp 1 "}"
+                | _ ->
+                    failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
+        writeCpp 0 "}"
 
 let renderWrapperSumType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
@@ -1078,45 +1108,7 @@ let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (w
         | FunctionDef namedFunction ->
             renderWrapperNamedFunc context writerH writerCpp namedFunction
         | UserType(name, userType) ->
-            // push/pop etc
             renderWrapperUserType context writerH writerCpp name userType
-            // other type-specific stuff
-            // why is this even separate to begin with? I guess something to do with the old dependency-based rendering, which was a prior/separate step? 
-            match userType with
-            | InterfaceDef namedFunctions ->
-                for nf in namedFunctions do
-                    // writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
-                    blankH()
-                    writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
-                    blankCpp()
-                    writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
-                    writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
-                    for argName, argType in nf.Args do
-                        popValue context writerCpp 1 argType (Variable argName)
-                    let invocation =
-                        sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
-                    if nf.Throws.IsEmpty then
-                        pushValue context writerCpp 1 nf.Returns invocation (Direct true)
-                    else
-                        writeCpp 1 "try {"
-                        pushValue context writerCpp 2 nf.Returns invocation (Direct true)
-                        writeCpp 1 "}"
-                        for exc in nf.Throws do
-                            match exc with
-                            | Resolved (resolvedName, ExceptionType) ->
-                                let typeName =
-                                    resolvedNameToString context resolvedName TypeMode
-                                writeCpp 1 "catch (const %s& e) {" typeName
-                                writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
-                                writeCpp 2 "%s__push(e);" typeName
-                                writeCpp 1 "}"
-                            | _ ->
-                                failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
-                    writeCpp 0 "}"
-            // | ExceptionDef _ ->
-            //     writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
-            | _ ->
-                ()
         | Group(groupName, _) ->
             let nextGroup =
                 context.GroupContext.SubGroups[groupName]

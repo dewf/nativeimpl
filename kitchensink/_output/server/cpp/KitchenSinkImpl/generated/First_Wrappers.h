@@ -3,19 +3,14 @@
 
 namespace First
 {
-    namespace Nested
-    {
-        namespace WhateverThing
-        {
 
-            void __push(Opaque value);
-            Opaque __pop();
+    void WootProblem__push(WootProblem e);
+    void WootProblem__buildAndThrow();
 
-            void someMethod__wrapper();
+    void CoolThing__push(std::shared_ptr<CoolThing> inst, bool isReturn);
+    std::shared_ptr<CoolThing> CoolThing__pop();
 
-            void dispose__wrapper();
-        }
-    }
+    void CoolThing_doSomething__wrapper(int serverID);
 
     void createThing__wrapper();
 

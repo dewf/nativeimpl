@@ -2,24 +2,12 @@
 
 namespace First
 {
-    namespace Nested
-    {
-        namespace WhateverThing
-        {
-            struct __OpaquePrivate {
-                // your content here
-                // (or simply cast your existing pointer to 'Opaque')
-                int x;
-            };
-            void someMethod(Opaque _this, int32_t x) {
-                _this->x += x;
-            }
-            void dispose(Opaque _this) {
-                printf("C++ disposing WhateverThing, inner value: %d\n", _this->x);
-            }
+    class MyThing : public ServerCoolThing {
+        void doSomething(int x) override {
+            throw WootProblem("yazoooo");
         }
-    }
-    Nested::WhateverThing::Opaque createThing() {
-        return new Nested::WhateverThing::__OpaquePrivate{ 0 };
+    };
+    std::shared_ptr<CoolThing> createThing() {
+        return std::shared_ptr<CoolThing>(new MyThing());
     }
 }

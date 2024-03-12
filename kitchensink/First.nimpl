@@ -1,8 +1,9 @@
 module First;
 
-group Nested {
-    opaque WhateverThing {
-        void someMethod(int x);
-    }
+exception WootProblem(string s);
+
+interface CoolThing {
+    void doSomething(int x) throws WootProblem;
 }
-Nested.WhateverThing createThing();
+
+CoolThing createThing();

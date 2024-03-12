@@ -13,52 +13,97 @@ namespace Org.Prefixed.KitchenSink
     {
         private static ModuleHandle _module;
         internal static ModuleMethodHandle _createThing;
+        internal static InterfaceHandle _coolThing;
+        internal static InterfaceMethodHandle _coolThing_doSomething;
+        internal static ExceptionHandle _wootProblem;
 
-        public static Nested.WhateverThing CreateThing()
+        public static CoolThing CreateThing()
         {
             NativeImplClient.InvokeModuleMethod(_createThing);
-            return Nested.WhateverThing__Pop();
+            var __ret = CoolThing__Pop();
+            NativeImplClient.ServerClearSafetyArea();
+            return __ret;
         }
-        public static class Nested
+        public class WootProblem : Exception
         {
-            internal static ModuleMethodHandle _whateverThing_someMethod;
-            internal static ModuleMethodHandle _whateverThing_dispose;
-            public class WhateverThing : IDisposable
+            public readonly string S;
+            public WootProblem(string s) : base("WootProblem")
             {
-                internal readonly IntPtr NativeHandle;
-                protected bool _disposed;
-                internal WhateverThing(IntPtr nativeHandle)
+                S = s;
+            }
+            internal void PushAndSet()
+            {
+                NativeImplClient.PushString(S);
+                NativeImplClient.SetException(_wootProblem);
+            }
+            internal static void BuildAndThrow()
+            {
+                var s = NativeImplClient.PopString();
+                throw new WootProblem(s);
+            }
+        }
+
+        public interface CoolThing : IDisposable
+        {
+            void DoSomething(int x); // throws WootProblem
+        }
+
+        internal static void CoolThing__Push(CoolThing thing, bool isReturn)
+        {
+            if (thing != null)
+            {
+                ((IPushable)thing).Push(isReturn);
+            }
+            else
+            {
+                NativeImplClient.PushNull();
+            }
+        }
+
+        internal static CoolThing CoolThing__Pop()
+        {
+            NativeImplClient.PopInstanceId(out var id, out var isClientId);
+            if (id != 0)
+            {
+                if (!isClientId)
                 {
-                    NativeHandle = nativeHandle;
+                    return new ServerCoolThing(id);
                 }
-                public virtual void Dispose()
+                else
                 {
-                    if (!_disposed)
-                    {
-                        WhateverThing__Push(this);
-                        NativeImplClient.InvokeModuleMethod(_whateverThing_dispose);
-                        _disposed = true;
-                    }
-                }
-                public void SomeMethod(int x)
-                {
-                    NativeImplClient.PushInt32(x);
-                    WhateverThing__Push(this);
-                    NativeImplClient.InvokeModuleMethod(_whateverThing_someMethod);
+                    return (CoolThing) ClientObject.GetById(id);
                 }
             }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static void WhateverThing__Push(WhateverThing thing)
+            else
             {
-                NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
+                return null;
+            }
+        }
+
+        public abstract class ClientCoolThing : ClientObject, CoolThing
+        {
+            public virtual void Dispose()
+            {
+                // override if necessary
+            }
+            public abstract void DoSomething(int x); // throws WootProblem
+        }
+
+        internal class ServerCoolThing : ServerObject, CoolThing
+        {
+            public ServerCoolThing(int id) : base(id)
+            {
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static WhateverThing WhateverThing__Pop()
+            public void DoSomething(int x)
             {
-                var ptr = NativeImplClient.PopPtr();
-                return ptr != IntPtr.Zero ? new WhateverThing(ptr) : null;
+                NativeImplClient.PushInt32(x);
+                NativeImplClient.InvokeInterfaceMethodWithExceptions(_coolThing_doSomething, Id);
+            }
+
+            public void Dispose()
+            {
+                ServerDispose();
             }
         }
 
@@ -67,8 +112,24 @@ namespace Org.Prefixed.KitchenSink
             _module = NativeImplClient.GetModule("First");
             // assign module handles
             _createThing = NativeImplClient.GetModuleMethod(_module, "createThing");
-            Nested._whateverThing_someMethod = NativeImplClient.GetModuleMethod(_module, "Nested.WhateverThing.someMethod");
-            Nested._whateverThing_dispose = NativeImplClient.GetModuleMethod(_module, "Nested.WhateverThing.dispose");
+            _wootProblem = NativeImplClient.GetException(_module, "WootProblem");
+            NativeImplClient.SetExceptionBuilder(_wootProblem, WootProblem.BuildAndThrow);
+            _coolThing = NativeImplClient.GetInterface(_module, "CoolThing");
+            _coolThing_doSomething = NativeImplClient.GetInterfaceMethod(_coolThing, "doSomething");
+            NativeImplClient.SetClientMethodWrapper(_coolThing_doSomething, delegate(ClientObject obj)
+            {
+                var inst = (ClientCoolThing) obj;
+                var x = NativeImplClient.PopInt32();
+                try
+                {
+                    inst.DoSomething(x);
+                }
+                catch (WootProblem e)
+                {
+                    NativeImplClient.SetException(_wootProblem);
+                    e.PushAndSet();
+                }
+            });
 
             // no static init
         }

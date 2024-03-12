@@ -7,11 +7,18 @@ internal static class Program
     {
         Library.Init();
 
-        using (var wut = First.CreateThing())
+        using (var x = First.CreateThing())
         {
-            wut.SomeMethod(101);
-            wut.SomeMethod(202);
+            try
+            {
+                x.DoSomething(1234);
+            }
+            catch (First.WootProblem p)
+            {
+                Console.WriteLine($"*** caught problem {p.S}");
+            }
         }
+        Console.WriteLine("after block");
         
         Library.Shutdown();
     }

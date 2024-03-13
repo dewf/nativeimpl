@@ -2,12 +2,17 @@
 
 namespace First
 {
-    class MyThing : public ServerCoolThing {
-        void doSomething(int x) override {
-            throw WootProblem("yazoooo");
+    namespace WhateverThing {
+        struct __OpaquePrivate {
+            // your content here
+            // (or simply cast your existing pointer to 'Opaque')
+        };
+        void _method_someMethod(Opaque _this, int32_t x) {
         }
-    };
-    std::shared_ptr<CoolThing> createThing() {
-        return std::shared_ptr<CoolThing>(new MyThing());
+        void _method_dispose(Opaque _this) {
+        }
+    }
+    WhateverThing::Opaque createThing() {
+        return new WhateverThing::__OpaquePrivate;
     }
 }

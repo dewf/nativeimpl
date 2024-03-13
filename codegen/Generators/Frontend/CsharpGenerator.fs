@@ -1092,9 +1092,9 @@ let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
                 mkTargetHandle name
             // instance methods
             for method in info.Methods do
-                write 3 "%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s.%s\");" targetBase method.Name sourceBase method.Name
+                write 3 "%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" targetBase method.Name sourceBase method.Name
             // synthesized dispose method handle
-            write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s.dispose\");" targetBase sourceBase
+            write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
     
     // exceptions
     if not group.Exceptions.IsEmpty then

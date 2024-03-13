@@ -11,27 +11,17 @@
 
 namespace First
 {
+    // opaque WhateverThing
+    namespace WhateverThing {
+        struct __OpaquePrivate; typedef struct __OpaquePrivate* Opaque;
+        // any static definitions will appear here (eg enums, structs, etc)
+        // order is important because of C++ rules :(
+        // ...
 
-    class WootProblem {
-    public:
-        std::string s;
-        WootProblem(std::string s)
-            : s(s) {}
-    };
+        // methods
+        void _method_someMethod(Opaque _this, int32_t x);
+        void _method_dispose(Opaque _this);
+    }
 
-    class CoolThing {
-    public:
-        virtual void doSomething(int32_t x) = 0; // throws WootProblem
-    };
-
-    // inherit from this to create server instances of CoolThing
-    class ServerCoolThing : public CoolThing, public ServerObject {
-    public:
-        virtual ~ServerCoolThing() {}
-        static std::shared_ptr<ServerCoolThing> getByID(int id) {
-            auto obj = ServerObject::getByID(id);
-            return std::static_pointer_cast<ServerCoolThing>(obj);
-        }
-    };
-    std::shared_ptr<CoolThing> createThing();
+    WhateverThing::Opaque createThing();
 }

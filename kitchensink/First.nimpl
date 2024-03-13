@@ -1,9 +1,7 @@
 module First;
 
-exception WootProblem(string s);
-
-interface CoolThing {
-    void doSomething(int x) throws WootProblem;
+opaque WhateverThing {
+    void someMethod(int x);
 }
 
-CoolThing createThing();
+WhateverThing createThing();

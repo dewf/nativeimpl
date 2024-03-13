@@ -735,14 +735,9 @@ type GroupContext = {
     SubOrder: string list                
     SubGroups: Map<string, GroupContext> // will be rendered in definition order, interleaved with user types, so better to have a name-keyed Map ... but we also store order for when we are dealing only with groups
 }
-
-type RenderContextFlags =
-    | InOpaquePath of path: string list
-    
 type RenderContext = {
     ModuleContext: ModuleContext
     GroupContext: GroupContext
-    Flags: Set<RenderContextFlags>
 }
 
 let createGroups (rootDefs: ModuleDefinition list) =
@@ -802,7 +797,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
 let createRenderContext (moduleContext: ModuleContext) =
     let root =
         createGroups moduleContext.Module.Defs
-    { ModuleContext = moduleContext; GroupContext = root; Flags = Set.empty }
+    { ModuleContext = moduleContext; GroupContext = root }
     
 type ResolveNameStringMode =
     | TypeMode

@@ -3,15 +3,12 @@
 
 namespace First
 {
-
-    void WootProblem__push(WootProblem e);
-    void WootProblem__buildAndThrow();
-
-    void CoolThing__push(std::shared_ptr<CoolThing> inst, bool isReturn);
-    std::shared_ptr<CoolThing> CoolThing__pop();
-
-    void CoolThing_doSomething__wrapper(int serverID);
-
+    namespace WhateverThing {
+        void __push(Opaque value);
+        Opaque __pop();
+        void _method_someMethod__wrapper();
+        void _method_dispose__wrapper();
+    }
     void createThing__wrapper();
 
     int __register();

@@ -108,18 +108,6 @@ let typeToCppString (context: RenderContext) (outerType: NIType) =
             let name =
                 resolvedNameToString context resolvedName TypeMode
             match resolvedType with
-            | OpaqueType ->
-                // if we're in the opaque's virtual/synthesized namespace (not a proper group),
-                // omit the path prefix entirely
-                // big hacky mess :((((
-                match resolvedName with
-                | ThisModule (SymbolName parts) ->
-                    if context.Flags.Contains (InOpaquePath parts) then
-                        "Opaque"
-                    else
-                        sprintf "%s::Opaque" name
-                | _ ->
-                    sprintf "%s::Opaque" name
             | InterfaceType ->
                 sprintf "std::shared_ptr<%s>" name
             | DelegateType ->
@@ -194,9 +182,9 @@ let defaultValueForType (context: RenderContext) (outerType: NIType) =
             | OpaqueType ->
                 // the final segment actually needs __ in front of it, since the opaque struct defs are defined with that
                 // silly kludge for now, because AFAIK we don't need to directly deal with the default opaque structs (prefixed with __) anywhere else in the generation
-                // let replaced =
-                //     prefixLastNameSegment name "__"
-                sprintf "new %s::__OpaquePrivate()" name // replaced
+                let replaced =
+                    prefixLastNameSegment name "__"
+                sprintf "new %s()" replaced
             | InterfaceType ->
                 sprintf "std::shared_ptr<%s>()" name
             | DelegateType ->
@@ -253,18 +241,6 @@ let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type
         let name =
             resolvedNameToString context resolvedName TypeMode
         match resolvedType with
-        | OpaqueType ->
-            // if we're in the opaque's virtual/synthesized namespace (not a proper group),
-            // omit the path prefix entirely
-            // big hacky mess :((((
-            match resolvedName with
-            | ThisModule (SymbolName parts) ->
-                if context.Flags.Contains (InOpaquePath parts) then
-                    write level "%s __pop();" contextPrefix
-                else
-                    write level "%s %s::__pop();" contextPrefix name
-            | _ ->
-                write level "%s %s::__pop();" contextPrefix name
         | ExceptionType ->
             write level "%s__buildAndThrow();" name
         | _ ->
@@ -336,18 +312,6 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
             resolvedNameToString context resolvedName TypeMode
         // switch on type for return param?
         match resolvedType with
-        | OpaqueType ->
-            // if we're in the opaque's virtual/synthesized namespace (not a proper group),
-            // omit the path prefix entirely
-            // big hacky mess :((((
-            match resolvedName with
-            | ThisModule (SymbolName parts) ->
-                if context.Flags.Contains (InOpaquePath parts) then
-                    write level "__push(%s);" content
-                else
-                    write level "%s::__push(%s);" name content
-            | _ ->
-                write level "%s::__push(%s);" name content
         | ExceptionType ->
             assert (isReturn = Direct true)          // maybe needs a separate value for exceptions?
             write level "%s__push(%s);" name content // isreturn irrelevant, exceptions must push everything safely because they are basically returns
@@ -508,36 +472,6 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
     writeCpp 2 "return %s();" (typeToCppString context outerType)
     writeCpp 1 "}"
     writeCpp 0 "}"
-    // server method wrappers ==================
-    for nf in methods do
-        // writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
-        blankH()
-        writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
-        blankCpp()
-        writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
-        writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
-        for argName, argType in nf.Args do
-            popValue context writerCpp 1 argType (Variable argName)
-        let invocation =
-            sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
-        if nf.Throws.IsEmpty then
-            pushValue context writerCpp 1 nf.Returns invocation (Direct true)
-        else
-            writeCpp 1 "try {"
-            pushValue context writerCpp 2 nf.Returns invocation (Direct true)
-            writeCpp 1 "}"
-            for exc in nf.Throws do
-                match exc with
-                | Resolved (resolvedName, ExceptionType) ->
-                    let typeName =
-                        resolvedNameToString context resolvedName TypeMode
-                    writeCpp 1 "catch (const %s& e) {" typeName
-                    writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
-                    writeCpp 2 "%s__push(e);" typeName
-                    writeCpp 1 "}"
-                | _ ->
-                    failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
-        writeCpp 0 "}"
 
 let renderWrapperSumType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
@@ -783,95 +717,23 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
             arrayDefault()
         member this.Other (_: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context outerType)
-            
-let synthesizeOpaqueMethods2 (context: RenderContext) (opaqueName: string) (info: OpaqueInfo) =
-    let fakeThis =
-        let symbolName =
-            SymbolName (context.GroupContext.Path @ [ opaqueName ])
-        Resolved ((ThisModule symbolName), OpaqueType)
-    let instanceMethods =
-        let disposeMethod =
-            { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] }
-        (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
-        // add "_this" parameter
-        |> List.map (fun nf ->
-            let nextArgs =
-                let firstArg =
-                    "_this", fakeThis
-                firstArg :: nf.Args
-            { nf with Args = nextArgs })
-    // name prefix
-    instanceMethods
-    |> List.map (fun nf ->
-        let nextName =
-            // sprintf "_method_%s" nf.Name
-            sprintf "%s" nf.Name
-        { nf with Name = nextName })
-    
-// common render func, used for top-level functions and opaque methods
-let renderWrapperNamedFunc (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (namedFunction: NamedFunction) =
-    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
-    let writeH, blankH = writerH.Write, writerH.Blank
-    blankH()
-    writeH 0 "void %s__wrapper();" namedFunction.Name
-    blankCpp()
-    writeCpp 0 "void %s__wrapper() {" namedFunction.Name
-    for argName, argType in namedFunction.Args do
-        popValue context writerCpp 1 argType (Variable argName)
-    let invocation =
-        sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
-    if namedFunction.Throws.IsEmpty then
-        pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
-    else
-        writeCpp 1 "try {"
-        pushValue context writerCpp 2 namedFunction.Returns invocation (Direct true)
-        writeCpp 1 "}"
-        for exc in namedFunction.Throws do
-            match exc with
-            | Resolved (resolvedName, ExceptionType) ->
-                let typeName =
-                    resolvedNameToString context resolvedName TypeMode
-                writeCpp 1 "catch (const %s& e) {" typeName
-                writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
-                pushValue context writerCpp 2 exc "e" (Direct true)
-                writeCpp 1 "}"
-            | _ ->
-                failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
-    writeCpp 0 "}"
 
 let renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (userType: UserType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     match userType with
-    | OpaqueDef info ->
-        // "virtual" namespace for group (meaning, it's not necessarily part of a group - but if there is static content, there will also be a group)
-        writeH 0 "namespace %s" name
-        writeH 0 "{"
-        writeCpp 0 "namespace %s" name
-        writeCpp 0 "{"
-        let context =
-            // re-bind context to indicate that we're now in this sub-namespace
-            // this way 'Opaque' won't be rendered with an unnecessary prefix
-            // (since this isn't necessarily a group proper [depending on whether it has static content], meaning we can't rely on the existing name resolution stuff to handle prefixes properly. UGLY KLUDGE)
-            let flag =
-                InOpaquePath (context.GroupContext.Path @ [ name ])
-            { context with Flags = context.Flags.Add flag }
-        // push/pop
+    | OpaqueDef _ ->
+        // the methods are synthesized and rendered along with the top-level module methods
+        // here we just need push/pop
         blankH()
-        writeH 1 "void __push(Opaque value);"
-        writeCpp 1 "void __push(Opaque value) {"
-        writeCpp 2 "ni_pushPtr(value);"
-        writeCpp 1 "}"
+        writeH 0 "void %s__push(%s value);" name name
+        writeCpp 0 "void %s__push(%s value) {" name name
+        writeCpp 1 "ni_pushPtr(value);"
+        writeCpp 0 "}"
         blankCpp()
-        writeH 1 "Opaque __pop();"
-        writeCpp 1 "Opaque __pop() {"
-        writeCpp 2 "return (Opaque)ni_popPtr();"
-        writeCpp 1 "}"
-        // render methods .h/.cpp
-        for nf in synthesizeOpaqueMethods2 context name info do
-            renderWrapperNamedFunc context (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1) nf
-        // end namespace
-        writeH 0 "}"
+        writeH 0 "%s %s__pop();" name name
+        writeCpp 0 "%s %s__pop() {" name name
+        writeCpp 1 "return (%s)ni_popPtr();" name
         writeCpp 0 "}"
     | StructDef namedFields ->
         blankH()
@@ -1086,6 +948,29 @@ let renderWrapperGeneric (context: RenderContext) (writerH: IFormatWriter) (writ
     | _ ->
         writeCpp 0 "// push/pop for generic %s" (typeToCppString context gType)
     
+let synthesizeOpaqueMethods2 (context: RenderContext) (opaqueName: string) (info: OpaqueInfo) =
+    let fakeThis =
+        let symbolName =
+            SymbolName (context.GroupContext.Path @ [ opaqueName ])
+        Resolved ((ThisModule symbolName), OpaqueType)
+    let instanceMethods =
+        let disposeMethod =
+            { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] }
+        (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
+        // add "_this" parameter
+        |> List.map (fun nf ->
+            let nextArgs =
+                let firstArg =
+                    "_this", fakeThis
+                firstArg :: nf.Args
+            { nf with Args = nextArgs })
+    // name prefix
+    instanceMethods
+    |> List.map (fun nf ->
+        let nextName =
+            sprintf "%s_%s" opaqueName nf.Name
+        { nf with Name = nextName })
+    
 let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
@@ -1100,15 +985,85 @@ let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (w
     for name, _ in group.Exceptions do
         writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
         
+    // common render func, used for top-level functions and opaque methods
+    let renderNamedFunc (namedFunction: NamedFunction) =
+        blankH()
+        writeH 0 "void %s__wrapper();" namedFunction.Name
+        blankCpp()
+        writeCpp 0 "void %s__wrapper() {" namedFunction.Name
+        for argName, argType in namedFunction.Args do
+            popValue context writerCpp 1 argType (Variable argName)
+        let invocation =
+            sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
+        if namedFunction.Throws.IsEmpty then
+            pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
+        else
+            writeCpp 1 "try {"
+            pushValue context writerCpp 2 namedFunction.Returns invocation (Direct true)
+            writeCpp 1 "}"
+            for exc in namedFunction.Throws do
+                match exc with
+                | Resolved (resolvedName, ExceptionType) ->
+                    let typeName =
+                        resolvedNameToString context resolvedName TypeMode
+                    writeCpp 1 "catch (const %s& e) {" typeName
+                    writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
+                    pushValue context writerCpp 2 exc "e" (Direct true)
+                    writeCpp 1 "}"
+                | _ ->
+                    failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
+        writeCpp 0 "}"
+    
     // go!
     for def in group.Defs do
         match def with
         | Global _ ->
             ()
         | FunctionDef namedFunction ->
-            renderWrapperNamedFunc context writerH writerCpp namedFunction
+            renderNamedFunc namedFunction
         | UserType(name, userType) ->
+            // push/pop etc
             renderWrapperUserType context writerH writerCpp name userType
+            // other type-specific stuff
+            // why is this even separate to begin with? I guess something to do with the old dependency-based rendering, which was a prior/separate step? 
+            match userType with
+            | OpaqueDef info ->
+                for nf in synthesizeOpaqueMethods2 context name info do
+                    renderNamedFunc nf
+            | InterfaceDef namedFunctions ->
+                for nf in namedFunctions do
+                    // writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
+                    blankH()
+                    writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
+                    blankCpp()
+                    writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
+                    writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
+                    for argName, argType in nf.Args do
+                        popValue context writerCpp 1 argType (Variable argName)
+                    let invocation =
+                        sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
+                    if nf.Throws.IsEmpty then
+                        pushValue context writerCpp 1 nf.Returns invocation (Direct true)
+                    else
+                        writeCpp 1 "try {"
+                        pushValue context writerCpp 2 nf.Returns invocation (Direct true)
+                        writeCpp 1 "}"
+                        for exc in nf.Throws do
+                            match exc with
+                            | Resolved (resolvedName, ExceptionType) ->
+                                let typeName =
+                                    resolvedNameToString context resolvedName TypeMode
+                                writeCpp 1 "catch (const %s& e) {" typeName
+                                writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
+                                writeCpp 2 "%s__push(e);" typeName
+                                writeCpp 1 "}"
+                            | _ ->
+                                failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
+                    writeCpp 0 "}"
+            // | ExceptionDef _ ->
+            //     writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
+            | _ ->
+                ()
         | Group(groupName, _) ->
             let nextGroup =
                 context.GroupContext.SubGroups[groupName]
@@ -1202,17 +1157,15 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     // register all nested group methods/interfaces/etc
     let rec registerGroupMethods (group: GroupContext) (writer: IFormatWriter) =
         // module methods (+ synthesized opaque)
-        for namedFunction in group.ModuleMethods do
+        let opaqueMethods =
+            group.Opaques
+            |> List.collect (fun (name, info) -> synthesizeOpaqueMethods2 context name info)
+        let allMethods =
+            group.ModuleMethods @ opaqueMethods
+        for namedFunction in allMethods do
             let parts =
                 group.Path @ [ namedFunction.Name ]
             writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" parts)
-        for name, info in group.Opaques do
-            let methods =
-                synthesizeOpaqueMethods2 context name info
-            for nf in methods do
-                let parts =
-                    group.Path @ [name; nf.Name]
-                writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" parts)
         // interfaces + methods
         for name, methods in group.Interfaces do
             let lowerIfaceName =
@@ -1362,17 +1315,6 @@ let renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (name:
     blank()
     match userType with
     | OpaqueDef info ->
-        // opaques are tricky, because they're nested under a namespace even though the AST doesn't reflect that ...
-        write 0 "namespace %s" name
-        write 0 "{"
-        write 1 "struct __OpaquePrivate; typedef struct __OpaquePrivate* Opaque;"
-        let context =
-            let opaquePath =
-                context.GroupContext.Path @ [ name ]
-            { context with Flags = context.Flags.Add (InOpaquePath opaquePath) }
-        // any static definitions will appear here (eg enums, structs, etc)
-        // order is important because of C++ rules :(
-        // ...
         let synthesized =
             synthesizeOpaqueMethods2 context name info
         for namedFunc in synthesized do
@@ -1385,9 +1327,7 @@ let renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (name:
                         |> List.map (typeToCppString context)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
-            write 1 "%s %s(%s);%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
-        // close namespace
-        write 0 "}"
+            write 0 "%s %s(%s);%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
     | StructDef namedFields ->
         write 0 "struct %s {" name
         for field in namedFields do
@@ -1451,11 +1391,11 @@ let rec renderImplementationHeaderGroup (context: RenderContext) (writer: IForma
     let group =
         context.GroupContext
     
-    // // opaque handles all at the top, so no (group-internal) ordering issues
-    // if not group.Opaques.IsEmpty then
-    //     blank()
-    //     for name, _ in group.Opaques do
-    //         write 0 "struct __%s; typedef struct __%s* %s;" name name name
+    // opaque handles all at the top, so no (group-internal) ordering issues
+    if not group.Opaques.IsEmpty then
+        blank()
+        for name, _ in group.Opaques do
+            write 0 "struct __%s; typedef struct __%s* %s;" name name name
     
     for def in context.GroupContext.Defs do
         match def with
@@ -1523,7 +1463,7 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
     let group =
         context.GroupContext
         
-    let renderFunc (context: RenderContext) (namedFunc: NamedFunction) (extraIndent: int) =
+    let renderFunc (namedFunc: NamedFunction) =
         let throwsComment =
             if namedFunc.Throws.IsEmpty then
                 ""
@@ -1533,34 +1473,25 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                     |> List.map (typeToCppString context)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
-        write (0 + extraIndent) "%s %s(%s) {%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+        write 0 "%s %s(%s) {%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
         if namedFunc.Returns <> UnitType then
-            write (1 + extraIndent) "return %s;" (defaultValueForType context namedFunc.Returns)
-        write (0 + extraIndent) "}"
+            write 1 "return %s;" (defaultValueForType context namedFunc.Returns)
+        write 0 "}"
         
     for def in group.Defs do
         match def with
         | Global(globalName, globalType) ->
             write 0 "const %s %s = %s;" (typeToCppString context globalType) globalName (defaultValueForType context globalType)
         | FunctionDef namedFunc ->
-            renderFunc context namedFunc 0
+            renderFunc namedFunc
         | UserType(name, userType) ->
             match userType with
             | OpaqueDef info ->
-                write 0 "namespace %s" (upperFirst name)
-                write 0 "{"
-                let context =
-                    let flag =
-                        InOpaquePath (group.Path @ [ name ])
-                    { context with Flags = context.Flags.Add flag }
-                write 1 "struct __OpaquePrivate {"
-                write 2 "// your content here"
-                write 2 "// (or simply cast your existing pointer to 'Opaque')"
-                write 1 "};"
+                write 0 "struct __%s {" (upperFirst name)
+                write 1 "// your content here"
+                write 0 "};"
                 for namedFunc in synthesizeOpaqueMethods2 context name info do
-                    renderFunc context namedFunc 1
-                // end opaque namespace
-                write 0 "}"
+                    renderFunc namedFunc
             | _ ->
                 write 0 "// userType: %s" name
         | Group(groupName, _) ->
@@ -1669,6 +1600,15 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
         paths.GeneratedDir.Split("/")
         |> Array.toList
         
+    printfn "  - %s.h/.cpp" wrappersFilenameBase
+    use wrappersOutputH =
+        let writer = new StreamWriter(wrappersFilenameBase + ".h")
+        new SimpleFormatWriter(writer, 0)
+    use wrappersOutputCpp =
+        let writer = new StreamWriter(wrappersFilenameBase + ".cpp")
+        new SimpleFormatWriter(writer, 0)
+    generateWrappers context wrappersOutputH wrappersOutputCpp generatedDirParts
+
     printfn "  - %s" implementationHeaderFilename
     use implHeaderOutput =
         let writer = new StreamWriter(implementationHeaderFilename)
@@ -1680,15 +1620,6 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
         let writer = new StreamWriter(implementationFilename)
         new SimpleFormatWriter(writer, 0)
     generateImplementationCpp context implementationOutput // className
-        
-    printfn "  - %s.h/.cpp" wrappersFilenameBase
-    use wrappersOutputH =
-        let writer = new StreamWriter(wrappersFilenameBase + ".h")
-        new SimpleFormatWriter(writer, 0)
-    use wrappersOutputCpp =
-        let writer = new StreamWriter(wrappersFilenameBase + ".cpp")
-        new SimpleFormatWriter(writer, 0)
-    generateWrappers context wrappersOutputH wrappersOutputCpp generatedDirParts
 
 let generateLibrary (allModules: Module list) (outParams: OutParams) =
     let baseNamespace, maybeModulePrefix, className =

@@ -4,74 +4,32 @@
 
 namespace First
 {
-    ni_InterfaceMethodRef coolThing_doSomething;
-    ni_ExceptionRef wootProblem;
-
-    void WootProblem__push(WootProblem e) {
-        pushStringInternal(e.s);
-    }
-
-    void WootProblem__buildAndThrow() {
-        auto s = popStringInternal();
-        throw WootProblem(s);
-    }
-    class ClientCoolThing : public ClientObject, public CoolThing {
-    public:
-        ClientCoolThing(int id) : ClientObject(id) {}
-        void doSomething(int32_t x) override {
-            ni_pushInt32(x);
-            invokeMethodWithExceptions(coolThing_doSomething);
+    namespace WhateverThing {
+        void __push(Opaque value) {
+            ni_pushPtr(value);
         }
-    };
-
-    void CoolThing__push(std::shared_ptr<CoolThing> inst, bool isReturn) {
-        if (inst != nullptr) {
-            auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-            pushable->push(pushable, isReturn);
+        Opaque __pop() {
+            return (Opaque)ni_popPtr();
         }
-        else {
-            ni_pushNull();
+        void _method_someMethod__wrapper() {
+            auto _this = __pop();
+            auto x = ni_popInt32();
+            _method_someMethod(_this, x);
+        }
+        void _method_dispose__wrapper() {
+            auto _this = __pop();
+            _method_dispose(_this);
         }
     }
-
-    std::shared_ptr<CoolThing> CoolThing__pop() {
-        bool isClientID;
-        auto id = ni_popInstance(&isClientID);
-        if (id != 0) {
-            if (isClientID) {
-                return std::shared_ptr<CoolThing>(new ClientCoolThing(id));
-            }
-            else {
-                return ServerCoolThing::getByID(id);
-            }
-        }
-        else {
-            return std::shared_ptr<CoolThing>();
-        }
-    }
-
-    void CoolThing_doSomething__wrapper(int serverID) {
-        auto inst = ServerCoolThing::getByID(serverID);
-        auto x = ni_popInt32();
-        try {
-            inst->doSomething(x);
-        }
-        catch (const WootProblem& e) {
-            ni_setException(wootProblem);
-            WootProblem__push(e);
-        }
-    }
-
     void createThing__wrapper() {
-        CoolThing__push(createThing(), true);
+        WhateverThing::__push(createThing());
     }
 
     int __register() {
         auto m = ni_registerModule("First");
         ni_registerModuleMethod(m, "createThing", &createThing__wrapper);
-        auto coolThing = ni_registerInterface(m, "CoolThing");
-        coolThing_doSomething = ni_registerInterfaceMethod(coolThing, "doSomething", &CoolThing_doSomething__wrapper);
-        wootProblem = ni_registerException(m, "WootProblem", &WootProblem__buildAndThrow);
+        ni_registerModuleMethod(m, "WhateverThing_someMethod", &WhateverThing::_method_someMethod__wrapper);
+        ni_registerModuleMethod(m, "WhateverThing_dispose", &WhateverThing::_method_dispose__wrapper);
         return 0; // = OK
     }
 }

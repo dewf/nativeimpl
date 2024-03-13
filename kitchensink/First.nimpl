@@ -1,8 +1,8 @@
 module First;
 
-group WhateverThing {
-    opaque Handle {
-        void someMethod(int x);
+group InterfaceGroup {
+    interface MyInterface {
+        void doesSomething(string s);
     }
-    Handle create();
 }
+void operateOnInterface(InterfaceGroup.MyInterface thing);

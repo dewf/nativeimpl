@@ -472,6 +472,37 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
     writeCpp 2 "return %s();" (typeToCppString context outerType)
     writeCpp 1 "}"
     writeCpp 0 "}"
+    // SERVER STUFF ============================
+    for nf in methods do
+        // writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
+        blankH()
+        writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
+        blankCpp()
+        writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
+        writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
+        for argName, argType in nf.Args do
+            popValue context writerCpp 1 argType (Variable argName)
+        let invocation =
+            sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
+        if nf.Throws.IsEmpty then
+            pushValue context writerCpp 1 nf.Returns invocation (Direct true)
+        else
+            writeCpp 1 "try {"
+            pushValue context writerCpp 2 nf.Returns invocation (Direct true)
+            writeCpp 1 "}"
+            for exc in nf.Throws do
+                match exc with
+                | Resolved (resolvedName, ExceptionType) ->
+                    let typeName =
+                        resolvedNameToString context resolvedName TypeMode
+                    writeCpp 1 "catch (const %s& e) {" typeName
+                    writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
+                    writeCpp 2 "%s__push(e);" typeName
+                    writeCpp 1 "}"
+                | _ ->
+                    failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
+        writeCpp 0 "}"
+    
 
 let renderWrapperSumType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
@@ -717,14 +748,65 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
             arrayDefault()
         member this.Other (_: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context outerType)
+            
+let synthesizeOpaqueMethods2 (context: RenderContext) (opaqueName: string) (info: OpaqueInfo) =
+    let fakeThis =
+        let symbolName =
+            SymbolName (context.GroupContext.Path @ [ opaqueName ])
+        Resolved ((ThisModule symbolName), OpaqueType)
+    let instanceMethods =
+        let disposeMethod =
+            { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] }
+        (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
+        // add "_this" parameter
+        |> List.map (fun nf ->
+            let nextArgs =
+                let firstArg =
+                    "_this", fakeThis
+                firstArg :: nf.Args
+            { nf with Args = nextArgs })
+    // name prefix
+    instanceMethods
+    |> List.map (fun nf ->
+        let nextName =
+            sprintf "%s_%s" opaqueName nf.Name
+        { nf with Name = nextName })
+    
+let renderWrapperNamedFunc (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (namedFunction: NamedFunction) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
+    blankH()
+    writeH 0 "void %s__wrapper();" namedFunction.Name
+    blankCpp()
+    writeCpp 0 "void %s__wrapper() {" namedFunction.Name
+    for argName, argType in namedFunction.Args do
+        popValue context writerCpp 1 argType (Variable argName)
+    let invocation =
+        sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
+    if namedFunction.Throws.IsEmpty then
+        pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
+    else
+        writeCpp 1 "try {"
+        pushValue context writerCpp 2 namedFunction.Returns invocation (Direct true)
+        writeCpp 1 "}"
+        for exc in namedFunction.Throws do
+            match exc with
+            | Resolved (resolvedName, ExceptionType) ->
+                let typeName =
+                    resolvedNameToString context resolvedName TypeMode
+                writeCpp 1 "catch (const %s& e) {" typeName
+                writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
+                pushValue context writerCpp 2 exc "e" (Direct true)
+                writeCpp 1 "}"
+            | _ ->
+                failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
+    writeCpp 0 "}"
 
 let renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (userType: UserType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     match userType with
-    | OpaqueDef _ ->
-        // the methods are synthesized and rendered along with the top-level module methods
-        // here we just need push/pop
+    | OpaqueDef info ->
         blankH()
         writeH 0 "void %s__push(%s value);" name name
         writeCpp 0 "void %s__push(%s value) {" name name
@@ -735,6 +817,9 @@ let renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (wri
         writeCpp 0 "%s %s__pop() {" name name
         writeCpp 1 "return (%s)ni_popPtr();" name
         writeCpp 0 "}"
+        // methods
+        for nf in synthesizeOpaqueMethods2 context name info do
+            renderWrapperNamedFunc context writerH writerCpp nf
     | StructDef namedFields ->
         blankH()
         writeH 0 "void %s__push(%s value, bool isReturn);" name name
@@ -948,28 +1033,6 @@ let renderWrapperGeneric (context: RenderContext) (writerH: IFormatWriter) (writ
     | _ ->
         writeCpp 0 "// push/pop for generic %s" (typeToCppString context gType)
     
-let synthesizeOpaqueMethods2 (context: RenderContext) (opaqueName: string) (info: OpaqueInfo) =
-    let fakeThis =
-        let symbolName =
-            SymbolName (context.GroupContext.Path @ [ opaqueName ])
-        Resolved ((ThisModule symbolName), OpaqueType)
-    let instanceMethods =
-        let disposeMethod =
-            { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] }
-        (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
-        // add "_this" parameter
-        |> List.map (fun nf ->
-            let nextArgs =
-                let firstArg =
-                    "_this", fakeThis
-                firstArg :: nf.Args
-            { nf with Args = nextArgs })
-    // name prefix
-    instanceMethods
-    |> List.map (fun nf ->
-        let nextName =
-            sprintf "%s_%s" opaqueName nf.Name
-        { nf with Name = nextName })
     
 let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
@@ -985,85 +1048,15 @@ let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (w
     for name, _ in group.Exceptions do
         writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
         
-    // common render func, used for top-level functions and opaque methods
-    let renderNamedFunc (namedFunction: NamedFunction) =
-        blankH()
-        writeH 0 "void %s__wrapper();" namedFunction.Name
-        blankCpp()
-        writeCpp 0 "void %s__wrapper() {" namedFunction.Name
-        for argName, argType in namedFunction.Args do
-            popValue context writerCpp 1 argType (Variable argName)
-        let invocation =
-            sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
-        if namedFunction.Throws.IsEmpty then
-            pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
-        else
-            writeCpp 1 "try {"
-            pushValue context writerCpp 2 namedFunction.Returns invocation (Direct true)
-            writeCpp 1 "}"
-            for exc in namedFunction.Throws do
-                match exc with
-                | Resolved (resolvedName, ExceptionType) ->
-                    let typeName =
-                        resolvedNameToString context resolvedName TypeMode
-                    writeCpp 1 "catch (const %s& e) {" typeName
-                    writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
-                    pushValue context writerCpp 2 exc "e" (Direct true)
-                    writeCpp 1 "}"
-                | _ ->
-                    failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
-        writeCpp 0 "}"
-    
     // go!
     for def in group.Defs do
         match def with
         | Global _ ->
             ()
         | FunctionDef namedFunction ->
-            renderNamedFunc namedFunction
+            renderWrapperNamedFunc context writerH writerCpp namedFunction
         | UserType(name, userType) ->
-            // push/pop etc
             renderWrapperUserType context writerH writerCpp name userType
-            // other type-specific stuff
-            // why is this even separate to begin with? I guess something to do with the old dependency-based rendering, which was a prior/separate step? 
-            match userType with
-            | OpaqueDef info ->
-                for nf in synthesizeOpaqueMethods2 context name info do
-                    renderNamedFunc nf
-            | InterfaceDef namedFunctions ->
-                for nf in namedFunctions do
-                    // writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
-                    blankH()
-                    writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
-                    blankCpp()
-                    writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
-                    writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
-                    for argName, argType in nf.Args do
-                        popValue context writerCpp 1 argType (Variable argName)
-                    let invocation =
-                        sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
-                    if nf.Throws.IsEmpty then
-                        pushValue context writerCpp 1 nf.Returns invocation (Direct true)
-                    else
-                        writeCpp 1 "try {"
-                        pushValue context writerCpp 2 nf.Returns invocation (Direct true)
-                        writeCpp 1 "}"
-                        for exc in nf.Throws do
-                            match exc with
-                            | Resolved (resolvedName, ExceptionType) ->
-                                let typeName =
-                                    resolvedNameToString context resolvedName TypeMode
-                                writeCpp 1 "catch (const %s& e) {" typeName
-                                writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
-                                writeCpp 2 "%s__push(e);" typeName
-                                writeCpp 1 "}"
-                            | _ ->
-                                failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
-                    writeCpp 0 "}"
-            // | ExceptionDef _ ->
-            //     writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
-            | _ ->
-                ()
         | Group(groupName, _) ->
             let nextGroup =
                 context.GroupContext.SubGroups[groupName]

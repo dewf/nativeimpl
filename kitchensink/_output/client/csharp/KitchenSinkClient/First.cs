@@ -12,53 +12,80 @@ namespace Org.Prefixed.KitchenSink
     public static class First
     {
         private static ModuleHandle _module;
-        public static class WhateverThing
-        {
-            internal static ModuleMethodHandle _create;
-            internal static ModuleMethodHandle _handle_someMethod;
-            internal static ModuleMethodHandle _handle_dispose;
+        internal static ModuleMethodHandle _operateOnInterface;
 
-            public static Handle Create()
+        public static void OperateOnInterface(InterfaceGroup.MyInterface thing)
+        {
+            InterfaceGroup.MyInterface__Push(thing, false);
+            NativeImplClient.InvokeModuleMethod(_operateOnInterface);
+        }
+        public static class InterfaceGroup
+        {
+            internal static InterfaceHandle _myInterface;
+            internal static InterfaceMethodHandle _myInterface_doesSomething;
+
+            public interface MyInterface : IDisposable
             {
-                NativeImplClient.InvokeModuleMethod(_create);
-                return Handle__Pop();
+                void DoesSomething(string s);
             }
-            public class Handle : IDisposable
+
+            internal static void MyInterface__Push(MyInterface thing, bool isReturn)
             {
-                internal readonly IntPtr NativeHandle;
-                protected bool _disposed;
-                internal Handle(IntPtr nativeHandle)
+                if (thing != null)
                 {
-                    NativeHandle = nativeHandle;
+                    ((IPushable)thing).Push(isReturn);
                 }
-                public virtual void Dispose()
+                else
                 {
-                    if (!_disposed)
+                    NativeImplClient.PushNull();
+                }
+            }
+
+            internal static MyInterface MyInterface__Pop()
+            {
+                NativeImplClient.PopInstanceId(out var id, out var isClientId);
+                if (id != 0)
+                {
+                    if (!isClientId)
                     {
-                        Handle__Push(this);
-                        NativeImplClient.InvokeModuleMethod(_handle_dispose);
-                        _disposed = true;
+                        return new ServerMyInterface(id);
+                    }
+                    else
+                    {
+                        return (MyInterface) ClientObject.GetById(id);
                     }
                 }
-                public void SomeMethod(int x)
+                else
                 {
-                    NativeImplClient.PushInt32(x);
-                    Handle__Push(this);
-                    NativeImplClient.InvokeModuleMethod(_handle_someMethod);
+                    return null;
                 }
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static void Handle__Push(Handle thing)
+            public abstract class ClientMyInterface : ClientObject, MyInterface
             {
-                NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
+                public virtual void Dispose()
+                {
+                    // override if necessary
+                }
+                public abstract void DoesSomething(string s);
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal static Handle Handle__Pop()
+            internal class ServerMyInterface : ServerObject, MyInterface
             {
-                var ptr = NativeImplClient.PopPtr();
-                return ptr != IntPtr.Zero ? new Handle(ptr) : null;
+                public ServerMyInterface(int id) : base(id)
+                {
+                }
+
+                public void DoesSomething(string s)
+                {
+                    NativeImplClient.PushString(s);
+                    NativeImplClient.InvokeInterfaceMethod(_myInterface_doesSomething, Id);
+                }
+
+                public void Dispose()
+                {
+                    ServerDispose();
+                }
             }
         }
 
@@ -66,9 +93,15 @@ namespace Org.Prefixed.KitchenSink
         {
             _module = NativeImplClient.GetModule("First");
             // assign module handles
-            WhateverThing._create = NativeImplClient.GetModuleMethod(_module, "WhateverThing.create");
-            WhateverThing._handle_someMethod = NativeImplClient.GetModuleMethod(_module, "WhateverThing.Handle_someMethod");
-            WhateverThing._handle_dispose = NativeImplClient.GetModuleMethod(_module, "WhateverThing.Handle_dispose");
+            _operateOnInterface = NativeImplClient.GetModuleMethod(_module, "operateOnInterface");
+            InterfaceGroup._myInterface = NativeImplClient.GetInterface(_module, "InterfaceGroup.MyInterface");
+            InterfaceGroup._myInterface_doesSomething = NativeImplClient.GetInterfaceMethod(InterfaceGroup._myInterface, "doesSomething");
+            NativeImplClient.SetClientMethodWrapper(InterfaceGroup._myInterface_doesSomething, delegate(ClientObject obj)
+            {
+                var inst = (InterfaceGroup.ClientMyInterface) obj;
+                var s = NativeImplClient.PopString();
+                inst.DoesSomething(s);
+            });
 
             // no static init
         }

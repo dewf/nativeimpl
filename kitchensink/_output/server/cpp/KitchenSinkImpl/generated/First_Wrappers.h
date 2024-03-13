@@ -3,18 +3,16 @@
 
 namespace First
 {
-    namespace WhateverThing
+    namespace InterfaceGroup
     {
 
-        void Handle__push(Handle value);
-        Handle Handle__pop();
+        void MyInterface__push(std::shared_ptr<MyInterface> inst, bool isReturn);
+        std::shared_ptr<MyInterface> MyInterface__pop();
 
-        void Handle_someMethod__wrapper();
-
-        void Handle_dispose__wrapper();
-
-        void create__wrapper();
+        void MyInterface_doesSomething__wrapper(int serverID);
     }
+
+    void operateOnInterface__wrapper();
 
     int __register();
 }

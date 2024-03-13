@@ -1,17 +1,26 @@
 ﻿using Org.Prefixed.KitchenSink;
 namespace AppRunner;
 
+internal class MyThing : First.InterfaceGroup.ClientMyInterface
+{
+    public override void DoesSomething(string s)
+    {
+        Console.WriteLine($"C# MyThing.DoesSomething({s})");
+    }
+}
+
 internal static class Program
 {
     private static void Main(string[] args)
     {
         Library.Init();
 
-        using (var wut = First.CreateThing())
+        using (var thing = new MyThing())
         {
-            wut.SomeMethod(101);
+            First.OperateOnInterface(thing);
         }
         
         Library.Shutdown();
     }
 }
+

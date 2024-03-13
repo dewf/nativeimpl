@@ -3,13 +3,18 @@
 
 namespace First
 {
-    namespace WhateverThing {
-        void __push(Opaque value);
-        Opaque __pop();
-        void _method_someMethod__wrapper();
-        void _method_dispose__wrapper();
+    namespace WhateverThing
+    {
+
+        void Handle__push(Handle value);
+        Handle Handle__pop();
+
+        void Handle_someMethod__wrapper();
+
+        void Handle_dispose__wrapper();
+
+        void create__wrapper();
     }
-    void createThing__wrapper();
 
     int __register();
 }

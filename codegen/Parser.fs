@@ -608,35 +608,38 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 // first, figure out the limits of the opaque content block as a whole
                 let contentBlock, afterBlock =
                     contentUntilMatching loc LeftBrace etc
-                    
-                // split just before "static {", if any
-                let staticBlockMatcher = function
-                    | Lookahead 2 ([StaticToken; LeftBrace], _, _) -> true
-                    | _ -> false
-                let methodsTokens, afterMethods =
-                    match splitTokensBefore staticBlockMatcher contentBlock with
-                    | Some (before, after) ->
-                        before, after
-                    | None ->
-                        contentBlock, []
-                        
-                // parse the methods-only part
+
                 let methods =
-                    methodsTokens
+                    contentBlock
                     |> List.unfold parseNamedFunction
-                
-                // is there a static {} block?
-                let staticDefs =
-                    match afterMethods with
-                    | [] ->
-                        []
-                    | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
-                        let staticBlock, _ =
-                            contentUntilMatching loc LeftBrace etc
-                        // woot!
-                        parseModuleDefs staticBlock
-                    | { Location = loc } :: _ ->
-                        failwithf "unknown content after opaque methods @ %s" (loc.ToString())
+                // // split just before "static {", if any
+                // let staticBlockMatcher = function
+                //     | Lookahead 2 ([StaticToken; LeftBrace], _, _) -> true
+                //     | _ -> false
+                // let methodsTokens, afterMethods =
+                //     match splitTokensBefore staticBlockMatcher contentBlock with
+                //     | Some (before, after) ->
+                //         before, after
+                //     | None ->
+                //         contentBlock, []
+                //         
+                // // parse the methods-only part
+                // let methods =
+                //     methodsTokens
+                //     |> List.unfold parseNamedFunction
+                //
+                // // is there a static {} block?
+                // let staticDefs =
+                //     match afterMethods with
+                //     | [] ->
+                //         []
+                //     | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
+                //         let staticBlock, _ =
+                //             contentUntilMatching loc LeftBrace etc
+                //         // woot!
+                //         parseModuleDefs staticBlock
+                //     | { Location = loc } :: _ ->
+                //         failwithf "unknown content after opaque methods @ %s" (loc.ToString())
                 let info =
                     { MaybeParent = maybeParent; Methods = methods }
                 ([UserType (opaqueName, OpaqueDef info)], afterBlock)

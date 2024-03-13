@@ -2,17 +2,17 @@
 
 namespace First
 {
-    namespace WhateverThing {
-        struct __OpaquePrivate {
+    namespace WhateverThing
+    {
+        struct __Handle {
             // your content here
-            // (or simply cast your existing pointer to 'Opaque')
         };
-        void _method_someMethod(Opaque _this, int32_t x) {
+        void Handle_someMethod(Handle _this, int32_t x) {
         }
-        void _method_dispose(Opaque _this) {
+        void Handle_dispose(Handle _this) {
         }
-    }
-    WhateverThing::Opaque createThing() {
-        return new WhateverThing::__OpaquePrivate;
+        Handle create() {
+            return new __Handle();
+        }
     }
 }

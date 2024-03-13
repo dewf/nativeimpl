@@ -12,60 +12,67 @@ namespace Org.Prefixed.KitchenSink
     public static class First
     {
         private static ModuleHandle _module;
-        private static ModuleMethodHandle _createThing;
-        
-        public static WhateverThing CreateThing()
+        public static class WhateverThing
         {
-            NativeImplClient.InvokeModuleMethod(_createThing);
-            return WhateverThing.__Pop();
-        }
-        
-        public class WhateverThing : IDisposable
-        {
-            private readonly IntPtr _nativeHandle;
-            protected bool _disposed;
-            
-            internal static ModuleMethodHandle _methodSomeMethod;
-            internal static ModuleMethodHandle _methodDispose;
-            internal WhateverThing(IntPtr nativeHandle)
+            internal static ModuleMethodHandle _create;
+            internal static ModuleMethodHandle _handle_someMethod;
+            internal static ModuleMethodHandle _handle_dispose;
+
+            public static Handle Create()
             {
-                _nativeHandle = nativeHandle;
+                NativeImplClient.InvokeModuleMethod(_create);
+                return Handle__Pop();
             }
-            public virtual void Dispose()
+            public class Handle : IDisposable
             {
-                if (!_disposed)
+                internal readonly IntPtr NativeHandle;
+                protected bool _disposed;
+                internal Handle(IntPtr nativeHandle)
                 {
-                    __Push(this);
-                    NativeImplClient.InvokeModuleMethod(_methodDispose);
-                    _disposed = true;
+                    NativeHandle = nativeHandle;
+                }
+                public virtual void Dispose()
+                {
+                    if (!_disposed)
+                    {
+                        Handle__Push(this);
+                        NativeImplClient.InvokeModuleMethod(_handle_dispose);
+                        _disposed = true;
+                    }
+                }
+                public void SomeMethod(int x)
+                {
+                    NativeImplClient.PushInt32(x);
+                    Handle__Push(this);
+                    NativeImplClient.InvokeModuleMethod(_handle_someMethod);
                 }
             }
-            public void SomeMethod(int x)
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static void Handle__Push(Handle thing)
             {
-                NativeImplClient.PushInt32(x);
-                __Push(this);
-                NativeImplClient.InvokeModuleMethod(_methodSomeMethod);
+                NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);
             }
-            internal static void __Push(WhateverThing thing)
-            {
-                NativeImplClient.PushPtr(thing?._nativeHandle ?? IntPtr.Zero);
-            }
-            internal static WhateverThing __Pop()
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static Handle Handle__Pop()
             {
                 var ptr = NativeImplClient.PopPtr();
-                return ptr != IntPtr.Zero ? new WhateverThing(ptr) : null;
+                return ptr != IntPtr.Zero ? new Handle(ptr) : null;
             }
         }
+
         internal static void __Init()
         {
             _module = NativeImplClient.GetModule("First");
             // assign module handles
-            _createThing = NativeImplClient.GetModuleMethod(_module, "createThing");
-            WhateverThing._methodSomeMethod = NativeImplClient.GetModuleMethod(_module, "WhateverThing_someMethod");
-            WhateverThing._methodDispose = NativeImplClient.GetModuleMethod(_module, "WhateverThing_dispose");
-            
+            WhateverThing._create = NativeImplClient.GetModuleMethod(_module, "WhateverThing.create");
+            WhateverThing._handle_someMethod = NativeImplClient.GetModuleMethod(_module, "WhateverThing.Handle_someMethod");
+            WhateverThing._handle_dispose = NativeImplClient.GetModuleMethod(_module, "WhateverThing.Handle_dispose");
+
             // no static init
         }
+
         internal static void __Shutdown()
         {
             // no static shutdown

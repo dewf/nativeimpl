@@ -11,17 +11,13 @@
 
 namespace First
 {
-    // opaque WhateverThing
-    namespace WhateverThing {
-        struct __OpaquePrivate; typedef struct __OpaquePrivate* Opaque;
-        // any static definitions will appear here (eg enums, structs, etc)
-        // order is important because of C++ rules :(
-        // ...
+    namespace WhateverThing
+    {
 
-        // methods
-        void _method_someMethod(Opaque _this, int32_t x);
-        void _method_dispose(Opaque _this);
+        struct __Handle; typedef struct __Handle* Handle;
+
+        void Handle_someMethod(Handle _this, int32_t x);
+        void Handle_dispose(Handle _this);
+        Handle create();
     }
-
-    WhateverThing::Opaque createThing();
 }

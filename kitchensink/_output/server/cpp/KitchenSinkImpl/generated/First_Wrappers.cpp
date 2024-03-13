@@ -4,32 +4,37 @@
 
 namespace First
 {
-    namespace WhateverThing {
-        void __push(Opaque value) {
+    namespace WhateverThing
+    {
+        void Handle__push(Handle value) {
             ni_pushPtr(value);
         }
-        Opaque __pop() {
-            return (Opaque)ni_popPtr();
+
+        Handle Handle__pop() {
+            return (Handle)ni_popPtr();
         }
-        void _method_someMethod__wrapper() {
-            auto _this = __pop();
+
+        void Handle_someMethod__wrapper() {
+            auto _this = Handle__pop();
             auto x = ni_popInt32();
-            _method_someMethod(_this, x);
+            Handle_someMethod(_this, x);
         }
-        void _method_dispose__wrapper() {
-            auto _this = __pop();
-            _method_dispose(_this);
+
+        void Handle_dispose__wrapper() {
+            auto _this = Handle__pop();
+            Handle_dispose(_this);
         }
-    }
-    void createThing__wrapper() {
-        WhateverThing::__push(createThing());
+
+        void create__wrapper() {
+            Handle__push(create());
+        }
     }
 
     int __register() {
         auto m = ni_registerModule("First");
-        ni_registerModuleMethod(m, "createThing", &createThing__wrapper);
-        ni_registerModuleMethod(m, "WhateverThing_someMethod", &WhateverThing::_method_someMethod__wrapper);
-        ni_registerModuleMethod(m, "WhateverThing_dispose", &WhateverThing::_method_dispose__wrapper);
+        ni_registerModuleMethod(m, "WhateverThing.create", &WhateverThing::create__wrapper);
+        ni_registerModuleMethod(m, "WhateverThing.Handle_someMethod", &WhateverThing::Handle_someMethod__wrapper);
+        ni_registerModuleMethod(m, "WhateverThing.Handle_dispose", &WhateverThing::Handle_dispose__wrapper);
         return 0; // = OK
     }
 }

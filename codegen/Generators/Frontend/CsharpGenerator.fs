@@ -973,7 +973,7 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
         write 2 "}"
         // server wrapper
         blank()
-        write 2 "internal class Server%s : ServerObject, %s" (upperFirst name) (upperFirst name)
+        write 2 "private class Server%s : ServerObject, %s" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "public Server%s(int id) : base(id)" name
         write 3 "{"
@@ -998,16 +998,15 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
                 popValue context writer 4 method.Returns Return
             write 3 "}"
         blank()
-        write 3 "public void Dispose()"
+        write 3 "protected override void ReleaseExtra()"
         write 3 "{"
-        write 4 "// need to rethink how the disposal works for interfaces, esp w/r/t server implementations"
-        write 4 "// because now we're actually doing something here, whereas before it was just"
-        write 4 "// ServerDispose() which was also called by the finalizer"
-        write 4 "// but now the table removal stuff is NOT happening via finalizer"
-        blank()
         write 4 "// remove from lookup table"
         write 4 "__%sToPushable.Remove(this);" (upperFirst name)
-        write 4 "// regular disposal stuff"
+        write 3 "}"
+        blank()
+        write 3 "public void Dispose()"
+        write 3 "{"
+        write 4 "// will invoke ReleaseExtra() for us"
         write 4 "ServerDispose();"
         write 3 "}"
         write 2 "}"

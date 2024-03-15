@@ -101,7 +101,7 @@ namespace Org.Prefixed.KitchenSink
             }
         }
 
-        internal class ServerITestInterface : ServerObject, ITestInterface
+        private class ServerITestInterface : ServerObject, ITestInterface
         {
             public ServerITestInterface(int id) : base(id)
             {
@@ -113,16 +113,15 @@ namespace Org.Prefixed.KitchenSink
                 NativeImplClient.InvokeInterfaceMethod(_iTestInterface_wootMethod, Id);
             }
 
-            public void Dispose()
+            protected override void ReleaseExtra()
             {
-                // need to rethink how the disposal works for interfaces, esp w/r/t server implementations
-                // because now we're actually doing something here, whereas before it was just
-                // ServerDispose() which was also called by the finalizer
-                // but now the table removal stuff is NOT happening via finalizer
-
                 // remove from lookup table
                 __ITestInterfaceToPushable.Remove(this);
-                // regular disposal stuff
+            }
+
+            public void Dispose()
+            {
+                // will invoke ReleaseExtra() for us
                 ServerDispose();
             }
         }

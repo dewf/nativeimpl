@@ -9,7 +9,7 @@
         }
         
         protected readonly int Id;
-        private bool _remoteReleased;
+        private bool _serverDisposed;
         protected ServerResource(int id)
         {
             Id = id;
@@ -18,17 +18,28 @@
         ~ServerResource()
         {
             // backstop in case the derived class not manually disposed
-            Console.WriteLine($"ServerResource id {Id} - dtor invoked, calling ServerDispose()");
+            Console.WriteLine($"ServerResource id {Id} - finalized invoked, calling ServerDispose()");
             ServerDispose();
         }
 
         protected abstract void NativePush();
-        
+
+        protected virtual void ReleaseExtra()
+        {
+            // override this if there's anything else we need to do on ServerDispose()
+        }
+
         protected void ServerDispose()
         {
-            if (_remoteReleased || NativeImplClient.RemoteIsShutdown) return;
-            NativeMethods.releaseServerResource(Id);
-            _remoteReleased = true;
+            if (!_serverDisposed)
+            {
+                ReleaseExtra();
+                if (!NativeImplClient.RemoteIsShutdown)
+                {
+                    NativeMethods.releaseServerResource(Id);
+                }
+                _serverDisposed = true;
+            }
         }
 
         void IPushable.Push(bool isReturn)

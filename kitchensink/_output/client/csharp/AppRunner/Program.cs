@@ -23,12 +23,14 @@ internal static class Program
         {
             First.OperateOnInterface(thing);
         }
+        Console.WriteLine("C# should have disposed client thing");
 
         using (var thing2 = First.ServerCreate())
         {
             Console.WriteLine("C# about to invoke server thing's .WootMethod...");
             thing2.WootMethod(9876);
         }
+        Console.WriteLine("C# should have disposed thing2");
         
         Library.DumpTables();
         Library.Shutdown();

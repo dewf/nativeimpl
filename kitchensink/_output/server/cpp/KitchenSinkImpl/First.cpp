@@ -8,7 +8,7 @@ namespace First
         thing->wootMethod(1234);
     }
 
-    class MyInterface : public ServerITestInterface {
+    class MyInterface : public ITestInterface {
     public:
         void wootMethod(int32_t x) override {
             printf("C++ server MyInterface: .wootMethod(%d)\n", x);

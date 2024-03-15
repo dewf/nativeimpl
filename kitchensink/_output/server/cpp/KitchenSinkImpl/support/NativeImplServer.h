@@ -27,7 +27,7 @@ public:
 protected:
 	virtual void nativePush() = 0; // implemented specifically for: objects, buffers, etc
 
-	// anything else you might want to do here, when destroyed (eg used by ServerFuncVal to remove itself from reverse map)
+	// anything else you might want to do here, when destroyed (eg used by ServerFuncVal to remove itself from reverse map, and server interface wrappers)
 	// (tried virtual destructors but things were behaving strangely)
 	virtual void releaseExtra() {}
 };

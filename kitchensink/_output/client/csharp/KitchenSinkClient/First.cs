@@ -41,9 +41,9 @@ namespace Org.Prefixed.KitchenSink
         }
 
         private static Dictionary<ITestInterface, IPushable> __ITestInterfaceToPushable = new();
-        private class __ITestInterfaceWrapper : ClientInterfaceWrapper<ITestInterface>
+        private class ClientITestInterfaceWrapper : ClientInterfaceWrapper<ITestInterface>
         {
-            public __ITestInterfaceWrapper(ITestInterface rawInterface) : base(rawInterface)
+            public ClientITestInterfaceWrapper(ITestInterface rawInterface) : base(rawInterface)
             {
             }
             protected override void ReleaseExtra()
@@ -65,7 +65,7 @@ namespace Org.Prefixed.KitchenSink
                 else
                 {
                     // as-yet-unknown client thing - wrap and add to lookup table
-                    pushable = new __ITestInterfaceWrapper(thing);
+                    pushable = new ClientITestInterfaceWrapper(thing);
                     __ITestInterfaceToPushable.Add(thing, pushable);
                 }
                 pushable.Push(isReturn);
@@ -84,7 +84,7 @@ namespace Org.Prefixed.KitchenSink
                 if (isClientId)
                 {
                     // we must have sent it over originally, so wrapper must exist
-                    var wrapper = (__ITestInterfaceWrapper)ClientObject.GetById(id);
+                    var wrapper = (ClientITestInterfaceWrapper)ClientObject.GetById(id);
                     return wrapper.RawInterface;
                 }
                 else // server ID
@@ -115,6 +115,7 @@ namespace Org.Prefixed.KitchenSink
 
             protected override void ReleaseExtra()
             {
+                Console.WriteLine("C# ServerITestInterface.ReleaseExtra()");
                 // remove from lookup table
                 __ITestInterfaceToPushable.Remove(this);
             }
@@ -136,7 +137,7 @@ namespace Org.Prefixed.KitchenSink
             _iTestInterface_wootMethod = NativeImplClient.GetInterfaceMethod(_iTestInterface, "wootMethod");
             NativeImplClient.SetClientMethodWrapper(_iTestInterface_wootMethod, delegate(ClientObject obj)
             {
-                var inst = ((__ITestInterfaceWrapper)obj).RawInterface;
+                var inst = ((ClientITestInterfaceWrapper)obj).RawInterface;
                 var x = NativeImplClient.PopInt32();
                 inst.WootMethod(x);
             });

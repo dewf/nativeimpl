@@ -1,8 +1,7 @@
 module First;
 
-group InterfaceGroup {
-    interface MyInterface {
-        void doesSomething(string s);
-    }
+interface ITestInterface {
+    void wootMethod(int x);
 }
-void operateOnInterface(InterfaceGroup.MyInterface thing);
+
+void operateOnInterface(ITestInterface thing);

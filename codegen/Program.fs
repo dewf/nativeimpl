@@ -3,12 +3,6 @@ open Generators.Frontend
 open Parser
 open AppCommon
 
-// // GUIBASE
-// let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
-// let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
-// let INPUTS = [ "Windowing"; "Drawing" ]
-// let LIBRARY = "GuiBase"
-
 // // TESTBENCH
 // let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench"
 // let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\_output"
@@ -20,6 +14,12 @@ let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\nativeimpl\kitchensink"
 let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\nativeimpl\kitchensink\_output"
 let INPUTS = [ "First" ]
 let LIBRARY = "KitchenSink"
+
+// // GUIBASE
+// let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
+// let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
+// let INPUTS = [ "Windowing"; "Drawing" ]
+// let LIBRARY = "GuiBase"
 
 let NAMESPACE = "Org.Prefixed"
 let FRONT_LANG = "csharp"

@@ -4,61 +4,58 @@
 
 namespace First
 {
-    namespace InterfaceGroup
-    {
-        ni_InterfaceMethodRef myInterface_doesSomething;
-        class ClientMyInterface : public ClientObject, public MyInterface {
-        public:
-            ClientMyInterface(int id) : ClientObject(id) {}
-            void doesSomething(std::string s) override {
-                pushStringInternal(s);
-                invokeMethod(myInterface_doesSomething);
-            }
-        };
-
-        void MyInterface__push(std::shared_ptr<MyInterface> inst, bool isReturn) {
-            if (inst != nullptr) {
-                auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
-                pushable->push(pushable, isReturn);
-            }
-            else {
-                ni_pushNull();
-            }
+    ni_InterfaceMethodRef iTestInterface_wootMethod;
+    class ClientITestInterface : public ClientObject, public ITestInterface {
+    public:
+        ClientITestInterface(int id) : ClientObject(id) {}
+        void wootMethod(int32_t x) override {
+            ni_pushInt32(x);
+            invokeMethod(iTestInterface_wootMethod);
         }
+    };
 
-        std::shared_ptr<MyInterface> MyInterface__pop() {
-            bool isClientID;
-            auto id = ni_popInstance(&isClientID);
-            if (id != 0) {
-                if (isClientID) {
-                    return std::shared_ptr<MyInterface>(new ClientMyInterface(id));
-                }
-                else {
-                    return ServerMyInterface::getByID(id);
-                }
-            }
-            else {
-                return std::shared_ptr<MyInterface>();
-            }
+    void ITestInterface__push(std::shared_ptr<ITestInterface> inst, bool isReturn) {
+        if (inst != nullptr) {
+            auto pushable = std::dynamic_pointer_cast<Pushable>(inst);
+            pushable->push(pushable, isReturn);
         }
-
-        void MyInterface_doesSomething__wrapper(int serverID) {
-            auto inst = ServerMyInterface::getByID(serverID);
-            auto s = popStringInternal();
-            inst->doesSomething(s);
+        else {
+            ni_pushNull();
         }
     }
 
+    std::shared_ptr<ITestInterface> ITestInterface__pop() {
+        bool isClientID;
+        auto id = ni_popInstance(&isClientID);
+        if (id != 0) {
+            if (isClientID) {
+                return std::shared_ptr<ITestInterface>(new ClientITestInterface(id));
+            }
+            else {
+                return ServerITestInterface::getByID(id);
+            }
+        }
+        else {
+            return std::shared_ptr<ITestInterface>();
+        }
+    }
+
+    void ITestInterface_wootMethod__wrapper(int serverID) {
+        auto inst = ServerITestInterface::getByID(serverID);
+        auto x = ni_popInt32();
+        inst->wootMethod(x);
+    }
+
     void operateOnInterface__wrapper() {
-        auto thing = InterfaceGroup::MyInterface__pop();
+        auto thing = ITestInterface__pop();
         operateOnInterface(thing);
     }
 
     int __register() {
         auto m = ni_registerModule("First");
         ni_registerModuleMethod(m, "operateOnInterface", &operateOnInterface__wrapper);
-        auto myInterface = ni_registerInterface(m, "InterfaceGroup.MyInterface");
-        InterfaceGroup::myInterface_doesSomething = ni_registerInterfaceMethod(myInterface, "doesSomething", &InterfaceGroup::MyInterface_doesSomething__wrapper);
+        auto iTestInterface = ni_registerInterface(m, "ITestInterface");
+        iTestInterface_wootMethod = ni_registerInterfaceMethod(iTestInterface, "wootMethod", &ITestInterface_wootMethod__wrapper);
         return 0; // = OK
     }
 }

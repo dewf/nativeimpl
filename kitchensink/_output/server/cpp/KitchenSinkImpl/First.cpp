@@ -2,12 +2,9 @@
 
 namespace First
 {
-    namespace InterfaceGroup
-    {
-        // userType: MyInterface
-    }
-    void operateOnInterface(std::shared_ptr<InterfaceGroup::MyInterface> thing) {
-        printf("C++ operateOnInterface, calling method:\n");
-        thing->doesSomething("!!woooot!!");
+    // userType: ITestInterface
+    void operateOnInterface(std::shared_ptr<ITestInterface> thing) {
+        printf("C++ calling interface method ->wootMethod(1234)\n");
+        thing->wootMethod(1234);
     }
 }

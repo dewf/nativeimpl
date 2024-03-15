@@ -1,11 +1,15 @@
 ﻿using Org.Prefixed.KitchenSink;
 namespace AppRunner;
 
-internal class MyThing : First.InterfaceGroup.ClientMyInterface
+internal class MyThing : First.ITestInterface, IDisposable
 {
-    public override void DoesSomething(string s)
+    public void Dispose()
     {
-        Console.WriteLine($"C# MyThing.DoesSomething({s})");
+        Console.WriteLine("client disposing, woot!");
+    }
+    public void WootMethod(int x)
+    {
+        Console.WriteLine($"C# MyThing.WootMethod({x})!");
     }
 }
 
@@ -23,4 +27,3 @@ internal static class Program
         Library.Shutdown();
     }
 }
-

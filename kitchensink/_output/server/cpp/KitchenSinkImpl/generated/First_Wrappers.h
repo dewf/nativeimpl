@@ -3,14 +3,11 @@
 
 namespace First
 {
-    namespace InterfaceGroup
-    {
 
-        void MyInterface__push(std::shared_ptr<MyInterface> inst, bool isReturn);
-        std::shared_ptr<MyInterface> MyInterface__pop();
+    void ITestInterface__push(std::shared_ptr<ITestInterface> inst, bool isReturn);
+    std::shared_ptr<ITestInterface> ITestInterface__pop();
 
-        void MyInterface_doesSomething__wrapper(int serverID);
-    }
+    void ITestInterface_wootMethod__wrapper(int serverID);
 
     void operateOnInterface__wrapper();
 

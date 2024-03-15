@@ -51,9 +51,14 @@ namespace First
         operateOnInterface(thing);
     }
 
+    void serverCreate__wrapper() {
+        ITestInterface__push(serverCreate(), true);
+    }
+
     int __register() {
         auto m = ni_registerModule("First");
         ni_registerModuleMethod(m, "operateOnInterface", &operateOnInterface__wrapper);
+        ni_registerModuleMethod(m, "serverCreate", &serverCreate__wrapper);
         auto iTestInterface = ni_registerInterface(m, "ITestInterface");
         iTestInterface_wootMethod = ni_registerInterfaceMethod(iTestInterface, "wootMethod", &ITestInterface_wootMethod__wrapper);
         return 0; // = OK

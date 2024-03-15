@@ -5,3 +5,6 @@ interface ITestInterface {
 }
 
 void operateOnInterface(ITestInterface thing);
+
+ITestInterface serverCreate();
+

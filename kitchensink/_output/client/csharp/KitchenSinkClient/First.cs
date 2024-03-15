@@ -13,6 +13,7 @@ namespace Org.Prefixed.KitchenSink
     {
         private static ModuleHandle _module;
         internal static ModuleMethodHandle _operateOnInterface;
+        internal static ModuleMethodHandle _serverCreate;
         internal static InterfaceHandle _iTestInterface;
         internal static InterfaceMethodHandle _iTestInterface_wootMethod;
 
@@ -20,6 +21,14 @@ namespace Org.Prefixed.KitchenSink
         {
             ITestInterface__Push(thing, false);
             NativeImplClient.InvokeModuleMethod(_operateOnInterface);
+        }
+
+        public static ITestInterface ServerCreate()
+        {
+            NativeImplClient.InvokeModuleMethod(_serverCreate);
+            var __ret = ITestInterface__Pop();
+            NativeImplClient.ServerClearSafetyArea();
+            return __ret;
         }
 
         public interface ITestInterface : IDisposable
@@ -30,8 +39,7 @@ namespace Org.Prefixed.KitchenSink
             }
             void WootMethod(int x);
         }
-        
-        // lookup table + pushable client wrapper for ITestInterface
+
         private static Dictionary<ITestInterface, IPushable> __ITestInterfaceToPushable = new();
         private class __ITestInterfaceWrapper : ClientInterfaceWrapper<ITestInterface>
         {
@@ -42,11 +50,6 @@ namespace Org.Prefixed.KitchenSink
             {
                 // remove the raw interface from the lookup table, no longer needed
                 __ITestInterfaceToPushable.Remove(RawInterface);
-                Console.WriteLine("release extra! removed from lookup table@@!!");
-            }
-            public new static __ITestInterfaceWrapper GetById(int id)
-            {
-                return (__ITestInterfaceWrapper)GetResourceById(id);
             }
         }
 
@@ -61,7 +64,7 @@ namespace Org.Prefixed.KitchenSink
                 }
                 else
                 {
-                    // unknown client thing, wrap and add to lookup table
+                    // as-yet-unknown client thing - wrap and add to lookup table
                     pushable = new __ITestInterfaceWrapper(thing);
                     __ITestInterfaceToPushable.Add(thing, pushable);
                 }
@@ -81,7 +84,7 @@ namespace Org.Prefixed.KitchenSink
                 if (isClientId)
                 {
                     // we must have sent it over originally, so wrapper must exist
-                    var wrapper = __ITestInterfaceWrapper.GetById(id);
+                    var wrapper = (__ITestInterfaceWrapper)ClientObject.GetById(id);
                     return wrapper.RawInterface;
                 }
                 else // server ID
@@ -92,13 +95,13 @@ namespace Org.Prefixed.KitchenSink
                     return thing;
                 }
             }
-            else // null ID?
+            else
             {
                 return null;
             }
         }
 
-        private class ServerITestInterface : ServerObject, ITestInterface
+        internal class ServerITestInterface : ServerObject, ITestInterface
         {
             public ServerITestInterface(int id) : base(id)
             {
@@ -116,10 +119,10 @@ namespace Org.Prefixed.KitchenSink
                 // because now we're actually doing something here, whereas before it was just
                 // ServerDispose() which was also called by the finalizer
                 // but now the table removal stuff is NOT happening via finalizer
-                
+
                 // remove from lookup table
                 __ITestInterfaceToPushable.Remove(this);
-                // regular disposal stuff ...
+                // regular disposal stuff
                 ServerDispose();
             }
         }
@@ -129,6 +132,7 @@ namespace Org.Prefixed.KitchenSink
             _module = NativeImplClient.GetModule("First");
             // assign module handles
             _operateOnInterface = NativeImplClient.GetModuleMethod(_module, "operateOnInterface");
+            _serverCreate = NativeImplClient.GetModuleMethod(_module, "serverCreate");
             _iTestInterface = NativeImplClient.GetInterface(_module, "ITestInterface");
             _iTestInterface_wootMethod = NativeImplClient.GetInterfaceMethod(_iTestInterface, "wootMethod");
             NativeImplClient.SetClientMethodWrapper(_iTestInterface_wootMethod, delegate(ClientObject obj)

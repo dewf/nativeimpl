@@ -11,5 +11,7 @@ namespace First
 
     void operateOnInterface__wrapper();
 
+    void serverCreate__wrapper();
+
     int __register();
 }

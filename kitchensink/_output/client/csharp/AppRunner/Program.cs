@@ -1,11 +1,11 @@
 ﻿using Org.Prefixed.KitchenSink;
 namespace AppRunner;
 
-internal class MyThing : First.ITestInterface, IDisposable
+internal class MyThing : First.ITestInterface
 {
     public void Dispose()
     {
-        Console.WriteLine("client disposing, woot!");
+        Console.WriteLine("C# MyThing disposed!");
     }
     public void WootMethod(int x)
     {
@@ -23,7 +23,14 @@ internal static class Program
         {
             First.OperateOnInterface(thing);
         }
+
+        using (var thing2 = First.ServerCreate())
+        {
+            Console.WriteLine("C# about to invoke server thing's .WootMethod...");
+            thing2.WootMethod(9876);
+        }
         
+        Library.DumpTables();
         Library.Shutdown();
     }
 }

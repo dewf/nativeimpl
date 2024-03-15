@@ -27,4 +27,5 @@ namespace First
         }
     };
     void operateOnInterface(std::shared_ptr<ITestInterface> thing);
+    std::shared_ptr<ITestInterface> serverCreate();
 }

@@ -1,10 +1,3 @@
 module First;
 
-interface ITestInterface {
-    void wootMethod(int x);
-}
-
-void operateOnInterface(ITestInterface thing);
-
-ITestInterface serverCreate();
-
+void doSomething(Option<string> maybeString);

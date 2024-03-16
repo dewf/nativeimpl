@@ -43,5 +43,8 @@
     <ClInclude Include="..\support\NativeImplServer.h">
       <Filter>Source Files\support</Filter>
     </ClInclude>
+    <ClInclude Include="..\support\result.h">
+      <Filter>Source Files\support</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

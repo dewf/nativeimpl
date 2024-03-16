@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using CSharpFunctionalExtensions;
 using Org.Prefixed.KitchenSink.Support;
 using ModuleHandle = Org.Prefixed.KitchenSink.Support.ModuleHandle;
 
@@ -12,134 +13,62 @@ namespace Org.Prefixed.KitchenSink
     public static class First
     {
         private static ModuleHandle _module;
-        internal static ModuleMethodHandle _operateOnInterface;
-        internal static ModuleMethodHandle _serverCreate;
-        internal static InterfaceHandle _iTestInterface;
-        internal static InterfaceMethodHandle _iTestInterface_wootMethod;
+        internal static ModuleMethodHandle _doSomething;
 
-        public static void OperateOnInterface(ITestInterface thing)
+        private static void __Result_int_string__Push(Result<int, string> result)
         {
-            ITestInterface__Push(thing, false);
-            NativeImplClient.InvokeModuleMethod(_operateOnInterface);
-        }
-
-        public static ITestInterface ServerCreate()
-        {
-            NativeImplClient.InvokeModuleMethod(_serverCreate);
-            var __ret = ITestInterface__Pop();
-            NativeImplClient.ServerClearSafetyArea();
-            return __ret;
-        }
-
-        public interface ITestInterface : IDisposable
-        {
-            void IDisposable.Dispose()
+            if (result.IsSuccess)
             {
-                // nothing by default
-            }
-            void WootMethod(int x);
-        }
-
-        private static Dictionary<ITestInterface, IPushable> __ITestInterfaceToPushable = new();
-        private class __ITestInterfaceWrapper : ClientInterfaceWrapper<ITestInterface>
-        {
-            public __ITestInterfaceWrapper(ITestInterface rawInterface) : base(rawInterface)
-            {
-            }
-            protected override void ReleaseExtra()
-            {
-                // remove the raw interface from the lookup table, no longer needed
-                __ITestInterfaceToPushable.Remove(RawInterface);
-            }
-        }
-
-        internal static void ITestInterface__Push(ITestInterface thing, bool isReturn)
-        {
-            if (thing != null)
-            {
-                if (__ITestInterfaceToPushable.TryGetValue(thing, out var pushable))
-                {
-                    // either an already-known client thing, or a server thing
-                    pushable.Push(isReturn);
-                }
-                else
-                {
-                    // as-yet-unknown client thing - wrap and add to lookup table
-                    pushable = new __ITestInterfaceWrapper(thing);
-                    __ITestInterfaceToPushable.Add(thing, pushable);
-                }
-                pushable.Push(isReturn);
+                NativeImplClient.PushInt32(result.Value);
+                NativeImplClient.PushBool(true);
             }
             else
             {
-                NativeImplClient.PushNull();
+                NativeImplClient.PushString(result.Error);
+                NativeImplClient.PushBool(false);
             }
         }
 
-        internal static ITestInterface ITestInterface__Pop()
+        private static Result<int, string> __Result_int_string__Pop()
         {
-            NativeImplClient.PopInstanceId(out var id, out var isClientId);
-            if (id != 0)
+            var success = NativeImplClient.PopBool();
+            if (success)
             {
-                if (isClientId)
-                {
-                    // we must have sent it over originally, so wrapper must exist
-                    var wrapper = (__ITestInterfaceWrapper)ClientObject.GetById(id);
-                    return wrapper.RawInterface;
-                }
-                else // server ID
-                {
-                    var thing = new ServerITestInterface(id);
-                    // add to lookup table before returning
-                    __ITestInterfaceToPushable.Add(thing, thing);
-                    return thing;
-                }
+                return NativeImplClient.PopInt32();
             }
-            else
-            {
-                return null;
-            }
+            return NativeImplClient.PopString();
         }
 
-        private class ServerITestInterface : ServerObject, ITestInterface
+        private static void __Option_string__Push(Maybe<string> maybeString)
         {
-            public ServerITestInterface(int id) : base(id)
+            if (maybeString.TryGetValue(out var value))
             {
+                NativeImplClient.PushString(value);
             }
+            NativeImplClient.PushBool(maybeString.HasValue);
+        }
+        private static Maybe<string> __Option_string__Pop()
+        {
+            var hasValue = NativeImplClient.PopBool();
+            if (hasValue)
+            {
+                return NativeImplClient.PopString();
+            }
+            return Maybe<string>.None;
+        }
 
-            public void WootMethod(int x)
-            {
-                NativeImplClient.PushInt32(x);
-                NativeImplClient.InvokeInterfaceMethod(_iTestInterface_wootMethod, Id);
-            }
-
-            protected override void ReleaseExtra()
-            {
-                // remove from lookup table
-                __ITestInterfaceToPushable.Remove(this);
-            }
-
-            public void Dispose()
-            {
-                // will invoke ReleaseExtra() for us
-                ServerDispose();
-            }
+        public static void DoSomething(Maybe<string> maybeString, Result<int,string> result)
+        {
+            __Result_int_string__Push(result);
+            __Option_string__Push(maybeString);
+            NativeImplClient.InvokeModuleMethod(_doSomething);
         }
 
         internal static void __Init()
         {
             _module = NativeImplClient.GetModule("First");
             // assign module handles
-            _operateOnInterface = NativeImplClient.GetModuleMethod(_module, "operateOnInterface");
-            _serverCreate = NativeImplClient.GetModuleMethod(_module, "serverCreate");
-            _iTestInterface = NativeImplClient.GetInterface(_module, "ITestInterface");
-            _iTestInterface_wootMethod = NativeImplClient.GetInterfaceMethod(_iTestInterface, "wootMethod");
-            NativeImplClient.SetClientMethodWrapper(_iTestInterface_wootMethod, delegate(ClientObject obj)
-            {
-                var inst = ((__ITestInterfaceWrapper)obj).RawInterface;
-                var x = NativeImplClient.PopInt32();
-                inst.WootMethod(x);
-            });
+            _doSomething = NativeImplClient.GetModuleMethod(_module, "doSomething");
 
             // no static init
         }

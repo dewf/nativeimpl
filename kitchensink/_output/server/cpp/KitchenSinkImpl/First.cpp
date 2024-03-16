@@ -2,21 +2,23 @@
 
 namespace First
 {
-    // userType: ITestInterface
-    void operateOnInterface(std::shared_ptr<ITestInterface> thing) {
-        printf("C++ calling interface method ->wootMethod(1234)\n");
-        thing->wootMethod(1234);
-    }
-
-    class MyInterface : public ITestInterface {
-    public:
-        void wootMethod(int32_t x) override {
-            printf("C++ server MyInterface: .wootMethod(%d)\n", x);
-        }
-    };
-
-    std::shared_ptr<ITestInterface> serverCreate()
+    void doSomething(std::optional<std::string> maybeString, result::Result<int, std::string> result)
     {
-        return std::shared_ptr<ITestInterface>(new MyInterface());
+        printf("C++ doSomething:\n");
+        printf("====== maybeString ========\n");
+        if (maybeString.has_value()) {
+            printf(" - hasValue: %s\n", maybeString.value().c_str());
+        }
+        else {
+            printf(" - (no value)\n");
+        }
+
+        printf("====== result =============\n");
+        if (result.is_ok()) {
+            printf(" - result OK: %d\n", result.unwrap());
+        }
+        else {
+            printf(" - result Error: %s\n", result.unwrap_err().c_str());
+        }
     }
 }

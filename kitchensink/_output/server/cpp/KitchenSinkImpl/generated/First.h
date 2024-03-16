@@ -8,14 +8,10 @@
 #include <map>
 #include <tuple>
 #include <set>
+#include <optional>
+#include "../support/result.h"
 
 namespace First
 {
-
-    class ITestInterface {
-    public:
-        virtual void wootMethod(int32_t x) = 0;
-    };
-    void operateOnInterface(std::shared_ptr<ITestInterface> thing);
-    std::shared_ptr<ITestInterface> serverCreate();
+    void doSomething(std::optional<std::string> maybeString, result::Result<int,std::string> result);
 }

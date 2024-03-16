@@ -66,6 +66,8 @@ type NIType =
     | TupleType of tupleTypes: NIType list
     | SetType of elem: NIType
     | BufferType of elemType: NIType
+    | OptionType of elem: NIType
+    | ResultType of success: NIType * error: NIType
     //
     | Unresolved of identifier: UnresolvedIdentifier * loc: Location * mustBe: TypeConstraint
     | Resolved of name: ResolvedName * type_: ResolvedType
@@ -272,6 +274,28 @@ let rec parseType (input: TokenAndLocation list) =
                 failwithf "missing ] for array type at %A" loc
         | _ ->
             failwithf "missing comma for array type at %A" loc
+    | Lookahead 2 ([OptionToken; LeftAngleBracket], loc, etc) ->
+        let elemType, etc =
+            parseType etc
+        match etc with
+        | Lookahead 1 ([RightAngleBracket], _, etc) ->
+            OptionType elemType, etc
+        | _ ->
+            failwithf "failed to parse Option type at %A" loc
+    | Lookahead 2 ([ResultToken; LeftAngleBracket], loc, etc) ->
+        let successType, etc =
+            parseType etc
+        match etc with
+        | Lookahead 1 ([Comma], loc, etc) ->
+            let errorType, etc =
+                parseType etc
+            match etc with
+            | Lookahead 1 ([RightAngleBracket], _, etc) ->
+                ResultType (successType, errorType), etc
+            | _ ->
+                failwithf "missing ] for result type at %A" loc
+        | _ ->
+            failwithf "missing comma for result type at %A" loc
     | Lookahead 2 ([BufferToken; LeftAngleBracket], loc, etc) ->
         let elemType, etc =
             parseType etc

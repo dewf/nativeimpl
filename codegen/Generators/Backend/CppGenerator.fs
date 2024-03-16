@@ -80,6 +80,8 @@ let typeToName (context: RenderContext) (outerType: NIType) =
         | MapType (keyType, valueType) -> sprintf "%s_%s_Map" (recInner true keyType) (recInner true valueType)
         | TupleType tupleTypes -> sprintf "%s_Tuple" (tupleTypes |> List.map (recInner true) |> String.concat "")
         | SetType niType -> sprintf "%s_Set" (recInner true niType)
+        | OptionType elem -> sprintf "%s_Option" (recInner true elem)
+        | ResultType (succ, err) -> sprintf "%s_%s_Result" (recInner true succ) (recInner true err)
         | BufferType elemType -> sprintf "Native_%s_Buffer" (recInner true elemType)
         | x -> sprintf "(typeToName: not done yet [%A]" x
     recInner false outerType
@@ -131,6 +133,8 @@ let typeToCppString (context: RenderContext) (outerType: NIType) =
         | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (recInner keyType) (recInner valueType)
         | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map recInner |> String.concat ",")
         | SetType niType -> sprintf "std::set<%s>" (recInner niType)
+        | OptionType elem -> sprintf "std::optional<%s>" (recInner elem)
+        | ResultType (succ, err) -> sprintf "result::Result<%s, %s>" (recInner succ) (recInner err)
         | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (recInner elemType)
         | x -> sprintf "(typeToCppString: not done yet [%A])" x
     recInner outerType
@@ -203,6 +207,8 @@ let defaultValueForType (context: RenderContext) (outerType: NIType) =
             sprintf "std::tuple<%s>{ %s }" typesJoined defaultsJoined
         | SetType niType -> sprintf "std::set<%s>()" (typeToCppString context niType)
         | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>()" (typeToCppString context elemType)
+        | OptionType elem -> sprintf "std::optional<%s>()" (typeToCppString context elem)
+        | ResultType (succ, _) -> sprintf "result::Ok(%s)" (recInner succ)
         | _ ->
             "(defaultValueForType: not yet supported)"
     recInner outerType
@@ -272,6 +278,10 @@ let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type
     | SetType _ ->
         write level "%s __%s__pop();" contextPrefix (typeToName context type_)
     | BufferType _ ->
+        write level "%s __%s__pop();" contextPrefix (typeToName context type_)
+    | OptionType _ ->
+        write level "%s __%s__pop();" contextPrefix (typeToName context type_)
+    | ResultType _ ->
         write level "%s __%s__pop();" contextPrefix (typeToName context type_)
     | _ ->
         write level "// (pop not yet implemented: %A)" type_
@@ -348,11 +358,14 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
         write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
     | SetType _ ->
         write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
+    | OptionType _ ->
+        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
+    | ResultType _ ->
+        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
     | BufferType _ ->
         write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
     | _ ->
         write level "// (pushValue not supported yet: %A)" type_
-
 
 let renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
@@ -1079,6 +1092,30 @@ let renderWrapperGeneric (context: RenderContext) (writerH: IFormatWriter) (writ
         let renderer =
             ArrayOrSetRenderer(context, writerCpp, gType, niType)
         renderArrayLike context.ModuleContext niType renderer
+    | OptionType elem ->
+        // PUSH =====
+        blankH()
+        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
+        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
+        writeCpp 1 "if (value.has_value()) {"
+        pushValue context writerCpp 2 elem "value.value()" (Indirect "isReturn")
+        pushValue context writerCpp 2 (Primitive Bool) "true" NotApplicable
+        writeCpp 1 "}"
+        writeCpp 1 "else {"
+        pushValue context writerCpp 2 (Primitive Bool) "false" NotApplicable
+        writeCpp 1 "}"
+        writeCpp 0 "}"
+        // POP =====
+        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        blankCpp()
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
+        writeCpp 1 "%s maybeValue;" (typeToCppString context gType)
+        popValue context writerCpp 1 (Primitive Bool) (Variable "hasValue")
+        writeCpp 1 "if (hasValue) {"
+        popValue context writerCpp 2 elem (LeftAssign "maybeValue")
+        writeCpp 1 "}"
+        writeCpp 1 "return maybeValue;"
+        writeCpp 0 "}"
     | _ ->
         writeCpp 0 "// push/pop for generic %s" (typeToCppString context gType)
     
@@ -1467,6 +1504,8 @@ let generateImplementationH (context: RenderContext) (writer: IFormatWriter) (cu
     write 0 "#include <map>"
     write 0 "#include <tuple>"
     write 0 "#include <set>"
+    write 0 "#include <optional>"
+    write 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "result"]))
     
     // imports
     if not m.Imports.IsEmpty then

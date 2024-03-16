@@ -20,10 +20,6 @@ type Token =
     | GroupToken
     | OpaqueToken
     | StructToken
-    | ArrayToken
-    | MapToken
-    | TupleToken
-    | SetToken
     | ExceptionToken
     | InterfaceToken
     | EnumToken | FlagsToken
@@ -36,6 +32,13 @@ type Token =
     | ThrowsToken
     | StaticToken
     | ExtendsToken
+    // generics/collections:
+    | ArrayToken
+    | MapToken
+    | TupleToken
+    | SetToken
+    | OptionToken
+    | ResultToken
     // symbols:
     | LeftBrace
     | RightBrace
@@ -240,6 +243,8 @@ let nextToken (loc: Location) (input: char[]) =
             | "Tuple" -> TupleToken
             | "Set" -> SetToken
             | "Buffer" -> BufferToken
+            | "Option" -> OptionToken
+            | "Result" -> ResultToken
             //
             | "void" -> UnitToken
             | "unit" -> UnitToken

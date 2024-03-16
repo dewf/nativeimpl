@@ -5,11 +5,6 @@
 namespace First
 {
     ni_InterfaceMethodRef iTestInterface_wootMethod;
-
-    // a map to allow users to use bare interfaces, instead of having
-    // to inherit from something with all the Pushable implementation
-    // a bit indirect but makes development that much more obvious and direct,
-    // which is the point of NativeImpl!
     static std::map<ITestInterface*, std::weak_ptr<Pushable>> __iTestInterfaceToPushable;
 
     class ServerITestInterfaceWrapper : public ServerObject {
@@ -20,7 +15,6 @@ namespace First
             this->rawInterface = raw;
         }
         void releaseExtra() override {
-            // remove entry from map, remote side released us
             __iTestInterfaceToPushable.erase(rawInterface.get());
         }
     public:
@@ -30,12 +24,11 @@ namespace First
             return ret;
         }
     };
-
     class ClientITestInterface : public ClientObject, public ITestInterface {
     public:
         ClientITestInterface(int id) : ClientObject(id) {}
         ~ClientITestInterface() override {
-             __iTestInterfaceToPushable.erase(this);
+            __iTestInterfaceToPushable.erase(this);
         }
         void wootMethod(int32_t x) override {
             ni_pushInt32(x);
@@ -47,13 +40,10 @@ namespace First
         if (inst != nullptr) {
             auto found = __iTestInterfaceToPushable.find(inst.get());
             if (found != __iTestInterfaceToPushable.end()) {
-                // if it's already in the table (client thing, or as-yet-unknown server thing),
-                // retrieve and push directly
                 auto pushable = found->second.lock();
                 pushable->push(pushable, isReturn);
             }
             else {
-                // if it's not in the table, it's a new server thing, needs to be wrapped and pushed
                 auto pushable = ServerITestInterfaceWrapper::wrapAndRegister(inst);
                 pushable->push(pushable, isReturn);
             }
@@ -69,12 +59,10 @@ namespace First
         if (id != 0) {
             if (isClientID) {
                 auto ret = std::shared_ptr<ITestInterface>(new ClientITestInterface(id));
-                // store incoming client things so we can look them up by interface
                 __iTestInterfaceToPushable[ret.get()] = std::dynamic_pointer_cast<Pushable>(ret);
                 return ret;
             }
             else {
-                // getting back something we previously sent over, so we know a wrapper already exists
                 auto wrapper = std::static_pointer_cast<ServerITestInterfaceWrapper>(ServerObject::getByID(id));
                 return wrapper->rawInterface;
             }

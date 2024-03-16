@@ -416,10 +416,41 @@ let renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (wri
 let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (outerType: NIType) (name: string) (methods: NamedFunction list) = // (typeContainsRefs: NIType -> bool) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
+    
+    // interface-to-pushable map
+    // this allows users to use bare interfaces, instead of having to inherit from something that implements Pushable
+    // a bit indirect but makes development that much more obvious and direct,
+    // which is the point of NativeImpl!
+    writeCpp 0 "static std::map<%s*, std::weak_ptr<Pushable>> __%sToPushable;" name (lowerFirst name)
+    
+    // server interface wrapper (holds a server interface ptr and implements Pushable)
+    blankCpp()
+    writeCpp 0 "class Server%sWrapper : public ServerObject {" name
+    writeCpp 0 "public:"
+    writeCpp 1 "std::shared_ptr<%s> rawInterface;" name
+    writeCpp 0 "private:"
+    writeCpp 1 "Server%sWrapper(std::shared_ptr<%s> raw) {" name name
+    writeCpp 2 "this->rawInterface = raw;"
+    writeCpp 1 "}"
+    writeCpp 1 "void releaseExtra() override {"
+    // remove entry from map, remote side released us
+    writeCpp 2 "__%sToPushable.erase(rawInterface.get());" (lowerFirst name)
+    writeCpp 1 "}"
+    writeCpp 0 "public:"
+    writeCpp 1 "static std::shared_ptr<Server%sWrapper> wrapAndRegister(std::shared_ptr<%s> raw) {" name name
+    writeCpp 2 "auto ret = std::shared_ptr<Server%sWrapper>(new Server%sWrapper(raw));" name name
+    writeCpp 2 "__%sToPushable[raw.get()] = ret;" (lowerFirst name)
+    writeCpp 2 "return ret;"
+    writeCpp 1 "}"
+    writeCpp 0 "};"
+    
     // client wrapper
     writeCpp 0 "class Client%s : public ClientObject, public %s {" name name
     writeCpp 0 "public:"
     writeCpp 1 "Client%s(int id) : ClientObject(id) {}" name
+    writeCpp 1 "~Client%s() override {" name
+    writeCpp 2 "__%sToPushable.erase(this);" (lowerFirst name)
+    writeCpp 1 "}"
     // methods
     for namedFunc in methods do
         writeCpp 1 "%s %s(%s) override {" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args)
@@ -441,19 +472,31 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
         writeCpp 1 "}"
     // end
     writeCpp 0 "};"
+    
     // PUSH ===================================
     blankH()
     writeH 0 "void %s__push(%s inst, bool isReturn);" (typeToName context outerType) (typeToCppString context outerType)
     blankCpp()
     writeCpp 0 "void %s__push(%s inst, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
     writeCpp 1 "if (inst != nullptr) {"
-    writeCpp 2 "auto pushable = std::dynamic_pointer_cast<Pushable>(inst);"
-    writeCpp 2 "pushable->push(pushable, isReturn);"
+    writeCpp 2 "auto found = __%sToPushable.find(inst.get());" (lowerFirst name)
+    writeCpp 2 "if (found != __%sToPushable.end()) {" (lowerFirst name)
+    // if it's already in the table (client thing, or as-yet-unknown server thing),
+    // retrieve and push directly
+    writeCpp 3 "auto pushable = found->second.lock();"
+    writeCpp 3 "pushable->push(pushable, isReturn);"
+    writeCpp 2 "}"
+    writeCpp 2 "else {"
+    // if it's not in the table, it's a new server thing, needs to be wrapped and pushed
+    writeCpp 3 "auto pushable = Server%sWrapper::wrapAndRegister(inst);" name
+    writeCpp 3 "pushable->push(pushable, isReturn);"
+    writeCpp 2 "}"
     writeCpp 1 "}"
     writeCpp 1 "else {"
     writeCpp 2 "ni_pushNull();"
     writeCpp 1 "}"
     writeCpp 0 "}"
+    
     // POP ====================================
     writeH 0 "%s %s__pop();" (typeToCppString context outerType) (typeToName context outerType)
     blankCpp()
@@ -462,24 +505,30 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
     writeCpp 1 "auto id = ni_popInstance(&isClientID);"
     writeCpp 1 "if (id != 0) {"
     writeCpp 2 "if (isClientID) {"
-    writeCpp 3 "return %s(new Client%s(id));" (typeToCppString context outerType) (typeToName context outerType)
+    writeCpp 3 "auto ret = std::shared_ptr<%s>(new Client%s(id));" name name
+    // store incoming client things so we can look them up by interface
+    writeCpp 3 "__%sToPushable[ret.get()] = std::dynamic_pointer_cast<Pushable>(ret);" (lowerFirst name)
+    writeCpp 3 "return ret;"
     writeCpp 2 "}"
     writeCpp 2 "else {"
-    writeCpp 3 "return Server%s::getByID(id);" (typeToName context outerType)
+    // getting back something we previously sent over, so we know a wrapper already exists
+    writeCpp 3 "auto wrapper = std::static_pointer_cast<Server%sWrapper>(ServerObject::getByID(id));" name
+    writeCpp 3 "return wrapper->rawInterface;"
     writeCpp 2 "}"
     writeCpp 1 "}"
     writeCpp 1 "else {"
     writeCpp 2 "return %s();" (typeToCppString context outerType)
     writeCpp 1 "}"
     writeCpp 0 "}"
+    
     // SERVER STUFF ============================
     for nf in methods do
-        // writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) nf.Name
         blankH()
         writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
         blankCpp()
         writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
-        writeCpp 1 "auto inst = Server%s::getByID(serverID);" name
+        writeCpp 1 "auto wrapper = std::static_pointer_cast<Server%sWrapper>(ServerObject::getByID(serverID));" name
+        writeCpp 1 "auto inst = wrapper->rawInterface;"
         for argName, argType in nf.Args do
             popValue context writerCpp 1 argType (Variable argName)
         let invocation =
@@ -487,7 +536,7 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
         if nf.Throws.IsEmpty then
             pushValue context writerCpp 1 nf.Returns invocation (Direct true)
         else
-            writeCpp 1 "try {"
+            writeCpp 1 "try {" 
             pushValue context writerCpp 2 nf.Returns invocation (Direct true)
             writeCpp 1 "}"
             for exc in nf.Throws do
@@ -1226,19 +1275,6 @@ let renderHeaderInterface (context: RenderContext) (writer: IFormatWriter) (name
                     |> String.concat ", "
                 sprintf " // throws %s" joined
         write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
-    write 0 "};"
-    // server wrapper template
-    let outerType =
-        Resolved (ThisModule (SymbolName [name]), InterfaceType)
-    blank()
-    write 0 "// inherit from this to create server instances of %s" name
-    write 0 "class Server%s : public %s, public ServerObject {" (typeToName context outerType) name
-    write 0 "public:"
-    write 1 "virtual ~Server%s() {}" (typeToName context outerType)
-    write 1 "static std::shared_ptr<Server%s> getByID(int id) {" (typeToName context outerType)
-    write 2 "auto obj = ServerObject::getByID(id);"
-    write 2 "return std::static_pointer_cast<Server%s>(obj);" (typeToName context outerType)
-    write 1 "}"
     write 0 "};"
 
 let renderHeaderSumType (context: RenderContext) (writer: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =

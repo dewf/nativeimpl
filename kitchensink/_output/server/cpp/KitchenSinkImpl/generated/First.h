@@ -16,7 +16,6 @@ namespace First
     public:
         virtual void wootMethod(int32_t x) = 0;
     };
-
     void operateOnInterface(std::shared_ptr<ITestInterface> thing);
     std::shared_ptr<ITestInterface> serverCreate();
 }

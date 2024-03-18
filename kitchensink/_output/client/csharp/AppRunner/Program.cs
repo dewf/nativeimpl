@@ -8,7 +8,7 @@ internal static class Program
     {
         Library.Init();
         
-        First.DoSomething("excellent string!", 1001);
+        First.DoSomething(Maybe.None, 1234);
         
         Library.DumpTables();
         Library.Shutdown();

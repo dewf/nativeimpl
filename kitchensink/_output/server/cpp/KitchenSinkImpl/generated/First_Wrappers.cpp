@@ -4,15 +4,8 @@
 
 namespace First
 {
-    result::Result<int, std::string> __Result_int_string__pop() {
-        auto isSuccess = ni_popBool();
-        if (isSuccess) {
-            return result::Ok(ni_popInt32());
-        }
-        return result::Err(popStringInternal());
-    }
 
-    void __Result_int_string__push(result::Result<int, std::string> value) {
+    void __Int32_String_Result__push(result::Result<int32_t, std::string> value, bool isReturn) {
         if (value.is_ok()) {
             ni_pushInt32(value.unwrap());
             ni_pushBool(true);
@@ -23,25 +16,38 @@ namespace First
         }
     }
 
-    std::optional<std::string> __Option_string_pop() {
-        auto hasValue = ni_popBool();
+    result::Result<int32_t, std::string> __Int32_String_Result__pop() {
+        auto isSuccess = ni_popBool();
+        if (isSuccess) {
+            auto successValue = ni_popInt32();
+            return result::Ok(successValue);
+        }
+        auto errValue = popStringInternal();
+        return result::Err(errValue);
+    }
+
+    void __String_Option__push(std::optional<std::string> value, bool isReturn) {
+        if (value.has_value()) {
+            pushStringInternal(value.value());
+            ni_pushBool(true);
+        }
+        else {
+            ni_pushBool(false);
+        }
+    }
+
+    std::optional<std::string> __String_Option__pop() {
         std::optional<std::string> maybeValue;
+        auto hasValue = ni_popBool();
         if (hasValue) {
-            maybeValue = popStringInternal();
+            maybeValue =  popStringInternal();
         }
         return maybeValue;
     }
 
-    void __Option_string_push(std::optional<std::string> value) {
-        if (value.has_value()) {
-            pushStringInternal(value.value());
-        }
-        ni_pushBool(value.has_value());
-    }
-
     void doSomething__wrapper() {
-        auto maybeString = __Option_string_pop();
-        auto result = __Result_int_string__pop();
+        auto maybeString = __String_Option__pop();
+        auto result = __Int32_String_Result__pop();
         doSomething(maybeString, result);
     }
 

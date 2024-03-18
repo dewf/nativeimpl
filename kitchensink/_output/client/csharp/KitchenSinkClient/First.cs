@@ -13,9 +13,8 @@ namespace Org.Prefixed.KitchenSink
     public static class First
     {
         private static ModuleHandle _module;
-        internal static ModuleMethodHandle _doSomething;
 
-        private static void __Result_int_string__Push(Result<int, string> result)
+        private static void __Int_String_Result__Push(Result<int,string> result, bool isReturn)
         {
             if (result.IsSuccess)
             {
@@ -28,8 +27,7 @@ namespace Org.Prefixed.KitchenSink
                 NativeImplClient.PushBool(false);
             }
         }
-
-        private static Result<int, string> __Result_int_string__Pop()
+        private static Result<int,string> __Int_String_Result__Pop()
         {
             var success = NativeImplClient.PopBool();
             if (success)
@@ -39,15 +37,20 @@ namespace Org.Prefixed.KitchenSink
             return NativeImplClient.PopString();
         }
 
-        private static void __Option_string__Push(Maybe<string> maybeString)
+        private static void __String_Option__Push(Maybe<string> maybeValue, bool isReturn)
         {
-            if (maybeString.TryGetValue(out var value))
+            if (maybeValue.TryGetValue(out var value))
             {
                 NativeImplClient.PushString(value);
+                NativeImplClient.PushBool(true);
             }
-            NativeImplClient.PushBool(maybeString.HasValue);
+            else
+            {
+                NativeImplClient.PushBool(false);
+            }
         }
-        private static Maybe<string> __Option_string__Pop()
+
+        private static Maybe<string> __String_Option__Pop()
         {
             var hasValue = NativeImplClient.PopBool();
             if (hasValue)
@@ -56,11 +59,12 @@ namespace Org.Prefixed.KitchenSink
             }
             return Maybe<string>.None;
         }
+        internal static ModuleMethodHandle _doSomething;
 
         public static void DoSomething(Maybe<string> maybeString, Result<int,string> result)
         {
-            __Result_int_string__Push(result);
-            __Option_string__Push(maybeString);
+            __Int_String_Result__Push(result, false);
+            __String_Option__Push(maybeString, false);
             NativeImplClient.InvokeModuleMethod(_doSomething);
         }
 

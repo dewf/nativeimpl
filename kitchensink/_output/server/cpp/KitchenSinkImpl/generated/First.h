@@ -13,5 +13,5 @@
 
 namespace First
 {
-    void doSomething(std::optional<std::string> maybeString, result::Result<int,std::string> result);
+    void doSomething(std::optional<std::string> maybeString, result::Result<int32_t, std::string> result);
 }

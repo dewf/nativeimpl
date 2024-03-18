@@ -56,6 +56,10 @@ let typeToCsString (context: RenderContext) (outerType: NIType) =
             sprintf "(%s)" joined
         | MapType (keyType, valueType) ->
             sprintf "Dictionary<%s,%s>" (recInner keyType) (recInner valueType)
+        | OptionType elemType ->
+            sprintf "Maybe<%s>" (recInner elemType)
+        | ResultType (succType, errType) ->
+            sprintf "Result<%s,%s>" (recInner succType) (recInner errType)
         | x ->
             sprintf "(typeToCsString: not yet supported: %A)" x
     // go
@@ -102,6 +106,10 @@ let typeToName (context: RenderContext) (outerType: NIType) =
             sprintf "%s_Set" (recInner true niType)
         | MapType (keyType, valueType) ->
             sprintf "%s_%s_Map" (recInner true keyType) (recInner true valueType)
+        | OptionType elemType ->
+            sprintf "%s_Option" (recInner true elemType)
+        | ResultType (succType, errType) ->
+            sprintf "%s_%s_Result" (recInner true succType) (recInner true errType)
         | BufferType elemType ->
             sprintf "Native_%s_Buffer" (recInner true elemType)
         | x -> sprintf "(typeToName: not yet supported: %A)" x
@@ -179,6 +187,10 @@ let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type
         write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
     | SetType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
+    | OptionType _ ->
+        write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
+    | ResultType _ ->
+        write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
     | BufferType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
     | _ ->
@@ -252,6 +264,10 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
     | BufferType _ ->
         write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | MapType _ ->
+        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+    | OptionType _ ->
+        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+    | ResultType _ ->
         write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | _ ->
         write level "// pushValue %A not yet supported" type_
@@ -574,6 +590,56 @@ let renderGeneric (context: RenderContext) (writer: IFormatWriter) (gType: NITyp
         write 4 "ret[keys[i]] = values[i];"
         write 3 "}"
         write 3 "return ret;"
+        write 2 "}"
+    | OptionType elemType ->
+        // push
+        write 2 "private static void __%s__Push(%s maybeValue, bool isReturn)" (typeToName context gType) (typeToCsString context gType)
+        write 2 "{"
+        write 3 "if (maybeValue.TryGetValue(out var value))"
+        write 3 "{"
+        pushValue context writer 4 elemType "value" (Indirect "isReturn")
+        pushValue context writer 4 (Primitive Bool) "true" NotApplicable
+        write 3 "}"
+        write 3 "else"
+        write 3 "{"
+        pushValue context writer 4 (Primitive Bool) "false" NotApplicable
+        write 3 "}"
+        write 2 "}"
+        // pop
+        blank()
+        write 2 "private static %s __%s__Pop()" (typeToCsString context gType) (typeToName context gType)
+        write 2 "{"
+        popValue context writer 3 (Primitive Bool) (NewVariable "hasValue")
+        write 3 "if (hasValue)"
+        write 3 "{"
+        popValue context writer 4 elemType Return
+        write 3 "}"
+        write 3 "return %s.None;" (typeToCsString context gType)
+        write 2 "}"
+    | ResultType (succType, errType) ->
+        // push
+        write 2 "private static void __%s__Push(%s result, bool isReturn)" (typeToName context gType) (typeToCsString context gType)
+        write 2 "{"
+        write 3 "if (result.IsSuccess)"
+        write 3 "{"
+        pushValue context writer 4 succType "result.Value" (Indirect "isReturn")
+        pushValue context writer 4 (Primitive Bool) "true" NotApplicable
+        write 3 "}"
+        write 3 "else"
+        write 3 "{"
+        pushValue context writer 4 errType "result.Error" (Indirect "isReturn")
+        pushValue context writer 4 (Primitive Bool) "false" NotApplicable
+        write 3 "}"
+        write 2 "}"
+        // pop
+        write 2 "private static %s __%s__Pop()" (typeToCsString context gType) (typeToName context gType)
+        write 2 "{"
+        popValue context writer 3 (Primitive Bool) (NewVariable "success")
+        write 3 "if (success)"
+        write 3 "{"
+        popValue context writer 4 succType Return
+        write 3 "}"
+        popValue context writer 3 errType Return
         write 2 "}"
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
@@ -1264,6 +1330,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "using System.Collections.Generic;"
     write 0 "using System.Linq;"
     write 0 "using System.Runtime.InteropServices;"
+    write 0 "using CSharpFunctionalExtensions;"
     write 0 "using %s.Support;" baseNamespace
     write 0 "using ModuleHandle = %s.Support.ModuleHandle;" baseNamespace // sigh
     
@@ -1407,6 +1474,10 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
         |> Option.defaultValue outParams.LibraryName
     write 2 "<RootNamespace>%s</RootNamespace>" rootNamespace
     write 1 "</PropertyGroup>"
+    blank ()
+    write 1 "<ItemGroup>"
+    write 2 "<PackageReference Include=\"CSharpFunctionalExtensions\" Version=\"2.41.0\" />"
+    write 1 "</ItemGroup>"
     blank ()
     write 0 "</Project>"
 

@@ -269,6 +269,7 @@ let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type
             | TupleType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
             | SetType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
             | MapType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
+            | OptionType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
             | _ -> sprintf "// (pop not yet supported: %A)" type_
         write level "%s %s();" contextPrefix popFunc
     | MapType _ ->
@@ -348,6 +349,8 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
             write level "__%sArray__push(%s, %s);" (typeToName context niType) content (isReturnString())
         | SetType _ ->
             write level "__%sArray__push(%s, %s);" (typeToName context niType) content (isReturnString())
+        | OptionType _ ->
+            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
         | Resolved _ ->
             write level "__%s__push(%s, %s);" (typeToName context (ArrayType niType)) content (isReturnString())
         | _ ->
@@ -603,7 +606,8 @@ let renderWrapperSumType (context: RenderContext) (writerH: IFormatWriter) (writ
 
 type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType) =
     // TODO! this doesn't yet support .H file writing
-    // should be as simple as adding another writer parameter to the ctor ...
+    // but then do we ever really need that? aren't all generics contained within the wrapper .cpp file?
+    // and rendered in strict dependency order? would the .H be required to avoid some kind of circularity?
     let write, blank = writer.Write, writer.Blank
     // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
     let arrayDefault () =
@@ -773,6 +777,38 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
             arrayDefault()
         member this.SetType () =
             arrayDefault()
+        member this.OptionType elemType =
+            // push ==========
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
+            write 1 "%s hasValueArray;" (typeToCppString context (ArrayType (Primitive Bool)))
+            write 1 "hasValueArray.reserve(values.size());"
+            write 1 "%s valueArray;" (typeToCppString context (ArrayType elemType))
+            write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
+            write 2 "if (i->has_value()) {"
+            write 3 "valueArray.push_back(i->value());"
+            write 3 "hasValueArray.push_back(true);"
+            write 2 "}"
+            write 2 "else {"
+            write 3 "hasValueArray.push_back(false);"
+            write 2 "}"
+            write 1 "}"
+            pushValue context writer 1 (ArrayType elemType) "valueArray" (Indirect "isReturn")
+            pushValue context writer 1 (ArrayType (Primitive Bool)) "hasValueArray" NotApplicable
+            write 0 "}"
+            // pop ===========
+            blank()
+            write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+            popValue context writer 1 (ArrayType (Primitive Bool)) (Variable "hasValueArray")
+            popValue context writer 1 (ArrayType elemType) (Variable "valueArray")
+            write 1 "%s ret(hasValueArray.size());" (typeToCppString context outerType) // allocate w/ default values = None
+            write 1 "auto valuePtr = valueArray.data();"
+            write 1 "for (auto i = 0; i < hasValueArray.size(); i++) {"
+            write 2 "if (hasValueArray[i]) {"
+            write 3 "ret[i] = *valuePtr++;"
+            write 2 "}"
+            write 1 "}"
+            write 1 "return ret;"
+            write 0 "}"
         member this.SumType () =
             arrayDefault()
         member this.Primitive (_: NIPrimitive) =

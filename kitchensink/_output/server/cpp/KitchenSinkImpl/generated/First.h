@@ -13,5 +13,6 @@
 
 namespace First
 {
-    void doSomething(std::optional<std::string> maybeString, result::Result<int32_t, std::string> result);
+    void neatoMethod(std::vector<std::optional<int32_t>> maybeArray);
+    std::vector<std::optional<int32_t>> returnsArray();
 }

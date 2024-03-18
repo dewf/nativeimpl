@@ -640,6 +640,7 @@ type IArrayLikeRenderer =
     abstract MapType: unit -> unit
     abstract DelegateType: unit -> unit
     abstract SetType: unit -> unit
+    abstract OptionType: NIType -> unit
     abstract SumType: unit -> unit
     abstract Primitive: NIPrimitive -> unit
     abstract Opaque: unit -> unit
@@ -685,6 +686,8 @@ let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArra
         renderer.Primitive prim
     | SetType _ ->
         renderer.SetType ()
+    | OptionType elemType ->
+        renderer.OptionType elemType
     | _ ->
         renderer.Other elemType
 

@@ -180,6 +180,7 @@ let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type
         | SetType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
         | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
         | TupleType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
+        | OptionType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
         | _ -> write level "// popValue not yet supported: array of %A" niType
     | MapType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
@@ -256,6 +257,7 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
         | SetType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
         | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
         | TupleType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+        | OptionType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
     | TupleType _ ->
         write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
@@ -464,6 +466,34 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
             renderDefault()
         member this.SetType () =
             renderDefault()
+        member this.OptionType elemType =
+            // push ====
+            write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+            write 2 "{"
+            write 3 "var valueArray = values.Where(v => v.HasValue).Select(v => v.Value).ToArray();"
+            write 3 "var hasValueArray = values.Select(v => v.HasValue).ToArray();"
+            pushValue context writer 3 (ArrayType elemType) "valueArray" (Indirect "isReturn")
+            pushValue context writer 3 (ArrayType (Primitive Bool)) "hasValueArray" NotApplicable
+            write 2 "}"
+            // pop =====
+            blank()
+            write 2 "private static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+            write 2 "{"
+            popValue context writer 3 (ArrayType (Primitive Bool)) (NewVariable "hasValueArray")
+            popValue context writer 3 (ArrayType elemType) (NewVariable "valueArray")
+            write 3 "var valuePtr = 0;"
+            // concise version, but haven't done any testing for what kind of code the C# compiler generates:
+            write 3 "return hasValueArray.Select(hasValue => hasValue ? valueArray[valuePtr++] : %s.None).ToArray();" (typeToCsString context (OptionType elemType))
+            // write 3 "var retArray = new %s[hasValueArray.Length];" (typeToCsString context (OptionType elemType))
+            // write 3 "for (var i = 0; i < hasValueArray.Length; i++)"
+            // write 3 "{"
+            // write 4 "if (hasValueArray[i])"
+            // write 4 "{"
+            // write 5"retArray[i] = valueArray[valuePtr++];"
+            // write 4 "}"
+            // write 3 "}"
+            // write 3 "return retArray;"
+            write 2 "}"
         member this.SumType () =
             renderDefault()
         member this.Primitive (prim: NIPrimitive) =

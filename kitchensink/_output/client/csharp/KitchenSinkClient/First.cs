@@ -14,34 +14,11 @@ namespace Org.Prefixed.KitchenSink
     {
         private static ModuleHandle _module;
 
-        private static void __Int_String_Result__Push(Result<int,string> result, bool isReturn)
-        {
-            if (result.IsSuccess)
-            {
-                NativeImplClient.PushInt32(result.Value);
-                NativeImplClient.PushBool(true);
-            }
-            else
-            {
-                NativeImplClient.PushString(result.Error);
-                NativeImplClient.PushBool(false);
-            }
-        }
-        private static Result<int,string> __Int_String_Result__Pop()
-        {
-            var success = NativeImplClient.PopBool();
-            if (success)
-            {
-                return NativeImplClient.PopInt32();
-            }
-            return NativeImplClient.PopString();
-        }
-
-        private static void __String_Option__Push(Maybe<string> maybeValue, bool isReturn)
+        private static void __Int_Option__Push(Maybe<int> maybeValue, bool isReturn)
         {
             if (maybeValue.TryGetValue(out var value))
             {
-                NativeImplClient.PushString(value);
+                NativeImplClient.PushInt32(value);
                 NativeImplClient.PushBool(true);
             }
             else
@@ -50,29 +27,52 @@ namespace Org.Prefixed.KitchenSink
             }
         }
 
-        private static Maybe<string> __String_Option__Pop()
+        private static Maybe<int> __Int_Option__Pop()
         {
             var hasValue = NativeImplClient.PopBool();
             if (hasValue)
             {
-                return NativeImplClient.PopString();
+                return NativeImplClient.PopInt32();
             }
-            return Maybe<string>.None;
+            return Maybe<int>.None;
         }
-        internal static ModuleMethodHandle _doSomething;
 
-        public static void DoSomething(Maybe<string> maybeString, Result<int,string> result)
+        private static void __Int_Option_Array__Push(Maybe<int>[] values, bool isReturn)
         {
-            __Int_String_Result__Push(result, false);
-            __String_Option__Push(maybeString, false);
-            NativeImplClient.InvokeModuleMethod(_doSomething);
+            var valueArray = values.Where(v => v.HasValue).Select(v => v.Value).ToArray();
+            var hasValueArray = values.Select(v => v.HasValue).ToArray();
+            NativeImplClient.PushInt32Array(valueArray);
+            NativeImplClient.PushBoolArray(hasValueArray);
+        }
+
+        private static Maybe<int>[] __Int_Option_Array__Pop()
+        {
+            var hasValueArray = NativeImplClient.PopBoolArray();
+            var valueArray = NativeImplClient.PopInt32Array();
+            var valuePtr = 0;
+            return hasValueArray.Select(hasValue => hasValue ? valueArray[valuePtr++] : Maybe<int>.None).ToArray();
+        }
+        internal static ModuleMethodHandle _neatoMethod;
+        internal static ModuleMethodHandle _returnsArray;
+
+        public static void NeatoMethod(Maybe<int>[] maybeArray)
+        {
+            __Int_Option_Array__Push(maybeArray, false);
+            NativeImplClient.InvokeModuleMethod(_neatoMethod);
+        }
+
+        public static Maybe<int>[] ReturnsArray()
+        {
+            NativeImplClient.InvokeModuleMethod(_returnsArray);
+            return __Int_Option_Array__Pop();
         }
 
         internal static void __Init()
         {
             _module = NativeImplClient.GetModule("First");
             // assign module handles
-            _doSomething = NativeImplClient.GetModuleMethod(_module, "doSomething");
+            _neatoMethod = NativeImplClient.GetModuleMethod(_module, "neatoMethod");
+            _returnsArray = NativeImplClient.GetModuleMethod(_module, "returnsArray");
 
             // no static init
         }

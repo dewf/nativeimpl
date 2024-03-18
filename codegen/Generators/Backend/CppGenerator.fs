@@ -1092,9 +1092,37 @@ let renderWrapperGeneric (context: RenderContext) (writerH: IFormatWriter) (writ
         let renderer =
             ArrayOrSetRenderer(context, writerCpp, gType, niType)
         renderArrayLike context.ModuleContext niType renderer
+    | ResultType (succType, errType) ->
+        // PUSH =====
+        blankH()
+        blankCpp()
+        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
+        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
+        writeCpp 1 "if (value.is_ok()) {"
+        pushValue context writerCpp 2 succType "value.unwrap()" (Indirect "isReturn")
+        pushValue context writerCpp 2 (Primitive Bool) "true" NotApplicable
+        writeCpp 1 "}"
+        writeCpp 1 "else {"
+        pushValue context writerCpp 2 errType "value.unwrap_err()" (Indirect "isReturn")
+        pushValue context writerCpp 2 (Primitive Bool) "false" NotApplicable
+        writeCpp 1 "}"
+        writeCpp 0 "}"
+        // PUSH =====
+        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        blankCpp()
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
+        popValue context writerCpp 1 (Primitive Bool) (Variable "isSuccess")
+        writeCpp 1 "if (isSuccess) {"
+        popValue context writerCpp 2 succType (Variable "successValue")
+        writeCpp 2 "return result::Ok(successValue);"
+        writeCpp 1 "}"
+        popValue context writerCpp 1 errType (Variable "errValue")
+        writeCpp 1 "return result::Err(errValue);"
+        writeCpp 0 "}"
     | OptionType elem ->
         // PUSH =====
         blankH()
+        blankCpp()
         writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
         writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
         writeCpp 1 "if (value.has_value()) {"

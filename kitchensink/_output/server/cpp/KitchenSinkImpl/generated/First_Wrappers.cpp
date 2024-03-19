@@ -4,6 +4,7 @@
 
 namespace First
 {
+
     void __Int32_String_Result__push(result::Result<int32_t, std::string> value, bool isReturn) {
         if (value.is_ok()) {
             ni_pushInt32(value.unwrap());
@@ -24,8 +25,7 @@ namespace First
         auto errValue = popStringInternal();
         return result::Err(errValue);
     }
-
-    void __int32_string_Result_Array__push(std::vector<result::Result<int32_t, std::string>> values, bool isReturn) {
+    void __Int32_String_Result_Array__push(std::vector<result::Result<int32_t, std::string>> values, bool isReturn) {
         std::vector<bool> isSuccessArray;
         isSuccessArray.reserve(values.size());
         std::vector<int32_t> successValuesArray;
@@ -45,7 +45,7 @@ namespace First
         pushBoolArrayInternal(isSuccessArray);
     }
 
-    std::vector<result::Result<int32_t, std::string>> __int32_string_Result_Array__pop() {
+    std::vector<result::Result<int32_t, std::string>> __Int32_String_Result_Array__pop() {
         auto isSuccessArray = popBoolArrayInternal();
         auto successValuesArray = popInt32ArrayInternal();
         auto errorValuesArray = popStringArrayInternal();
@@ -65,12 +65,12 @@ namespace First
     }
 
     void method1__wrapper() {
-        auto resultArray = __int32_string_Result_Array__pop();
+        auto resultArray = __Int32_String_Result_Array__pop();
         method1(resultArray);
     }
 
     void method2__wrapper() {
-        __int32_string_Result_Array__push(method2(), true);
+        __Int32_String_Result_Array__push(method2(), true);
     }
 
     int __register() {

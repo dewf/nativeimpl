@@ -37,7 +37,7 @@ namespace Org.Prefixed.KitchenSink
             return NativeImplClient.PopString();
         }
 
-        private static void __Int_String_Result_Array__Push(Result<int, string>[] values, bool isReturn)
+        private static void __Int_String_Result_Array__Push(Result<int,string>[] values, bool isReturn)
         {
             var isSuccessArray = values.Select(v => v.IsSuccess).ToArray();
             var successValues = values.Where(v => v.IsSuccess).Select(v => v.Value).ToArray();
@@ -46,8 +46,7 @@ namespace Org.Prefixed.KitchenSink
             NativeImplClient.PushInt32Array(successValues);
             NativeImplClient.PushBoolArray(isSuccessArray);
         }
-
-        private static Result<int, string>[] __Int_String_Result_Array__Pop()
+        private static Result<int,string>[] __Int_String_Result_Array__Pop()
         {
             var isSuccessArray = NativeImplClient.PopBoolArray();
             var successValues = NativeImplClient.PopInt32Array();
@@ -66,7 +65,6 @@ namespace Org.Prefixed.KitchenSink
                 }
             }).ToArray();
         }
-
         internal static ModuleMethodHandle _method1;
         internal static ModuleMethodHandle _method2;
 

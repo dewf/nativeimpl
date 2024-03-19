@@ -270,6 +270,7 @@ let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type
             | SetType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
             | MapType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
             | OptionType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
+            | ResultType _ -> sprintf "__%s__pop" (typeToName context (ArrayType niType))
             | _ -> sprintf "// (pop not yet supported: %A)" type_
         write level "%s %s();" contextPrefix popFunc
     | MapType _ ->
@@ -350,6 +351,8 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
         | SetType _ ->
             write level "__%sArray__push(%s, %s);" (typeToName context niType) content (isReturnString())
         | OptionType _ ->
+            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
+        | ResultType _ ->
             write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
         | Resolved _ ->
             write level "__%s__push(%s, %s);" (typeToName context (ArrayType niType)) content (isReturnString())
@@ -805,6 +808,47 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
             write 1 "for (auto i = 0; i < hasValueArray.size(); i++) {"
             write 2 "if (hasValueArray[i]) {"
             write 3 "ret[i] = *valuePtr++;"
+            write 2 "}"
+            write 1 "}"
+            write 1 "return ret;"
+            write 0 "}"
+        member this.ResultType succType errType =
+            // push =========
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
+            write 1 "%s isSuccessArray;" (typeToCppString context (ArrayType (Primitive Bool)))
+            write 1 "isSuccessArray.reserve(values.size());"
+            write 1 "%s successValuesArray;" (typeToCppString context (ArrayType succType))
+            write 1 "%s errorValuesArray;" (typeToCppString context (ArrayType errType))
+            write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
+            write 2 "if (i->is_ok()) {"
+            write 3 "successValuesArray.push_back(i->unwrap());"
+            write 3 "isSuccessArray.push_back(true);"
+            write 2 "}"
+            write 2 "else {"
+            write 3 "errorValuesArray.push_back(i->unwrap_err());"
+            write 3 "isSuccessArray.push_back(false);"
+            write 2 "}"
+            write 1 "}"
+            pushValue context writer 1 (ArrayType errType) "errorValuesArray" (Indirect "isReturn")
+            pushValue context writer 1 (ArrayType succType) "successValuesArray" (Indirect "isReturn")
+            pushValue context writer 1 (ArrayType (Primitive Bool)) "isSuccessArray" NotApplicable
+            write 0 "}"
+            // pop ==========
+            blank()
+            write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+            popValue context writer 1 (ArrayType (Primitive Bool)) (Variable "isSuccessArray")
+            popValue context writer 1 (ArrayType succType) (Variable "successValuesArray")
+            popValue context writer 1 (ArrayType errType) (Variable "errorValuesArray")
+            write 1 "%s ret;" (typeToCppString context outerType)
+            write 1 "ret.reserve(isSuccessArray.size());"
+            write 1 "auto succPtr = successValuesArray.data();"
+            write 1 "auto errPtr = errorValuesArray.data();"
+            write 1 "for (auto i = isSuccessArray.begin(); i != isSuccessArray.end(); i++) {"
+            write 2 "if (*i) {"
+            write 3 "ret.push_back(result::Ok(*succPtr++));"
+            write 2 "}"
+            write 2 "else {"
+            write 3 "ret.push_back(result::Err(*errPtr++));"
             write 2 "}"
             write 1 "}"
             write 1 "return ret;"

@@ -181,6 +181,7 @@ let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type
         | MapType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
         | TupleType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
         | OptionType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
+        | ResultType _ -> write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
         | _ -> write level "// popValue not yet supported: array of %A" niType
     | MapType _ ->
         write level "%s __%s__Pop();" contextPrefix (typeToName context type_)
@@ -258,6 +259,7 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
         | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
         | TupleType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
         | OptionType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+        | ResultType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
     | TupleType _ ->
         write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
@@ -493,6 +495,37 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
             // write 4 "}"
             // write 3 "}"
             // write 3 "return retArray;"
+            write 2 "}"
+        member this.ResultType succType errType =
+            // push
+            write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+            write 2 "{"
+            write 3 "var isSuccessArray = values.Select(v => v.IsSuccess).ToArray();"
+            write 3 "var successValues = values.Where(v => v.IsSuccess).Select(v => v.Value).ToArray();"
+            write 3 "var errorValues = values.Where(v => v.IsFailure).Select(v => v.Error).ToArray();"
+            pushValue context writer 3 (ArrayType errType) "errorValues" (Indirect "isReturn")
+            pushValue context writer 3 (ArrayType succType) "successValues" (Indirect "isReturn")
+            pushValue context writer 3 (ArrayType (Primitive Bool)) "isSuccessArray" NotApplicable
+            write 2 "}"
+            // pop
+            write 2 "private static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+            write 2 "{"
+            popValue context writer 3 (ArrayType (Primitive Bool)) (NewVariable "isSuccessArray")
+            popValue context writer 3 (ArrayType succType) (NewVariable "successValues")
+            popValue context writer 3 (ArrayType errType) (NewVariable "errorValues")
+            write 3 "var successPtr = 0;"
+            write 3 "var errorPtr = 0;"
+            write 3 "return isSuccessArray.Select<bool, Result<int, string>>(isSuccess =>"
+            write 3 "{"
+            write 4 "if (isSuccess)"
+            write 4 "{"
+            write 5 "return successValues[successPtr++];"
+            write 4 "}"
+            write 4 "else"
+            write 4 "{"
+            write 5 "return errorValues[errorPtr++];"
+            write 4 "}"
+            write 3 "}).ToArray();"
             write 2 "}"
         member this.SumType () =
             renderDefault()

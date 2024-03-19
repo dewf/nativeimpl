@@ -1,4 +1,4 @@
 module First;
 
-void neatoMethod(Array<Option<int>> maybeArray);
-Array<Option<int>> returnsArray();
+void method1(Array<Result<int,string>> resultArray);
+Array<Result<int,string>> method2();

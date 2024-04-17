@@ -162,7 +162,15 @@ let allGenericTypes (context: ModuleContext) =
                         retTypes @ argTypes @ throwTypes)
                 match userType with
                 | OpaqueDef info ->
-                    namedFuncsHandler info.Methods
+                    let nestedTypes =
+                        match info.MaybeStaticDefs with
+                        | Some staticDefs ->
+                            processDefs staticDefs
+                        | None ->
+                            []
+                    let methodTypes =
+                        namedFuncsHandler info.Methods
+                    methodTypes @ nestedTypes
                 | StructDef namedFields ->
                     namedFields
                     |> List.collect (fun field -> typeAndSubTypes field.Type_)
@@ -217,19 +225,24 @@ let allGenericTypes (context: ModuleContext) =
 type RenderableEntry =
     | RenderableDirect of thing: UserOrGeneric
     | RenderableContainer of sub: RenderableTable
+    | RenderableHybrid of thing: UserOrGeneric * sub: RenderableTable
 and RenderableTable =
     Map<string, RenderableEntry>
     
 let rec userToRenderable (symbolTable: SymbolTable): RenderableTable =
     symbolTable
-    |> Map.map (fun k entry ->
+    |> Map.map (fun _ entry ->
         match entry with
         | Direct thing ->
             RenderableDirect (UserOrGeneric.User thing)
         | SubTable table ->
             let sub =
                 userToRenderable table
-            RenderableContainer sub)
+            RenderableContainer sub
+        | Hybrid (thing, table) ->
+            let sub =
+                userToRenderable table
+            RenderableHybrid (UserOrGeneric.User thing, sub))
     
 let userTypesAndGenerics (context: ModuleContext) =
     // create combined map
@@ -291,7 +304,7 @@ let containsRefs (context: ModuleContext) (thing: NIType) =
             false
         | TypeDef actual ->
             processType actual
-        | EnumDef info ->
+        | EnumDef _ ->
             false
         | SumTypeDef values ->
             values
@@ -315,12 +328,12 @@ let getNamespaceRelation (a: string list) (b: string list) =
         NSEqual
     else
         match List.removePrefix a b with
-        | Some bRemain ->
+        | Some _bRemain ->
             // b contained all of a and then some (well, technically bRemain could be empty if a == b, but the first branch above removes that possibility)
             NSDescendsFrom
         | None ->
             match List.removePrefix b a with
-            | Some aRemain ->
+            | Some _aRemain ->
                 // a contained all of b and then some (again, couldn't be equal because of initial 'if')
                 NSAncestorOf
             | None ->
@@ -341,7 +354,7 @@ let symbolToRenderableKey (SymbolName nameParts) (currentNamespace: string list)
     | NSDescendsFrom ->
         // symbol is in a namespace nested from current, truncate down and grab whatever is in this NS (eg opaque container at this level)
         match List.removePrefix currentNamespace symbolNamespace with
-        | Some (key :: etc) ->
+        | Some (key :: _) ->
             Some key
         | Some [] ->
             failwith "symbolToRenderableKey: removed common namespace, but nothing left!"
@@ -353,283 +366,6 @@ let symbolToRenderableKey (SymbolName nameParts) (currentNamespace: string list)
     | NSUnrelated ->
         // parallel / unrelated namespace with an unknown common ancestor, ignore
         None
-
-// let renderUserTypes (currentNamespace: string list) (table: RenderableTable) (renderFunc: string -> UserOrGeneric -> RenderableTable -> unit) =
-//     let rec renderType (type_: NIType) (alreadyRendered: Set<string>) =
-//         match type_ with
-//         | UnitType ->
-//             alreadyRendered
-//         | Primitive _ ->
-//             alreadyRendered
-//         | Resolved (resolvedName, resolvedType) ->
-//             match resolvedName with
-//             | Imported _ ->
-//                 // don't attempt to render external stuff!
-//                 alreadyRendered
-//             | ThisModule symbolName ->
-//                 // compare against current namespace, and use that to decide whether to render the symbol (or its container) or what
-//                 // 1. if equal, OK to proceed
-//                 // 2. if symbol NS is child of current, truncate to this level (eg opaque static item -> opaque itself)
-//                 // 3. if symbol NS is parent of current, ignore
-//                 // 4. if symbol NS is unrelated NS, ignore
-//                 // TODO ** don't forget!! when computing the dependencies of an opaque item, we must consider the nested contents of its static block. but I think this Resolved() match branch will filter things nicely (to only whatever is relevant to the current namespace / render level)
-//                 match symbolToRenderableKey symbolName currentNamespace with
-//                 | None ->
-//                     // not our problem!
-//                     alreadyRendered
-//                 | Some name ->
-//                     match resolvedType with
-//                     | InterfaceType ->
-//                         // TODO: try to understand this again, have completely forgotten the exact reasoning
-//                         // something about avoiding mutually-dependent interfaces I think, which would lead to infinite render loops
-//                         // and since the things would exist in the root table coming in to renderUserTypes, they'll definitely get rendered (since we iterate over the table keys to begin with)
-//                         // for the InterfaceType, it will render a fwd declaration (if the target language requires such a thing)
-//                         // but then we're not doing that for opaques?
-//                         // I guess we could spit out all of them at the tops of the files entirely, vs. as-needed-by-dependency like this
-//                         
-//                         // special handling for interface dependencies! they need to emit forward references,
-//                         // depending on context (either "class <whatever>" in the header, or push/pop prototypes in the wrapper)
-//                         let checkName =
-//                             // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
-//                             sprintf "fwd:class %s" name
-//                         if not (alreadyRendered.Contains(checkName)) then
-//                             renderFunc name UserOrGeneric.FwdInterface table
-//                             alreadyRendered.Add(checkName)
-//                         else
-//                             alreadyRendered
-//                     | OpaqueType ->
-//                         // special handling for opaque dependencies! see interface notes below
-//                         let checkName =
-//                             // just need a way of making sure we haven't done this already - no other infrastructure for fwd declarations (yet?)
-//                             sprintf "fwd:opaque %s" name
-//                         if not (alreadyRendered.Contains(checkName)) then
-//                             // don't emit anything at all for these
-//                             alreadyRendered.Add(checkName)
-//                         else
-//                             alreadyRendered
-//                     | StructType ->
-//                         renderDeps name alreadyRendered
-//                     | ExceptionType ->
-//                         renderDeps name alreadyRendered
-//                     | DelegateType ->
-//                         renderDeps name alreadyRendered
-//                     | TypedefType ->
-//                         renderDeps name alreadyRendered
-//                     | EnumType ->
-//                         renderDeps name alreadyRendered
-//                     | SumType ->
-//                         renderDeps name alreadyRendered
-//                     | OptionsType ->
-//                         renderDeps name alreadyRendered
-//         | ArrayType _ ->
-//             let name = (typeToInternalKey type_)
-//             renderDeps name alreadyRendered
-//         | MapType _ ->
-//             let name = (typeToInternalKey type_)
-//             renderDeps name alreadyRendered
-//         | TupleType _ ->
-//             let name = (typeToInternalKey type_)
-//             renderDeps name alreadyRendered
-//         | SetType _ ->
-//             let name = (typeToInternalKey type_)
-//             renderDeps name alreadyRendered
-//         | BufferType _ ->
-//             let name = (typeToInternalKey type_)
-//             renderDeps name alreadyRendered
-//         | Unresolved _ ->
-//             failwith "renderUserTypes/renderType: 'Unresolved' type encountered??"
-//
-//     and renderModuleDef (moduleDefinition: ModuleDefinition) (alreadyRendered: Set<string>) =
-//         match moduleDefinition with
-//         | Group (name, groupDefs) ->
-//             (alreadyRendered, groupDefs)
-//             ||> List.fold (fun acc def ->
-//                 renderModuleDef def acc)
-//         | Global(_, globalType) ->
-//             renderType globalType alreadyRendered
-//         | FunctionDef namedFunc ->
-//             let withReturn =
-//                 renderType namedFunc.Returns alreadyRendered
-//             let withThrows =
-//                 (withReturn, namedFunc.Throws)
-//                 ||> List.fold (fun already3 eType ->
-//                     renderType eType already3)
-//             (withThrows, namedFunc.Args)
-//             ||> List.fold (fun already3 (_, argType) ->
-//                 renderType argType already3)
-//         | UserType(_, userType) ->
-//             renderUserTypeDeps userType alreadyRendered
-//     
-//     and renderUserTypeDeps (userType: UserType) (alreadyRendered: Set<string>) =
-//         match userType with
-//         | OpaqueDef info ->
-//             (alreadyRendered, info.Methods)
-//             ||> List.fold (fun already2 namedFunc ->
-//                 let withReturn =
-//                     renderType namedFunc.Returns already2
-//                 let withThrows =
-//                     (withReturn, namedFunc.Throws)
-//                     ||> List.fold (fun already3 eType ->
-//                         renderType eType already3)
-//                 (withThrows, namedFunc.Args)
-//                 ||> List.fold (fun already3 (_, argType) ->
-//                     renderType argType already3))
-//         | StructDef namedFields ->
-//             (alreadyRendered, namedFields)
-//             ||> List.fold (fun already2 field -> renderType field.Type_ already2)
-//         | OptionsDef namedFields ->
-//             (alreadyRendered, namedFields)
-//             ||> List.fold (fun already2 field -> renderType field.Type_ already2)
-//         | ExceptionDef namedFields ->
-//             (alreadyRendered, namedFields)
-//             ||> List.fold (fun already2 field -> renderType field.Type_ already2)
-//         | InterfaceDef namedFunctions ->
-//             (alreadyRendered, namedFunctions)
-//             ||> List.fold (fun already2 namedFunc ->
-//                 let withReturn =
-//                     renderType namedFunc.Returns already2
-//                 let withThrows =
-//                     (withReturn, namedFunc.Throws)
-//                     ||> List.fold (fun already3 eType ->
-//                         renderType eType already3)
-//                 (withThrows, namedFunc.Args)
-//                 ||> List.fold (fun already3 (_, argType) ->
-//                     renderType argType already3))
-//         | DelegateDef info ->
-//             let withReturn =
-//                 renderType info.Returns alreadyRendered
-//             let withThrows =
-//                 (withReturn, info.Throws)
-//                 ||> List.fold (fun already3 eType ->
-//                     renderType eType already3)
-//             (withThrows, info.Args)
-//             ||> List.fold (fun already2 (_, argType) ->
-//                 renderType argType already2)
-//         | TypeDef actual ->
-//             renderType actual alreadyRendered
-//         | EnumDef _ ->
-//             alreadyRendered
-//         | SumTypeDef enumValues ->
-//             (alreadyRendered, enumValues)
-//             ||> List.fold (fun already2 value ->
-//                 (already2, value.Args)
-//                 ||> List.fold (fun already3 (_, argType) ->
-//                     renderType argType already3))
-//         
-//     and renderDeps (name: string) (alreadyRendered: Set<string>) =
-//         if alreadyRendered.Contains(name) then
-//             alreadyRendered
-//         else
-//             let content =
-//                 match table.TryFind name with
-//                 | Some entry ->
-//                     match entry with
-//                     | RenderableDirect thing -> thing
-//                     | RenderableContainer sub ->
-//                         failwith "renderDeps table.TryFind: name matched thing-less container"
-//                 | None ->
-//                     failwith "renderDeps table.TryFind: no entry found"
-//             let subRendered =
-//                 match content with
-//                 | UserOrGeneric.FwdInterface ->
-//                     failwith "renderUserTypes: shouldn't see this"
-//                 | UserOrGeneric.Generic gType ->
-//                     // common stuff for array/set
-//                     let arrayOrSetHandling (niType: NIType) (alreadyRendered: Set<string>) =
-//                         // process each struct field as an array as well, since that's how we push/pop them
-//                         match niType with
-//                         | Resolved(resolvedName, resolvedType) ->
-//                             match resolvedName with
-//                             | Imported(moduleName, name) ->
-//                                 failwithf "renderDeps:arrayOrSetHandling (%A|%A) - how should we handle imported types?" moduleName name
-//                             | ThisModule symbolName ->
-//                                 // something from our own module, OK
-//                                 // but is it in the current namespace/scope?
-//                                 match symbolToRenderableKey symbolName currentNamespace with
-//                                 | None ->
-//                                     // uhh, not sure if this is sensible
-//                                     alreadyRendered
-//                                 | Some name ->
-//                                     // really just behaving analogously to other parts of this code
-//                                     // don't know if this makes sense in this context ...
-//                                     // ultimately we're just trying to render dependencies, right?
-//                                     let content2 =
-//                                         match table.TryFind name with
-//                                         | Some entry ->
-//                                             match entry with
-//                                             | RenderableDirect thing ->
-//                                                 thing
-//                                             | RenderableContainer sub ->
-//                                                 failwith "renderDeps arrayOrSetHandling table.TryFind: name matched container"
-//                                         | None ->
-//                                             failwith "renderDeps arrayOrSetHandling table.TryFind: failed to get content of Resolved type"
-//                                     match resolvedType with
-//                                     | StructType ->
-//                                         // array of struct implies array of each struct field
-//                                         match content2 with
-//                                         | UserOrGeneric.User (StructDef namedFields) ->
-//                                             (alreadyRendered, namedFields)
-//                                             ||> List.fold (fun already2 field -> renderType (ArrayType field.Type_) already2)
-//                                         | _ ->
-//                                             failwithf "renderDeps: struct (from array) didn't exist in typemap??"
-//                                     | TypedefType ->
-//                                         // arrays of typedefs of tuple are flattened
-//                                         // (why penalize the user because they wanted a typedef?)
-//                                         // (this just creates the dependency on the array-of-<tuplefield>s, so that the requisite array push/pop methods exist)
-//                                         match content2 with
-//                                         | UserOrGeneric.User (TypeDef (TupleType tupleTypes as tt)) ->
-//                                             (alreadyRendered, tupleTypes)
-//                                             ||> List.fold (fun already2 type_ -> renderType (ArrayType type_) already2)
-//                                             // + the tuple type itself, sigh
-//                                             |> renderType (ArrayType tt)
-//                                         | _ ->
-//                                             alreadyRendered
-//                                     | _ ->
-//                                         alreadyRendered
-//                         | TupleType tupleTypes ->
-//                             // array of tuple implies array of each tuple subtype
-//                             (alreadyRendered, tupleTypes)
-//                             ||> List.fold (fun already2 type_ -> renderType (ArrayType type_) already2)
-//                         | _ ->
-//                             alreadyRendered
-//                         // and the type itself, of course ...
-//                         |> renderType niType
-//                     // begin generic type switch ===================================================================
-//                     match gType with
-//                     | ArrayType niType ->
-//                         arrayOrSetHandling niType alreadyRendered
-//                     | MapType (keyType, valueType) ->
-//                         // maps are pushed/popped as keys+values arrays
-//                         alreadyRendered
-//                         |> renderType (ArrayType keyType) // these imply the keyType/valueType alone
-//                         |> renderType (ArrayType valueType)
-//                     | TupleType tupleTypes ->
-//                         (alreadyRendered, tupleTypes)
-//                         ||> List.fold (fun already2 type_ -> renderType type_ already2)
-//                     | SetType niType ->
-//                         arrayOrSetHandling niType alreadyRendered
-//                     | BufferType elemType ->
-//                         // could probably omit this since it's always a primitive type ...
-//                         alreadyRendered
-//                         |> renderType elemType
-//                     | _ ->
-//                         failwithf "renderUserTypes.renderDeps: unsupported generic type %A!" gType
-//                 | UserOrGeneric.User userType ->
-//                     renderUserTypeDeps userType alreadyRendered
-//
-//             // use plugin render func, since it depends on our context
-//             renderFunc name content table
-//
-//             // done
-//             subRendered.Add(name)
-//     // process all keys (names) - renderDeps just skips anything it's seen before
-//     let keys =
-//         table
-//         |> Map.toList
-//         |> List.map fst
-//     (Set.empty, keys)
-//     ||> List.fold (fun alreadyRendered k -> renderDeps k alreadyRendered)
-//     |> ignore
 
 type IArrayLikeRenderer =
     abstract TypedefTuple: NIType -> unit

@@ -375,7 +375,7 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
 
 let renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
-    let writeH, blankH = writerH.Write, writerH.Blank
+    let writeH, _ = writerH.Write, writerH.Blank
     // push
     writeH 0 "void %s__push(std::function<%s> f);" name name
     writeCpp 0 "void %s__push(std::function<%s> f) {" name name
@@ -574,7 +574,7 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
 
 let renderWrapperSumType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
-    let writeH, blankH = writerH.Write, writerH.Blank
+    let writeH, _ = writerH.Write, writerH.Blank
     let tagType =
         Primitive(Int(true,Width32))
     // push
@@ -1229,8 +1229,8 @@ let renderWrapperGeneric (context: RenderContext) (writerH: IFormatWriter) (writ
     
     
 let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) =
-    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
-    let writeH, blankH = writerH.Write, writerH.Blank
+    let writeCpp, _ = writerCpp.Write, writerCpp.Blank
+    let writeH, _ = writerH.Write, writerH.Blank
     let group =
         context.GroupContext
         
@@ -1388,7 +1388,7 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     writeCpp 0 "}"
 
 let renderHeaderException (context: RenderContext) (writer: IFormatWriter) (exName: string) (exFields: NamedField list) =
-    let write, blank = writer.Write, writer.Blank
+    let write, _ = writer.Write, writer.Blank
     //
     write 0 "class %s {" exName
     write 0 "public:"
@@ -1405,7 +1405,7 @@ let renderHeaderException (context: RenderContext) (writer: IFormatWriter) (exNa
     write 0 "};"
 
 let renderHeaderInterface (context: RenderContext) (writer: IFormatWriter) (name: string) (methods: NamedFunction list) =
-    let write, blank = writer.Write, writer.Blank
+    let write, _ = writer.Write, writer.Blank
     //
     write 0 "class %s {" name
     write 0 "public:"
@@ -1423,7 +1423,7 @@ let renderHeaderInterface (context: RenderContext) (writer: IFormatWriter) (name
     write 0 "};"
 
 let renderHeaderSumType (context: RenderContext) (writer: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
-    let write, blank = writer.Write, writer.Blank
+    let write, _ = writer.Write, writer.Blank
     //
     write 0 "struct %s {" sumTypeName
     write 0 "public:"
@@ -1447,7 +1447,7 @@ let renderHeaderSumType (context: RenderContext) (writer: IFormatWriter) (sumTyp
     write 0 "};"
     
 let renderHeaderOptionsType (context: RenderContext) (writer: IFormatWriter) (optionsTypeName: string) (namedFields: NamedField list) =
-    let write, blank = writer.Write, writer.Blank
+    let write, _ = writer.Write, writer.Blank
     //
     write 0 "struct %s {" optionsTypeName
     write 0 "private:"
@@ -1635,7 +1635,7 @@ let generateImplementationH (context: RenderContext) (writer: IFormatWriter) (cu
     write 0 "}"
     
 let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWriter) =
-    let write, blank = writer.Write, writer.Blank
+    let write, _ = writer.Write, writer.Blank
     let group =
         context.GroupContext
         

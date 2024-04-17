@@ -10,8 +10,8 @@ open AppCommon
 // let LIBRARY = "TestBench"
 
 // KITCHENSINK
-let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\nativeimpl\kitchensink"
-let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\nativeimpl\kitchensink\_output"
+let INPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink"
+let OUTPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink\_output"
 let INPUTS = [ "First" ]
 let LIBRARY = "KitchenSink"
 

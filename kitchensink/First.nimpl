@@ -1,4 +1,13 @@
 module First;
 
-void method1(Array<Result<int,string>> resultArray);
-Array<Result<int,string>> method2();
+opaque Whatever {
+    static {
+        enum CoolEnum {
+            First,
+            Second
+        }
+        Whatever create(CoolEnum x);
+    }
+    void doSomething(int x);
+    void another(CoolEnum e);
+}

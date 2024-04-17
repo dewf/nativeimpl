@@ -380,6 +380,7 @@ let isValidEnumWidth (t: NIType) =
 type OpaqueInfo = {
     MaybeParent: NIType option          // must be an opaque, obviously
     Methods: NamedFunction list
+    MaybeStaticDefs: ModuleDefinition list option
 }
 and UserType =
     | OpaqueDef of OpaqueInfo
@@ -400,6 +401,7 @@ and ModuleDefinition =
 type SymbolTableEntry =
     | Direct of thing: UserType
     | SubTable of table: SymbolTable
+    | Hybrid of thing: UserType * table: SymbolTable
 and SymbolTable =
     Map<string, SymbolTableEntry>
     
@@ -624,49 +626,42 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             // empty opaque
             | Lookahead 1 ([Semicolon], loc, etc) ->
                 let info =
-                    { MaybeParent = maybeParent; Methods = [] }
+                    { MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None }
                 ([UserType (opaqueName, OpaqueDef info)], etc)
                 |> Some
             // opaque with content (methods + optional static {} block)
             | Lookahead 1 ([LeftBrace], loc, etc) ->
                 // first, figure out the limits of the opaque content block as a whole
-                let contentBlock, afterBlock =
+                let contentBlock, afterOpaqueBlock =
                     contentUntilMatching loc LeftBrace etc
 
+                // opaques optionally begin with static block
+                let maybeStaticDefs, methodBlock =
+                    match contentBlock with
+                    | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
+                        let staticContent, afterStatic =
+                            contentUntilMatching loc LeftBrace etc
+                        let maybeDefs =
+                            let parsed =
+                                parseModuleDefs staticContent
+                            if parsed.IsEmpty then
+                                None
+                            else
+                                Some parsed
+                        maybeDefs, afterStatic
+                    | _ ->
+                        None, contentBlock
+                        
+                // methods should always be present
                 let methods =
-                    contentBlock
+                    methodBlock
                     |> List.unfold parseNamedFunction
-                // // split just before "static {", if any
-                // let staticBlockMatcher = function
-                //     | Lookahead 2 ([StaticToken; LeftBrace], _, _) -> true
-                //     | _ -> false
-                // let methodsTokens, afterMethods =
-                //     match splitTokensBefore staticBlockMatcher contentBlock with
-                //     | Some (before, after) ->
-                //         before, after
-                //     | None ->
-                //         contentBlock, []
-                //         
-                // // parse the methods-only part
-                // let methods =
-                //     methodsTokens
-                //     |> List.unfold parseNamedFunction
-                //
-                // // is there a static {} block?
-                // let staticDefs =
-                //     match afterMethods with
-                //     | [] ->
-                //         []
-                //     | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
-                //         let staticBlock, _ =
-                //             contentUntilMatching loc LeftBrace etc
-                //         // woot!
-                //         parseModuleDefs staticBlock
-                //     | { Location = loc } :: _ ->
-                //         failwithf "unknown content after opaque methods @ %s" (loc.ToString())
+                    
                 let info =
-                    { MaybeParent = maybeParent; Methods = methods }
-                ([UserType (opaqueName, OpaqueDef info)], afterBlock)
+                    { MaybeParent = maybeParent
+                      Methods = methods
+                      MaybeStaticDefs = maybeStaticDefs }
+                ([UserType (opaqueName, OpaqueDef info)], afterOpaqueBlock)
                 |> Some
             | _ ->
                 failwithf "error parsing opaque token at %s" (loc.ToString())
@@ -827,7 +822,7 @@ let findSymbolHere (table: SymbolTable) (nameParts: string list) =
             match currentTable.TryFind name with
             | Some entry ->
                 match etc, entry with
-                | [], Direct thing ->
+                | [], (Direct thing | Hybrid (thing, _)) ->
                     // direct hit, OK
                     Some thing
                 | [], SubTable _ ->
@@ -836,7 +831,7 @@ let findSymbolHere (table: SymbolTable) (nameParts: string list) =
                 | _ :: _, Direct _ ->
                     // had more name parts, but dead-ended (prevented from going further)
                     None
-                | more, SubTable subTable ->
+                | more, (SubTable subTable | Hybrid (_, subTable)) ->
                     // recurse to consume name parts
                     recFind subTable more
             | None ->
@@ -871,7 +866,7 @@ let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: str
             match current.TryFind name with
             | Some entry ->
                 match etc, entry with
-                | _, SubTable subTable ->
+                | _, (SubTable subTable | Hybrid (_, subTable)) ->
                     match findDepthFirst subTable (name :: revConsumedPath) etc with
                     | Some value ->
                         // found something deeper, great!
@@ -994,7 +989,7 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                     failwithf "type constraint failed @ %A - must be 'exception' type" loc
             let resolvedType =
                 match resolvedDef with
-                | OpaqueDef _ -> OpaqueType
+                | OpaqueDef info -> OpaqueType
                 | StructDef _ -> StructType
                 | InterfaceDef _ -> InterfaceType
                 | DelegateDef _ -> DelegateType
@@ -1083,11 +1078,27 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                 let nextMaybeParent =
                     info.MaybeParent
                     |> Option.map (resolveType context namespacePath)
-                let nextMethods =
-                    info.Methods
-                    |> List.map (resolveFunctionTypes context namespacePath)
+                let nextMethods, nextStaticDefs =
+                    match info.MaybeStaticDefs with
+                    | Some staticDefs ->
+                        // if static block exists, method defs need to be evaluated in its context
+                        // otherwise method params (eg associated enums) won't resolve!
+                        let subPath =
+                            name :: namespacePath
+                        let nextMethods =
+                            info.Methods
+                            |> List.map (resolveFunctionTypes context subPath)
+                        let nextStaticDefs =
+                            staticDefs
+                            |> List.map (fun md -> resolveModuleDef context subPath md)
+                        nextMethods, Some nextStaticDefs
+                    | None ->
+                        let nextMethods =
+                            info.Methods
+                            |> List.map (resolveFunctionTypes context namespacePath)
+                        nextMethods, None
                 let nextInfo =
-                    { MaybeParent = nextMaybeParent; Methods = nextMethods }
+                    { MaybeParent = nextMaybeParent; Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
                 OpaqueDef nextInfo
             | TypeDef niType ->
                 TypeDef (resolveType context namespacePath niType)
@@ -1111,7 +1122,17 @@ let rec getUserTypes (defs: ModuleDefinition list) =
                 getUserTypes defs
             Some (name, SubTable subTable)
         | UserType (name, definition) ->
-            Some (name, Direct definition)
+            match definition with
+            | OpaqueDef info ->
+                match info.MaybeStaticDefs with
+                | Some staticDefs ->
+                    let subTable =
+                        getUserTypes staticDefs
+                    Some (name, Hybrid (definition, subTable))
+                | None ->
+                    Some (name, Direct definition)
+            | _ ->
+                Some (name, Direct definition)
         | _ -> None)
     |> Map.ofList
 

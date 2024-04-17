@@ -528,8 +528,14 @@ let createGroups (rootDefs: ModuleDefinition list) =
                 |> List.choose (function
                     | Group(name, defs) ->
                         let group =
-                            name, recInner name defs (name :: revPath)
-                        Some group
+                            recInner name defs (name :: revPath)
+                        Some (name, group)
+                    | UserType (name, OpaqueDef info) ->
+                        info.MaybeStaticDefs
+                        |> Option.map (fun defs ->
+                            let group =
+                                recInner name defs (name :: revPath)
+                            name, group)
                     | _ -> None)
             let order =
                 pairs

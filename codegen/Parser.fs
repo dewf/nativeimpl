@@ -517,7 +517,7 @@ let parseOneEnumValue (input: TokenAndLocation list) =
     | [] ->
         // done
         None
-    | Lookahead 1 ([Identifier name], loc, etc) ->
+    | Lookahead 1 ([Identifier name], _, etc) ->
         // optional user-specified numeric value?
         let value, etc =
             match etc with
@@ -624,7 +624,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             // continue as normal
             match etc with
             // empty opaque
-            | Lookahead 1 ([Semicolon], loc, etc) ->
+            | Lookahead 1 ([Semicolon], _, etc) ->
                 let info =
                     { MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None }
                 ([UserType (opaqueName, OpaqueDef info)], etc)
@@ -989,7 +989,7 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                     failwithf "type constraint failed @ %A - must be 'exception' type" loc
             let resolvedType =
                 match resolvedDef with
-                | OpaqueDef info -> OpaqueType
+                | OpaqueDef _ -> OpaqueType
                 | StructDef _ -> StructType
                 | InterfaceDef _ -> InterfaceType
                 | DelegateDef _ -> DelegateType
@@ -1045,7 +1045,7 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
             name :: namespacePath
         let nextDefs =
             defs
-            |> List.map (fun md -> resolveModuleDef context subPath md)
+            |> List.map (resolveModuleDef context subPath)
         Group (name, nextDefs)
     | UserType (name, userType) ->
         let nextUserType =
@@ -1090,7 +1090,7 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                             |> List.map (resolveFunctionTypes context subPath)
                         let nextStaticDefs =
                             staticDefs
-                            |> List.map (fun md -> resolveModuleDef context subPath md)
+                            |> List.map (resolveModuleDef context subPath)
                         nextMethods, Some nextStaticDefs
                     | None ->
                         let nextMethods =

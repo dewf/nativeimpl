@@ -572,16 +572,17 @@ let resolvedNameToStringAbstract (languageNsDelim: string) (context: RenderConte
         // strip current namespace prefix if possible
         // (but not in Generics mode)
         let parts2 =
-            if parts.Length > 1 then // have to leave something!
-                match mode with
-                | GenericIdentifierMode -> parts
-                | _ ->
-                    match List.removePrefix context.GroupContext.Path parts with
-                    | Some remaining ->
+            match mode with
+            | GenericIdentifierMode -> parts
+            | _ ->
+                match List.removePrefix context.GroupContext.Path parts with
+                | Some remaining ->
+                    if remaining.IsEmpty then
+                        // have to leave at least one segment!
+                        [ parts |> List.last ]
+                    else
                         remaining
-                    | None -> parts
-            else
-                parts
+                | None -> parts
         joinNameParts separator (parts2 |> List.map upperFirst)
     | Imported(moduleName, symbolName) ->
         let symbolParts =

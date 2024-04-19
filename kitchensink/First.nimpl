@@ -1,13 +1,17 @@
 module First;
 
-opaque Whatever {
-    static {
-        enum CoolEnum {
-            First,
-            Second
+group Nested {
+    opaque Whatever {
+        static {
+            enum CoolEnum {
+                First,
+                Second
+            }
+            Whatever create(CoolEnum x);
         }
-        Whatever create(CoolEnum x);
+        void doSomething(int x);
+        void another(CoolEnum e);
     }
-    void doSomething(int x);
-    void another(CoolEnum e);
 }
+
+void outsideFunc(Nested.Whatever w);

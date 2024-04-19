@@ -110,6 +110,8 @@ let typeToCppString (context: RenderContext) (outerType: NIType) =
             let name =
                 resolvedNameToString context resolvedName TypeMode
             match resolvedType with
+            | OpaqueType ->
+                sprintf "%sRef" name
             | InterfaceType ->
                 sprintf "std::shared_ptr<%s>" name
             | DelegateType ->
@@ -1483,12 +1485,25 @@ let renderHeaderOptionsType (context: RenderContext) (writer: IFormatWriter) (op
     // done
     write 0 "};"
     
-let renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
+let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
     //
     blank()
     match userType with
     | OpaqueDef info ->
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            write 0 "namespace %s {" name
+            let nextContext =
+                let nextGroup =
+                    context.GroupContext.SubGroups[name]
+                { context with GroupContext = nextGroup }
+            renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
+            // end namespace
+            write 0 "}"
+        | None ->
+            ()
+        // methods
         let synthesized =
             synthesizeOpaqueMethods2 context name info
         for namedFunc in synthesized do
@@ -1559,7 +1574,7 @@ let renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (name:
     | SumTypeDef enumValues ->
         renderHeaderSumType context writer name enumValues
     
-let rec renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWriter) =
+and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     
     let group =
@@ -1569,7 +1584,7 @@ let rec renderImplementationHeaderGroup (context: RenderContext) (writer: IForma
     if not group.Opaques.IsEmpty then
         blank()
         for name, _ in group.Opaques do
-            write 0 "struct __%s; typedef struct __%s* %s;" name name name
+            write 0 "struct __%s; typedef struct __%s* %sRef;" name name name
     
     for def in context.GroupContext.Defs do
         match def with
@@ -1663,13 +1678,26 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
         | UserType(name, userType) ->
             match userType with
             | OpaqueDef info ->
+                write 0 "// [opaque: %s]" (upperFirst name)
                 write 0 "struct __%s {" (upperFirst name)
                 write 1 "// your content here"
+                write 1 "// (or delete this and cast your own opaque ptr to '%sRef' in the stubs below)" (upperFirst name)
                 write 0 "};"
+                write 0 "// static content"
+                write 0 "namespace %s {" (upperFirst name)
+                let nextContext =
+                    let nextGroup =
+                        context.GroupContext.SubGroups[name]
+                    { context with GroupContext = nextGroup }
+                renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
+                write 0 "}" // end namespace
+                write 0 "// instance methods"
                 for namedFunc in synthesizeOpaqueMethods2 context name info do
                     renderFunc namedFunc
+                write 0 "// [%s end]" (upperFirst name)
             | _ ->
-                write 0 "// userType: %s" name
+                // write 0 "// userType: %s" name
+                ()
         | Group(groupName, _) ->
             let nextGroup =
                 context.GroupContext.SubGroups[groupName]

@@ -946,141 +946,6 @@ let renderWrapperNamedFunc (context: RenderContext) (writerH: IFormatWriter) (wr
                 failwithf "C++ plain function wrappers: 'throws' contained non-exception type"
     writeCpp 0 "}"
 
-let renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (userType: UserType) =
-    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
-    let writeH, blankH = writerH.Write, writerH.Blank
-    match userType with
-    | OpaqueDef info ->
-        blankH()
-        writeH 0 "void %s__push(%s value);" name name
-        writeCpp 0 "void %s__push(%s value) {" name name
-        writeCpp 1 "ni_pushPtr(value);"
-        writeCpp 0 "}"
-        blankCpp()
-        writeH 0 "%s %s__pop();" name name
-        writeCpp 0 "%s %s__pop() {" name name
-        writeCpp 1 "return (%s)ni_popPtr();" name
-        writeCpp 0 "}"
-        // methods
-        for nf in synthesizeOpaqueMethods2 context name info do
-            renderWrapperNamedFunc context writerH writerCpp nf
-    | StructDef namedFields ->
-        blankH()
-        writeH 0 "void %s__push(%s value, bool isReturn);" name name
-        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
-        for field in namedFields |> List.rev do
-            pushValue context writerCpp 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
-        writeCpp 0 "}"
-        blankCpp()
-        writeH 0 "%s %s__pop();" name name
-        writeCpp 0 "%s %s__pop() {" name name
-        for field in namedFields do
-            popValue context writerCpp 1 field.Type_ (Variable field.Name)
-        writeCpp 1 "return %s { %s };" name (joinedFieldNames namedFields)
-        writeCpp 0 "}"
-    | OptionsDef namedFields ->
-        let flagsType =
-            Primitive(Int(true,Width32))
-        // push
-        blankH()
-        writeH 0 "void %s__push(%s value, bool isReturn);" name name
-        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
-        for field in namedFields |> List.rev do
-            writeCpp 1 "%s %s;" (typeToCppString context field.Type_) field.Name
-            writeCpp 1 "if (value.has%s(&%s)) {" (upperFirst field.Name) field.Name
-            pushValue context writerCpp 2 field.Type_ field.Name (Indirect "isReturn")
-            writeCpp 1 "}"
-        pushValue context writerCpp 1 flagsType "value.getUsedFields()" NotApplicable
-        writeCpp 0 "}"
-        // pop
-        blankCpp()
-        writeH 0 "%s %s__pop();" name name
-        writeCpp 0 "%s %s__pop() {" name name
-        writeCpp 1 "%s value = {};" name
-        popValue context writerCpp 1 flagsType (LeftAssign "value._usedFields")
-        for field in namedFields do
-            writeCpp 1 "if (value._usedFields & %s::Fields::%sField) {" name (upperFirst field.Name)
-            popValue context writerCpp 2 field.Type_ (Variable "x")
-            writeCpp 2 "value.set%s(x);" (upperFirst field.Name)
-            writeCpp 1 "}"
-        writeCpp 1 "return value;"
-        writeCpp 0 "}"
-    | ExceptionDef exFields ->
-        blankH()
-        writeH 0 "void %s__push(%s e);" name name
-        blankCpp()
-        writeCpp 0 "void %s__push(%s e) {" name name
-        // push field values (reverse order)
-        for namedField in exFields |> List.rev do
-            let memberVar =
-                sprintf "e.%s" namedField.Name
-            pushValue context writerCpp 1 namedField.Type_ memberVar (Direct true) // true = exceptions are always returned by definition, so any references in their fields need to be kept safe ... right?
-        writeCpp 0 "}"
-        // build and throw
-        writeH 0 "void %s__buildAndThrow();" name
-        blankCpp()
-        writeCpp 0 "void %s__buildAndThrow() {" name
-        for field in exFields do
-            popValue context writerCpp 1 field.Type_ (Variable field.Name)
-        // joined variables (_0, _1, etc)
-        writeCpp 1 "throw %s(%s);" name (joinedFieldNames exFields)
-        writeCpp 0 "}"
-    | InterfaceDef methods ->
-        let outerType =
-            let symbolName =
-                SymbolName (context.GroupContext.Path @ [ name ])
-            Resolved (ThisModule symbolName, InterfaceType)
-        renderWrapperInterface context writerH writerCpp outerType name methods
-    | DelegateDef info ->
-        renderWrapperDelegate context writerH writerCpp name info
-    | TypeDef niType ->
-        // ghetto, but for now instead of flattening, just write an inline wrapper
-        blankH()
-        writeH 0 "%s %s__pop();" name name
-        writeCpp 0 "inline %s %s__pop() {" name name
-        popValue context writerCpp 1 niType Return
-        writeCpp 0 "}"
-        writeH 0 "void %s__push(%s value, bool isReturn);" name name
-        blankCpp()
-        writeCpp 0 "inline void %s__push(%s value, bool isReturn) {" name name
-        pushValue context writerCpp 1 niType "value" (Indirect "isReturn")
-        writeCpp 0 "}"
-    | EnumDef info ->
-        let widthType =
-            match info.MaybeWidth with
-            | Some widthType -> widthType
-            | None ->
-                let signed =
-                    not info.FlagsMode
-                Primitive(Int(signed,Width32))
-        if info.FlagsMode then
-            blankH()
-            writeH 0 "void %s__push(%s value);" name (typeToCppString context widthType)
-            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context widthType)
-            pushValue context writerCpp 1 widthType "value" NotApplicable
-            writeCpp 0 "}"
-            writeH 0 "%s %s__pop();" (typeToCppString context widthType) name
-            blankCpp()
-            writeCpp 0 "%s %s__pop() {" (typeToCppString context widthType) name
-            popValue context writerCpp 1 widthType Return
-            writeCpp 0 "}"
-        else
-            blankH()
-            writeH 0 "void %s__push(%s value);" name name
-            writeCpp 0 "void %s__push(%s value) {" name name
-            let content =
-                sprintf "(%s)value" (typeToCppString context widthType)
-            pushValue context writerCpp 1 widthType content NotApplicable
-            writeCpp 0 "}"
-            writeH 0 "%s %s__pop();" name name
-            blankCpp()
-            writeCpp 0 "%s %s__pop() {" name name
-            popValue context writerCpp 1 widthType (Variable "tag")
-            writeCpp 1 "return (%s)tag;" name
-            writeCpp 0 "}"
-    | SumTypeDef values ->
-        renderWrapperSumType context writerH writerCpp name values
-        
 let renderWrapperGeneric (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (gType: NIType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
@@ -1230,7 +1095,158 @@ let renderWrapperGeneric (context: RenderContext) (writerH: IFormatWriter) (writ
         writeCpp 0 "// push/pop for generic %s" (typeToCppString context gType)
     
     
-let rec renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) =
+let rec renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (userType: UserType) =
+    let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
+    let writeH, blankH = writerH.Write, writerH.Blank
+    match userType with
+    | OpaqueDef info ->
+        blankH()
+        writeH 0 "void %s__push(%sRef value);" name name
+        writeCpp 0 "void %s__push(%sRef value) {" name name
+        writeCpp 1 "ni_pushPtr(value);"
+        writeCpp 0 "}"
+        blankCpp()
+        writeH 0 "%sRef %s__pop();" name name
+        writeCpp 0 "%sRef %s__pop() {" name name
+        writeCpp 1 "return (%sRef)ni_popPtr();" name
+        writeCpp 0 "}"
+        // nested static block
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            let nextContext =
+                let nextGroup =
+                    context.GroupContext.SubGroups[name]
+                { context with GroupContext = nextGroup }
+            writeH 0 "namespace %s {" name
+            writeCpp 0 "namespace %s {" name
+            //
+            renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
+            //
+            writeH 0 "}"
+            writeCpp 0 "}"
+        | None ->
+            ()
+        // methods
+        for nf in synthesizeOpaqueMethods2 context name info do
+            renderWrapperNamedFunc context writerH writerCpp nf
+    | StructDef namedFields ->
+        blankH()
+        writeH 0 "void %s__push(%s value, bool isReturn);" name name
+        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
+        for field in namedFields |> List.rev do
+            pushValue context writerCpp 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
+        writeCpp 0 "}"
+        blankCpp()
+        writeH 0 "%s %s__pop();" name name
+        writeCpp 0 "%s %s__pop() {" name name
+        for field in namedFields do
+            popValue context writerCpp 1 field.Type_ (Variable field.Name)
+        writeCpp 1 "return %s { %s };" name (joinedFieldNames namedFields)
+        writeCpp 0 "}"
+    | OptionsDef namedFields ->
+        let flagsType =
+            Primitive(Int(true,Width32))
+        // push
+        blankH()
+        writeH 0 "void %s__push(%s value, bool isReturn);" name name
+        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
+        for field in namedFields |> List.rev do
+            writeCpp 1 "%s %s;" (typeToCppString context field.Type_) field.Name
+            writeCpp 1 "if (value.has%s(&%s)) {" (upperFirst field.Name) field.Name
+            pushValue context writerCpp 2 field.Type_ field.Name (Indirect "isReturn")
+            writeCpp 1 "}"
+        pushValue context writerCpp 1 flagsType "value.getUsedFields()" NotApplicable
+        writeCpp 0 "}"
+        // pop
+        blankCpp()
+        writeH 0 "%s %s__pop();" name name
+        writeCpp 0 "%s %s__pop() {" name name
+        writeCpp 1 "%s value = {};" name
+        popValue context writerCpp 1 flagsType (LeftAssign "value._usedFields")
+        for field in namedFields do
+            writeCpp 1 "if (value._usedFields & %s::Fields::%sField) {" name (upperFirst field.Name)
+            popValue context writerCpp 2 field.Type_ (Variable "x")
+            writeCpp 2 "value.set%s(x);" (upperFirst field.Name)
+            writeCpp 1 "}"
+        writeCpp 1 "return value;"
+        writeCpp 0 "}"
+    | ExceptionDef exFields ->
+        blankH()
+        writeH 0 "void %s__push(%s e);" name name
+        blankCpp()
+        writeCpp 0 "void %s__push(%s e) {" name name
+        // push field values (reverse order)
+        for namedField in exFields |> List.rev do
+            let memberVar =
+                sprintf "e.%s" namedField.Name
+            pushValue context writerCpp 1 namedField.Type_ memberVar (Direct true) // true = exceptions are always returned by definition, so any references in their fields need to be kept safe ... right?
+        writeCpp 0 "}"
+        // build and throw
+        writeH 0 "void %s__buildAndThrow();" name
+        blankCpp()
+        writeCpp 0 "void %s__buildAndThrow() {" name
+        for field in exFields do
+            popValue context writerCpp 1 field.Type_ (Variable field.Name)
+        // joined variables (_0, _1, etc)
+        writeCpp 1 "throw %s(%s);" name (joinedFieldNames exFields)
+        writeCpp 0 "}"
+    | InterfaceDef methods ->
+        let outerType =
+            let symbolName =
+                SymbolName (context.GroupContext.Path @ [ name ])
+            Resolved (ThisModule symbolName, InterfaceType)
+        renderWrapperInterface context writerH writerCpp outerType name methods
+    | DelegateDef info ->
+        renderWrapperDelegate context writerH writerCpp name info
+    | TypeDef niType ->
+        // ghetto, but for now instead of flattening, just write an inline wrapper
+        blankH()
+        writeH 0 "%s %s__pop();" name name
+        writeCpp 0 "inline %s %s__pop() {" name name
+        popValue context writerCpp 1 niType Return
+        writeCpp 0 "}"
+        writeH 0 "void %s__push(%s value, bool isReturn);" name name
+        blankCpp()
+        writeCpp 0 "inline void %s__push(%s value, bool isReturn) {" name name
+        pushValue context writerCpp 1 niType "value" (Indirect "isReturn")
+        writeCpp 0 "}"
+    | EnumDef info ->
+        let widthType =
+            match info.MaybeWidth with
+            | Some widthType -> widthType
+            | None ->
+                let signed =
+                    not info.FlagsMode
+                Primitive(Int(signed,Width32))
+        if info.FlagsMode then
+            blankH()
+            writeH 0 "void %s__push(%s value);" name (typeToCppString context widthType)
+            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context widthType)
+            pushValue context writerCpp 1 widthType "value" NotApplicable
+            writeCpp 0 "}"
+            writeH 0 "%s %s__pop();" (typeToCppString context widthType) name
+            blankCpp()
+            writeCpp 0 "%s %s__pop() {" (typeToCppString context widthType) name
+            popValue context writerCpp 1 widthType Return
+            writeCpp 0 "}"
+        else
+            blankH()
+            writeH 0 "void %s__push(%s value);" name name
+            writeCpp 0 "void %s__push(%s value) {" name name
+            let content =
+                sprintf "(%s)value" (typeToCppString context widthType)
+            pushValue context writerCpp 1 widthType content NotApplicable
+            writeCpp 0 "}"
+            writeH 0 "%s %s__pop();" name name
+            blankCpp()
+            writeCpp 0 "%s %s__pop() {" name name
+            popValue context writerCpp 1 widthType (Variable "tag")
+            writeCpp 1 "return (%s)tag;" name
+            writeCpp 0 "}"
+    | SumTypeDef values ->
+        renderWrapperSumType context writerH writerCpp name values
+
+and renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) =
     let writeCpp, _ = writerCpp.Write, writerCpp.Blank
     let writeH, _ = writerH.Write, writerH.Blank
     let group =

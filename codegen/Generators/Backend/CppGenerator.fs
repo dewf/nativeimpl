@@ -1593,21 +1593,6 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
 and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     
-    let group =
-        context.GroupContext
-    
-    // opaque handles all at the top, so no (group-internal) ordering issues
-    if not group.Opaques.IsEmpty then
-        blank()
-        for name, info in group.Opaques do
-            let extendsComment =
-                match info.MaybeParent with
-                | Some parentType ->
-                    sprintf " // extends %s" (typeToName context parentType)
-                | None ->
-                    ""
-            write 0 "struct __%s; typedef struct __%s* %sRef;%s" name name name extendsComment
-    
     for def in context.GroupContext.Defs do
         match def with
         | Global(globalName, globalType) ->
@@ -1668,6 +1653,34 @@ let generateImplementationH (context: RenderContext) (writer: IFormatWriter) (cu
     | ModuleName nameParts ->
         write 0 "namespace %s" (joinNameParts "::" nameParts)
     write 0 "{"
+
+    // recursively emit all opaque types at the top, so that there are no ordering/dependency issues
+    let rec renderOpaques (group: GroupContext) =
+        if not group.Opaques.IsEmpty then
+            blank()
+            for name, info in group.Opaques do
+                let extendsComment =
+                    match info.MaybeParent with
+                    | Some parentType ->
+                        sprintf " // extends %s" (typeToCppString context parentType)
+                    | None ->
+                        ""
+                let innerCommon =
+                    sprintf "struct __%s; typedef struct __%s* %sRef;" name name name
+                match group.Path with
+                | [] ->
+                    write 1 "%s%s" innerCommon extendsComment
+                | _ ->
+                    let nsJoined =
+                        String.concat "::" group.Path
+                    write 1 "namespace %s { %s }%s" nsJoined innerCommon extendsComment
+                
+        for subName in group.SubOrder do
+            let sub = group.SubGroups[subName]
+            renderOpaques sub
+    write 1 "// opaque fwd declarations"
+    renderOpaques context.GroupContext
+    
     renderImplementationHeaderGroup context (writer.WithExtraIndent 1)
     write 0 "}"
     

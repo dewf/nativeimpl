@@ -2,16 +2,26 @@ module First;
 
 group Nested {
     opaque Whatever {
-        static {
-            enum CoolEnum {
-                First,
-                Second
-            }
-            Whatever create(CoolEnum x);
-        }
-        void doSomething(int x);
-        void another(CoolEnum e);
+        void woot();
     }
 }
 
-void outsideFunc(Nested.Whatever w);
+group Nested2 {
+    group Subnested3 {
+        opaque Coolio {
+            void woot();
+        }
+    }
+}
+
+opaque TheBest {
+    void woot();
+}
+
+group Nested4 {
+    group Nested5 {
+        group Nested6 {
+            opaque Noice extends Nested2.Subnested3.Coolio;
+        }
+    }
+}

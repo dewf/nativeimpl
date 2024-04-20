@@ -1,5 +1,16 @@
 module First;
 
+interface CoolInterface {
+    static {
+        enum CoolEnum2 {
+            First,
+            Second
+        }
+    }
+    void method1(int x);
+    void method2(int y);
+}
+
 group Nested {
     opaque Whatever {
         void woot();

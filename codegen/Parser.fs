@@ -77,6 +77,16 @@ let validBufferElementType = function
         prim <> StringType
     | _ ->
         false
+        
+let (|Require|_|) (required: Token list) (input: TokenAndLocation list) =
+    let front, etc =
+        List.safeSplit required.Length input
+    let frontTokens =
+        front |> List.map (_.Token)
+    if frontTokens = required then
+        Some (front.Head.Location, etc)
+    else
+        None
 
 let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
     let front, etc =
@@ -382,11 +392,15 @@ type OpaqueInfo = {
     Methods: NamedFunction list
     MaybeStaticDefs: ModuleDefinition list option
 }
+and InterfaceInfo = {
+    Methods: NamedFunction list
+    MaybeStaticDefs: ModuleDefinition list option
+}
 and UserType =
-    | OpaqueDef of OpaqueInfo
+    | OpaqueDef of info: OpaqueInfo
     | StructDef of fields: NamedField list
     | ExceptionDef of fields: NamedField list      // created as an args list, although they are accessible fields
-    | InterfaceDef of methods: NamedFunction list
+    | InterfaceDef of info: InterfaceInfo
     | DelegateDef of info: DelegateInfo
     | TypeDef of actual: NIType
     | EnumDef of info: EnumInfo
@@ -597,8 +611,39 @@ let parseSumTypeValues (loc: Location) (input: TokenAndLocation list) =
         List.unfold parseOneSumTypeValue content
     values, etc
     
+type UnfoldElement<'a> =
+    | Element of 'a
+    | Terminator of remaining: TokenAndLocation list
+    
+let unfoldUntil (stopTokens: Token list) (generatorFunc: TokenAndLocation list -> ('a * TokenAndLocation list) option) (input: TokenAndLocation list) =
+    let func2 (remaining: TokenAndLocation list) =
+        match remaining with
+        | [] ->
+            None
+        | Require stopTokens (_, etc) ->
+            Some (Terminator etc, [])
+        | { Token = tok; Location = loc } :: _ ->
+            match generatorFunc remaining with
+            | Some (value, remaining) ->
+                Some (Element value, remaining)
+            | None ->
+                // I think this would only happen if 'remaining' were empty (which it won't ever be here), based on how our generators are written
+                failwithf "unfoldUntil: unexpected token %A at loc %A" tok loc
+    let elements, termList =
+        input
+        |> List.unfold func2
+        |> List.partition (function | Element _ -> true | _ -> false)
+    let elements =
+        elements
+        |> List.map (function | Element e -> e | _ -> failwith "nope")
+    let etc =
+        match termList |> List.head with
+        | Terminator etc -> etc
+        | _ -> failwith "nope"
+    elements, etc
+    
 let rec parseModuleDefs (input: TokenAndLocation list) =
-    let parseNext (remaining: TokenAndLocation list) =
+    let rec parseNext (remaining: TokenAndLocation list) =
         match remaining with
         | Lookahead 3 ([GroupToken; Identifier groupName; LeftBrace], loc, etc) ->
             let contentBlock, etc =
@@ -691,10 +736,29 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             ([UserType (name, ExceptionDef fields)], etc)
             |> Some
         | Lookahead 3 ([InterfaceToken; Identifier name; LeftBrace], loc, etc) ->
-            let methods, etc2 =
+            // optional static block
+            let maybeStaticDefs, etc =
+                match etc with
+                | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
+                    let defsList, etc  =
+                        unfoldUntil [RightBrace] parseNext etc
+                    let flattened =
+                        defsList
+                        |> List.collect id
+                    let maybeStaticDefs =
+                        if not flattened.IsEmpty then Some flattened else None
+                    maybeStaticDefs, etc
+                | _ ->
+                    None, etc
+            let methods, etc =
                 parseFunctionList loc etc
-            ([UserType (name, InterfaceDef methods)], etc2)
-            |> Some
+            if methods.Length > 0 then
+                let info =
+                    { Methods = methods; MaybeStaticDefs = maybeStaticDefs }
+                ([UserType (name, InterfaceDef info)], etc)
+                |> Some
+            else
+                failwithf "interface '%s' @ loc %A - no methods declared" name loc
         | Lookahead 1 ([DelegateToken], _, etc) ->
             parseNamedFunction etc
             |> Option.map (fun (nf, etc2) ->
@@ -1065,11 +1129,29 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                     fieldTypes
                     |> List.map (resolveFieldType context namespacePath)
                 ExceptionDef nextFieldTypes
-            | InterfaceDef namedFunctions ->
-                let nextFunctions =
-                    namedFunctions
-                    |> List.map (resolveFunctionTypes context namespacePath)
-                InterfaceDef nextFunctions
+            | InterfaceDef info ->
+                let nextMethods, nextStaticDefs =
+                    match info.MaybeStaticDefs with
+                    | Some staticDefs ->
+                        // if static block exists, method defs need to be evaluated in its context
+                        // otherwise method params (eg associated enums) won't resolve!
+                        let subPath =
+                            name :: namespacePath
+                        let nextMethods =
+                            info.Methods
+                            |> List.map (resolveFunctionTypes context subPath)
+                        let nextStaticDefs =
+                            staticDefs
+                            |> List.map (resolveModuleDef context subPath)
+                        nextMethods, Some nextStaticDefs
+                    | None ->
+                        let nextMethods =
+                            info.Methods
+                            |> List.map (resolveFunctionTypes context namespacePath)
+                        nextMethods, None
+                let nextInfo =
+                    { Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
+                InterfaceDef nextInfo
             | DelegateDef delegateInfo ->
                 let nextInfo =
                     resolveDelegateTypes context namespacePath delegateInfo

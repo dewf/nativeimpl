@@ -1190,12 +1190,12 @@ let rec renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) 
         // joined variables (_0, _1, etc)
         writeCpp 1 "throw %s(%s);" name (joinedFieldNames exFields)
         writeCpp 0 "}"
-    | InterfaceDef methods ->
+    | InterfaceDef info ->
         let outerType =
             let symbolName =
                 SymbolName (context.GroupContext.Path @ [ name ])
             Resolved (ThisModule symbolName, InterfaceType)
-        renderWrapperInterface context writerH writerCpp outerType name methods
+        renderWrapperInterface context writerH writerCpp outerType name info.Methods
     | DelegateDef info ->
         renderWrapperDelegate context writerH writerCpp name info
     | TypeDef niType ->
@@ -1253,8 +1253,8 @@ and renderWrappersGroup (context: RenderContext) (writerH: IFormatWriter) (write
         context.GroupContext
         
     // declare various module handles etc at top of group
-    for name, methods in group.Interfaces do
-        for method in methods do
+    for name, info in group.Interfaces do
+        for method in info.Methods do
             writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.Name
             
     for name, _ in group.Exceptions do
@@ -1372,7 +1372,7 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
                 group.Path @ [ namedFunction.Name ]
             writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" parts)
         // interfaces + methods
-        for name, methods in group.Interfaces do
+        for name, info in group.Interfaces do
             let lowerIfaceName =
                 lowerFirst name
             let parts =
@@ -1380,7 +1380,7 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
             let lowerParts =
                 group.Path @ [ lowerIfaceName ]
             writeCpp 2 "auto %s = ni_registerInterface(m, \"%s\");" lowerIfaceName (joinNameParts "." parts)
-            for method in methods do
+            for method in info.Methods do
                 let targetVarName =
                     sprintf "%s_%s" (joinNameParts "::" lowerParts) method.Name
                 let wrapperName =
@@ -1542,8 +1542,8 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
         renderHeaderOptionsType context writer name namedFields
     | ExceptionDef namedFields ->
         renderHeaderException context writer name namedFields
-    | InterfaceDef namedFunctions ->
-        renderHeaderInterface context writer name namedFunctions
+    | InterfaceDef info ->
+        renderHeaderInterface context writer name info.Methods
     | DelegateDef info ->
         let maybeThrows =
             if info.Throws.IsEmpty then

@@ -180,8 +180,16 @@ let allGenericTypes (context: ModuleContext) =
                 | ExceptionDef namedFields ->
                     namedFields
                     |> List.collect (fun field -> typeAndSubTypes field.Type_)
-                | InterfaceDef namedFunctions ->
-                    namedFuncsHandler namedFunctions
+                | InterfaceDef info ->
+                    let nestedTypes =
+                        match info.MaybeStaticDefs with
+                        | Some staticDefs ->
+                            processDefs staticDefs
+                        | None ->
+                            []
+                    let methodTypes =
+                        namedFuncsHandler info.Methods
+                    methodTypes @ nestedTypes
                 | DelegateDef info ->
                     let retTypes =
                         typeAndSubTypes info.Returns
@@ -482,7 +490,7 @@ type GroupContext = {
     // broken down for easy use:
     ModuleMethods: NamedFunction list
     Opaques: (string * OpaqueInfo) list
-    Interfaces: (string * NamedFunction list) list
+    Interfaces: (string * InterfaceInfo) list
     Exceptions: (string * NamedField list) list
     Globals: (string * NIType) list
     SubOrder: string list                
@@ -510,8 +518,10 @@ let createGroups (rootDefs: ModuleDefinition list) =
         let interfaces =
             groupDefs
             |> List.choose (function
-                | UserType(name, InterfaceDef namedFunctions) -> Some (name, namedFunctions)
-                | _ -> None)
+                | UserType(name, InterfaceDef info) ->
+                    Some (name, info)
+                | _ ->
+                    None)
         let exceptions =
             groupDefs
             |> List.choose (function

@@ -1015,7 +1015,7 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
         write 2 "{"
         popValue context writer 3 niType Return
         write 2 "}"
-    | InterfaceDef namedFunctions ->
+    | InterfaceDef info ->
         blank()
         // raw interface itself
         write 2 "public interface %s : IDisposable" (upperFirst name)
@@ -1024,7 +1024,7 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
         write 3 "{"
         write 4 "// nothing by default"
         write 3 "}"
-        for method in namedFunctions do
+        for method in info.Methods do
             let throwsComment =
                 if method.Throws.IsEmpty then
                     ""
@@ -1108,7 +1108,7 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
         write 3 "{"
         write 3 "}"
         // server wrapper methods
-        for method in namedFunctions do
+        for method in info.Methods do
             blank()
             write 3 "public %s %s(%s)" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args)
             write 3 "{"
@@ -1257,22 +1257,22 @@ let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
     
     // interface method handles, wrappers
     if not group.Interfaces.IsEmpty then
-        for ifaceName, methods in group.Interfaces do
+        for ifaceName, info in group.Interfaces do
             let sourceIface =
                 mkSourceHandle ifaceName
             let targetIface =
                 mkTargetHandle ifaceName
             write 3 "%s = NativeImplClient.GetInterface(_module, \"%s\");" targetIface sourceIface
             // methods
-            if not methods.IsEmpty then
-                for method in methods do
+            if not info.Methods.IsEmpty then
+                for method in info.Methods do
                     // let sourceMethod =
                     //     sprintf "%s.%s" sourceIface method.Name
                     let targetMethodHandle =
                         mkTargetHandle (sprintf "%s_%s" ifaceName method.Name)
                     write 3 "%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetMethodHandle targetIface method.Name
             // method wrappers
-            for method in methods do
+            for method in info.Methods do
                 write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject obj)" targetIface method.Name
                 write 3 "{"
                 let clientWrapperClass =
@@ -1328,9 +1328,9 @@ let rec renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
         write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
     
     // interfaces
-    for name, methods in groupContext.Interfaces do
+    for name, info in groupContext.Interfaces do
         write 2 "internal static InterfaceHandle _%s;" (lowerFirst name)
-        for method in methods do
+        for method in info.Methods do
             write 2 "internal static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
     
     // exceptions

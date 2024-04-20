@@ -1599,8 +1599,14 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
     // opaque handles all at the top, so no (group-internal) ordering issues
     if not group.Opaques.IsEmpty then
         blank()
-        for name, _ in group.Opaques do
-            write 0 "struct __%s; typedef struct __%s* %sRef;" name name name
+        for name, info in group.Opaques do
+            let extendsComment =
+                match info.MaybeParent with
+                | Some parentType ->
+                    sprintf " // extends %s" (typeToName context parentType)
+                | None ->
+                    ""
+            write 0 "struct __%s; typedef struct __%s* %sRef;%s" name name name extendsComment
     
     for def in context.GroupContext.Defs do
         match def with
@@ -1699,14 +1705,18 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                 write 1 "// your content here"
                 write 1 "// (or delete this and cast your own opaque ptr to '%sRef' in the stubs below)" (upperFirst name)
                 write 0 "};"
-                write 0 "// static content"
-                write 0 "namespace %s {" (upperFirst name)
-                let nextContext =
-                    let nextGroup =
-                        context.GroupContext.SubGroups[name]
-                    { context with GroupContext = nextGroup }
-                renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
-                write 0 "}" // end namespace
+                match info.MaybeStaticDefs with
+                | Some _ ->
+                    write 0 "// static content"
+                    write 0 "namespace %s {" (upperFirst name)
+                    let nextContext =
+                        let nextGroup =
+                            context.GroupContext.SubGroups[name]
+                        { context with GroupContext = nextGroup }
+                    renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
+                    write 0 "}" // end namespace
+                | None ->
+                    ()
                 write 0 "// instance methods"
                 for namedFunc in synthesizeOpaqueMethods2 context name info do
                     renderFunc namedFunc

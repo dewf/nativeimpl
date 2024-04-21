@@ -484,8 +484,7 @@ let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
     baseNamespace, maybeJoinedPrefix modulePrefix, className
     
 type GroupKind =
-    | NormalGroup
-    | OpaqueStaticGroup
+    | NormalOrOpaqueStatic
     | InterfaceStaticGroup
 
 type GroupContext = {
@@ -545,7 +544,13 @@ let createGroups (rootDefs: ModuleDefinition list) =
                 |> List.choose (function
                     | Group(name, defs) ->
                         let group =
-                            recInner name defs (name :: revPath) NormalGroup
+                            let subKind =
+                                if kind = InterfaceStaticGroup then
+                                    // interfaces 'taint' the group types, no namespaces inside of static classes!
+                                    InterfaceStaticGroup
+                                else
+                                    NormalOrOpaqueStatic
+                            recInner name defs (name :: revPath) subKind
                         Some (name, group)
                     | UserType (name, userType) ->
                         match userType with
@@ -553,7 +558,9 @@ let createGroups (rootDefs: ModuleDefinition list) =
                             info.MaybeStaticDefs
                             |> Option.map (fun defs ->
                                 let group =
-                                    recInner name defs (name :: revPath) OpaqueStaticGroup
+                                    // no subkind check (as above, with regular Group) because interface static blocks currently cannot contain opaques
+                                    // (because of issues with forward declaration of the opaque ptrs)
+                                    recInner name defs (name :: revPath) NormalOrOpaqueStatic
                                 name, group)
                         | InterfaceDef info ->
                             info.MaybeStaticDefs
@@ -580,7 +587,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
           Globals = globals
           SubOrder = subOrder
           SubGroups = subGroups }
-    recInner "$ROOT$" rootDefs [] NormalGroup
+    recInner "$ROOT$" rootDefs [] NormalOrOpaqueStatic
     
 let createRenderContext (moduleContext: ModuleContext) =
     let root =

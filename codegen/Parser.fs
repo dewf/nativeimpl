@@ -747,6 +747,14 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         |> List.collect id
                     let maybeStaticDefs =
                         if not flattened.IsEmpty then Some flattened else None
+                    // assert no opaques for now
+                    // maybe there's a better/more general way to check these kinds of constraints?
+                    match maybeStaticDefs with
+                    | Some defs ->
+                        if defs |> List.exists (function | UserType (_, OpaqueDef _) -> true | _ -> false) then
+                            failwithf "opaque types currently not allowed in interface definitions (interface '%s' @ %A)" name loc
+                    | None ->
+                        ()
                     maybeStaticDefs, etc
                 | _ ->
                     None, etc
@@ -1206,6 +1214,14 @@ let rec getUserTypes (defs: ModuleDefinition list) =
         | UserType (name, definition) ->
             match definition with
             | OpaqueDef info ->
+                match info.MaybeStaticDefs with
+                | Some staticDefs ->
+                    let subTable =
+                        getUserTypes staticDefs
+                    Some (name, Hybrid (definition, subTable))
+                | None ->
+                    Some (name, Direct definition)
+            | InterfaceDef info ->
                 match info.MaybeStaticDefs with
                 | Some staticDefs ->
                     let subTable =

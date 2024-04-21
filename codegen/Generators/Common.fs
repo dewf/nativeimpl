@@ -482,9 +482,15 @@ let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
     let modulePrefix, className =
         List.splitAtLast nameParts
     baseNamespace, maybeJoinedPrefix modulePrefix, className
+    
+type GroupKind =
+    | NormalGroup
+    | OpaqueStaticGroup
+    | InterfaceStaticGroup
 
 type GroupContext = {
     Name: string
+    Kind: GroupKind
     Path: string list
     Defs: ModuleDefinition list
     // broken down for easy use:
@@ -496,13 +502,14 @@ type GroupContext = {
     SubOrder: string list                
     SubGroups: Map<string, GroupContext> // will be rendered in definition order, interleaved with user types, so better to have a name-keyed Map ... but we also store order for when we are dealing only with groups
 }
+
 type RenderContext = {
     ModuleContext: ModuleContext
     GroupContext: GroupContext
 }
 
 let createGroups (rootDefs: ModuleDefinition list) =
-    let rec recInner (name: string) (groupDefs: ModuleDefinition list) (revPath: string list) =
+    let rec recInner (name: string) (groupDefs: ModuleDefinition list) (revPath: string list) (kind: GroupKind) =
         let moduleMethods =
             groupDefs
             |> List.choose (function
@@ -538,20 +545,32 @@ let createGroups (rootDefs: ModuleDefinition list) =
                 |> List.choose (function
                     | Group(name, defs) ->
                         let group =
-                            recInner name defs (name :: revPath)
+                            recInner name defs (name :: revPath) NormalGroup
                         Some (name, group)
-                    | UserType (name, OpaqueDef info) ->
-                        info.MaybeStaticDefs
-                        |> Option.map (fun defs ->
-                            let group =
-                                recInner name defs (name :: revPath)
-                            name, group)
-                    | _ -> None)
+                    | UserType (name, userType) ->
+                        match userType with
+                        | OpaqueDef info ->
+                            info.MaybeStaticDefs
+                            |> Option.map (fun defs ->
+                                let group =
+                                    recInner name defs (name :: revPath) OpaqueStaticGroup
+                                name, group)
+                        | InterfaceDef info ->
+                            info.MaybeStaticDefs
+                            |> Option.map (fun defs ->
+                                let group =
+                                    recInner name defs (name :: revPath) InterfaceStaticGroup
+                                name, group)
+                        | _ ->
+                            None
+                    | _ ->
+                        None)
             let order =
                 pairs
                 |> List.map fst
             order, pairs |> Map.ofList
         { Name = name
+          Kind = kind
           Path = List.rev revPath
           Defs = groupDefs
           ModuleMethods = moduleMethods
@@ -561,7 +580,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
           Globals = globals
           SubOrder = subOrder
           SubGroups = subGroups }
-    recInner "$ROOT$" rootDefs []
+    recInner "$ROOT$" rootDefs [] NormalGroup
     
 let createRenderContext (moduleContext: ModuleContext) =
     let root =

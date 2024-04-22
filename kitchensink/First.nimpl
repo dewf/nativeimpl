@@ -1,29 +1,31 @@
 module First;
 
-interface CoolInterface {
-    static {
-        int someIntConstant;
+opaque RootThing;
 
-        group NestedGroup {
-            group NestedGroup2 {
-                void anotherFunction(int x);
+group Nested1 {
+    opaque Opaque1;
+    opaque Opaque2;
+    opaque NestedThing {
+        static {
+            struct Wow {
+                int x;
             }
         }
-        struct SomeStruct {
-            int x;
-            string y;
-        }
-        enum CoolEnum {
-            First,
-            Second
-        }
-        sumtype MySumType {
-            Value1(int x),
-            Value2(string y)
-        }
-        void staticStringMethod(string s);
     }
-    // methods
-    void method1(CoolEnum value);
-    SomeStruct makeStruct();
+
+    interface ICoolThing {
+        static {
+            int someConst;
+            
+            opaque InterfaceNestedThing {
+                static {
+                    enum Enum01 {
+                        One,
+                        Two
+                    }
+                }
+            }
+        }
+        void doSomething();
+    }
 }

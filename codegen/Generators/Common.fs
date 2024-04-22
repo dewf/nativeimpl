@@ -558,9 +558,13 @@ let createGroups (rootDefs: ModuleDefinition list) =
                             info.MaybeStaticDefs
                             |> Option.map (fun defs ->
                                 let group =
-                                    // no subkind check (as above, with regular Group) because interface static blocks currently cannot contain opaques
-                                    // (because of issues with forward declaration of the opaque ptrs)
-                                    recInner name defs (name :: revPath) NormalOrOpaqueStatic
+                                    let subKind =
+                                        if kind = InterfaceStaticGroup then
+                                            // interfaces 'taint' the group types, no namespaces inside of static classes!
+                                            InterfaceStaticGroup
+                                        else
+                                            NormalOrOpaqueStatic
+                                    recInner name defs (name :: revPath) subKind
                                 name, group)
                         | InterfaceDef info ->
                             info.MaybeStaticDefs

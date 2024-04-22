@@ -1491,14 +1491,20 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
     | OpaqueDef info ->
         match info.MaybeStaticDefs with
         | Some _ ->
-            write 0 "namespace %s {" name
+            let kind =
+                context.GroupContext.Kind
+            match kind with
+            | NormalOrOpaqueStatic ->
+                write 0 "namespace %s {" name
+            | InterfaceStaticGroup ->
+                write 0 "static class %s {" name
             let nextContext =
                 let nextGroup =
                     context.GroupContext.SubGroups[name]
                 { context with GroupContext = nextGroup }
             renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
             // end namespace
-            write 0 "}"
+            write 0 "}%s" (if kind = InterfaceStaticGroup then ";" else "")
         | None ->
             ()
         // methods
@@ -1602,13 +1608,24 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
 and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     
-    let groupKind =
-        context.GroupContext.Kind
+    let group =
+        context.GroupContext
+        
+    if not group.Opaques.IsEmpty then
+        blank()
+        for name, info in group.Opaques do
+            let extendsComment =
+                match info.MaybeParent with
+                | Some parentType ->
+                    sprintf " // extends %s" (typeToCppString context parentType)
+                | None ->
+                    ""
+            write 0 "struct __%s; typedef struct __%s* %sRef;%s" name name name extendsComment
     
     for def in context.GroupContext.Defs do
         match def with
         | Global(globalName, globalType) ->
-            match groupKind with
+            match group.Kind with
             | NormalOrOpaqueStatic ->
                 write 0 "extern const %s %s;" (typeToCppString context globalType) globalName
             | InterfaceStaticGroup ->
@@ -1623,7 +1640,7 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
                         |> List.map (typeToCppString context)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
-            match groupKind with
+            match group.Kind with
             | NormalOrOpaqueStatic ->
                 write 0 "%s %s(%s);%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
             | InterfaceStaticGroup ->
@@ -1635,14 +1652,14 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
                 let nextGroup =
                     context.GroupContext.SubGroups[groupName]
                 { context with GroupContext = nextGroup }
-            match groupKind with
+            match group.Kind with
             | NormalOrOpaqueStatic ->
                 write 0 "namespace %s" groupName
             | InterfaceStaticGroup ->
                 write 0 "static class %s" groupName
             write 0 "{"
             renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
-            write 0 "}%s" (if groupKind = InterfaceStaticGroup then ";" else "")
+            write 0 "}%s" (if group.Kind = InterfaceStaticGroup then ";" else "")
         
 let generateImplementationH (context: RenderContext) (writer: IFormatWriter) (currentDir: string list) = // (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank
@@ -1678,38 +1695,38 @@ let generateImplementationH (context: RenderContext) (writer: IFormatWriter) (cu
         write 0 "namespace %s" (joinNameParts "::" nameParts)
     write 0 "{"
 
-    // recursively emit all opaque types at the top, so that there are no ordering/dependency issues
-    let rec renderOpaques (group: GroupContext) =
-        if not group.Opaques.IsEmpty then
-            blank()
-            for name, info in group.Opaques do
-                let extendsComment =
-                    match info.MaybeParent with
-                    | Some parentType ->
-                        sprintf " // extends %s" (typeToCppString context parentType)
-                    | None ->
-                        ""
-                let innerCommon =
-                    sprintf "struct __%s; typedef struct __%s* %sRef;" name name name
-                match group.Path with
-                | [] ->
-                    write 1 "%s%s" innerCommon extendsComment
-                | _ ->
-                    let nsJoined =
-                        String.concat "::" group.Path
-                    write 1 "namespace %s { %s }%s" nsJoined innerCommon extendsComment
-                
-        for subName in group.SubOrder do
-            let sub = group.SubGroups[subName]
-            renderOpaques sub
-    write 1 "// opaque fwd declarations"
-    renderOpaques context.GroupContext
+    // // recursively emit all opaque types at the top, so that there are no ordering/dependency issues
+    // let rec renderOpaques (group: GroupContext) =
+    //     if not group.Opaques.IsEmpty then
+    //         blank()
+    //         for name, info in group.Opaques do
+    //             let extendsComment =
+    //                 match info.MaybeParent with
+    //                 | Some parentType ->
+    //                     sprintf " // extends %s" (typeToCppString context parentType)
+    //                 | None ->
+    //                     ""
+    //             let innerCommon =
+    //                 sprintf "struct __%s; typedef struct __%s* %sRef;" name name name
+    //             match group.Path with
+    //             | [] ->
+    //                 write 1 "%s%s" innerCommon extendsComment
+    //             | _ ->
+    //                 let nsJoined =
+    //                     String.concat "::" group.Path
+    //                 write 1 "namespace %s { %s }%s" nsJoined innerCommon extendsComment
+    //             
+    //     for subName in group.SubOrder do
+    //         let sub = group.SubGroups[subName]
+    //         renderOpaques sub
+    // write 1 "// opaque fwd declarations"
+    // renderOpaques context.GroupContext
     
     renderImplementationHeaderGroup context (writer.WithExtraIndent 1)
     write 0 "}"
     
 let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWriter) =
-    let write, _ = writer.Write, writer.Blank
+    let write, blank = writer.Write, writer.Blank
     let group =
         context.GroupContext
         
@@ -1745,6 +1762,28 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                 match info.MaybeStaticDefs with
                 | Some _ ->
                     write 0 "// static content ============================="
+                    match group.Kind with
+                    | NormalOrOpaqueStatic ->
+                        write 0 "namespace %s {" (upperFirst name)
+                    | InterfaceStaticGroup ->
+                        // TODO: uhhhh this ain't right
+                        write 0 "static class %s {" (upperFirst name) // TODO: use nsPrefix
+                    let nextContext =
+                        let nextGroup =
+                            context.GroupContext.SubGroups[name]
+                        { context with GroupContext = nextGroup }
+                    renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
+                    write 0 "}%s" (if group.Kind = InterfaceStaticGroup then ";" else "")
+                | None ->
+                    ()
+                for namedFunc in synthesizeOpaqueMethods2 context name info do
+                    renderFunc namedFunc
+                blank()
+            | InterfaceDef info ->
+                match info.MaybeStaticDefs with
+                | Some _ ->
+                    write 0 "// static content ============================="
+                    // so we can't actually use namespaces/static classes for these, have to use <classname>:: prefixes from this level and deeper
                     write 0 "namespace %s {" (upperFirst name)
                     let nextContext =
                         let nextGroup =
@@ -1752,24 +1791,24 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                         { context with GroupContext = nextGroup }
                     renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
                     write 0 "}" // end namespace
-                | None ->
-                    ()
-                write 0 "// instance methods ============================="
-                for namedFunc in synthesizeOpaqueMethods2 context name info do
-                    renderFunc namedFunc
-                write 0 "// [%s end]" (upperFirst name)
+                | None -> failwith "todo"
             | _ ->
                 // write 0 "// userType: %s" name
                 ()
         | Group(groupName, _) ->
-            let nextGroup =
-                context.GroupContext.SubGroups[groupName]
             let nextContext =
+                let nextGroup =
+                    context.GroupContext.SubGroups[groupName]
                 { context with GroupContext = nextGroup }
-            write 0 "namespace %s" groupName
+            match group.Kind with
+            | NormalOrOpaqueStatic ->
+                write 0 "namespace %s" groupName
+            | InterfaceStaticGroup ->
+                // can't use this ...
+                write 0 "static class %s" groupName
             write 0 "{"
             renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
-            write 0 "}"
+            write 0 "}%s" (if group.Kind = InterfaceStaticGroup then ";" else "")
 
 let generateImplementationCpp (context: RenderContext) (writer: IFormatWriter) = // (className: string) =
     let write, blank = writer.Write, writer.Blank

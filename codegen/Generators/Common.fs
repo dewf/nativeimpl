@@ -491,6 +491,7 @@ type GroupContext = {
     Name: string
     Kind: GroupKind
     Path: string list
+    KindPath: GroupKind list
     Defs: ModuleDefinition list
     // broken down for easy use:
     ModuleMethods: NamedFunction list
@@ -508,7 +509,7 @@ type RenderContext = {
 }
 
 let createGroups (rootDefs: ModuleDefinition list) =
-    let rec recInner (name: string) (groupDefs: ModuleDefinition list) (revPath: string list) (kind: GroupKind) =
+    let rec recInner (name: string) (kind: GroupKind) (groupDefs: ModuleDefinition list) (revPath: (string * GroupKind) list) =
         let moduleMethods =
             groupDefs
             |> List.choose (function
@@ -550,7 +551,9 @@ let createGroups (rootDefs: ModuleDefinition list) =
                                     InterfaceStaticGroup
                                 else
                                     NormalOrOpaqueStatic
-                            recInner name defs (name :: revPath) subKind
+                            let nextRevPath =
+                                (name, subKind) :: revPath
+                            recInner name subKind defs nextRevPath
                         Some (name, group)
                     | UserType (name, userType) ->
                         match userType with
@@ -564,13 +567,17 @@ let createGroups (rootDefs: ModuleDefinition list) =
                                             InterfaceStaticGroup
                                         else
                                             NormalOrOpaqueStatic
-                                    recInner name defs (name :: revPath) subKind
+                                    let nextRevPath =
+                                        (name, subKind) :: revPath
+                                    recInner name subKind defs nextRevPath 
                                 name, group)
                         | InterfaceDef info ->
                             info.MaybeStaticDefs
                             |> Option.map (fun defs ->
                                 let group =
-                                    recInner name defs (name :: revPath) InterfaceStaticGroup
+                                    let nextRevPath =
+                                        (name, InterfaceStaticGroup) :: revPath
+                                    recInner name InterfaceStaticGroup defs nextRevPath
                                 name, group)
                         | _ ->
                             None
@@ -580,9 +587,13 @@ let createGroups (rootDefs: ModuleDefinition list) =
                 pairs
                 |> List.map fst
             order, pairs |> Map.ofList
+        let path, kindPath =
+            List.rev revPath
+            |> List.unzip
         { Name = name
           Kind = kind
-          Path = List.rev revPath
+          Path = path
+          KindPath = kindPath
           Defs = groupDefs
           ModuleMethods = moduleMethods
           Opaques = opaques
@@ -591,7 +602,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
           Globals = globals
           SubOrder = subOrder
           SubGroups = subGroups }
-    recInner "$ROOT$" rootDefs [] NormalOrOpaqueStatic
+    recInner "$ROOT$" NormalOrOpaqueStatic rootDefs []
     
 let createRenderContext (moduleContext: ModuleContext) =
     let root =

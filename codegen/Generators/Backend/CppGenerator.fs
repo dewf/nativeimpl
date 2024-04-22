@@ -1498,6 +1498,7 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
                 write 0 "namespace %s {" name
             | InterfaceStaticGroup ->
                 write 0 "static class %s {" name
+                write 0 "public:"
             let nextContext =
                 let nextGroup =
                     context.GroupContext.SubGroups[name]
@@ -1548,7 +1549,6 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
         write 0 "public:"
         match info.MaybeStaticDefs with
         | Some _ ->
-            write 1 "// static defs ============================="
             let nextContext =
                 let nextGroup =
                     context.GroupContext.SubGroups[name]
@@ -1654,10 +1654,10 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
                 { context with GroupContext = nextGroup }
             match group.Kind with
             | NormalOrOpaqueStatic ->
-                write 0 "namespace %s" groupName
+                write 0 "namespace %s {" groupName
             | InterfaceStaticGroup ->
-                write 0 "static class %s" groupName
-            write 0 "{"
+                write 0 "static class %s {" groupName
+                write 0 "public:"
             renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
             write 0 "}%s" (if group.Kind = InterfaceStaticGroup then ";" else "")
         
@@ -1730,6 +1730,20 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
     let group =
         context.GroupContext
         
+    let nsPrefix =
+        match group.Kind with
+        | NormalOrOpaqueStatic ->
+            ""
+        | InterfaceStaticGroup ->
+            // since we can't use the usual nested 'namespace { ... }' with c++ classes,
+            // we have to prefix classnames, sigh
+            // find all non-namespace class segments since the last one and join them together
+            List.zip group.Path group.KindPath
+            |> List.filter (fun (_, kind) -> kind = InterfaceStaticGroup)
+            |> List.map fst
+            |> String.concat "::"
+            |> sprintf "%s::"
+        
     let renderFunc (namedFunc: NamedFunction) =
         let throwsComment =
             if namedFunc.Throws.IsEmpty then
@@ -1740,7 +1754,7 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                     |> List.map (typeToCppString context)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
-        write 0 "%s %s(%s) {%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+        write 0 "%s %s%s(%s) {%s" (typeToCppString context namedFunc.Returns) nsPrefix namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
         if namedFunc.Returns <> UnitType then
             write 1 "return %s;" (defaultValueForType context namedFunc.Returns)
         write 0 "}"
@@ -1748,32 +1762,29 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
     for def in group.Defs do
         match def with
         | Global(globalName, globalType) ->
-            write 0 "const %s %s = %s;" (typeToCppString context globalType) globalName (defaultValueForType context globalType)
+            write 0 "const %s %s%s = %s;" (typeToCppString context globalType) nsPrefix globalName (defaultValueForType context globalType)
         | FunctionDef namedFunc ->
             renderFunc namedFunc
         | UserType(name, userType) ->
             match userType with
             | OpaqueDef info ->
-                write 0 "// [opaque: %s]" (upperFirst name)
-                write 0 "struct __%s {" (upperFirst name)
+                write 0 "struct %s__%s {" nsPrefix (upperFirst name)
                 write 1 "// your content here"
                 write 1 "// (or delete this and cast your own opaque ptr to '%sRef' in the stubs below)" (upperFirst name)
                 write 0 "};"
                 match info.MaybeStaticDefs with
                 | Some _ ->
-                    write 0 "// static content ============================="
-                    match group.Kind with
-                    | NormalOrOpaqueStatic ->
-                        write 0 "namespace %s {" (upperFirst name)
-                    | InterfaceStaticGroup ->
-                        // TODO: uhhhh this ain't right
-                        write 0 "static class %s {" (upperFirst name) // TODO: use nsPrefix
                     let nextContext =
                         let nextGroup =
                             context.GroupContext.SubGroups[name]
                         { context with GroupContext = nextGroup }
-                    renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
-                    write 0 "}%s" (if group.Kind = InterfaceStaticGroup then ";" else "")
+                    match group.Kind with
+                    | NormalOrOpaqueStatic ->
+                        write 0 "namespace %s {" (upperFirst name)
+                        renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
+                        write 0 "}"
+                    | InterfaceStaticGroup ->
+                        renderImplementationCppGroup nextContext writer // no indent!
                 | None ->
                     ()
                 for namedFunc in synthesizeOpaqueMethods2 context name info do
@@ -1782,16 +1793,13 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
             | InterfaceDef info ->
                 match info.MaybeStaticDefs with
                 | Some _ ->
-                    write 0 "// static content ============================="
-                    // so we can't actually use namespaces/static classes for these, have to use <classname>:: prefixes from this level and deeper
-                    write 0 "namespace %s {" (upperFirst name)
                     let nextContext =
                         let nextGroup =
                             context.GroupContext.SubGroups[name]
                         { context with GroupContext = nextGroup }
-                    renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
-                    write 0 "}" // end namespace
-                | None -> failwith "todo"
+                    renderImplementationCppGroup nextContext writer // no indent
+                | None ->
+                    ()
             | _ ->
                 // write 0 "// userType: %s" name
                 ()
@@ -1802,13 +1810,11 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                 { context with GroupContext = nextGroup }
             match group.Kind with
             | NormalOrOpaqueStatic ->
-                write 0 "namespace %s" groupName
+                write 0 "namespace %s {" groupName
+                renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
+                write 0 "}"
             | InterfaceStaticGroup ->
-                // can't use this ...
-                write 0 "static class %s" groupName
-            write 0 "{"
-            renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
-            write 0 "}%s" (if group.Kind = InterfaceStaticGroup then ";" else "")
+                renderImplementationCppGroup nextContext writer
 
 let generateImplementationCpp (context: RenderContext) (writer: IFormatWriter) = // (className: string) =
     let write, blank = writer.Write, writer.Blank

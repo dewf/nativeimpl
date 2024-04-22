@@ -16,7 +16,7 @@ group Nested1 {
     interface ICoolThing {
         static {
             int someConst;
-            
+
             opaque InterfaceNestedThing {
                 static {
                     enum Enum01 {
@@ -29,3 +29,5 @@ group Nested1 {
         void doSomething();
     }
 }
+
+void rootFunction(Nested1.ICoolThing.InterfaceNestedThing.Enum01 value);

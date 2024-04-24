@@ -484,8 +484,9 @@ let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
     baseNamespace, maybeJoinedPrefix modulePrefix, className
     
 type GroupKind =
-    | NormalOrOpaqueStatic
-    | InterfaceStaticGroup
+    | NormalGroup
+    | OpaqueStatic
+    | InterfaceStatic
 
 type GroupContext = {
     Name: string
@@ -506,7 +507,11 @@ type GroupContext = {
 type RenderContext = {
     ModuleContext: ModuleContext
     GroupContext: GroupContext
-}
+} with
+    member this.NavigateToSub(name: string) =
+        let nextGroup =
+            this.GroupContext.SubGroups[name]
+        { this with GroupContext = nextGroup }
 
 let createGroups (rootDefs: ModuleDefinition list) =
     let rec recInner (name: string) (kind: GroupKind) (groupDefs: ModuleDefinition list) (revPath: (string * GroupKind) list) =
@@ -546,11 +551,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
                     | Group(name, defs) ->
                         let group =
                             let subKind =
-                                if kind = InterfaceStaticGroup then
-                                    // interfaces 'taint' the group types, no namespaces inside of static classes!
-                                    InterfaceStaticGroup
-                                else
-                                    NormalOrOpaqueStatic
+                                NormalGroup
                             let nextRevPath =
                                 (name, subKind) :: revPath
                             recInner name subKind defs nextRevPath
@@ -562,11 +563,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
                             |> Option.map (fun defs ->
                                 let group =
                                     let subKind =
-                                        if kind = InterfaceStaticGroup then
-                                            // interfaces 'taint' the group types, no namespaces inside of static classes!
-                                            InterfaceStaticGroup
-                                        else
-                                            NormalOrOpaqueStatic
+                                        OpaqueStatic
                                     let nextRevPath =
                                         (name, subKind) :: revPath
                                     recInner name subKind defs nextRevPath 
@@ -575,9 +572,11 @@ let createGroups (rootDefs: ModuleDefinition list) =
                             info.MaybeStaticDefs
                             |> Option.map (fun defs ->
                                 let group =
+                                    let subKind =
+                                        InterfaceStatic
                                     let nextRevPath =
-                                        (name, InterfaceStaticGroup) :: revPath
-                                    recInner name InterfaceStaticGroup defs nextRevPath
+                                        (name, subKind) :: revPath
+                                    recInner name subKind defs nextRevPath
                                 name, group)
                         | _ ->
                             None
@@ -602,42 +601,93 @@ let createGroups (rootDefs: ModuleDefinition list) =
           Globals = globals
           SubOrder = subOrder
           SubGroups = subGroups }
-    recInner "$ROOT$" NormalOrOpaqueStatic rootDefs []
+    recInner "$ROOT$" NormalGroup rootDefs []
     
 let createRenderContext (moduleContext: ModuleContext) =
     let root =
         createGroups moduleContext.Module.Defs
     { ModuleContext = moduleContext; GroupContext = root }
     
+let resolvedNamePathToKindPath (m: ModuleContext) (name: ResolvedName) =
+    let m, parts = 
+        match name with
+        | ThisModule (SymbolName parts) ->
+            m.Module, parts
+        | Imported(moduleName, SymbolName parts) ->
+            m.Loaded[moduleName], parts
+    let rec recInner (table: SymbolTable) (remaining: string list) =
+        match remaining with
+        | [] ->
+            failwith "resolvedNameToGroupKindPrefix: empty list, shouldn't happen"
+        | [ _ ] ->
+            // last item, should be 'Direct' and we don't care about that - only the path prefix
+            []
+        | h :: etc ->
+            let kind, sub =
+                match table[h] with
+                | Direct _ ->
+                    failwithf "resolvedNameToGroupKindPrefix: encounted 'Direct' entry in middle of path?"
+                | SubTable table ->
+                    NormalGroup, table
+                | Hybrid(thing, table) ->
+                    match thing with
+                    | OpaqueDef _ ->
+                        OpaqueStatic, table
+                    | InterfaceDef _ ->
+                        InterfaceStatic, table
+                    | _ ->
+                        failwithf "resolvedNameToGroupKindPrefix:recInner: unhandled hybrid 'thing' type"
+            kind :: recInner sub etc
+    let table =
+        match m.SymbolTable with
+        | Complete table ->
+            table
+        | _ ->
+            failwith "resolvedNameToGroupKindPrefix: symbol table not in 'Complete' state??"
+    recInner table parts
+    
 type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
     | GenericIdentifierMode
-let resolvedNameToStringAbstract (languageNsDelim: string) (maybePathClamp: string list option) (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+let resolvedNameToStringAbstract (languageNsDelim: string) (partRenameFunc: string -> GroupKind -> string) (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
     let separator =
         match mode with
         | TypeMode -> languageNsDelim
         | IdentifierMode | GenericIdentifierMode -> "_"
-    let originPath =
-        // this is for C++ currently, because in .cpp files we can't actually nest down into a class-static namespace via namespace{} blocks
-        // so this will basically force any addressing of those names to use explicit class prefixes, eg class1::subclass::thing, instead of namespace class1 { namespace subclass { ... } }
-        match maybePathClamp with
-        | Some pathClamp ->
-            if List.startsWith pathClamp context.GroupContext.Path then
-                pathClamp
-            else
-                context.GroupContext.Path
-        | None ->
-            context.GroupContext.Path
+        
+    // sigh, this part is a mess
+    // but sadly to make things work with C++, we need the ability to rename namespace segments anywhere they might appear
+    // other backend languages might not have to use this functionality
+    let kindParts =
+        resolvedNamePathToKindPath context.ModuleContext name
+        |> List.map Some
+        |> (fun x -> x @ [None]) // final segment has no group kind, should be a direct thing
+    let renameParts (parts: string list) =
+        List.zip parts kindParts
+        |> List.map (fun (name, maybeKind) ->
+            match maybeKind with
+            | Some kind ->
+                partRenameFunc name kind
+            | None ->
+                name)
+    let currentContextPath =
+        // perform rename as well! otherwise it won't match / be properly stripped with List.removePrefix below :(
+        List.zip context.GroupContext.Path context.GroupContext.KindPath
+        |> List.map (fun (name, kind) -> partRenameFunc name kind)
+        
     match name with
     | ThisModule (SymbolName parts) ->
+        // rename the 'parts' segments now, based on their kinds
+        let parts =
+            renameParts parts
         // strip current namespace prefix if possible
         // (but not in Generics mode)
         let parts2 =
             match mode with
             | GenericIdentifierMode -> parts
             | _ ->
-                match List.removePrefix originPath parts with
+                match List.removePrefix currentContextPath parts with
                 | Some remaining ->
                     if remaining.IsEmpty then
                         // have to leave at least one segment!
@@ -647,9 +697,12 @@ let resolvedNameToStringAbstract (languageNsDelim: string) (maybePathClamp: stri
                 | None -> parts
         joinNameParts separator (parts2 |> List.map upperFirst)
     | Imported(moduleName, symbolName) ->
+        // rename the 'symbolParts' segments now, based on their kinds
         let symbolParts =
             match symbolName with
-            | SymbolName parts -> parts
+            | SymbolName parts ->
+                // apply the segment rename func
+                renameParts parts
         if symbolIsUnambiguous context.ModuleContext symbolName then
             joinNameParts separator (symbolParts |> List.map upperFirst)
         else

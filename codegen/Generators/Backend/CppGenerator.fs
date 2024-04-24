@@ -8,12 +8,13 @@ open Util
 open Generators.Common
 open Extensions
 
+let groupSegmentRenameFunc (name: string) = function
+    | NormalGroup -> name
+    | OpaqueStatic -> name + "Static"
+    | InterfaceStatic -> name + "Static"
+        
 let resolvedNameToString =
-    let renameFunc (name: string) = function
-        | NormalGroup -> name
-        | OpaqueStatic -> name + "Static"
-        | InterfaceStatic -> name + "Static"
-    resolvedNameToStringAbstract "::" renameFunc
+    resolvedNameToStringAbstract "::" groupSegmentRenameFunc
     
 let getRelativePath (currentPath: string list) (targetPath: string list) =
     // remove common segments
@@ -1119,8 +1120,8 @@ let rec renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) 
         | Some _ ->
             let nextContext =
                 context.NavigateToSub(name)
-            writeH 0 "namespace %s {" name
-            writeCpp 0 "namespace %s {" name
+            writeH 0 "namespace %sStatic {" name
+            writeCpp 0 "namespace %sStatic {" name
             //
             renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
             //
@@ -1193,6 +1194,21 @@ let rec renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) 
         writeCpp 1 "throw %s(%s);" name (joinedFieldNames exFields)
         writeCpp 0 "}"
     | InterfaceDef info ->
+        // nested static block
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            let nextContext =
+                context.NavigateToSub(name)
+            writeH 0 "namespace %sStatic {" name
+            writeCpp 0 "namespace %sStatic {" name
+            //
+            renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
+            //
+            writeH 0 "}"
+            writeCpp 0 "}"
+        | None ->
+            ()
+        // actual class
         let outerType =
             let symbolName =
                 SymbolName (context.GroupContext.Path @ [ name ])
@@ -1359,8 +1375,14 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     writeCpp 2 "auto m = ni_registerModule(\"%s\");" m.Name.LastPart
     if allGlobalsCount > 0 then
         writeCpp 2 "ni_registerModuleConstants(m, &__constantsFunc);"
+        
     // register all nested group methods/interfaces/etc
     let rec registerGroupMethods (group: GroupContext) (writer: IFormatWriter) =
+        // apply any renaming rules to the group path segments
+        let groupPathRenamed =
+            List.zip group.Path group.KindPath
+            |> List.map (fun (name, kind) -> groupSegmentRenameFunc name kind)
+            
         // module methods (+ synthesized opaque)
         let opaqueMethods =
             group.Opaques
@@ -1369,16 +1391,16 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
             group.ModuleMethods @ opaqueMethods
         for namedFunction in allMethods do
             let parts =
-                group.Path @ [ namedFunction.Name ]
+                groupPathRenamed @ [ namedFunction.Name ]
             writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" parts)
         // interfaces + methods
         for name, info in group.Interfaces do
             let lowerIfaceName =
                 lowerFirst name
             let parts =
-                group.Path @ [ name ]
+                groupPathRenamed @ [ name ]
             let lowerParts =
-                group.Path @ [ lowerIfaceName ]
+                groupPathRenamed @ [ lowerIfaceName ]
             writeCpp 2 "auto %s = ni_registerInterface(m, \"%s\");" lowerIfaceName (joinNameParts "." parts)
             for method in info.Methods do
                 let targetVarName =
@@ -1389,7 +1411,7 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
         // exceptions
         for name, _ in group.Exceptions do
             let parts =
-                group.Path @ [ name ]
+                groupPathRenamed @ [ name ]
             let lowerName =
                 lowerFirst name
             writeCpp 2 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" lowerName (joinNameParts "." parts) (joinNameParts "::" parts)

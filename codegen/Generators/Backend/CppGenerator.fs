@@ -1363,14 +1363,15 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     // globals/constants func
     let allGlobalsCount =
         let rec groupCount (group: GroupContext) =
-            group.Defs
-            |> List.sumBy (function
-                | Global _ -> 1
-                | Group(name, _) ->
-                   let sub =
-                       group.SubGroups[name]
-                   groupCount sub
-                | _ -> 0)
+            let thisCount =
+                group.Defs
+                |> List.sumBy (function
+                    | Global _ -> 1
+                    | _ -> 0 )
+            let subCount =
+                group.SubOrder
+                |> List.sumBy (fun name -> groupCount group.SubGroups[name])
+            thisCount + subCount
         groupCount context.GroupContext
         
     if allGlobalsCount > 0 then
@@ -1382,8 +1383,11 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
                 let sub = group.SubGroups[subName]
                 pushGroupConstants sub
             for globalName, globalType in group.Globals |> List.rev do
+                let renamedPath =
+                    (group.Path, group.KindPath)
+                    ||> List.map2 groupSegmentRenameFunc
                 let content =
-                    joinNameParts "::" (group.Path @ [ globalName ])
+                    joinNameParts "::" (renamedPath @ [ globalName ])
                 pushValue context writerCpp 2 globalType content (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
         pushGroupConstants context.GroupContext
         writeCpp 1 "}"

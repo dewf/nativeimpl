@@ -81,4 +81,19 @@ module List =
         |> List.partition fst
         |> (fun (left, right) ->
             left |> List.map snd, right |> List.map snd)
-         
+    
+    let startsWith (prefix: 'a list) (xs: 'a list) =
+        let rec recInner (pRemain: 'a list) (xRemain: 'a list) =
+            match pRemain, xRemain with
+            | pHead :: pEtc, xHead :: xEtc when pHead = xHead ->
+                recInner pEtc xEtc
+            | [], xEtc ->
+                // xEtc might be empty, but we did exhaust the prefix as asked
+                true
+            | _ :: _, [] ->
+                // ran out of target list before consuming prefix
+                false
+            | _ ->
+                // heads exist but not equal, fail
+                false
+        recInner prefix xs

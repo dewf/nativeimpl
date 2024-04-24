@@ -613,11 +613,22 @@ type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
     | GenericIdentifierMode
-let resolvedNameToStringAbstract (languageNsDelim: string) (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+let resolvedNameToStringAbstract (languageNsDelim: string) (maybePathClamp: string list option) (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
     let separator =
         match mode with
         | TypeMode -> languageNsDelim
         | IdentifierMode | GenericIdentifierMode -> "_"
+    let originPath =
+        // this is for C++ currently, because in .cpp files we can't actually nest down into a class-static namespace via namespace{} blocks
+        // so this will basically force any addressing of those names to use explicit class prefixes, eg class1::subclass::thing, instead of namespace class1 { namespace subclass { ... } }
+        match maybePathClamp with
+        | Some pathClamp ->
+            if List.startsWith pathClamp context.GroupContext.Path then
+                pathClamp
+            else
+                context.GroupContext.Path
+        | None ->
+            context.GroupContext.Path
     match name with
     | ThisModule (SymbolName parts) ->
         // strip current namespace prefix if possible
@@ -626,7 +637,7 @@ let resolvedNameToStringAbstract (languageNsDelim: string) (context: RenderConte
             match mode with
             | GenericIdentifierMode -> parts
             | _ ->
-                match List.removePrefix context.GroupContext.Path parts with
+                match List.removePrefix originPath parts with
                 | Some remaining ->
                     if remaining.IsEmpty then
                         // have to leave at least one segment!

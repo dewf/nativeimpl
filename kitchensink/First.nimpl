@@ -2,32 +2,36 @@ module First;
 
 opaque RootThing;
 
+exception RootException(int x);
+
 group Nested1 {
     opaque Opaque1;
     opaque Opaque2;
+
     opaque NestedThing {
         static {
             struct Wow {
                 int x;
             }
         }
+        void singleMethod(Wow value);
     }
 
     interface ICoolThing {
         static {
             int someConst;
+            exception Exceptional(string msg);
             opaque InterfaceNestedThing {
                 static {
                     enum Enum01 {
                         One,
                         Two
                     }
-
-                    void noice(Enum01 value3);
+                    void noice(Enum01 value3) throws Exceptional;
                 }
             }
         }
-        void doSomething();
+        void doSomething() throws RootException;
     }
 }
 

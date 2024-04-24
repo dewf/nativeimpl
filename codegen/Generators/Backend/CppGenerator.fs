@@ -382,8 +382,26 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
         write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
     | _ ->
         write level "// (pushValue not supported yet: %A)" type_
+        
+let exceptionTypeAndVariableName (context: RenderContext) (resolvedName: ResolvedName) =
+    let typeName =
+        resolvedNameToString context resolvedName TypeMode
+    let parts =
+        typeName.Split("::")
+        |> Array.toList
+        |> List.rev
+    match parts with
+    | last :: revEtc ->
+        let nsPrefix =
+            List.rev revEtc
+        let variableName =
+            nsPrefix @ [ lowerFirst last ]
+            |> String.concat "::"
+        typeName, variableName
+    | [] ->
+        failwith "exceptionVariableName: shouldn't happen"
 
-let renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) =
+let rec renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, _ = writerH.Write, writerH.Blank
     // push
@@ -410,10 +428,10 @@ let renderWrapperDelegate (context: RenderContext) (writerH: IFormatWriter) (wri
         for exc in info.Throws do
             match exc with
             | Resolved (resolvedName, ExceptionType) ->
-                let exceptionName =
-                    resolvedNameToString context resolvedName IdentifierMode
+                let _, variableName =
+                    exceptionTypeAndVariableName context resolvedName
                 writeCpp 2 "catch (const %s& e) {" (typeToCppString context exc)
-                writeCpp 3 "ni_setException(%s);" (lowerFirst exceptionName)
+                writeCpp 3 "ni_setException(%s);" variableName
                 pushValue context writerCpp 3 exc "e" (Direct true)
                 writeCpp 2 "}"
             | _ ->
@@ -571,10 +589,10 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
             for exc in nf.Throws do
                 match exc with
                 | Resolved (resolvedName, ExceptionType) ->
-                    let typeName =
-                        resolvedNameToString context resolvedName TypeMode
+                    let typeName, variableName =
+                        exceptionTypeAndVariableName context resolvedName
                     writeCpp 1 "catch (const %s& e) {" typeName
-                    writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
+                    writeCpp 2 "ni_setException(%s);" variableName
                     writeCpp 2 "%s__push(e);" typeName
                     writeCpp 1 "}"
                 | _ ->
@@ -944,10 +962,10 @@ let renderWrapperNamedFunc (context: RenderContext) (writerH: IFormatWriter) (wr
         for exc in namedFunction.Throws do
             match exc with
             | Resolved (resolvedName, ExceptionType) ->
-                let typeName =
-                    resolvedNameToString context resolvedName TypeMode
+                let typeName, variableName =
+                    exceptionTypeAndVariableName context resolvedName
                 writeCpp 1 "catch (const %s& e) {" typeName
-                writeCpp 2 "ni_setException(%s);" (lowerFirst typeName)
+                writeCpp 2 "ni_setException(%s);" variableName
                 pushValue context writerCpp 2 exc "e" (Direct true)
                 writeCpp 1 "}"
             | _ ->
@@ -1394,13 +1412,17 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
             group.ModuleMethods @ opaqueMethods
         for namedFunction in allMethods do
             let parts =
+                group.Path @ [ namedFunction.Name ]
+            let renamedParts =
                 groupPathRenamed @ [ namedFunction.Name ]
-            writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" parts)
+            writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" renamedParts)
         // interfaces + methods
         for name, info in group.Interfaces do
             let lowerIfaceName =
                 lowerFirst name
             let parts =
+                group.Path @ [ name ]
+            let renamedParts =
                 groupPathRenamed @ [ name ]
             let lowerParts =
                 groupPathRenamed @ [ lowerIfaceName ]
@@ -1409,15 +1431,22 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
                 let targetVarName =
                     sprintf "%s_%s" (joinNameParts "::" lowerParts) method.Name
                 let wrapperName =
-                    sprintf "%s_%s__wrapper" (joinNameParts "::" parts) method.Name
+                    sprintf "%s_%s__wrapper" (joinNameParts "::" renamedParts) method.Name
                 writeCpp 2 "%s = ni_registerInterfaceMethod(%s, \"%s\", &%s);" targetVarName lowerIfaceName method.Name wrapperName
         // exceptions
         for name, _ in group.Exceptions do
             let parts =
+                group.Path @ [ name ]
+            let renamedParts =
                 groupPathRenamed @ [ name ]
             let lowerName =
                 lowerFirst name
-            writeCpp 2 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" lowerName (joinNameParts "." parts) (joinNameParts "::" parts)
+            let assignTo =
+                let prefix =
+                    if groupPathRenamed.IsEmpty then ""
+                    else (joinNameParts "::" groupPathRenamed) + "::"
+                prefix + lowerName
+            writeCpp 2 "%s = ni_registerException(m, \"%s\", &%s__buildAndThrow);" assignTo (joinNameParts "." parts) (joinNameParts "::" renamedParts)
         // subgroups
         for subName in group.SubOrder do
             let sub = group.SubGroups[subName]
@@ -1548,7 +1577,6 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
         renderHeaderException context writer name namedFields
     | InterfaceDef info ->
         let renderMethods (context: RenderContext) =
-            write 1 "// instance methods ========================"
             for namedFunc in info.Methods do
                 let throwsComment =
                     if namedFunc.Throws.IsEmpty then

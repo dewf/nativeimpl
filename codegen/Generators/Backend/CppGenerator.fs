@@ -1380,8 +1380,8 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     let rec registerGroupMethods (group: GroupContext) (writer: IFormatWriter) =
         // apply any renaming rules to the group path segments
         let groupPathRenamed =
-            List.zip group.Path group.KindPath
-            |> List.map (fun (name, kind) -> groupSegmentRenameFunc name kind)
+            (group.Path, group.KindPath)
+            ||> List.map2 groupSegmentRenameFunc
             
         // module methods (+ synthesized opaque)
         let opaqueMethods =

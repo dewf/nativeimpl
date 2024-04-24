@@ -8,10 +8,13 @@ open Util
 open Generators.Common
 open Extensions
 
+let STATIC_SUFFIX =
+    "Static"
+
 let groupSegmentRenameFunc (name: string) = function
     | NormalGroup -> name
-    | OpaqueStatic -> name + "Static"
-    | InterfaceStatic -> name + "Static"
+    | OpaqueStatic -> name + STATIC_SUFFIX
+    | InterfaceStatic -> name + STATIC_SUFFIX
         
 let resolvedNameToString =
     resolvedNameToStringAbstract "::" groupSegmentRenameFunc
@@ -1120,8 +1123,8 @@ let rec renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) 
         | Some _ ->
             let nextContext =
                 context.NavigateToSub(name)
-            writeH 0 "namespace %sStatic {" name
-            writeCpp 0 "namespace %sStatic {" name
+            writeH 0 "namespace %s%s {" name STATIC_SUFFIX
+            writeCpp 0 "namespace %s%s {" name STATIC_SUFFIX
             //
             renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
             //
@@ -1199,8 +1202,8 @@ let rec renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) 
         | Some _ ->
             let nextContext =
                 context.NavigateToSub(name)
-            writeH 0 "namespace %sStatic {" name
-            writeCpp 0 "namespace %sStatic {" name
+            writeH 0 "namespace %s%s {" name STATIC_SUFFIX
+            writeCpp 0 "namespace %s%s {" name STATIC_SUFFIX
             //
             renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
             //
@@ -1513,7 +1516,7 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
     | OpaqueDef info ->
         match info.MaybeStaticDefs with
         | Some _ ->
-            write 0 "namespace %sStatic {" name
+            write 0 "namespace %s%s {" name STATIC_SUFFIX
             let nextContext =
                 context.NavigateToSub(name)
             renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
@@ -1562,7 +1565,7 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
         | Some _ ->
             let nextContext =
                 context.NavigateToSub(name)
-            write 0 "namespace %sStatic {" name
+            write 0 "namespace %s%s {" name STATIC_SUFFIX
             let nextContext =
                 context.NavigateToSub(name)
             renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
@@ -1762,7 +1765,7 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                 | Some _ ->
                     let nextContext =
                         context.NavigateToSub(name)
-                    write 0 "namespace %sStatic {" (upperFirst name)
+                    write 0 "namespace %s%s {" (upperFirst name) STATIC_SUFFIX
                     renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
                     write 0 "}"
                 | None ->
@@ -1775,7 +1778,7 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                 | Some _ ->
                     let nextContext =
                         context.NavigateToSub(name)
-                    write 0 "namespace %sStatic {" (upperFirst name)
+                    write 0 "namespace %s%s {" (upperFirst name) STATIC_SUFFIX
                     renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
                     write 0 "}"
                 | None ->

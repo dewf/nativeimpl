@@ -1791,7 +1791,7 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
             | OpaqueDef info ->
                 write 0 "struct __%s {" (upperFirst name)
                 write 1 "// your content here"
-                write 1 "// (or delete this and cast your own opaque ptr to '%sRef' in the stubs below)" (upperFirst name)
+                write 1 "// (or delete this and cast your own opaque ptr to '%s' in the stubs below)" (upperFirst name)
                 write 0 "};"
                 match info.MaybeStaticDefs with
                 | Some _ ->

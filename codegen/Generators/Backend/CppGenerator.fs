@@ -1362,17 +1362,7 @@ let generateWrappers (context: RenderContext) (writerH: IFormatWriter) (writerCp
     
     // globals/constants func
     let allGlobalsCount =
-        let rec groupCount (group: GroupContext) =
-            let thisCount =
-                group.Defs
-                |> List.sumBy (function
-                    | Global _ -> 1
-                    | _ -> 0 )
-            let subCount =
-                group.SubOrder
-                |> List.sumBy (fun name -> groupCount group.SubGroups[name])
-            thisCount + subCount
-        groupCount context.GroupContext
+        countGroupConstants context.GroupContext
         
     if allGlobalsCount > 0 then
         blankCpp()

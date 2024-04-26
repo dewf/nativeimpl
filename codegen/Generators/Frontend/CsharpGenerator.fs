@@ -1459,18 +1459,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 3 "_module = NativeImplClient.GetModule(\"%s\");" (joinModuleName m.Name)
     
     // pop module constants, if any
-    let allGlobalsCount =
-        let rec groupCount (group: GroupContext) =
-            group.Defs
-            |> List.sumBy (function
-                | Global _ -> 1
-                | Group(name, _) ->
-                   let sub =
-                       group.SubGroups[name]
-                   groupCount sub
-                | _ -> 0)
-        groupCount root
-    if allGlobalsCount > 0 then
+    if countGroupConstants root > 0 then
         write 3 "// assign module constants"
         write 3 "NativeImplClient.PushModuleConstants(_module);"
         // recursively pop and assign module constants

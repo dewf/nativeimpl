@@ -768,3 +768,18 @@ let resolvedNameToStringAbstract (languageNsDelim: string) (partRenameFunc: stri
     //     //         match moduleName with
     //     //         | ModuleName moduleParts ->
     //     //             joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
+
+let countGroupConstants (top: GroupContext) =
+    let rec groupCount (group: GroupContext) =
+        let thisCount =
+            group.Defs
+            |> List.sumBy (function
+                | Global _ -> 1
+                | _ -> 0 )
+        let subCount =
+            group.SubOrder
+            |> List.sumBy (fun name -> groupCount group.SubGroups[name])
+        thisCount + subCount
+    groupCount top
+  
+    

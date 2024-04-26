@@ -707,7 +707,7 @@ let renderGeneric (context: RenderContext) (writer: IFormatWriter) (gType: NITyp
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
         
-let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
+let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
     
     match userType with
@@ -763,32 +763,42 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
         write 5 "_disposed = true;"
         write 4 "}"
         write 3 "}"
-        // instance methods
-        for namedFunc in info.Methods do
-            let throwsComment =
+        let renderInstanceMethods (context: RenderContext) =
+            for namedFunc in info.Methods do
+                let throwsComment =
+                    if namedFunc.Throws.IsEmpty then
+                        ""
+                    else
+                        let joined =
+                            namedFunc.Throws
+                            |> List.map (typeToCsString context)
+                            |> String.concat ", "
+                        sprintf " // throws %s" joined
+                write 3 "public %s %s(%s)%s" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args) throwsComment
+                write 3 "{"
+                // push args in reverse
+                for argName, argType in namedFunc.Args |> List.rev do
+                    pushValue context writer 4 argType argName (Direct false)
+                // push self argument
+                pushValue context writer 4 fakeThis "this" (Direct false)
+                // invoke remote
                 if namedFunc.Throws.IsEmpty then
-                    ""
+                    write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.Name
                 else
-                    let joined =
-                        namedFunc.Throws
-                        |> List.map (typeToCsString context)
-                        |> String.concat ", "
-                    sprintf " // throws %s" joined
-            write 3 "public %s %s(%s)%s" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args) throwsComment
-            write 3 "{"
-            // push args in reverse
-            for argName, argType in namedFunc.Args |> List.rev do
-                pushValue context writer 4 argType argName (Direct false)
-            // push self argument
-            pushValue context writer 4 fakeThis "this" (Direct false)
-            // invoke remote
-            if namedFunc.Throws.IsEmpty then
-                write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.Name
-            else
-                write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.Name
-            // return pop
-            popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
-            write 3 "}"
+                    write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.Name
+                // return pop
+                popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+                write 3 "}"
+        // static content
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            let nextContext =
+                context.NavigateToSub(name)
+            renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            // render methods in context of static block, so things aren't necessarily prefixed
+            renderInstanceMethods nextContext
+        | None ->
+            renderInstanceMethods context
         // end class definition
         write 2 "}"
         // push
@@ -1024,22 +1034,31 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
         write 3 "{"
         write 4 "// nothing by default"
         write 3 "}"
-        for method in info.Methods do
-            let throwsComment =
-                if method.Throws.IsEmpty then
-                    ""
-                else
-                    let joined =
-                        method.Throws
-                        |> List.map (typeToCsString context)
-                        |> String.concat ", "
-                    sprintf " // throws %s" joined
-            write 3 "%s %s(%s);%s" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args) throwsComment
+        let renderMethods (context: RenderContext) =
+            for method in info.Methods do
+                let throwsComment =
+                    if method.Throws.IsEmpty then
+                        ""
+                    else
+                        let joined =
+                            method.Throws
+                            |> List.map (typeToCsString context)
+                            |> String.concat ", "
+                        sprintf " // throws %s" joined
+                write 3 "%s %s(%s);%s" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args) throwsComment
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            let nextContext =
+                context.NavigateToSub(name)
+            renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            renderMethods nextContext
+        | None ->
+            renderMethods context
         write 2 "}"
         // lookup table and client wrapper
         blank()
         write 2 "private static Dictionary<%s, IPushable> __%sToPushable = new();" (upperFirst name) (upperFirst name)
-        write 2 "private class __%sWrapper : ClientInterfaceWrapper<%s>" (upperFirst name) (upperFirst name)
+        write 2 "internal class __%sWrapper : ClientInterfaceWrapper<%s>" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "public __%sWrapper(%s rawInterface) : base(rawInterface)" (upperFirst name) (upperFirst name)
         write 3 "{"
@@ -1210,6 +1229,72 @@ let renderUserType (context: RenderContext) (writer: IFormatWriter) (name: strin
         write 3 "return Wrapper;"
         write 2 "}"
 
+and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
+    let write, blank = writer.Write, writer.Blank
+    
+    let groupContext =
+        context.GroupContext
+    
+    // declare top level function handles
+    for namedFunc in groupContext.ModuleMethods do
+        write 2 "internal static ModuleMethodHandle _%s;" namedFunc.Name
+
+    for name, info in groupContext.Opaques do
+        // instance methods
+        for method in info.Methods do
+            write 2 "internal static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
+        // synthesized dispose method
+        write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
+    
+    // interfaces
+    for name, info in groupContext.Interfaces do
+        write 2 "internal static InterfaceHandle _%s;" (lowerFirst name)
+        for method in info.Methods do
+            write 2 "internal static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
+    
+    // exceptions
+    for name, _ in groupContext.Exceptions do
+        write 2 "internal static ExceptionHandle _%s;" (lowerFirst name)
+    
+    // globals declaration
+    for name, type_ in groupContext.Globals do
+        write 2 "public static %s %s { get; internal set; }" (typeToCsString context type_) (upperFirst name)
+    
+    // top-level functions ===========
+    for namedFunc in groupContext.ModuleMethods do
+        blank()
+        write 2 "public static %s %s(%s)" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args)
+        write 2 "{"
+        // push args in reverse
+        for argName, argType in namedFunc.Args |> List.rev do
+            pushValue context writer 3 argType argName (Direct false)
+        // invoke remote
+        if namedFunc.Throws.IsEmpty then
+            write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.Name
+        else
+            write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.Name
+        // return pop
+        popValue context writer 3 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+        write 2 "}"
+    
+    // render user types + nested groups in order of declaration
+    for def in groupContext.Defs do
+        match def with
+        | UserType(name, userType) ->
+            renderUserType context writer name userType
+        | Group(name, _) ->
+            let group =
+                groupContext.SubGroups[name]
+            let nextContext =
+                { context with GroupContext = group }
+            write 2 "public static class %s" group.Name
+            write 2 "{"
+            renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            write 2 "}"
+            // renderNestedGroup nextContext writer
+        | _ ->
+            ()
+            
 let joinModuleName (ModuleName nameParts) =
     joinNameParts "." nameParts
     
@@ -1309,72 +1394,6 @@ let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
         let nextContext =
             { context with GroupContext = sub }
         assignModuleHandles nextContext writer
-                
-let rec renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
-    let write, blank = writer.Write, writer.Blank
-    
-    let groupContext =
-        context.GroupContext
-    
-    // declare top level function handles
-    for namedFunc in groupContext.ModuleMethods do
-        write 2 "internal static ModuleMethodHandle _%s;" namedFunc.Name
-
-    for name, info in groupContext.Opaques do
-        // instance methods
-        for method in info.Methods do
-            write 2 "internal static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
-        // synthesized dispose method
-        write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
-    
-    // interfaces
-    for name, info in groupContext.Interfaces do
-        write 2 "internal static InterfaceHandle _%s;" (lowerFirst name)
-        for method in info.Methods do
-            write 2 "internal static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
-    
-    // exceptions
-    for name, _ in groupContext.Exceptions do
-        write 2 "internal static ExceptionHandle _%s;" (lowerFirst name)
-    
-    // globals declaration
-    for name, type_ in groupContext.Globals do
-        write 2 "public static %s %s { get; internal set; }" (typeToCsString context type_) (upperFirst name)
-    
-    // top-level functions ===========
-    for namedFunc in groupContext.ModuleMethods do
-        blank()
-        write 2 "public static %s %s(%s)" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args)
-        write 2 "{"
-        // push args in reverse
-        for argName, argType in namedFunc.Args |> List.rev do
-            pushValue context writer 3 argType argName (Direct false)
-        // invoke remote
-        if namedFunc.Throws.IsEmpty then
-            write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.Name
-        else
-            write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.Name
-        // return pop
-        popValue context writer 3 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
-        write 2 "}"
-    
-    // render user types + nested groups in order of declaration
-    for def in groupContext.Defs do
-        match def with
-        | UserType(name, userType) ->
-            renderUserType context writer name userType
-        | Group(name, _) ->
-            let group =
-                groupContext.SubGroups[name]
-            let nextContext =
-                { context with GroupContext = group }
-            write 2 "public static class %s" group.Name
-            write 2 "{"
-            renderGroupCommon nextContext (writer.WithExtraIndent 1)
-            write 2 "}"
-            // renderNestedGroup nextContext writer
-        | _ ->
-            ()
             
 let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseNamespace: string) (maybeModulePrefix: string option) (className: string) =
     let write, blank = writer.Write, writer.Blank

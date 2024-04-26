@@ -13,6 +13,7 @@ group Nested1 {
             struct Wow {
                 int x;
             }
+            Wow wowValue;
         }
         void singleMethod(Wow value);
     }

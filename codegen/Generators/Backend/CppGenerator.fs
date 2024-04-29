@@ -208,7 +208,16 @@ let defaultValueForType (context: RenderContext) (outerType: NIType) =
             | OptionsType ->
                 sprintf "%s{}" name
             | EnumType ->
-                "0"
+                match requiredSymbolLookup context.ModuleContext resolvedName with
+                | EnumDef info ->
+                    if info.FlagsMode then
+                        "0"
+                    else
+                        match info.Values with
+                        | (valueName, _) :: _ -> sprintf "%s::%s" name valueName
+                        | _ -> failwith "defaultValueForType: nope"
+                | _ ->
+                    failwithf "c++ defaultValueForType: EnumType lookup failed"
             | _ ->
                 "(defaultValueForType: not yet supported)"
         | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString context niType)

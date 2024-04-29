@@ -205,6 +205,10 @@ let defaultValueForType (context: RenderContext) (outerType: NIType) =
                 sprintf "std::function<%s>()" name
             | StructType ->
                 sprintf "%s{}" name
+            | OptionsType ->
+                sprintf "%s{}" name
+            | EnumType ->
+                "0"
             | _ ->
                 "(defaultValueForType: not yet supported)"
         | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString context niType)

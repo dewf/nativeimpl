@@ -49,7 +49,55 @@ type UserOrGeneric =
     | User of UserType
     | Generic of NIType
     | FwdInterface      // just a special case for rendering, really - won't be in the type map or anything
-    
+
+// convert all first-level "ThisModule" symbols to imported, from a particular modulename
+// this is necessary when we're operating on sub-elements of things we've imported
+// eg array handling of imported structs
+// right now this only operates on things with sub-fields
+let makeFirstLevelImported (toName: ModuleName) (ut: UserType) =
+    let nextType (t: NIType) =
+        match t with
+        | Resolved (resolvedName, resolvedType) ->
+            let nextName =
+                match resolvedName with
+                | ThisModule name ->
+                    Imported (toName, name)
+                | _ ->
+                    resolvedName
+            Resolved (nextName, resolvedType)
+        | _ ->
+            t
+    let nextNamedField (nf: NamedField) =
+        { nf with Type_ = nextType nf.Type_ }
+    match ut with
+    | StructDef fields ->
+        let nextFields =
+            fields
+            |> List.map nextNamedField
+        StructDef nextFields
+    | ExceptionDef fields ->
+        let nextFields =
+            fields
+            |> List.map nextNamedField
+        ExceptionDef nextFields
+    | SumTypeDef values ->
+        let nextValues =
+            values
+            |> List.map (fun stv ->
+                let nextArgs =
+                    stv.Args
+                    |> List.map (fun (name, type_) -> name, nextType type_)
+                { stv with Args = nextArgs })
+        SumTypeDef nextValues
+    | OptionsDef fields ->
+        let nextFields =
+            fields
+            |> List.map nextNamedField
+        OptionsDef nextFields
+    | _ ->
+        // unchanged
+        ut
+
 let requiredSymbolLookup (context: ModuleContext) (name: ResolvedName) =
     match name with
     | ThisModule (SymbolName nameParts) ->
@@ -61,7 +109,7 @@ let requiredSymbolLookup (context: ModuleContext) (name: ResolvedName) =
         | Some value ->
             value
         | None ->
-            failwith "requiredSymbolLookup: findSymbolHere failed (for ThisModule)"
+            failwithf "requiredSymbolLookup: findSymbolHere failed (for ThisModule) - name: %A" name
     | Imported (importName, SymbolName nameParts) ->
         match context.Loaded.TryFind importName with
         | Some m ->
@@ -71,7 +119,11 @@ let requiredSymbolLookup (context: ModuleContext) (name: ResolvedName) =
                 | _ -> failwith "requiredSymbolLookup: imported module symbol table not complete"
             match findSymbolHere table nameParts with
             | Some value ->
-                value
+                // value
+                // !!
+                // we need to recursively convert all ThisModule resolved names, Imported instead!
+                // because when we were looking up imported symbols for eg. array rendering, we were incorrecntly seeing them as located in ThisModule
+                makeFirstLevelImported importName value
             | None ->
                 failwith "requiredSymbolLookup: findSymbolHere failed (for imported symbol)"
         | None -> failwith "todo"

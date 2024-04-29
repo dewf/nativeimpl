@@ -1028,15 +1028,30 @@ let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: s
             failwithf "resolveIdentifier: identifier %A not found in containing module %A nor in any imports @ %A" nameParts context.Module.Name loc
 
 let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_: NIType) =
+    let applyNested =
+        resolveType context namespacePath
     match type_ with
+    | UnitType ->
+        type_
+    | Primitive _ ->
+        type_
+    | BufferType _ ->
+        type_
+    | Resolved _ ->
+        type_
+    // apply to things which contain nested NITypes
     | ArrayType niType ->
-        ArrayType (resolveType context namespacePath niType)
+        ArrayType (applyNested niType)
     | MapType (keyType, valueType) ->
-        MapType (resolveType context namespacePath keyType, resolveType context namespacePath valueType)
+        MapType (applyNested keyType, applyNested valueType)
     | TupleType tupleTypes ->
-        TupleType (tupleTypes |> List.map (resolveType context namespacePath))
+        TupleType (tupleTypes |> List.map applyNested)
     | SetType niType ->
-        SetType (resolveType context namespacePath niType)
+        SetType (applyNested niType)
+    | OptionType elem ->
+        OptionType (applyNested elem)
+    | ResultType(success, error) ->
+        ResultType (applyNested success, applyNested error)
     | Unresolved (nameParts, loc, typeConstraint) ->
         match resolveIdentifier context loc namespacePath nameParts with
         | resolvedName, resolvedDef ->
@@ -1071,8 +1086,6 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                 | OptionsDef _ -> OptionsType
                 | ExceptionDef _ -> ExceptionType
             Resolved (resolvedName, resolvedType)
-    | _ ->
-        type_
 
 let resolveFieldType (context: ModuleContext) (namespacePath: string list) (ft: NamedField) =
     let nextType =

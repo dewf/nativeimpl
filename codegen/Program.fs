@@ -9,17 +9,23 @@ open AppCommon
 // let INPUTS = [ "First"; "Second"; "SomePackage.Third" ]
 // let LIBRARY = "TestBench"
 
-// KITCHENSINK
-let INPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink"
-let OUTPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink\_output"
-let INPUTS = [ "First" ]
-let LIBRARY = "KitchenSink"
+// // KITCHENSINK
+// let INPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink"
+// let OUTPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink\_output"
+// let INPUTS = [ "First" ]
+// let LIBRARY = "KitchenSink"
 
-// // GUIBASE
-// let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase"
-// let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\guibase\output"
-// let INPUTS = [ "Windowing"; "Drawing" ]
-// let LIBRARY = "GuiBase"
+// GUIBASE
+let INPUT_PATH = @"C:\DataPart\Development\guibase"
+let OUTPUT_PATH = @"C:\DataPart\Development\guibase\output"
+let INPUTS = [ "Windowing"; "Keys"; "Drawing"; "Text"; ]
+let LIBRARY = "GuiBase"
+
+// // QT TESTING
+// let INPUT_PATH = @"C:\DataPart\Development\QtTesting"
+// let OUTPUT_PATH = @"C:\DataPart\Development\QtTesting\output"
+// let INPUTS = [ "Application"; "Widget" ]
+// let LIBRARY = "QtTesting"
 
 let NAMESPACE = "Org.Prefixed"
 let FRONT_LANG = "csharp"

@@ -962,9 +962,21 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         // definition
         write 2 "public abstract record %s" (upperFirst name)
         write 2 "{"
-        for value in sumTypeValues do
+        write 3 "internal abstract void Push(bool isReturn);"
+        write 3 "internal static %s Pop()" (upperFirst name)
+        write 3 "{"
+        write 4 "return NativeImplClient.PopInt32() switch"
+        write 4 "{"
+        for i, value in sumTypeValues |> List.indexed do
+            write 5 "%d => %s.PopDerived()," i (upperFirst value.Name)
+        write 5 "_ => throw new Exception(\"%s.Pop() - unknown tag!\")" (upperFirst name)
+        write 4 "};" // end return switch
+        write 3 "}" // end Pop()
+        // value records
+        for i, value in sumTypeValues |> List.indexed do
             if value.Args.IsEmpty then
-                write 3 "public sealed record %s : %s;" (upperFirst value.Name) name
+                write 3 "public sealed record %s : %s" (upperFirst value.Name) name
+                write 3 "{"
             else
                 let upperFirstArgs =
                     value.Args |> List.map (fun (name, t) -> (upperFirst name), t)
@@ -972,52 +984,36 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
                 write 3 "{"
                 for argName, argType in upperFirstArgs do
                     write 4 "public %s %s { get; } = %s;" (typeToCsString context argType) argName argName
-                write 3 "}"
-        write 2 "}"
-        // tags for push/pop
-        blank()
-        write 2 "private enum %s__Tag" (upperFirst name)
-        write 2 "{"
-        for value, maybeComma in sumTypeValues |> withTrailingCommas do
-            write 3 "%s%s" (upperFirst value.Name) maybeComma
-        write 2 "}"
-        let tagType =
-            Primitive(Int(true,Width32))
-        // PUSH
-        blank()
-        write 2 "internal static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        write 3 "%s__Tag which;" (upperFirst name)
-        write 3 "switch (thing)"
-        write 3 "{"
-        for value in sumTypeValues do
-            write 4 "case %s.%s %s:" (upperFirst name) (upperFirst value.Name) (lowerFirst value.Name)
-            write 5 "which = %s__Tag.%s;" (upperFirst name) (upperFirst value.Name)
+            // push
+            write 4 "internal override void Push(bool isReturn)"
+            write 4 "{"
             for argName, argType in value.Args |> List.rev do
-                pushValue context writer 5 argType (sprintf "%s.%s" (lowerFirst value.Name) (upperFirst argName)) (Indirect "isReturn")
-            write 5 "break;"
-        write 4 "default:"
-        write 5 "throw new ArgumentOutOfRangeException(nameof(thing));"
-        write 3 "}"
-        pushValue context writer 3 tagType "(int)which" NotApplicable
-        write 2 "}"
-        // POP
-        blank()
-        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        popValue context writer 3 tagType (NewVariable "which")
-        write 3 "switch ((%s__Tag)which)" (upperFirst name)
-        write 3 "{"
-        for value in sumTypeValues do
-            write 4 "case %s__Tag.%s:" (upperFirst name) (upperFirst value.Name)
+                pushValue context writer 5 argType (upperFirst argName) (Indirect "isReturn")
+            write 5 "// kind"
+            write 5 "NativeImplClient.PushInt32(%d);" i
+            write 4 "}" // end push
+            // popderived
+            write 4 "internal static %s PopDerived()" (upperFirst value.Name)
             write 4 "{"
             for argName, argType in value.Args do
                 popValue context writer 5 argType (NewVariable argName)
-            write 5 "return new %s.%s(%s);" (upperFirst name) (upperFirst value.Name) (argNamesJoined value.Args)
-            write 4 "}"
-        write 4 "default:"
-        write 5 "throw new ArgumentOutOfRangeException();"
-        write 3 "}"
+            write 5 "return new %s(%s);" (upperFirst value.Name) (argNamesJoined value.Args)
+            write 4 "}" // end popderived
+            write 3 "}" // end value record
+        write 2 "}" // end base type
+        // PUSH
+        blank()
+        write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+        write 2 "internal static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
+        write 2 "{"
+        write 3 "thing.Push(isReturn);"
+        write 2 "}"
+        // POP
+        blank()
+        write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+        write 2 "{"
+        write 3 "return %s.Pop();" (upperFirst name)
         write 2 "}"
     | TypeDef niType ->
         // C# has no proper typedefs, so we just emit push/pop that pass through to the real thing

@@ -138,6 +138,8 @@ let typeToCppString (context: RenderContext) (outerType: NIType) =
                     else
                         name
                 | _ -> failwith "typeToCppString - problem fetching enum definition"
+            | SumType ->
+                sprintf "std::shared_ptr<%s::Base>" name
             | _ ->
                 name
         | ArrayType niType -> sprintf "std::vector<%s>" (recInner niType)
@@ -617,36 +619,50 @@ let renderWrapperInterface (context: RenderContext) (writerH: IFormatWriter) (wr
 let renderWrapperSumType (context: RenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, _ = writerH.Write, writerH.Blank
-    let tagType =
-        Primitive(Int(true,Width32))
-    // push
-    writeH 0 "void %s__push(%s value, bool isReturn);" sumTypeName sumTypeName
-    writeCpp 0 "void %s__push(%s value, bool isReturn) {" sumTypeName sumTypeName
-    writeCpp 1 "switch (value.tag) {"
-    for value in values do
-        writeCpp 1 "case %s::Tag::%s:" sumTypeName value.Name
+        
+    // push ========
+    writeH 0 "void %s__push(std::shared_ptr<%s::Base> value, bool isReturn);" sumTypeName sumTypeName
+    // pushvisitor
+    blankCpp()
+    writeCpp 0 "class %s_PushVisitor : public %s::Visitor {" sumTypeName sumTypeName
+    writeCpp 0 "private:"
+    writeCpp 1 "bool isReturn;"
+    writeCpp 0 "public:"
+    writeCpp 1 "%s_PushVisitor(bool isReturn) : isReturn(isReturn) {}" sumTypeName
+    for i, value in values |> List.indexed do
+        writeCpp 1 "void on%s(const %s::%s* %s) override {" value.Name sumTypeName value.Name (lowerFirst value.Name)
         for argName, argType in value.Args |> List.rev do
             let content =
-                sprintf "value.%s->%s" (lowerFirst value.Name) argName
+                sprintf "%s->%s" (lowerFirst value.Name) argName
             pushValue context writerCpp 2 argType content (Indirect "isReturn")
-        writeCpp 2 "break;"
-    writeCpp 1 "}"
-    pushValue context writerCpp 1 tagType "(int32_t)value.tag" (Indirect "isReturn")
-    writeCpp 0 "}"
-    // pop
-    writeH 0 "%s %s__pop();" sumTypeName sumTypeName
+        writeCpp 2 "// kind:"
+        writeCpp 2 "ni_pushInt32(%d);" i
+        writeCpp 1 "}"
+    writeCpp 0 "};" // end pushvisitor
+    // actual push
     blankCpp()
-    writeCpp 0 "%s %s__pop() {" sumTypeName sumTypeName
-    popValue context writerCpp 1 tagType (Variable "which")
-    writeCpp 1 "switch ((%s::Tag)which) {" sumTypeName
-    for value in values do
-        writeCpp 1 "case %s::Tag::%s: {" sumTypeName value.Name
+    writeCpp 0 "void %s__push(std::shared_ptr<%s::Base> value, bool isReturn) {" sumTypeName sumTypeName
+    writeCpp 1 "%s_PushVisitor v(isReturn);" sumTypeName
+    writeCpp 1 "value->accept((%s::Visitor*)&v);" sumTypeName
+    writeCpp 0 "}"
+    
+    // pop =======
+    writeH 0 "std::shared_ptr<%s::Base> %s__pop();" sumTypeName sumTypeName
+    blankCpp()
+    writeCpp 0 "std::shared_ptr<%s::Base> %s__pop() {" sumTypeName sumTypeName
+    writeCpp 1 "%s::Base* __ret = nullptr;" sumTypeName
+    writeCpp 1 "switch (ni_popInt32()) {"
+    for i, value in values |> List.indexed do
+        writeCpp 1 "case %d: {" i
         for argName, argType in value.Args do
             popValue context writerCpp 2 argType (Variable argName)
-        writeCpp 2 "return %s::%s::make(%s); }" sumTypeName value.Name (joinedArgNames value.Args)
+        writeCpp 2 "__ret = new %s::%s(%s);" sumTypeName value.Name (joinedArgNames value.Args)
+        writeCpp 2 "break;"
+        writeCpp 1 "}"
     writeCpp 1 "default:"
-    writeCpp 2 "throw \"%s__pop(): unknown tag!\";" sumTypeName
-    writeCpp 1 "}"
+    writeCpp 2 "printf(\"C++ %s__pop() - unknown kind! returning null\\n\");" sumTypeName
+    writeCpp 1 "}" // end switch
+    writeCpp 1 "return std::shared_ptr<%s::Base>(__ret);" sumTypeName
     writeCpp 0 "}"
 
 type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType) =
@@ -1499,28 +1515,47 @@ let renderHeaderException (context: RenderContext) (writer: IFormatWriter) (exNa
     write 0 "};"
 
 let renderHeaderSumType (context: RenderContext) (writer: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
-    let write, _ = writer.Write, writer.Blank
+    let write, blank = writer.Write, writer.Blank
     //
-    write 0 "struct %s {" sumTypeName
-    write 0 "public:"
-    write 1 "enum class Tag {"
-    for value, maybeComma in values |> withTrailingCommas do
-        write 2 "%s%s" value.Name maybeComma
+    write 0 "namespace %s {" sumTypeName
+    for value in values do
+        write 1 "class %s;" value.Name
+    
+    blank()
+    write 1 "class Visitor {"
+    write 1 "public:"
+    for value in values do
+        write 2 "virtual void on%s(const %s* %s) = 0;" value.Name value.Name (lowerFirst value.Name)
     write 1 "};"
-    write 1 "const Tag tag;"
+    
+    blank()
+    write 1 "class Base {"
+    write 1 "public:"
+    write 2 "virtual void accept(Visitor* visitor) = 0;"
+    write 1 "};"
+    
     for value in values do
-        write 1 "struct %s {" value.Name
-        for argName, argType in value.Args do
-            write 2 "const %s %s;" (typeToCppString context argType) argName;
-        write 2 "static %s make(%s) {" sumTypeName (joinedArgs context value.Args)
-        write 3 "%s ret{ Tag::%s };" sumTypeName value.Name
-        write 3 "ret.%s = std::shared_ptr<%s>(new %s{ %s });" (lowerFirst value.Name) value.Name value.Name (joinedArgNames value.Args)
-        write 3 "return ret;"
-        write 2 "}"
-        write 1 "};"
-    for value in values do
-        write 1 "std::shared_ptr<%s> %s;" value.Name (lowerFirst value.Name)
-    write 0 "};"
+        blank()
+        write 1 "class %s : public Base {" value.Name
+        write 1 "public:"
+        for name, type_ in value.Args do
+            write 2 "const %s %s;" (typeToCppString context type_) (lowerFirst name)
+        let initializersString =
+            let raw = 
+                value.Args
+                |> List.map (fun (name, _) -> sprintf "%s(%s)" name name)
+                |> String.concat ", "
+            if raw.Length > 0 then
+                " : " + raw
+            else
+                ""
+        write 2 "%s(%s)%s {}" value.Name (joinedArgs context value.Args) initializersString
+        write 2 "void accept(Visitor* visitor) override {"
+        write 3 "visitor->on%s(this);" value.Name
+        write 2 "}" // end accept()
+        write 1 "};" // end value class
+    
+    write 0 "}" // end namespace
     
 let renderHeaderOptionsType (context: RenderContext) (writer: IFormatWriter) (optionsTypeName: string) (namedFields: NamedField list) =
     let write, _ = writer.Write, writer.Blank

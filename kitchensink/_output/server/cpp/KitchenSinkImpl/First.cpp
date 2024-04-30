@@ -2,37 +2,37 @@
 
 namespace First
 {
-    class Visitor1 : public Thing1Visitor {
+    class Visitor1 : public Thing1::Visitor {
     public:
-        void onValue1(const Value1* value1) {
+        void onValue1(const Thing1::Value1* value1) {
             printf(" - we got a value1\n");
         }
-        void onValue2(const Value2* value1) {
+        void onValue2(const Thing1::Value2* value1) {
             printf(" - we got a value2: %d\n", value1->x);
         }
-        void onValue3(const Value3* value1) {
+        void onValue3(const Thing1::Value3* value1) {
             printf(" - we got a value3: %s\n", value1->y.c_str());
         }
     };
 
-    class MyVisitor : public Thing2Visitor {
+    class MyVisitor : public Thing2::Visitor {
     public:
-        void onVariant1(const Variant1 *variant1) {
+        void onVariant1(const Thing2::Variant1 *variant1) {
             printf("we got a variant 1!\n");
         }
-        void onVariant2(const Variant2 *variant2) {
+        void onVariant2(const Thing2::Variant2 *variant2) {
             printf("we got a variant 2! submatch:\n");
             Visitor1 v1;
-            variant2->thing->accept((Thing1Visitor*)&v1);
+            variant2->thing->accept((Thing1::Visitor*)&v1);
         }
-        void onVariant3(const Variant3 *variant3) {
+        void onVariant3(const Thing2::Variant3 *variant3) {
             printf("we got a variant 3 with %d children!\n", (int)variant3->children.size());
         }
     };
 
-    void doSomething(std::shared_ptr<Thing2> root)
+    void doSomething(std::shared_ptr<Thing2::Base> root)
     {
         MyVisitor v;
-        root->accept((Thing2Visitor*)&v);
+        root->accept((Thing2::Visitor*)&v);
     }
 }

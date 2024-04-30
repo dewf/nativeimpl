@@ -97,11 +97,13 @@ namespace Org.Prefixed.KitchenSink
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void Thing1__Push(Thing1 thing, bool isReturn)
         {
             thing.Push(isReturn);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static Thing1 Thing1__Pop()
         {
             return Thing1.Pop();

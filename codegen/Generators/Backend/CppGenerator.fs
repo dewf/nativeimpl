@@ -1518,8 +1518,9 @@ let renderHeaderSumType (context: RenderContext) (writer: IFormatWriter) (sumTyp
     let write, blank = writer.Write, writer.Blank
     //
     write 0 "namespace %s {" sumTypeName
-    for value in values do
-        write 1 "class %s;" value.Name
+    // we're now emitting them at the start of the group, to allow for mutually dependent types
+    // for value in values do
+    //     write 1 "class %s;" value.Name
     
     blank()
     write 1 "class Visitor {"
@@ -1724,6 +1725,7 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
     let group =
         context.GroupContext
         
+    // emit all opaque handles at once, so they can be mutually dependent
     if not group.Opaques.IsEmpty then
         blank()
         for name, info in group.Opaques do
@@ -1734,6 +1736,15 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
                 | None ->
                     ""
             write 0 "struct __%s; typedef struct __%s* %s;%s" name name name extendsComment
+            
+    // emit sumtype fwd decls, so they can be mutually dependent
+    if not group.SumTypes.IsEmpty then
+        blank()
+        for name, values in group.SumTypes do
+            write 0 "namespace %s {" name
+            for value in values do
+                write 1 "class %s;" value.Name
+            write 0 "}"
     
     for def in context.GroupContext.Defs do
         match def with

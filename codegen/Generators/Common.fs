@@ -70,11 +70,12 @@ let makeFirstLevelImported (toName: ModuleName) (ut: UserType) =
     let nextNamedField (nf: NamedField) =
         { nf with Type_ = nextType nf.Type_ }
     match ut with
-    | StructDef fields ->
+    | StructDef info ->
         let nextFields =
-            fields
+            info.Fields
             |> List.map nextNamedField
-        StructDef nextFields
+        // do we need to go into the static defs? to sleepy to think about it ...
+        StructDef { info with Fields = nextFields }
     | ExceptionDef fields ->
         let nextFields =
             fields
@@ -147,8 +148,8 @@ let allGenericTypes (context: ModuleContext) =
                 match resolvedType with
                 | StructType ->
                     match requiredSymbolLookup context resolvedName with
-                    | StructDef namedFields ->
-                        namedFields
+                    | StructDef info ->
+                        info.Fields
                         |> List.collect (fun field -> typeAndSubTypes (ArrayType field.Type_))
                     | _ ->
                         failwith "allGenericTypes:typeAndSubTypes:arrayOrSetHandling: some issue getting struct def for array of struct"
@@ -223,9 +224,17 @@ let allGenericTypes (context: ModuleContext) =
                     let methodTypes =
                         namedFuncsHandler info.Methods
                     methodTypes @ nestedTypes
-                | StructDef namedFields ->
-                    namedFields
-                    |> List.collect (fun field -> typeAndSubTypes field.Type_)
+                | StructDef info ->
+                    let nestedTypes =
+                        match info.MaybeStaticDefs with
+                        | Some staticDefs ->
+                            processDefs staticDefs
+                        | None ->
+                            []
+                    let fieldTypes =
+                        info.Fields
+                        |> List.collect (fun field -> typeAndSubTypes field.Type_)
+                    fieldTypes @ nestedTypes
                 | OptionsDef namedFields ->
                     namedFields
                     |> List.collect (fun field -> typeAndSubTypes field.Type_)
@@ -322,6 +331,7 @@ let userTypesAndGenerics (context: ModuleContext) =
         newMap.Add(name, RenderableDirect (UserOrGeneric.Generic type_)))
     
 let containsRefs (context: ModuleContext) (thing: NIType) =
+    // does pushing this type push any ref types in the process?
     let rec processType (t: NIType) =
         match t with
         | UnitType -> false
@@ -351,8 +361,8 @@ let containsRefs (context: ModuleContext) (thing: NIType) =
         match userType with
         | OpaqueDef _ ->
             false
-        | StructDef fields ->
-            fields
+        | StructDef info ->
+            info.Fields
             |> List.exists (fun nf -> processType nf.Type_)
         | ExceptionDef fields ->
             // hard to imagine this carrying an interface, but I guess we haven't forbidden it?
@@ -461,8 +471,8 @@ let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArra
         | StructType ->
             // fetch the fields so we can make a struct-of-arrays
             match content with
-            | StructDef namedFields ->
-                renderer.StructType resolvedName namedFields
+            | StructDef info ->
+                renderer.StructType resolvedName info.Fields
             | _ ->
                 failwithf "renderWrapperUserOrGeneric: failed to find struct in typemap"
         | SumType ->
@@ -539,6 +549,7 @@ type GroupKind =
     | NormalGroup
     | OpaqueStatic
     | InterfaceStatic
+    | StructStatic
 
 type GroupContext = {
     Name: string
@@ -609,27 +620,22 @@ let createGroups (rootDefs: ModuleDefinition list) =
                             recInner name subKind defs nextRevPath
                         Some (name, group)
                     | UserType (name, userType) ->
+                        let processNested (subKind: GroupKind) (defs: ModuleDefinition list) =
+                            let group =
+                                let nextRevPath =
+                                    (name, subKind) :: revPath
+                                recInner name subKind defs nextRevPath
+                            name, group
                         match userType with
                         | OpaqueDef info ->
                             info.MaybeStaticDefs
-                            |> Option.map (fun defs ->
-                                let group =
-                                    let subKind =
-                                        OpaqueStatic
-                                    let nextRevPath =
-                                        (name, subKind) :: revPath
-                                    recInner name subKind defs nextRevPath 
-                                name, group)
+                            |> Option.map (processNested OpaqueStatic)
                         | InterfaceDef info ->
                             info.MaybeStaticDefs
-                            |> Option.map (fun defs ->
-                                let group =
-                                    let subKind =
-                                        InterfaceStatic
-                                    let nextRevPath =
-                                        (name, subKind) :: revPath
-                                    recInner name subKind defs nextRevPath
-                                name, group)
+                            |> Option.map (processNested InterfaceStatic)
+                        | StructDef info ->
+                            info.MaybeStaticDefs
+                            |> Option.map (processNested StructStatic)
                         | _ ->
                             None
                     | _ ->
@@ -687,6 +693,8 @@ let resolvedNamePathToKindPath (m: ModuleContext) (name: ResolvedName) =
                         OpaqueStatic, table
                     | InterfaceDef _ ->
                         InterfaceStatic, table
+                    | StructDef _ ->
+                        StructStatic, table
                     | _ ->
                         failwithf "resolvedNameToGroupKindPrefix:recInner: unhandled hybrid 'thing' type"
             kind :: recInner sub etc

@@ -15,6 +15,7 @@ let groupSegmentRenameFunc (name: string) = function
     | NormalGroup -> name
     | OpaqueStatic -> name + STATIC_SUFFIX
     | InterfaceStatic -> name + STATIC_SUFFIX
+    | StructStatic -> name + STATIC_SUFFIX
         
 let resolvedNameToString =
     resolvedNameToStringAbstract "::" groupSegmentRenameFunc
@@ -1166,20 +1167,34 @@ let rec renderWrapperUserType (context: RenderContext) (writerH: IFormatWriter) 
         // methods
         for nf in synthesizeOpaqueMethods2 context name info do
             renderWrapperNamedFunc context writerH writerCpp nf
-    | StructDef namedFields ->
+    | StructDef info ->
         blankH()
         writeH 0 "void %s__push(%s value, bool isReturn);" name name
         writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
-        for field in namedFields |> List.rev do
+        for field in info.Fields |> List.rev do
             pushValue context writerCpp 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
         writeCpp 0 "}"
         blankCpp()
         writeH 0 "%s %s__pop();" name name
         writeCpp 0 "%s %s__pop() {" name name
-        for field in namedFields do
+        for field in info.Fields do
             popValue context writerCpp 1 field.Type_ (Variable field.Name)
-        writeCpp 1 "return %s { %s };" name (joinedFieldNames namedFields)
+        writeCpp 1 "return %s { %s };" name (joinedFieldNames info.Fields)
         writeCpp 0 "}"
+        // nested static block
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            let nextContext =
+                context.NavigateToSub(name)
+            writeH 0 "namespace %s%s {" name STATIC_SUFFIX
+            writeCpp 0 "namespace %s%s {" name STATIC_SUFFIX
+            //
+            renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
+            //
+            writeH 0 "}"
+            writeCpp 0 "}"
+        | None ->
+            ()
     | OptionsDef namedFields ->
         let flagsType =
             Primitive(Int(true,Width32))
@@ -1573,9 +1588,21 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
                         |> String.concat ", "
                     sprintf " // throws %s" joined
             write 0 "%s %s(%s);%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
-    | StructDef namedFields ->
+    | StructDef info ->
+        // render static block, if any
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            write 0 "namespace %s%s {" name STATIC_SUFFIX
+            let nextContext =
+                context.NavigateToSub(name)
+            renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
+            write 0 "}" // end namespace
+        | None ->
+            ()
+        // struct proper
         write 0 "struct %s {" name
-        for field in namedFields do
+        // DON'T render in context of static block, we need the static namespace prefix
+        for field in info.Fields do
             write 1 "%s %s;" (typeToCppString context field.Type_) field.Name
         write 0 "};"
     | OptionsDef namedFields ->
@@ -1598,8 +1625,6 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
         // render static block, if any
         match info.MaybeStaticDefs with
         | Some _ ->
-            let nextContext =
-                context.NavigateToSub(name)
             write 0 "namespace %s%s {" name STATIC_SUFFIX
             let nextContext =
                 context.NavigateToSub(name)
@@ -1809,6 +1834,16 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                     renderFunc namedFunc
                 blank()
             | InterfaceDef info ->
+                match info.MaybeStaticDefs with
+                | Some _ ->
+                    let nextContext =
+                        context.NavigateToSub(name)
+                    write 0 "namespace %s%s {" (upperFirst name) STATIC_SUFFIX
+                    renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
+                    write 0 "}"
+                | None ->
+                    ()
+            | StructDef info ->
                 match info.MaybeStaticDefs with
                 | Some _ ->
                     let nextContext =

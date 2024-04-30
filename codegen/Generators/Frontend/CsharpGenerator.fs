@@ -816,31 +816,41 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         write 3 "var ptr = NativeImplClient.PopPtr();"
         write 3 "return ptr != IntPtr.Zero ? new %s(ptr) : null;" (upperFirst name)
         write 2 "}"
-    | StructDef namedFields ->
+    | StructDef info ->
+        let renderContent (context: RenderContext) =
+            for field in info.Fields do
+                write 3 "public %s %s;" (typeToCsString context field.Type_) (upperFirst field.Name)
+            // constructor
+            write 3 "public %s(%s)" name (fieldsJoined context info.Fields)
+            write 3 "{"
+            for field in info.Fields do
+                write 4 "this.%s = %s;" (upperFirst field.Name) field.Name
+            write 3 "}"
+            write 2 "}"
+            // push
+            blank()
+            write 2 "internal static void %s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            for field in info.Fields |> List.rev do
+                pushValue context writer 3 field.Type_ (sprintf "value.%s" (upperFirst field.Name)) (Indirect "isReturn")
+            write 2 "}"
+            // pop
+            blank()
+            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            for field in info.Fields do
+                popValue context writer 3 field.Type_ (NewVariable field.Name)
+            write 3 "return new %s(%s);" name (fieldNamesJoined info.Fields)
+        // actual struct
         write 2 "public struct %s {" name
-        for field in namedFields do
-            write 3 "public %s %s;" (typeToCsString context field.Type_) (upperFirst field.Name)
-        // constructor
-        write 3 "public %s(%s)" name (fieldsJoined context namedFields)
-        write 3 "{"
-        for field in namedFields do
-            write 4 "this.%s = %s;" (upperFirst field.Name) field.Name
-        write 3 "}"
-        write 2 "}"
-        // push
-        blank()
-        write 2 "internal static void %s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        for field in namedFields |> List.rev do
-            pushValue context writer 3 field.Type_ (sprintf "value.%s" (upperFirst field.Name)) (Indirect "isReturn")
-        write 2 "}"
-        // pop
-        blank()
-        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        for field in namedFields do
-            popValue context writer 3 field.Type_ (NewVariable field.Name)
-        write 3 "return new %s(%s);" name (fieldNamesJoined namedFields)
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            let nextContext =
+                context.NavigateToSub(name)
+            renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            renderContent nextContext
+        | None ->
+            renderContent context
         write 2 "}"
     | EnumDef info ->
         let widthType, widthStr =

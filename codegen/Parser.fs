@@ -396,9 +396,13 @@ and InterfaceInfo = {
     Methods: NamedFunction list
     MaybeStaticDefs: ModuleDefinition list option
 }
+and StructInfo = {
+    Fields: NamedField list
+    MaybeStaticDefs: ModuleDefinition list option
+}
 and UserType =
     | OpaqueDef of info: OpaqueInfo
-    | StructDef of fields: NamedField list
+    | StructDef of info: StructInfo
     | ExceptionDef of fields: NamedField list      // created as an args list, although they are accessible fields
     | InterfaceDef of info: InterfaceInfo
     | DelegateDef of info: DelegateInfo
@@ -711,10 +715,29 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             | _ ->
                 failwithf "error parsing opaque token at %s" (loc.ToString())
         | Lookahead 3 ([StructToken; Identifier name; LeftBrace], loc, etc) ->
+            // optional static block
+            let maybeStaticDefs, etc =
+                match etc with
+                | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
+                    let defsList, etc  =
+                        unfoldUntil [RightBrace] parseNext etc
+                    let flattened =
+                        defsList
+                        |> List.collect id
+                    let maybeStaticDefs =
+                        if not flattened.IsEmpty then Some flattened else None
+                    maybeStaticDefs, etc
+                | _ ->
+                    None, etc
             let fields, etc2 =
                 parseFields loc etc
-            ([UserType (name, StructDef fields)], etc2)
-            |> Some
+            if fields.Length > 0 then
+                let info =
+                    { Fields = fields; MaybeStaticDefs = maybeStaticDefs }
+                ([UserType (name, StructDef info)], etc2)
+                |> Some
+            else
+                failwithf "struct '%s' @ loc %A - no fields declared" name loc
         | Lookahead 2 ([ExceptionToken; Identifier name], loc, etc) ->
             // does it have arguments? (these become fields)
             let args, etc =
@@ -747,14 +770,6 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         |> List.collect id
                     let maybeStaticDefs =
                         if not flattened.IsEmpty then Some flattened else None
-                    // // assert no opaques for now
-                    // // maybe there's a better/more general way to check these kinds of constraints?
-                    // match maybeStaticDefs with
-                    // | Some defs ->
-                    //     if defs |> List.exists (function | UserType (_, OpaqueDef _) -> true | _ -> false) then
-                    //         failwithf "opaque types currently not allowed in interface definitions (interface '%s' @ %A)" name loc
-                    // | None ->
-                    //     ()
                     maybeStaticDefs, etc
                 | _ ->
                     None, etc
@@ -1135,11 +1150,28 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
     | UserType (name, userType) ->
         let nextUserType =
             match userType with
-            | StructDef fieldTypes ->
-                let nextFieldTypes =
-                    fieldTypes
-                    |> List.map (resolveFieldType context namespacePath)
-                StructDef nextFieldTypes
+            | StructDef info ->
+                let nextFields, nextStaticDefs =
+                    match info.MaybeStaticDefs with
+                    | Some staticDefs ->
+                        // if static block exists, method defs need to be evaluated in its context
+                        let subPath =
+                            name :: namespacePath
+                        let nextFields =
+                            info.Fields
+                            |> List.map (resolveFieldType context subPath)
+                        let nextStaticDefs =
+                            staticDefs
+                            |> List.map (resolveModuleDef context subPath)
+                        nextFields, Some nextStaticDefs
+                    | None ->
+                        let nextFields =
+                            info.Fields
+                            |> List.map (resolveFieldType context namespacePath)
+                        nextFields, None
+                let nextInfo =
+                    { info with Fields = nextFields; MaybeStaticDefs = nextStaticDefs }
+                StructDef nextInfo
             | OptionsDef fieldTypes ->
                 let nextFieldTypes =
                     fieldTypes
@@ -1235,6 +1267,14 @@ let rec getUserTypes (defs: ModuleDefinition list) =
                 | None ->
                     Some (name, Direct definition)
             | InterfaceDef info ->
+                match info.MaybeStaticDefs with
+                | Some staticDefs ->
+                    let subTable =
+                        getUserTypes staticDefs
+                    Some (name, Hybrid (definition, subTable))
+                | None ->
+                    Some (name, Direct definition)
+            | StructDef info ->
                 match info.MaybeStaticDefs with
                 | Some staticDefs ->
                     let subTable =

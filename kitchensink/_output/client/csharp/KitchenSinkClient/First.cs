@@ -42,69 +42,71 @@ namespace Org.Prefixed.KitchenSink
         }
         public abstract record Thing1
         {
-            public sealed record Value1 : Thing1;
+            internal abstract void Push(bool isReturn);
+            internal static Thing1 Pop()
+            {
+                return NativeImplClient.PopInt32() switch
+                {
+                    0 => Value1.PopDerived(),
+                    1 => Value2.PopDerived(),
+                    2 => Value3.PopDerived(),
+                    _ => throw new Exception("Thing1.Pop() - unknown tag!")
+                };
+            }
+            public sealed record Value1 : Thing1
+            {
+                internal override void Push(bool isReturn)
+                {
+                    // kind
+                    NativeImplClient.PushInt32(0);
+                }
+                internal static Value1 PopDerived()
+                {
+                    return new Value1();
+                }
+            }
             public sealed record Value2(int X) : Thing1
             {
                 public int X { get; } = X;
+                internal override void Push(bool isReturn)
+                {
+                    NativeImplClient.PushInt32(X);
+                    // kind
+                    NativeImplClient.PushInt32(1);
+                }
+                internal static Value2 PopDerived()
+                {
+                    var x = NativeImplClient.PopInt32();
+                    return new Value2(x);
+                }
             }
             public sealed record Value3(string Y) : Thing1
             {
                 public string Y { get; } = Y;
+                internal override void Push(bool isReturn)
+                {
+                    NativeImplClient.PushString(Y);
+                    // kind
+                    NativeImplClient.PushInt32(2);
+                }
+                internal static Value3 PopDerived()
+                {
+                    var y = NativeImplClient.PopString();
+                    return new Value3(y);
+                }
             }
-        }
-
-        private enum Thing1__Tag
-        {
-            Value1,
-            Value2,
-            Value3
         }
 
         internal static void Thing1__Push(Thing1 thing, bool isReturn)
         {
-            Thing1__Tag which;
-            switch (thing)
-            {
-                case Thing1.Value1 value1:
-                    which = Thing1__Tag.Value1;
-                    break;
-                case Thing1.Value2 value2:
-                    which = Thing1__Tag.Value2;
-                    NativeImplClient.PushInt32(value2.X);
-                    break;
-                case Thing1.Value3 value3:
-                    which = Thing1__Tag.Value3;
-                    NativeImplClient.PushString(value3.Y);
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(thing));
-            }
-            NativeImplClient.PushInt32((int)which);
+            thing.Push(isReturn);
         }
 
         internal static Thing1 Thing1__Pop()
         {
-            var which = NativeImplClient.PopInt32();
-            switch ((Thing1__Tag)which)
-            {
-                case Thing1__Tag.Value1:
-                {
-                    return new Thing1.Value1();
-                }
-                case Thing1__Tag.Value2:
-                {
-                    var x = NativeImplClient.PopInt32();
-                    return new Thing1.Value2(x);
-                }
-                case Thing1__Tag.Value3:
-                {
-                    var y = NativeImplClient.PopString();
-                    return new Thing1.Value3(y);
-                }
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
+            return Thing1.Pop();
         }
+        
         public abstract record Thing2
         {
             public sealed record Variant1 : Thing2;

@@ -50,6 +50,7 @@ namespace Org.Prefixed.KitchenSink
                     0 => Value1.PopDerived(),
                     1 => Value2.PopDerived(),
                     2 => Value3.PopDerived(),
+                    3 => Value4.PopDerived(),
                     _ => throw new Exception("Thing1.Pop() - unknown tag!")
                 };
             }
@@ -95,6 +96,21 @@ namespace Org.Prefixed.KitchenSink
                     return new Value3(y);
                 }
             }
+            public sealed record Value4(Thing2 Other) : Thing1
+            {
+                public Thing2 Other { get; } = Other;
+                internal override void Push(bool isReturn)
+                {
+                    Thing2__Push(Other, isReturn);
+                    // kind
+                    NativeImplClient.PushInt32(3);
+                }
+                internal static Value4 PopDerived()
+                {
+                    var other = Thing2__Pop();
+                    return new Value4(other);
+                }
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -108,71 +124,73 @@ namespace Org.Prefixed.KitchenSink
         {
             return Thing1.Pop();
         }
-        
         public abstract record Thing2
         {
-            public sealed record Variant1 : Thing2;
+            internal abstract void Push(bool isReturn);
+            internal static Thing2 Pop()
+            {
+                return NativeImplClient.PopInt32() switch
+                {
+                    0 => Variant1.PopDerived(),
+                    1 => Variant2.PopDerived(),
+                    2 => Variant3.PopDerived(),
+                    _ => throw new Exception("Thing2.Pop() - unknown tag!")
+                };
+            }
+            public sealed record Variant1 : Thing2
+            {
+                internal override void Push(bool isReturn)
+                {
+                    // kind
+                    NativeImplClient.PushInt32(0);
+                }
+                internal static Variant1 PopDerived()
+                {
+                    return new Variant1();
+                }
+            }
             public sealed record Variant2(Thing1 Thing) : Thing2
             {
                 public Thing1 Thing { get; } = Thing;
+                internal override void Push(bool isReturn)
+                {
+                    Thing1__Push(Thing, isReturn);
+                    // kind
+                    NativeImplClient.PushInt32(1);
+                }
+                internal static Variant2 PopDerived()
+                {
+                    var thing = Thing1__Pop();
+                    return new Variant2(thing);
+                }
             }
             public sealed record Variant3(Thing2[] Children) : Thing2
             {
                 public Thing2[] Children { get; } = Children;
-            }
-        }
-
-        private enum Thing2__Tag
-        {
-            Variant1,
-            Variant2,
-            Variant3
-        }
-
-        internal static void Thing2__Push(Thing2 thing, bool isReturn)
-        {
-            Thing2__Tag which;
-            switch (thing)
-            {
-                case Thing2.Variant1 variant1:
-                    which = Thing2__Tag.Variant1;
-                    break;
-                case Thing2.Variant2 variant2:
-                    which = Thing2__Tag.Variant2;
-                    Thing1__Push(variant2.Thing, isReturn);
-                    break;
-                case Thing2.Variant3 variant3:
-                    which = Thing2__Tag.Variant3;
-                    __Thing2_Array__Push(variant3.Children, isReturn);
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(thing));
-            }
-            NativeImplClient.PushInt32((int)which);
-        }
-
-        internal static Thing2 Thing2__Pop()
-        {
-            var which = NativeImplClient.PopInt32();
-            switch ((Thing2__Tag)which)
-            {
-                case Thing2__Tag.Variant1:
+                internal override void Push(bool isReturn)
                 {
-                    return new Thing2.Variant1();
+                    __Thing2_Array__Push(Children, isReturn);
+                    // kind
+                    NativeImplClient.PushInt32(2);
                 }
-                case Thing2__Tag.Variant2:
-                {
-                    var thing = Thing1__Pop();
-                    return new Thing2.Variant2(thing);
-                }
-                case Thing2__Tag.Variant3:
+                internal static Variant3 PopDerived()
                 {
                     var children = __Thing2_Array__Pop();
-                    return new Thing2.Variant3(children);
+                    return new Variant3(children);
                 }
-                default:
-                    throw new ArgumentOutOfRangeException();
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void Thing2__Push(Thing2 thing, bool isReturn)
+        {
+            thing.Push(isReturn);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static Thing2 Thing2__Pop()
+        {
+            return Thing2.Pop();
         }
 
         internal static void __Init()

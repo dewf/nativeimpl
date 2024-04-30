@@ -1742,6 +1742,7 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
         blank()
         for name, values in group.SumTypes do
             write 0 "namespace %s {" name
+            write 1 "class Base;"
             for value in values do
                 write 1 "class %s;" value.Name
             write 0 "}"

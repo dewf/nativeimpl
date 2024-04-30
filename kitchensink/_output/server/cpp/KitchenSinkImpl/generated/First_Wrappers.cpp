@@ -27,18 +27,23 @@ namespace First
     public:
         Thing1_PushVisitor(bool isReturn) : isReturn(isReturn) {}
         void onValue1(const Thing1::Value1* value1) override {
-            // type:
+            // kind:
             ni_pushInt32(0);
         }
         void onValue2(const Thing1::Value2* value2) override {
             ni_pushInt32(value2->x);
-            // type:
+            // kind:
             ni_pushInt32(1);
         }
         void onValue3(const Thing1::Value3* value3) override {
             pushStringInternal(value3->y);
-            // type:
+            // kind:
             ni_pushInt32(2);
+        }
+        void onValue4(const Thing1::Value4* value4) override {
+            Thing2__push(value4->other, isReturn);
+            // kind:
+            ni_pushInt32(3);
         }
     };
 
@@ -48,26 +53,31 @@ namespace First
     }
 
     std::shared_ptr<Thing1::Base> Thing1__pop() {
-        Thing1::Base* thing = nullptr;
+        Thing1::Base* __ret = nullptr;
         switch (ni_popInt32()) {
         case 0: {
-            thing = new Thing1::Value1();
+            __ret = new Thing1::Value1();
             break;
         }
         case 1: {
             auto x = ni_popInt32();
-            thing = new Thing1::Value2(x);
+            __ret = new Thing1::Value2(x);
             break;
         }
         case 2: {
-            auto s = popStringInternal();
-            thing = new Thing1::Value3(s);
+            auto y = popStringInternal();
+            __ret = new Thing1::Value3(y);
+            break;
+        }
+        case 3: {
+            auto other = Thing2__pop();
+            __ret = new Thing1::Value4(other);
             break;
         }
         default:
-            printf("c++ Thing1__pop() - unknown kind! returning null\n");
+            printf("C++ Thing1__pop() - unknown kind! returning null\n");
         }
-        return std::shared_ptr<Thing1::Base>(thing);
+        return std::shared_ptr<Thing1::Base>(__ret);
     }
 
     class Thing2_PushVisitor : public Thing2::Visitor {
@@ -76,17 +86,17 @@ namespace First
     public:
         Thing2_PushVisitor(bool isReturn) : isReturn(isReturn) {}
         void onVariant1(const Thing2::Variant1* variant1) override {
-            // kind
+            // kind:
             ni_pushInt32(0);
         }
         void onVariant2(const Thing2::Variant2* variant2) override {
             Thing1__push(variant2->thing, isReturn);
-            // kind
+            // kind:
             ni_pushInt32(1);
         }
         void onVariant3(const Thing2::Variant3* variant3) override {
             __Thing2_Array__push(variant3->children, isReturn);
-            // kind
+            // kind:
             ni_pushInt32(2);
         }
     };
@@ -97,26 +107,26 @@ namespace First
     }
 
     std::shared_ptr<Thing2::Base> Thing2__pop() {
-        Thing2::Base* ret = nullptr;
+        Thing2::Base* __ret = nullptr;
         switch (ni_popInt32()) {
         case 0: {
-            ret = new Thing2::Variant1();
+            __ret = new Thing2::Variant1();
             break;
         }
         case 1: {
             auto thing = Thing1__pop();
-            ret = new Thing2::Variant2(thing);
+            __ret = new Thing2::Variant2(thing);
             break;
         }
         case 2: {
             auto children = __Thing2_Array__pop();
-            ret = new Thing2::Variant3(children);
+            __ret = new Thing2::Variant3(children);
             break;
         }
         default:
-            printf("c++ Thing2__pop() - unknown kind! returning null\n");
+            printf("C++ Thing2__pop() - unknown kind! returning null\n");
         }
-        return std::shared_ptr<Thing2::Base>(ret);
+        return std::shared_ptr<Thing2::Base>(__ret);
     }
 
     void doSomething__wrapper() {

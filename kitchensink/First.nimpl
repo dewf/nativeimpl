@@ -3,7 +3,8 @@ module First;
 sumtype Thing1 {
     Value1,
     Value2(int x),
-    Value3(string y)
+    Value3(string y),
+    Value4(Thing2 other)
 }
 
 sumtype Thing2 {

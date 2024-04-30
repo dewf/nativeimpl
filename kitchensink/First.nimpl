@@ -1,39 +1,15 @@
 module First;
 
-opaque RootThing;
-
-exception RootException(int x);
-
-group Nested1 {
-    opaque Opaque1;
-    opaque Opaque2;
-
-    opaque NestedThing {
-        static {
-            struct Wow {
-                int x;
-            }
-            Wow wowValue;
-        }
-        void singleMethod(Wow value);
-    }
-
-    interface ICoolThing {
-        static {
-            int someConst;
-            exception Exceptional(string msg);
-            opaque InterfaceNestedThing {
-                static {
-                    enum Enum01 {
-                        One,
-                        Two
-                    }
-                    void noice(Enum01 value3) throws Exceptional;
-                }
-            }
-        }
-        void doSomething() throws RootException;
-    }
+sumtype Thing1 {
+    Value1,
+    Value2(int x),
+    Value3(string y)
 }
 
-void rootFunction(Nested1.ICoolThing.InterfaceNestedThing.Enum01 value);
+sumtype Thing2 {
+    Variant1,
+    Variant2(Thing1 thing),
+    Variant3(Array<Thing2> children)
+}
+
+void doSomething(Thing2 root);

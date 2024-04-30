@@ -14,78 +14,168 @@ namespace Org.Prefixed.KitchenSink
     {
         private static ModuleHandle _module;
 
-        private static void __Int_String_Result__Push(Result<int,string> result, bool isReturn)
+        internal static void __Thing2_Array__Push(Thing2[] values, bool isReturn)
         {
-            if (result.IsSuccess)
+            foreach (var value in values.Reverse())
             {
-                NativeImplClient.PushInt32(result.Value);
-                NativeImplClient.PushBool(true);
+                Thing2__Push(value, isReturn);
             }
-            else
-            {
-                NativeImplClient.PushString(result.Error);
-                NativeImplClient.PushBool(false);
-            }
-        }
-        private static Result<int,string> __Int_String_Result__Pop()
-        {
-            var success = NativeImplClient.PopBool();
-            if (success)
-            {
-                return NativeImplClient.PopInt32();
-            }
-            return NativeImplClient.PopString();
+            NativeImplClient.PushSizeT((IntPtr)values.Length);
         }
 
-        private static void __Int_String_Result_Array__Push(Result<int,string>[] values, bool isReturn)
+        internal static Thing2[] __Thing2_Array__Pop()
         {
-            var isSuccessArray = values.Select(v => v.IsSuccess).ToArray();
-            var successValues = values.Where(v => v.IsSuccess).Select(v => v.Value).ToArray();
-            var errorValues = values.Where(v => v.IsFailure).Select(v => v.Error).ToArray();
-            NativeImplClient.PushStringArray(errorValues);
-            NativeImplClient.PushInt32Array(successValues);
-            NativeImplClient.PushBoolArray(isSuccessArray);
-        }
-        private static Result<int,string>[] __Int_String_Result_Array__Pop()
-        {
-            var isSuccessArray = NativeImplClient.PopBoolArray();
-            var successValues = NativeImplClient.PopInt32Array();
-            var errorValues = NativeImplClient.PopStringArray();
-            var successPtr = 0;
-            var errorPtr = 0;
-            return isSuccessArray.Select<bool, Result<int, string>>(isSuccess =>
+            var count = (int)NativeImplClient.PopSizeT();
+            var ret = new Thing2[count];
+            for (var i = 0; i < count; i++)
             {
-                if (isSuccess)
+                ret[i] = Thing2__Pop();
+            }
+            return ret;
+        }
+        internal static ModuleMethodHandle _doSomething;
+
+        public static void DoSomething(Thing2 root)
+        {
+            Thing2__Push(root, false);
+            NativeImplClient.InvokeModuleMethod(_doSomething);
+        }
+        public abstract record Thing1
+        {
+            public sealed record Value1 : Thing1;
+            public sealed record Value2(int X) : Thing1
+            {
+                public int X { get; } = X;
+            }
+            public sealed record Value3(string Y) : Thing1
+            {
+                public string Y { get; } = Y;
+            }
+        }
+
+        private enum Thing1__Tag
+        {
+            Value1,
+            Value2,
+            Value3
+        }
+
+        internal static void Thing1__Push(Thing1 thing, bool isReturn)
+        {
+            Thing1__Tag which;
+            switch (thing)
+            {
+                case Thing1.Value1 value1:
+                    which = Thing1__Tag.Value1;
+                    break;
+                case Thing1.Value2 value2:
+                    which = Thing1__Tag.Value2;
+                    NativeImplClient.PushInt32(value2.X);
+                    break;
+                case Thing1.Value3 value3:
+                    which = Thing1__Tag.Value3;
+                    NativeImplClient.PushString(value3.Y);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(thing));
+            }
+            NativeImplClient.PushInt32((int)which);
+        }
+
+        internal static Thing1 Thing1__Pop()
+        {
+            var which = NativeImplClient.PopInt32();
+            switch ((Thing1__Tag)which)
+            {
+                case Thing1__Tag.Value1:
                 {
-                    return successValues[successPtr++];
+                    return new Thing1.Value1();
                 }
-                else
+                case Thing1__Tag.Value2:
                 {
-                    return errorValues[errorPtr++];
+                    var x = NativeImplClient.PopInt32();
+                    return new Thing1.Value2(x);
                 }
-            }).ToArray();
+                case Thing1__Tag.Value3:
+                {
+                    var y = NativeImplClient.PopString();
+                    return new Thing1.Value3(y);
+                }
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
         }
-        internal static ModuleMethodHandle _method1;
-        internal static ModuleMethodHandle _method2;
-
-        public static void Method1(Result<int,string>[] resultArray)
+        public abstract record Thing2
         {
-            __Int_String_Result_Array__Push(resultArray, false);
-            NativeImplClient.InvokeModuleMethod(_method1);
+            public sealed record Variant1 : Thing2;
+            public sealed record Variant2(Thing1 Thing) : Thing2
+            {
+                public Thing1 Thing { get; } = Thing;
+            }
+            public sealed record Variant3(Thing2[] Children) : Thing2
+            {
+                public Thing2[] Children { get; } = Children;
+            }
         }
 
-        public static Result<int,string>[] Method2()
+        private enum Thing2__Tag
         {
-            NativeImplClient.InvokeModuleMethod(_method2);
-            return __Int_String_Result_Array__Pop();
+            Variant1,
+            Variant2,
+            Variant3
+        }
+
+        internal static void Thing2__Push(Thing2 thing, bool isReturn)
+        {
+            Thing2__Tag which;
+            switch (thing)
+            {
+                case Thing2.Variant1 variant1:
+                    which = Thing2__Tag.Variant1;
+                    break;
+                case Thing2.Variant2 variant2:
+                    which = Thing2__Tag.Variant2;
+                    Thing1__Push(variant2.Thing, isReturn);
+                    break;
+                case Thing2.Variant3 variant3:
+                    which = Thing2__Tag.Variant3;
+                    __Thing2_Array__Push(variant3.Children, isReturn);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(thing));
+            }
+            NativeImplClient.PushInt32((int)which);
+        }
+
+        internal static Thing2 Thing2__Pop()
+        {
+            var which = NativeImplClient.PopInt32();
+            switch ((Thing2__Tag)which)
+            {
+                case Thing2__Tag.Variant1:
+                {
+                    return new Thing2.Variant1();
+                }
+                case Thing2__Tag.Variant2:
+                {
+                    var thing = Thing1__Pop();
+                    return new Thing2.Variant2(thing);
+                }
+                case Thing2__Tag.Variant3:
+                {
+                    var children = __Thing2_Array__Pop();
+                    return new Thing2.Variant3(children);
+                }
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
         }
 
         internal static void __Init()
         {
             _module = NativeImplClient.GetModule("First");
             // assign module handles
-            _method1 = NativeImplClient.GetModuleMethod(_module, "method1");
-            _method2 = NativeImplClient.GetModuleMethod(_module, "method2");
+            _doSomething = NativeImplClient.GetModuleMethod(_module, "doSomething");
 
             // no static init
         }

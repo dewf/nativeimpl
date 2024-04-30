@@ -3,13 +3,13 @@
 
 namespace First
 {
+    void Thing1__push(std::shared_ptr<Thing1> value, bool isReturn);
+    std::shared_ptr<Thing1> Thing1__pop();
 
-    void __Int32_String_Result__push(result::Result<int32_t, std::string> value, bool isReturn);
-    result::Result<int32_t, std::string> __Int32_String_Result__pop();
+    void Thing2__push(std::shared_ptr<Thing2> value, bool isReturn);
+    std::shared_ptr<Thing2> Thing2__pop();
 
-    void method1__wrapper();
-
-    void method2__wrapper();
+    void doSomething__wrapper();
 
     int __register();
 }

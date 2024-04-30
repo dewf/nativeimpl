@@ -7,13 +7,10 @@ internal static class Program
     private static void Main(string[] args)
     {
         Library.Init();
-        
-        First.Method1([10, "woot", 30, "woot2!", 50, "niiiice!", "oops", 80]);
-        Console.WriteLine("C# got:");
-        foreach (var x in First.Method2())
-        {
-            Console.WriteLine(x.TryGetValue(out var value) ? $" - success: {value}" : $" - error: {x.Error}");
-        }
+
+        var thing1 = new First.Thing1.Value2(3003);
+        var thing2 = new First.Thing2.Variant2(thing1);
+        First.DoSomething(thing2);
         
         Library.DumpTables();
         Library.Shutdown();

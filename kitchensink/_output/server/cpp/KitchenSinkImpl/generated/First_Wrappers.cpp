@@ -4,79 +4,129 @@
 
 namespace First
 {
-
-    void __Int32_String_Result__push(result::Result<int32_t, std::string> value, bool isReturn) {
-        if (value.is_ok()) {
-            ni_pushInt32(value.unwrap());
-            ni_pushBool(true);
+    void __Thing2_Array__push(std::vector<std::shared_ptr<Thing2>> values, bool isReturn) {
+        for (auto v = values.rbegin(); v != values.rend(); v++) {
+            Thing2__push(*v, isReturn);
         }
-        else {
-            pushStringInternal(value.unwrap_err());
-            ni_pushBool(false);
-        }
+        ni_pushSizeT(values.size());
     }
 
-    result::Result<int32_t, std::string> __Int32_String_Result__pop() {
-        auto isSuccess = ni_popBool();
-        if (isSuccess) {
-            auto successValue = ni_popInt32();
-            return result::Ok(successValue);
+    std::vector<std::shared_ptr<Thing2>> __Thing2_Array__pop() {
+        std::vector<std::shared_ptr<Thing2>> __ret;
+        auto count = ni_popSizeT();
+        for (auto i = 0; i < count; i++) {
+            auto value = Thing2__pop();
+            __ret.push_back(value);
         }
-        auto errValue = popStringInternal();
-        return result::Err(errValue);
-    }
-    void __Int32_String_Result_Array__push(std::vector<result::Result<int32_t, std::string>> values, bool isReturn) {
-        std::vector<bool> isSuccessArray;
-        isSuccessArray.reserve(values.size());
-        std::vector<int32_t> successValuesArray;
-        std::vector<std::string> errorValuesArray;
-        for (auto i = values.begin(); i != values.end(); i++) {
-            if (i->is_ok()) {
-                successValuesArray.push_back(i->unwrap());
-                isSuccessArray.push_back(true);
-            }
-            else {
-                errorValuesArray.push_back(i->unwrap_err());
-                isSuccessArray.push_back(false);
-            }
-        }
-        pushStringArrayInternal(errorValuesArray);
-        pushInt32ArrayInternal(successValuesArray);
-        pushBoolArrayInternal(isSuccessArray);
+        return __ret;
     }
 
-    std::vector<result::Result<int32_t, std::string>> __Int32_String_Result_Array__pop() {
-        auto isSuccessArray = popBoolArrayInternal();
-        auto successValuesArray = popInt32ArrayInternal();
-        auto errorValuesArray = popStringArrayInternal();
-        std::vector<result::Result<int32_t, std::string>> ret;
-        ret.reserve(isSuccessArray.size());
-        auto succPtr = successValuesArray.data();
-        auto errPtr = errorValuesArray.data();
-        for (auto i = isSuccessArray.begin(); i != isSuccessArray.end(); i++) {
-            if (*i) {
-                ret.push_back(result::Ok(*succPtr++));
-            }
-            else {
-                ret.push_back(result::Err(*errPtr++));
-            }
+    class Thing1_PushVisitor : public Thing1Visitor {
+    private:
+        bool isReturn;
+    public:
+        Thing1_PushVisitor(bool isReturn) : isReturn(isReturn) {}
+        void onValue1(const Value1* value1) override {
+            // type:
+            ni_pushInt32(0);
         }
-        return ret;
+        void onValue2(const Value2* value2) override {
+            ni_pushInt32(value2->x);
+            // type:
+            ni_pushInt32(1);
+        }
+        void onValue3(const Value3* value3) override {
+            pushStringInternal(value3->y);
+            // type:
+            ni_pushInt32(2);
+        }
+    };
+
+    void Thing1__push(std::shared_ptr<Thing1> value, bool isReturn) {
+        Thing1_PushVisitor v(isReturn);
+        value->accept((Thing1Visitor*)&v);
     }
 
-    void method1__wrapper() {
-        auto resultArray = __Int32_String_Result_Array__pop();
-        method1(resultArray);
+    std::shared_ptr<Thing1> Thing1__pop() {
+        Thing1* thing = nullptr;
+        switch (ni_popInt32()) {
+        case 0: {
+            thing = new Value1();
+            break;
+        }
+        case 1: {
+            auto x = ni_popInt32();
+            thing = new Value2(x);
+            break;
+        }
+        case 2: {
+            auto s = popStringInternal();
+            thing = new Value3(s);
+            break;
+        }
+        default:
+            printf("c++ Thing1__pop() - unknown kind! returning null\n");
+        }
+        return std::shared_ptr<Thing1>(thing);
     }
 
-    void method2__wrapper() {
-        __Int32_String_Result_Array__push(method2(), true);
+    class Thing2_PushVisitor : public Thing2Visitor {
+    private:
+        bool isReturn;
+    public:
+        Thing2_PushVisitor(bool isReturn) : isReturn(isReturn) {}
+        void onVariant1(const Variant1* variant1) override {
+            // kind
+            ni_pushInt32(0);
+        }
+        void onVariant2(const Variant2* variant2) override {
+            Thing1__push(variant2->thing, isReturn);
+            // kind
+            ni_pushInt32(1);
+        }
+        void onVariant3(const Variant3* variant3) override {
+            __Thing2_Array__push(variant3->children, isReturn);
+            // kind
+            ni_pushInt32(2);
+        }
+    };
+
+    void Thing2__push(std::shared_ptr<Thing2> value, bool isReturn) {
+        Thing2_PushVisitor v(isReturn);
+        value->accept((Thing2Visitor*)&v);
+    }
+
+    std::shared_ptr<Thing2> Thing2__pop() {
+        Thing2* ret = nullptr;
+        switch (ni_popInt32()) {
+        case 0: {
+            ret = new Variant1();
+            break;
+        }
+        case 1: {
+            auto thing = Thing1__pop();
+            ret = new Variant2(thing);
+            break;
+        }
+        case 2: {
+            auto children = __Thing2_Array__pop();
+            ret = new Variant3(children);
+            break;
+        }
+        default:
+            printf("c++ Thing2__pop() - unknown kind! returning null\n");
+        }
+        return std::shared_ptr<Thing2>(ret);
+    }
+
+    void doSomething__wrapper() {
+        auto root = Thing2__pop();
+        doSomething(root);
     }
 
     int __register() {
         auto m = ni_registerModule("First");
-        ni_registerModuleMethod(m, "method1", &method1__wrapper);
-        ni_registerModuleMethod(m, "method2", &method2__wrapper);
+        ni_registerModuleMethod(m, "doSomething", &doSomething__wrapper);
         return 0; // = OK
     }
 }

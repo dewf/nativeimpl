@@ -11,6 +11,10 @@ struct MyStruct {
                 Wow3
             }
             int nestedFunction(NestedEnum e);
+
+            opaque DeepOpaque {
+                void wow();
+            }
         }
         enum Kind {
             Type1,

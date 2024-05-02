@@ -1,16 +1,44 @@
 module First;
 
-sumtype Thing1 {
-    Value1,
-    Value2(int x),
-    Value3(string y),
-    Value4(Thing2 other)
+struct MyStruct {
+    static {
+        enum Kind {
+            Type1,
+            Type2
+        }
+        struct SubStruct {
+            int x;
+        }
+        MyStruct create(Kind kind);
+    }
+    int a;
+    string b;
 }
 
-sumtype Thing2 {
-    Variant1,
-    Variant2(Thing1 thing),
-    Variant3(Array<Thing2> children)
+opaque MyOpaque {
+    static {
+        enum Kind {
+            Type1,
+            Type2
+        }
+        struct SubStruct {
+            int x;
+        }
+        MyOpaque create(Kind kind);
+    }
+    void doSomething(int x);
 }
 
-void doSomething(Thing2 root);
+interface IThing {
+    static {
+        enum Kind {
+            Type1,
+            Type2
+        }
+        struct SubStruct {
+            int x;
+        }
+        IThing create(Kind kind);
+    }
+    void doSomething2(string s);
+}

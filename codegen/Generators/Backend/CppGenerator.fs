@@ -1757,7 +1757,12 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
     for def in context.GroupContext.Defs do
         match def with
         | Global(globalName, globalType) ->
-            write 0 "extern const %s %s;" (typeToCppString context globalType) globalName
+            let storage =
+                if insideInterfaceOrStructStatic then
+                    "static"
+                else
+                    "extern"
+            write 0 "%s const %s %s;" storage (typeToCppString context globalType) globalName
         | FunctionDef namedFunc ->
             let throwsComment =
                 if namedFunc.Throws.IsEmpty then

@@ -2,7 +2,9 @@ module First;
 
 struct MyStruct {
     static {
+        int someValue;
         group Nested {
+            string someNestedValue;
             enum NestedEnum {
                 Wow1,
                 Wow2,
@@ -25,7 +27,9 @@ struct MyStruct {
 
 opaque MyOpaque {
     static {
+        int someValue;
         group Nested {
+            string someNestedValue;
             enum NestedEnum {
                 Wow1,
                 Wow2,
@@ -47,7 +51,9 @@ opaque MyOpaque {
 
 interface IThing {
     static {
+        int someValue;
         group Nested {
+            string someNestedValue;
             enum NestedEnum {
                 Wow1,
                 Wow2,

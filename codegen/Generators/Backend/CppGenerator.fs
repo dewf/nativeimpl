@@ -12,10 +12,8 @@ let STATIC_SUFFIX =
     "Static"
 
 let groupSegmentRenameFunc (name: string) = function
-    | NormalGroup -> name
     | OpaqueStatic -> name + STATIC_SUFFIX
-    | InterfaceStatic -> name + STATIC_SUFFIX
-    | StructStatic -> name + STATIC_SUFFIX
+    | _ -> name
         
 let resolvedNameToString =
     resolvedNameToStringAbstract "::" groupSegmentRenameFunc
@@ -1788,6 +1786,7 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
                 renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
             if insideInterfaceOrStructStatic then
                 write 0 "class %s {" groupName
+                write 0 "public:"
                 renderContent()
                 write 0 "};"
             else
@@ -1909,7 +1908,7 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                 | Some _ ->
                     let nextContext =
                         context.NavigateToSub(name)
-                    write 0 "namespace %s%s {" (upperFirst name) STATIC_SUFFIX
+                    write 0 "namespace %s {" (upperFirst name)
                     renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
                     write 0 "}"
                 | None ->
@@ -1919,7 +1918,7 @@ let rec renderImplementationCppGroup (context: RenderContext) (writer: IFormatWr
                 | Some _ ->
                     let nextContext =
                         context.NavigateToSub(name)
-                    write 0 "namespace %s%s {" (upperFirst name) STATIC_SUFFIX
+                    write 0 "namespace %s {" (upperFirst name)
                     renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
                     write 0 "}"
                 | None ->

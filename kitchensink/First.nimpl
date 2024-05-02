@@ -72,3 +72,5 @@ interface IThing {
     }
     void doSomething2(string s);
 }
+
+void rootMethod(MyStruct.Nested.NestedEnum e);

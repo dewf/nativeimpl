@@ -2,6 +2,14 @@ module First;
 
 struct MyStruct {
     static {
+        group Nested {
+            enum NestedEnum {
+                Wow1,
+                Wow2,
+                Wow3
+            }
+            int nestedFunction(NestedEnum e);
+        }
         enum Kind {
             Type1,
             Type2
@@ -17,6 +25,14 @@ struct MyStruct {
 
 opaque MyOpaque {
     static {
+        group Nested {
+            enum NestedEnum {
+                Wow1,
+                Wow2,
+                Wow3
+            }
+            int nestedFunction(NestedEnum e);
+        }
         enum Kind {
             Type1,
             Type2
@@ -31,6 +47,14 @@ opaque MyOpaque {
 
 interface IThing {
     static {
+        group Nested {
+            enum NestedEnum {
+                Wow1,
+                Wow2,
+                Wow3
+            }
+            int nestedFunction(NestedEnum e);
+        }
         enum Kind {
             Type1,
             Type2

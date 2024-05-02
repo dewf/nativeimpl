@@ -1625,22 +1625,21 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
                     sprintf " // throws %s" joined
             write 0 "%s %s(%s);%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
     | StructDef info ->
-        // render static block, if any
+        let renderFields (context: RenderContext) =
+            for field in info.Fields do
+                write 1 "%s %s;" (typeToCppString context field.Type_) field.Name
+        write 0 "struct %s {" name
         match info.MaybeStaticDefs with
         | Some _ ->
-            write 0 "namespace %s%s {" name STATIC_SUFFIX
             let nextContext =
                 context.NavigateToSub(name)
+            write 1 "// static definitions:"
             renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
-            write 0 "}" // end namespace
+            write 1 "// fields:"
+            renderFields nextContext
         | None ->
-            ()
-        // struct proper
-        write 0 "struct %s {" name
-        // DON'T render in context of static block, we need the static namespace prefix
-        for field in info.Fields do
-            write 1 "%s %s;" (typeToCppString context field.Type_) field.Name
-        write 0 "};"
+            renderFields context
+        write 0 "};" // end struct
     | OptionsDef namedFields ->
         renderHeaderOptionsType context writer name namedFields
     | ExceptionDef namedFields ->
@@ -1658,20 +1657,19 @@ let rec renderHeaderUserType (context: RenderContext) (writer: IFormatWriter) (n
                             |> String.concat ", "
                         sprintf " // throws %s" joined
                 write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
-        // render static block, if any
-        match info.MaybeStaticDefs with
-        | Some _ ->
-            write 0 "namespace %s%s {" name STATIC_SUFFIX
-            let nextContext =
-                context.NavigateToSub(name)
-            renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
-            write 0 "}"
-        | None ->
-            ()
         // class/interface proper
         write 0 "class %s {" name
         write 0 "public:"
-        renderMethods context // DON'T render in context of static block, we need things to be prefixed properly
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            let nextContext =
+                context.NavigateToSub(name)
+            write 1 "// static definitions:"
+            renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
+            write 1 "// instance methods:"
+            renderMethods nextContext
+        | None ->
+            renderMethods context
         write 0 "};"
     | DelegateDef info ->
         let maybeThrows =
@@ -1746,6 +1744,15 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
             for value in values do
                 write 1 "class %s;" value.Name
             write 0 "}"
+
+    // if there exists an interface or struct static group anywhere above this one (including at this level),
+    // then some of the code generation is different, because we can't use simple namespaces anymore
+    // eg functions need to be prefixed with "static", we use nested classes instead of namespaces for groups, etc
+    let insideInterfaceOrStructStatic =
+        group.KindPath
+        |> List.exists (function
+            | InterfaceStatic | StructStatic -> true
+            | _ -> false)
     
     for def in context.GroupContext.Defs do
         match def with
@@ -1761,15 +1768,27 @@ and renderImplementationHeaderGroup (context: RenderContext) (writer: IFormatWri
                         |> List.map (typeToCppString context)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
-            write 0 "%s %s(%s);%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+            let maybeStaticPrefix =
+                if insideInterfaceOrStructStatic then
+                    "static "
+                else
+                    ""
+            write 0 "%s%s %s(%s);%s" maybeStaticPrefix (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
         | UserType(name, userType) ->
             renderHeaderUserType context writer name userType
         | Group(groupName, _) ->
-            let nextContext =
-                context.NavigateToSub(groupName)
-            write 0 "namespace %s {" groupName
-            renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
-            write 0 "}"
+            let renderContent () =
+                let nextContext =
+                    context.NavigateToSub(groupName)
+                renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
+            if insideInterfaceOrStructStatic then
+                write 0 "class %s {" groupName
+                renderContent()
+                write 0 "};"
+            else
+                write 0 "namespace %s {" groupName
+                renderContent()
+                write 0 "}"
         
 let generateImplementationH (context: RenderContext) (writer: IFormatWriter) (currentDir: string list) = // (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank

@@ -8,7 +8,6 @@ open Util
 open Generators.Common
 open Extensions
 
-
 type ResolvedNameMode =
     | Normal
     | Wrappers
@@ -51,24 +50,13 @@ type CppRenderContext = {
             RenderContext = nextRenderContext
             MaybePathClamp = nextPathClamp }
 
-let STATIC_SUFFIX =
-    "Static"
-    
-let groupSegmentRenameFunc (name: string) (prefix: GroupKind list) =
-    let kind =
-        prefix |> List.last
-    match kind with
-    | OpaqueStatic -> name + STATIC_SUFFIX
-    | _ -> name
-    
-let groupSegmentRenameFuncWrappersFunc (name: string) (prefix: GroupKind list) =
+let wrappersGroupSegmentRenameFunc (name: string) (prefix: GroupKind list) =
     let kind =
         prefix |> List.last
     let inFakeWrapperNamespace =
         prefix
         |> List.exists (function | InterfaceStatic | StructStatic -> true | _ -> false)
     match inFakeWrapperNamespace, kind with
-    | _, OpaqueStatic -> name + STATIC_SUFFIX
     | true, _ -> name + "__"
     | _ -> name
         
@@ -83,9 +71,9 @@ let resolvedNameToString (context: CppRenderContext) =
     let renameFunc =
         match context.NameMode with
         | WrappersPushPop ->
-            groupSegmentRenameFuncWrappersFunc
+            wrappersGroupSegmentRenameFunc
         | _ ->
-            groupSegmentRenameFunc
+            (fun name _ -> name)
     resolvedNameToStringAbstract "::" renameFunc pathClamp context.RenderContext
     
 let getRelativePath (currentPath: string list) (targetPath: string list) =
@@ -188,7 +176,7 @@ let typeToCppString (context: CppRenderContext) (outerType: NIType) =
                 resolvedNameToString context resolvedName TypeMode
             match resolvedType with
             | OpaqueType ->
-                name
+                sprintf "%sRef" name
             | InterfaceType ->
                 sprintf "std::shared_ptr<%s>" name
             | DelegateType ->
@@ -1296,8 +1284,8 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
                 writeH 0 "namespace %s__ {" name
                 writeCpp 0 "namespace %s__ {" name
             else
-                writeH 0 "namespace %s%s {" name STATIC_SUFFIX
-                writeCpp 0 "namespace %s%s {" name STATIC_SUFFIX
+                writeH 0 "namespace %s {" name
+                writeCpp 0 "namespace %s {" name
             //
             renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
             //
@@ -1545,13 +1533,8 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
                 let sub = group.SubGroups[subName]
                 pushGroupConstants sub
             for globalName, globalType in group.Globals |> List.rev do
-                // TODO: get rid of this after we go back to using normal opaque static name
-                let renamedPath =
-                    (group.Path, group.KindPath)
-                    ||> List.zip
-                    |> renameGroupPath groupSegmentRenameFunc // use normal segment rename, we're not referring to anything in the wrappers faux namespaces
                 let content =
-                    joinNameParts "::" (renamedPath @ [ globalName ])
+                    joinNameParts "::" (group.Path @ [ globalName ])
                 pushValue context writerCpp 2 globalType content (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
         pushGroupConstants context.GroupContext
         writeCpp 1 "}"
@@ -1571,7 +1554,7 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
         let groupPathRenamed =
             (group.Path, group.KindPath)
             ||> List.zip
-            |> renameGroupPath groupSegmentRenameFuncWrappersFunc
+            |> renameGroupPath wrappersGroupSegmentRenameFunc
             // ||> List.map2 groupSegmentRenameFuncWrappersFunc
             
         // module methods (+ synthesized opaque)
@@ -1735,7 +1718,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
     | OpaqueDef info ->
         match info.MaybeStaticDefs with
         | Some _ ->
-            write 0 "namespace %s%s {" name STATIC_SUFFIX
+            write 0 "namespace %s {" name
             let nextContext =
                 context.NavigateToSub(name)
             renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
@@ -1870,7 +1853,7 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                     sprintf " // extends %s" (typeToCppString context parentType)
                 | None ->
                     ""
-            write 0 "struct __%s; typedef struct __%s* %s;%s" name name name extendsComment
+            write 0 "struct __%s; typedef struct __%s* %sRef;%s" name name name extendsComment
             
     // emit sumtype fwd decls, so they can be mutually dependent
     if not group.SumTypes.IsEmpty then
@@ -2034,14 +2017,14 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
             | OpaqueDef info ->
                 write 0 "struct %s__%s {" nsPrefix (upperFirst name)
                 write 1 "// your content here"
-                write 1 "// (or delete this and cast your own opaque ptr to '%s' in the stubs below)" (upperFirst name)
+                write 1 "// (or delete this and cast your own opaque ptr to '%sRef' in the stubs below)" (upperFirst name)
                 write 0 "};"
                 match info.MaybeStaticDefs with
                 | Some _ ->
                     let nextContext =
                         context.NavigateToSub(name)
                     if not context.InsideInterfaceOrStructStatic then
-                        write 0 "namespace %s%s {" (upperFirst name) STATIC_SUFFIX
+                        write 0 "namespace %s {" (upperFirst name)
                         renderImplementationCppGroup nextContext (writer.WithExtraIndent 1)
                         write 0 "}"
                     else

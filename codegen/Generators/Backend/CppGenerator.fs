@@ -690,23 +690,39 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
                 | _ ->
                     failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
         writeCpp 0 "}"
-    
+        
+let clampedNsPrefix (context: CppRenderContext) =
+    match context.MaybePathClamp with
+    | Some clampPath ->
+        match List.removePrefix clampPath context.GroupContext.Path with
+        | Some remaining ->
+            (String.concat "::" remaining) + "::"
+        | None ->
+            // not a descendent of that prefix
+            ""
+    | None ->
+        ""
 
-let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
+let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (values: SumTypeValue list) (niType: NIType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, _ = writerH.Write, writerH.Blank
+
+    let qualifiedName =
+        let nsPrefix =
+            clampedNsPrefix context
+        nsPrefix + name
         
     // push ========
-    writeH 0 "void %s__push(std::shared_ptr<%s::Base> value, bool isReturn);" sumTypeName sumTypeName
+    writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context niType)
     // pushvisitor
     blankCpp()
-    writeCpp 0 "class %s_PushVisitor : public %s::Visitor {" sumTypeName sumTypeName
+    writeCpp 0 "class %s_PushVisitor : public %s::Visitor {" name qualifiedName
     writeCpp 0 "private:"
     writeCpp 1 "bool isReturn;"
     writeCpp 0 "public:"
-    writeCpp 1 "%s_PushVisitor(bool isReturn) : isReturn(isReturn) {}" sumTypeName
+    writeCpp 1 "%s_PushVisitor(bool isReturn) : isReturn(isReturn) {}" name
     for i, value in values |> List.indexed do
-        writeCpp 1 "void on%s(const %s::%s* %s) override {" value.Name sumTypeName value.Name (lowerFirst value.Name)
+        writeCpp 1 "void on%s(const %s::%s* %s) override {" value.Name qualifiedName value.Name (lowerFirst value.Name)
         for argName, argType in value.Args |> List.rev do
             let content =
                 sprintf "%s->%s" (lowerFirst value.Name) argName
@@ -717,28 +733,28 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
     writeCpp 0 "};" // end pushvisitor
     // actual push
     blankCpp()
-    writeCpp 0 "void %s__push(std::shared_ptr<%s::Base> value, bool isReturn) {" sumTypeName sumTypeName
-    writeCpp 1 "%s_PushVisitor v(isReturn);" sumTypeName
-    writeCpp 1 "value->accept((%s::Visitor*)&v);" sumTypeName
+    writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context niType)
+    writeCpp 1 "%s_PushVisitor v(isReturn);" name
+    writeCpp 1 "value->accept((%s::Visitor*)&v);" qualifiedName
     writeCpp 0 "}"
     
     // pop =======
-    writeH 0 "std::shared_ptr<%s::Base> %s__pop();" sumTypeName sumTypeName
+    writeH 0 "%s %s__pop();" (typeToCppString context niType) name
     blankCpp()
-    writeCpp 0 "std::shared_ptr<%s::Base> %s__pop() {" sumTypeName sumTypeName
-    writeCpp 1 "%s::Base* __ret = nullptr;" sumTypeName
+    writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
+    writeCpp 1 "%s::Base* __ret = nullptr;" qualifiedName
     writeCpp 1 "switch (ni_popInt32()) {"
     for i, value in values |> List.indexed do
         writeCpp 1 "case %d: {" i
         for argName, argType in value.Args do
             popValue context writerCpp 2 argType (Variable argName)
-        writeCpp 2 "__ret = new %s::%s(%s);" sumTypeName value.Name (joinedArgNames value.Args)
+        writeCpp 2 "__ret = new %s::%s(%s);" qualifiedName value.Name (joinedArgNames value.Args)
         writeCpp 2 "break;"
         writeCpp 1 "}"
     writeCpp 1 "default:"
-    writeCpp 2 "printf(\"C++ %s__pop() - unknown kind! returning null\\n\");" sumTypeName
+    writeCpp 2 "printf(\"C++ %s__pop() - unknown kind! returning null\\n\");" name
     writeCpp 1 "}" // end switch
-    writeCpp 1 "return std::shared_ptr<%s::Base>(__ret);" sumTypeName
+    writeCpp 1 "return std::shared_ptr<%s::Base>(__ret);" qualifiedName
     writeCpp 0 "}"
 
 type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType) =
@@ -1053,16 +1069,7 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
     let writeH, blankH = writerH.Write, writerH.Blank
     
     let nsPrefix =
-        match context.MaybePathClamp with
-        | Some clampPath ->
-            match List.removePrefix clampPath context.GroupContext.Path with
-            | Some remaining ->
-                (String.concat "::" remaining) + "::"
-            | None ->
-                // not a descendent of that prefix
-                ""
-        | None ->
-            ""
+        clampedNsPrefix context
         
     blankH()
     writeH 0 "void %s__wrapper();" namedFunction.Name
@@ -1435,7 +1442,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             writeCpp 1 "return (%s)tag;" (typeToCppString context niType)
             writeCpp 0 "}"
     | SumTypeDef values ->
-        renderWrapperSumType context writerH writerCpp name values
+        renderWrapperSumType context writerH writerCpp name values niType
 
 and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) =
     let writeCpp, _ = writerCpp.Write, writerCpp.Blank
@@ -1638,7 +1645,7 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
     else
         write 0 "namespace %s {" sumTypeName
     // fwd declarations for case classes
-    // Base still needs to be emitted elsewhere
+    // Base still needs to be emitted at group level to allow for mutual recursion
     for value in values do
         write 1 "class %s;" value.Name
     
@@ -1851,7 +1858,8 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
     let group =
         context.GroupContext
         
-    // emit all opaque handles at once, so they can be mutually dependent
+    // emit all group opaque handles at once, to minimize ordering / mutual referencing problems
+    // unfortunately we can't emit them at the very top of the model, because it seems you can't prefix the struct declaration with a namespace?
     if not group.Opaques.IsEmpty then
         blank()
         for name, info in group.Opaques do
@@ -1869,10 +1877,8 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
         for name, values in group.SumTypes do
             write 0 "namespace %s {" name
             write 1 "class Base;"
-            // for value in values do
-            //     write 1 "class %s;" value.Name
             write 0 "}"
-
+    
     for def in context.GroupContext.Defs do
         match def with
         | Global(globalName, globalType) ->
@@ -1949,32 +1955,25 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
         write 0 "namespace %s" (joinNameParts "::" nameParts)
     write 0 "{"
 
-    // // recursively emit all opaque types at the top, so that there are no ordering/dependency issues
-    // let rec renderOpaques (group: GroupContext) =
-    //     if not group.Opaques.IsEmpty then
+    // // recursively emit (some) fwd declarations at top of module, to minimize ordering/dependency issues (currently for sumtypes, maybe for interfaces in the future)
+    // // ... didn't seem possible to also do opaques here, couldn't prefix their definitions with namespaces?
+    // let rec renderFwdDeclarations (group: GroupContext) (writer: IFormatWriter) =
+    //     let write = writer.Write
+    //     let nsPrefix =
+    //         // no silly path clamping shenanigans here!
+    //         if not group.Path.IsEmpty then
+    //             (String.concat "::" group.Path) + "::"
+    //         else
+    //             ""
+    //     if not group.SumTypes.IsEmpty then
     //         blank()
-    //         for name, info in group.Opaques do
-    //             let extendsComment =
-    //                 match info.MaybeParent with
-    //                 | Some parentType ->
-    //                     sprintf " // extends %s" (typeToCppString context parentType)
-    //                 | None ->
-    //                     ""
-    //             let innerCommon =
-    //                 sprintf "struct __%s; typedef struct __%s* %s;" name name name
-    //             match group.Path with
-    //             | [] ->
-    //                 write 1 "%s%s" innerCommon extendsComment
-    //             | _ ->
-    //                 let nsJoined =
-    //                     String.concat "::" group.Path
-    //                 write 1 "namespace %s { %s }%s" nsJoined innerCommon extendsComment
-    //             
+    //         for name, _ in group.SumTypes do
+    //             write 0 "class %s%s::Base;" nsPrefix name
     //     for subName in group.SubOrder do
-    //         let sub = group.SubGroups[subName]
-    //         renderOpaques sub
-    // write 1 "// opaque fwd declarations"
-    // renderOpaques context.GroupContext
+    //         let sub =
+    //             group.SubGroups[subName]
+    //         renderFwdDeclarations sub writer
+    // renderFwdDeclarations context.GroupContext (writer.WithExtraIndent 1)
     
     renderImplementationHeaderGroup context (writer.WithExtraIndent 1)
     write 0 "}"
@@ -1986,18 +1985,8 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
 
     // if the path is clamped (because we can't use "namespace X {" to descend into class or struct namespaces in the .cpp file)
     // then compute what the relative namespace prefix has to be, for emitting globals and function names
-    // I guess instead of a "clamp" we could have called it "last actual namespace"
     let nsPrefix =
-        match context.MaybePathClamp with
-        | Some clampPath ->
-            match List.removePrefix clampPath group.Path with
-            | Some remaining ->
-                (String.concat "::" remaining) + "::"
-            | None ->
-                // not a descendent of that prefix
-                ""
-        | None ->
-            ""
+        clampedNsPrefix context
             
     let renderFunc (namedFunc: NamedFunction) =
         let throwsComment =

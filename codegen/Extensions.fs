@@ -97,3 +97,19 @@ module List =
                 // heads exist but not equal, fail
                 false
         recInner prefix xs
+
+    let mapPrefixes (f: 'a list -> 'b) (xs: 'a list) =
+        // I'm sure there's a better name for this operation, no idea what
+        // [1; 2; 3; 4; 5] -> [[1]; [1; 2]; [1; 2; 3]; [1; 2; 3; 4]; [1; 2; 3; 4; 5]] -> List.map f
+        ([], xs)
+        ||> List.scan (fun acc i ->
+            i :: acc)
+        |> List.map List.rev
+        |> List.tail
+        |> List.map f
+        
+    let allButLast (xs: 'a list) =
+        xs
+        |> List.rev
+        |> List.tail
+        |> List.rev

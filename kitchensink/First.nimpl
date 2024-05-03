@@ -1,5 +1,21 @@
 module First;
 
+group NormalGroup {
+    struct NormalGroupStruct {
+        static {
+            group NormalNested {
+                enum NormalNestedEnum {
+                    Value1,
+                    Value2
+                }
+                int probablyBroken(NormalNestedEnum e);
+            }
+        }
+        int x;
+        string y;
+    }
+}
+
 struct MyStruct {
     static {
         int someValue;

@@ -714,12 +714,24 @@ let resolvedNamePathToKindPath (m: ModuleContext) (name: ResolvedName) =
         | _ ->
             failwith "resolvedNameToGroupKindPrefix: symbol table not in 'Complete' state??"
     recInner table parts
+
+let renameGroupPath (renameFunc: string -> GroupKind list -> string) (joinedPath: (string * GroupKind) list) =
+    joinedPath
+    |> List.mapPrefixes (fun upToPoint ->
+        let namePath, kindPath =
+            upToPoint
+            |> List.unzip
+        let name =
+            namePath |> List.last
+        renameFunc name kindPath)
     
 type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
     | GenericIdentifierMode
-let resolvedNameToStringAbstract (languageNsDelim: string) (partRenameFunc: string -> GroupKind -> string) (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+let resolvedNameToStringAbstract
+            (languageNsDelim: string) (partRenameFunc: string -> GroupKind list -> string) (maybePathClamp: string list option)
+            (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
     let separator =
         match mode with
         | TypeMode -> languageNsDelim
@@ -732,18 +744,29 @@ let resolvedNameToStringAbstract (languageNsDelim: string) (partRenameFunc: stri
         resolvedNamePathToKindPath context.ModuleContext name
         |> List.map Some
         |> (fun x -> x @ [None]) // final segment has no group kind, should be a direct thing
+
     let renameParts (parts: string list) =
-        List.zip parts kindParts
-        |> List.map (fun (name, maybeKind) ->
-            match maybeKind with
-            | Some kind ->
-                partRenameFunc name kind
-            | None ->
-                name)
+        let joinedPathPrefix = // not including the final named thing
+            (parts, kindParts)
+            ||> List.zip
+            |> List.allButLast
+            |> List.map (fun (name, maybeKind) -> name, Option.get maybeKind) // .allButLast prior should guarantee this always works, only final element was an Option
+        let renamedPathPrefix =
+            joinedPathPrefix
+            |> renameGroupPath partRenameFunc
+        renamedPathPrefix @ [parts |> List.last] // re-append the final element, sigh
+        
     let currentContextPath =
+        let path, kindPath =
+            match maybePathClamp with
+            | Some value ->
+                // caller wants to render 'as if' at a higher/shallower level in the group tree
+                value, context.GroupContext.KindPath |> List.take value.Length
+            | None ->
+                context.GroupContext.Path, context.GroupContext.KindPath
         // perform rename as well! otherwise it won't match / be properly stripped with List.removePrefix below :(
-        List.zip context.GroupContext.Path context.GroupContext.KindPath
-        |> List.map (fun (name, kind) -> partRenameFunc name kind)
+        List.zip path kindPath
+        |> renameGroupPath partRenameFunc
         
     match name with
     | ThisModule (SymbolName parts) ->

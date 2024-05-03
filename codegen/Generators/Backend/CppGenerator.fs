@@ -8,10 +8,17 @@ open Util
 open Generators.Common
 open Extensions
 
+
+type ResolvedNameMode =
+    | Normal
+    | Wrappers
+    | WrappersPushPop
 type CppRenderContext = {
     RenderContext: RenderContext
+    // TODO: these two are redundant, merge into a single thing (maybe with .insideInterface... as a computed property)
     InsideInterfaceOrStructStatic: bool
     MaybePathClamp: string list option
+    NameMode: ResolvedNameMode
 } with
     member this.ModuleContext =
         this.RenderContext.ModuleContext
@@ -43,12 +50,39 @@ type CppRenderContext = {
 let STATIC_SUFFIX =
     "Static"
 
-let groupSegmentRenameFunc (name: string) = function
+let groupSegmentRenameFunc (name: string) (prefix: GroupKind list) =
+    let kind =
+        prefix |> List.last
+    match kind with
     | OpaqueStatic -> name + STATIC_SUFFIX
+    | _ -> name
+    
+let groupSegmentRenameFuncWrappersFunc (name: string) (prefix: GroupKind list) =
+    let kind =
+        prefix |> List.last
+    let inFakeWrapperNamespace =
+        prefix
+        |> List.exists (function | InterfaceStatic | StructStatic -> true | _ -> false)
+    match inFakeWrapperNamespace, kind with
+    | _, OpaqueStatic -> name + STATIC_SUFFIX
+    | true, _ -> name + "__"
     | _ -> name
         
 let resolvedNameToString (context: CppRenderContext) =
-    resolvedNameToStringAbstract "::" groupSegmentRenameFunc context.RenderContext
+    let pathClamp =
+        match context.NameMode with
+        | Normal ->
+            None
+        | Wrappers | WrappersPushPop ->
+            // only in these modes do we pass it through
+            context.MaybePathClamp
+    let renameFunc =
+        match context.NameMode with
+        | WrappersPushPop ->
+            groupSegmentRenameFuncWrappersFunc
+        | _ ->
+            groupSegmentRenameFunc
+    resolvedNameToStringAbstract "::" renameFunc pathClamp context.RenderContext
     
 let getRelativePath (currentPath: string list) (targetPath: string list) =
     // remove common segments
@@ -277,6 +311,16 @@ type PopValueContext =
     | ExceptionContext
 
 let popValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
+    let context =
+        // enable "wrappers push/pop" mode if necessary
+        // for rewriting path prefixes as usual :(((
+        let nextNameMode =
+            match context.NameMode with
+            | Wrappers ->
+                WrappersPushPop
+            | _ ->
+                context.NameMode
+        { context with NameMode = nextNameMode }
     let write = writer.Write
     let contextPrefix =
         match popContext with
@@ -357,6 +401,16 @@ type PushIsReturn =
     | NotApplicable
 
 let pushValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
+    let context =
+        // enable "wrappers push/pop" mode if necessary
+        // for rewriting path prefixes as usual :(((
+        let nextNameMode =
+            match context.NameMode with
+            | Wrappers ->
+                WrappersPushPop
+            | _ ->
+                context.NameMode
+        { context with NameMode = nextNameMode }
     let write = writer.Write
     let isReturnString() =
         match isReturn with
@@ -1005,6 +1059,19 @@ let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (i
 let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (namedFunction: NamedFunction) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
+    
+    let nsPrefix =
+        match context.MaybePathClamp with
+        | Some clampPath ->
+            match List.removePrefix clampPath context.GroupContext.Path with
+            | Some remaining ->
+                (String.concat "::" remaining) + "::"
+            | None ->
+                // not a descendent of that prefix
+                ""
+        | None ->
+            ""
+        
     blankH()
     writeH 0 "void %s__wrapper();" namedFunction.Name
     blankCpp()
@@ -1012,7 +1079,7 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
     for argName, argType in namedFunction.Args do
         popValue context writerCpp 1 argType (Variable argName)
     let invocation =
-        sprintf "%s(%s)" namedFunction.Name (joinedArgNames namedFunction.Args)
+        sprintf "%s%s(%s)" nsPrefix namedFunction.Name (joinedArgNames namedFunction.Args)
     if namedFunction.Throws.IsEmpty then
         pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
     else
@@ -1184,25 +1251,49 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
 let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (userType: UserType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
+    
+    // necessary to have as an NIType in many places
+    // especially since we can't actually dive into namespaces for interface/struct statics,
+    // and have to rely on typeToCppString to emit path prefixes
+    let niType =
+        let symbolName =
+            SymbolName (context.GroupContext.Path @ [ name ])
+        let resolvedType =
+            match userType with
+            | OpaqueDef _ -> OpaqueType
+            | StructDef _ -> StructType
+            | ExceptionDef _ -> ExceptionType
+            | InterfaceDef _ -> InterfaceType
+            | DelegateDef _ -> DelegateType
+            | TypeDef _ -> TypedefType
+            | EnumDef _ -> EnumType
+            | SumTypeDef _ -> SumType
+            | OptionsDef _ -> OptionsType
+        Resolved (ThisModule symbolName, resolvedType)
+    
     match userType with
     | OpaqueDef info ->
         blankH()
-        writeH 0 "void %s__push(%s value);" name name
-        writeCpp 0 "void %s__push(%s value) {" name name
+        writeH 0 "void %s__push(%s value);" name (typeToCppString context niType)
+        writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context niType)
         writeCpp 1 "ni_pushPtr(value);"
         writeCpp 0 "}"
         blankCpp()
-        writeH 0 "%s %s__pop();" name name
-        writeCpp 0 "%s %s__pop() {" name name
-        writeCpp 1 "return (%s)ni_popPtr();" name
+        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
+        writeCpp 1 "return (%s)ni_popPtr();" (typeToCppString context niType)
         writeCpp 0 "}"
         // nested static block
         match info.MaybeStaticDefs with
         | Some _ ->
             let nextContext =
                 context.NavigateToSub(name)
-            writeH 0 "namespace %s%s {" name STATIC_SUFFIX
-            writeCpp 0 "namespace %s%s {" name STATIC_SUFFIX
+            if context.InsideInterfaceOrStructStatic then
+                writeH 0 "namespace %s__ {" name
+                writeCpp 0 "namespace %s__ {" name
+            else
+                writeH 0 "namespace %s%s {" name STATIC_SUFFIX
+                writeCpp 0 "namespace %s%s {" name STATIC_SUFFIX
             //
             renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
             //
@@ -1215,25 +1306,25 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             renderWrapperNamedFunc context writerH writerCpp nf
     | StructDef info ->
         blankH()
-        writeH 0 "void %s__push(%s value, bool isReturn);" name name
-        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
+        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context niType)
+        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context niType)
         for field in info.Fields |> List.rev do
             pushValue context writerCpp 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
         writeCpp 0 "}"
         blankCpp()
-        writeH 0 "%s %s__pop();" name name
-        writeCpp 0 "%s %s__pop() {" name name
+        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
         for field in info.Fields do
             popValue context writerCpp 1 field.Type_ (Variable field.Name)
-        writeCpp 1 "return %s { %s };" name (joinedFieldNames info.Fields)
+        writeCpp 1 "return %s { %s };" (typeToCppString context niType) (joinedFieldNames info.Fields)
         writeCpp 0 "}"
         // nested static block
         match info.MaybeStaticDefs with
         | Some _ ->
             let nextContext =
                 context.NavigateToSub(name)
-            writeH 0 "namespace %s%s {" name STATIC_SUFFIX
-            writeCpp 0 "namespace %s%s {" name STATIC_SUFFIX
+            writeH 0 "namespace %s__ {" name
+            writeCpp 0 "namespace %s__ {" name
             //
             renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
             //
@@ -1241,13 +1332,29 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             writeCpp 0 "}"
         | None ->
             ()
+    | InterfaceDef info ->
+        // nested static block
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            let nextContext =
+                context.NavigateToSub(name)
+            writeH 0 "namespace %s__ {" name
+            writeCpp 0 "namespace %s__ {" name
+            //
+            renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
+            //
+            writeH 0 "}"
+            writeCpp 0 "}"
+        | None ->
+            ()
+        renderWrapperInterface context writerH writerCpp niType name info.Methods
     | OptionsDef namedFields ->
         let flagsType =
             Primitive(Int(true,Width32))
         // push
         blankH()
-        writeH 0 "void %s__push(%s value, bool isReturn);" name name
-        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name
+        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context niType)
+        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context niType)
         for field in namedFields |> List.rev do
             writeCpp 1 "%s %s;" (typeToCppString context field.Type_) field.Name
             writeCpp 1 "if (value.has%s(&%s)) {" (upperFirst field.Name) field.Name
@@ -1257,12 +1364,12 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         writeCpp 0 "}"
         // pop
         blankCpp()
-        writeH 0 "%s %s__pop();" name name
-        writeCpp 0 "%s %s__pop() {" name name
-        writeCpp 1 "%s value = {};" name
+        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
+        writeCpp 1 "%s value = {};" (typeToCppString context niType)
         popValue context writerCpp 1 flagsType (LeftAssign "value._usedFields")
         for field in namedFields do
-            writeCpp 1 "if (value._usedFields & %s::Fields::%sField) {" name (upperFirst field.Name)
+            writeCpp 1 "if (value._usedFields & %s::Fields::%sField) {" (typeToCppString context niType) (upperFirst field.Name)
             popValue context writerCpp 2 field.Type_ (Variable "x")
             writeCpp 2 "value.set%s(x);" (upperFirst field.Name)
             writeCpp 1 "}"
@@ -1270,9 +1377,9 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         writeCpp 0 "}"
     | ExceptionDef exFields ->
         blankH()
-        writeH 0 "void %s__push(%s e);" name name
+        writeH 0 "void %s__push(%s e);" name (typeToCppString context niType)
         blankCpp()
-        writeCpp 0 "void %s__push(%s e) {" name name
+        writeCpp 0 "void %s__push(%s e) {" name (typeToCppString context niType)
         // push field values (reverse order)
         for namedField in exFields |> List.rev do
             let memberVar =
@@ -1286,41 +1393,20 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         for field in exFields do
             popValue context writerCpp 1 field.Type_ (Variable field.Name)
         // joined variables (_0, _1, etc)
-        writeCpp 1 "throw %s(%s);" name (joinedFieldNames exFields)
+        writeCpp 1 "throw %s(%s);" (typeToCppString context niType) (joinedFieldNames exFields)
         writeCpp 0 "}"
-    | InterfaceDef info ->
-        // nested static block
-        match info.MaybeStaticDefs with
-        | Some _ ->
-            let nextContext =
-                context.NavigateToSub(name)
-            writeH 0 "namespace %s%s {" name STATIC_SUFFIX
-            writeCpp 0 "namespace %s%s {" name STATIC_SUFFIX
-            //
-            renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
-            //
-            writeH 0 "}"
-            writeCpp 0 "}"
-        | None ->
-            ()
-        // actual class
-        let outerType =
-            let symbolName =
-                SymbolName (context.GroupContext.Path @ [ name ])
-            Resolved (ThisModule symbolName, InterfaceType)
-        renderWrapperInterface context writerH writerCpp outerType name info.Methods
     | DelegateDef info ->
         renderWrapperDelegate context writerH writerCpp name info
     | TypeDef niType ->
         // ghetto, but for now instead of flattening, just write an inline wrapper
         blankH()
-        writeH 0 "%s %s__pop();" name name
-        writeCpp 0 "inline %s %s__pop() {" name name
+        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
+        writeCpp 0 "inline %s %s__pop() {" (typeToCppString context niType) name
         popValue context writerCpp 1 niType Return
         writeCpp 0 "}"
-        writeH 0 "void %s__push(%s value, bool isReturn);" name name
+        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context niType)
         blankCpp()
-        writeCpp 0 "inline void %s__push(%s value, bool isReturn) {" name name
+        writeCpp 0 "inline void %s__push(%s value, bool isReturn) {" name (typeToCppString context niType)
         pushValue context writerCpp 1 niType "value" (Indirect "isReturn")
         writeCpp 0 "}"
     | EnumDef info ->
@@ -1344,17 +1430,17 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             writeCpp 0 "}"
         else
             blankH()
-            writeH 0 "void %s__push(%s value);" name name
-            writeCpp 0 "void %s__push(%s value) {" name name
+            writeH 0 "void %s__push(%s value);" name (typeToCppString context niType)
+            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context niType)
             let content =
                 sprintf "(%s)value" (typeToCppString context widthType)
             pushValue context writerCpp 1 widthType content NotApplicable
             writeCpp 0 "}"
-            writeH 0 "%s %s__pop();" name name
+            writeH 0 "%s %s__pop();" (typeToCppString context niType) name
             blankCpp()
-            writeCpp 0 "%s %s__pop() {" name name
+            writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
             popValue context writerCpp 1 widthType (Variable "tag")
-            writeCpp 1 "return (%s)tag;" name
+            writeCpp 1 "return (%s)tag;" (typeToCppString context niType)
             writeCpp 0 "}"
     | SumTypeDef values ->
         renderWrapperSumType context writerH writerCpp name values
@@ -1385,10 +1471,12 @@ and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (wr
         | Group(groupName, _) ->
             let nextContext =
                 context.NavigateToSub(groupName)
-            writeH 0 "namespace %s" groupName
-            writeCpp 0 "namespace %s" groupName
-            writeH 0 "{"
-            writeCpp 0 "{"
+            if context.InsideInterfaceOrStructStatic then
+                writeH 0 "namespace %s__ {" groupName
+                writeCpp 0 "namespace %s__ {" groupName
+            else
+                writeH 0 "namespace %s {" groupName
+                writeCpp 0 "namespace %s {" groupName
             renderWrappersGroup nextContext (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
             writeH 0 "}"
             writeCpp 0 "}"
@@ -1398,6 +1486,12 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
     let writeH, blankH = writerH.Write, writerH.Blank
     let m =
         context.ModuleContext.Module
+        
+    // change the resolved name mode, so that it's emitting the correct prefixes from the clamp point
+    // (because the common resolved name computation has no concept of path clamping, which is currently unique to C++ rendering)
+    // see resolvedNameToString to see what we do differently in 'Wrappers' mode 
+    let context =
+        { context with NameMode = Wrappers }
 
     // begin output: ===============================================
     // header
@@ -1447,9 +1541,11 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
                 let sub = group.SubGroups[subName]
                 pushGroupConstants sub
             for globalName, globalType in group.Globals |> List.rev do
+                // TODO: get rid of this after we go back to using normal opaque static name
                 let renamedPath =
                     (group.Path, group.KindPath)
-                    ||> List.map2 groupSegmentRenameFunc
+                    ||> List.zip
+                    |> renameGroupPath groupSegmentRenameFunc // use normal segment rename, we're not referring to anything in the wrappers faux namespaces
                 let content =
                     joinNameParts "::" (renamedPath @ [ globalName ])
                 pushValue context writerCpp 2 globalType content (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
@@ -1470,7 +1566,9 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
         // apply any renaming rules to the group path segments
         let groupPathRenamed =
             (group.Path, group.KindPath)
-            ||> List.map2 groupSegmentRenameFunc
+            ||> List.zip
+            |> renameGroupPath groupSegmentRenameFuncWrappersFunc
+            // ||> List.map2 groupSegmentRenameFuncWrappersFunc
             
         // module methods (+ synthesized opaque)
         let opaqueMethods =
@@ -2070,7 +2168,8 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
     let context =
         { RenderContext = createRenderContext moduleContext
           MaybePathClamp = None
-          InsideInterfaceOrStructStatic = false }
+          InsideInterfaceOrStructStatic = false
+          NameMode = Normal }
         
     let generatedDirParts =
         paths.GeneratedDir.Split("/")

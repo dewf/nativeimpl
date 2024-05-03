@@ -802,65 +802,6 @@ let resolvedNameToStringAbstract
             match moduleName with
             | ModuleName moduleParts ->
                 joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
-    // match mode with
-    // | TypeMode ->
-    //     // type mode behaves a bit differently, we want to remove the current namespace prefix if possible for ThisModule names
-    //     match name with
-    //     | ThisModule (SymbolName parts) ->
-    //         // strip current namespace prefix if possible
-    //         let parts2 =
-    //             match List.removePrefix context.GroupContext.Path parts with
-    //             | Some remaining -> remaining
-    //             | None -> parts
-    //         joinNameParts separator (parts2 |> List.map upperFirst)
-    //     | Imported(moduleName, symbolName) ->
-    //         let symbolParts =
-    //             match symbolName with
-    //             | SymbolName parts -> parts
-    //         if symbolIsUnambiguous context.ModuleContext symbolName then
-    //             joinNameParts separator (symbolParts |> List.map upperFirst)
-    //         else
-    //             match moduleName with
-    //             | ModuleName moduleParts ->
-    //                 joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
-    // | IdentifierMode ->
-    //     match name with
-    //     | ThisModule (SymbolName parts) ->
-    //         // strip current namespace prefix if possible
-    //         let parts2 =
-    //             match List.removePrefix context.GroupContext.Path parts with
-    //             | Some remaining -> remaining
-    //             | None -> parts
-    //         joinNameParts separator (parts2 |> List.map upperFirst)
-    //     | Imported(moduleName, symbolName) ->
-    //         let symbolParts =
-    //             match symbolName with
-    //             | SymbolName parts -> parts
-    //         if symbolIsUnambiguous context.ModuleContext symbolName then
-    //             joinNameParts separator (symbolParts |> List.map upperFirst)
-    //         else
-    //             match moduleName with
-    //             | ModuleName moduleParts ->
-    //                 joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
-    //     // // in identifier mode, we just use the full symbol name prefix unless imported and ambiguous,
-    //     // // then use full module + symbol name
-    //     // let moduleName, symbolName =
-    //     //     match name with
-    //     //     | ThisModule symbolName ->
-    //     //         context.ModuleContext.Module.Name, symbolName
-    //     //     | Imported(moduleName, symbolName) ->
-    //     //         moduleName, symbolName
-    //     // match symbolName with
-    //     // | SymbolName symbolParts ->
-    //     //     // we want to use the shortest UNAMBIGUOUS name
-    //     //     // if symbolName alone yields multiple results (in this module or imports), use the fully qualified name
-    //     //     if symbolIsUnambiguous context.ModuleContext symbolName then
-    //     //         // DON'T strip the common namespace in identifier mode, we need the full thing for eg generics push/pop
-    //     //         joinNameParts separator (symbolParts |> List.map upperFirst)
-    //     //     else
-    //     //         match moduleName with
-    //     //         | ModuleName moduleParts ->
-    //     //             joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
 
 let countGroupConstants (top: GroupContext) =
     let rec groupCount (group: GroupContext) =

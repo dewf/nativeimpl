@@ -1632,10 +1632,15 @@ let renderHeaderException (context: CppRenderContext) (writer: IFormatWriter) (e
 let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sumTypeName: string) (values: SumTypeValue list) =
     let write, blank = writer.Write, writer.Blank
     //
-    write 0 "namespace %s {" sumTypeName
-    // we're now emitting them at the start of the group, to allow for mutually dependent types
-    // for value in values do
-    //     write 1 "class %s;" value.Name
+    if context.InsideInterfaceOrStructStatic then
+        write 0 "class %s {" sumTypeName
+        write 0 "public:"
+    else
+        write 0 "namespace %s {" sumTypeName
+    // fwd declarations for case classes
+    // Base still needs to be emitted elsewhere
+    for value in values do
+        write 1 "class %s;" value.Name
     
     blank()
     write 1 "class Visitor {"
@@ -1671,7 +1676,10 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
         write 2 "}" // end accept()
         write 1 "};" // end value class
     
-    write 0 "}" // end namespace
+    if context.InsideInterfaceOrStructStatic then
+        write 0 "};" // end class
+    else
+        write 0 "}"  // end namespace
     
 let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) (optionsTypeName: string) (namedFields: NamedField list) =
     let write, _ = writer.Write, writer.Blank
@@ -1861,8 +1869,8 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
         for name, values in group.SumTypes do
             write 0 "namespace %s {" name
             write 1 "class Base;"
-            for value in values do
-                write 1 "class %s;" value.Name
+            // for value in values do
+            //     write 1 "class %s;" value.Name
             write 0 "}"
 
     for def in context.GroupContext.Defs do

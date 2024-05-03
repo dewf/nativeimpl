@@ -15,8 +15,6 @@ type ResolvedNameMode =
     | WrappersPushPop
 type CppRenderContext = {
     RenderContext: RenderContext
-    // TODO: these two are redundant, merge into a single thing (maybe with .insideInterface... as a computed property)
-    InsideInterfaceOrStructStatic: bool
     MaybePathClamp: string list option
     NameMode: ResolvedNameMode
 } with
@@ -24,32 +22,38 @@ type CppRenderContext = {
         this.RenderContext.ModuleContext
     member this.GroupContext =
         this.RenderContext.GroupContext
+    member this.InsideInterfaceOrStructStatic =
+        // if there exists an interface or struct static group anywhere at or above a given level,
+        // then some of the code generation is different, because we can't use simple namespaces anymore
+        // eg functions need to be prefixed with "static", we use nested classes instead of namespaces for groups, etc
+        match this.MaybePathClamp with
+        | Some _ -> true
+        | None -> false
     member this.NavigateToSub(name: string) =
         let nextRenderContext =
             this.RenderContext.NavigateToSub(name)
-        let nextFlag =
-            // if there exists an interface or struct static group anywhere at or above this level,
-            // then some of the code generation is different, because we can't use simple namespaces anymore
-            // eg functions need to be prefixed with "static", we use nested classes instead of namespaces for groups, etc
-            nextRenderContext.GroupContext.KindPath
-            |> List.exists (function | InterfaceStatic | StructStatic -> true | _ -> false)
-        // if the flag changed (for the first time), clamp the path here
-        // this will help to emit the namespace prefixes on stuff defined in the .cpp file
-        // because we can't use a simple "namespace X {" to descend into class/struct namespaces in the .cpp file :(
         let nextPathClamp =
-            if nextFlag && not this.InsideInterfaceOrStructStatic then
-                Some this.RenderContext.GroupContext.Path
-            else
-                // else don't touch existing
-                this.MaybePathClamp
+            match this.MaybePathClamp with
+            | Some value ->
+                // already in, so just keep it
+                Some value
+            | None ->
+                let nextIsInsideInterfaceOrStructStatic =
+                    nextRenderContext.GroupContext.KindPath
+                    |> List.exists (function | InterfaceStatic | StructStatic -> true | _ -> false)
+                if nextIsInsideInterfaceOrStructStatic then
+                    // next one is in a group where we can't follow (because we can't simply "namespace X {}" into interface or struct namespaces)
+                    // so clamp the path at the current group, from which deeper names can be relatively prefixed
+                    Some this.RenderContext.GroupContext.Path
+                else
+                    None
         { this with
             RenderContext = nextRenderContext
-            InsideInterfaceOrStructStatic = nextFlag
             MaybePathClamp = nextPathClamp }
 
 let STATIC_SUFFIX =
     "Static"
-
+    
 let groupSegmentRenameFunc (name: string) (prefix: GroupKind list) =
     let kind =
         prefix |> List.last
@@ -2168,7 +2172,6 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
     let context =
         { RenderContext = createRenderContext moduleContext
           MaybePathClamp = None
-          InsideInterfaceOrStructStatic = false
           NameMode = Normal }
         
     let generatedDirParts =

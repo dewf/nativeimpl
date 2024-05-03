@@ -80,6 +80,8 @@ interface IThing {
                 Wow3
             }
             int nestedFunction(NestedEnum e);
+
+            void woot(Map<string, NormalGroup.NormalGroupStruct.NormalNested.NormalNestedEnum> wack);
         }
         enum Kind {
             Type1,

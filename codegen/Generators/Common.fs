@@ -732,10 +732,11 @@ type ResolveNameStringMode =
 let resolvedNameToStringAbstract
             (languageNsDelim: string) (partRenameFunc: string -> GroupKind list -> string) (maybePathClamp: string list option)
             (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
-    let separator =
+    
+    let separator, partRenameFunc = // rebind partRenameFunc
         match mode with
-        | TypeMode -> languageNsDelim
-        | IdentifierMode | GenericIdentifierMode -> "_"
+        | TypeMode -> languageNsDelim, partRenameFunc
+        | IdentifierMode | GenericIdentifierMode -> "_", (fun name _ -> name) // no part renaming in identifier modes
         
     // sigh, this part is a mess
     // but sadly to make things work with C++, we need the ability to rename namespace segments anywhere they might appear

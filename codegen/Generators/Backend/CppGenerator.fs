@@ -493,15 +493,26 @@ let exceptionTypeAndVariableName (context: CppRenderContext) (resolvedName: Reso
     | [] ->
         failwith "exceptionVariableName: shouldn't happen"
 
-let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) =
+let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) (niType: NIType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, _ = writerH.Write, writerH.Blank
+    
+    let typeString =
+        typeToCppString context niType
+        
+    let rawDelegateType = // without the std::function<> shell
+        match niType with
+        | Resolved(resolvedName, DelegateType) ->
+            resolvedNameToString context resolvedName TypeMode
+        | _ ->
+            failwith "c++ renderWrapperDelegate: uhhh"
+        
     // push
-    writeH 0 "void %s__push(std::function<%s> f);" name name
-    writeCpp 0 "void %s__push(std::function<%s> f) {" name name
+    writeH 0 "void %s__push(%s f);" name typeString
+    writeCpp 0 "void %s__push(%s f) {" name typeString
     writeCpp 1 "size_t uniqueKey = 0;"
     writeCpp 1 "if (f) {"
-    writeCpp 2 "%s* ptr_fun = f.target<%s>();" name name
+    writeCpp 2 "%s* ptr_fun = f.target<%s>();" rawDelegateType rawDelegateType
     writeCpp 2 "if (ptr_fun != nullptr) {"
     writeCpp 3 "uniqueKey = (size_t)ptr_fun;"
     writeCpp 2 "}"
@@ -532,9 +543,9 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
     writeCpp 1 "pushServerFuncVal(wrapper, uniqueKey);"
     writeCpp 0 "}"
     // pop =============
-    writeH 0 "std::function<%s> %s__pop();" name name
+    writeH 0 "%s %s__pop();" typeString name
     blankCpp()
-    writeCpp 0 "std::function<%s> %s__pop() {" name name
+    writeCpp 0 "%s %s__pop() {" typeString name
     writeCpp 1 "auto id = ni_popClientFunc();"
     writeCpp 1 "auto cf = std::shared_ptr<ClientFuncVal>(new ClientFuncVal(id));"
     writeCpp 1 "auto wrapper = [cf](%s) {" (joinedArgs context info.Args)
@@ -1395,7 +1406,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         writeCpp 1 "throw %s(%s);" (typeToCppString context niType) (joinedFieldNames exFields)
         writeCpp 0 "}"
     | DelegateDef info ->
-        renderWrapperDelegate context writerH writerCpp name info
+        renderWrapperDelegate context writerH writerCpp name info niType
     | TypeDef niType ->
         // ghetto, but for now instead of flattening, just write an inline wrapper
         blankH()

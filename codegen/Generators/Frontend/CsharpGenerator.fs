@@ -1303,101 +1303,98 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
 let joinModuleName (ModuleName nameParts) =
     joinNameParts "." nameParts
     
-// let renderInitCommon (context: RenderContext) (writer: IFormatWriter) =
-let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
+let assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     
-    let group =
-        context.GroupContext
-    
-    let mkSourceHandle name =
-        joinNameParts "." (group.Path @ [ name ])
-    let mkTargetHandle name =
-        joinNameParts "." (group.Path @ [ "_" + lowerFirst name ])
-    
-    // module method handles
-    if not group.ModuleMethods.IsEmpty then
-        for namedFunc in group.ModuleMethods do
-            let source = mkSourceHandle namedFunc.WrapperName
-            let target = mkTargetHandle namedFunc.WrapperName
-            write 3 "%s = NativeImplClient.GetModuleMethod(_module, \"%s\");" target source
-            
-    // opaque method handles
-    if not group.Opaques.IsEmpty then
-        for name, info in group.Opaques do
-            let sourceBase =
-                mkSourceHandle name
-            let targetBase =
-                mkTargetHandle name
-            // instance methods
-            for method in info.Methods do
-                write 3 "%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" targetBase method.WrapperName sourceBase method.WrapperName
-            // synthesized dispose method handle
-            write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
-    
-    // exceptions
-    if not group.Exceptions.IsEmpty then
-        for name, _ in group.Exceptions do
-            let source =
-                mkSourceHandle name
-            let target =
-                mkTargetHandle name
-            write 3 "%s = NativeImplClient.GetException(_module, \"%s\");" target source
-            write 3 "NativeImplClient.SetExceptionBuilder(%s, %s.BuildAndThrow);" target source
-    
-    // interface method handles, wrappers
-    if not group.Interfaces.IsEmpty then
-        for ifaceName, info in group.Interfaces do
-            let sourceIface =
-                mkSourceHandle ifaceName
-            let targetIface =
-                mkTargetHandle ifaceName
-            write 3 "%s = NativeImplClient.GetInterface(_module, \"%s\");" targetIface sourceIface
-            // methods
-            if not info.Methods.IsEmpty then
+    let rec assignGroup (group: GroupContext) =
+        let mkSourceHandle name =
+            joinNameParts "." (group.Path @ [ name ])
+        let mkTargetHandle name =
+            joinNameParts "." (group.Path @ [ "_" + lowerFirst name ])
+        
+        // module method handles
+        if not group.ModuleMethods.IsEmpty then
+            for namedFunc in group.ModuleMethods do
+                let source = mkSourceHandle namedFunc.WrapperName
+                let target = mkTargetHandle namedFunc.WrapperName
+                write 3 "%s = NativeImplClient.GetModuleMethod(_module, \"%s\");" target source
+                
+        // opaque method handles
+        if not group.Opaques.IsEmpty then
+            for name, info in group.Opaques do
+                let sourceBase =
+                    mkSourceHandle name
+                let targetBase =
+                    mkTargetHandle name
+                // instance methods
                 for method in info.Methods do
-                    // let sourceMethod =
-                    //     sprintf "%s.%s" sourceIface method.Name
-                    let targetMethodHandle =
-                        mkTargetHandle (sprintf "%s_%s" ifaceName method.WrapperName)
-                    write 3 "%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetMethodHandle targetIface method.WrapperName
-            // method wrappers
-            for method in info.Methods do
-                write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject obj)" targetIface method.WrapperName
-                write 3 "{"
-                let clientWrapperClass =
-                    joinNameParts "." (group.Path @ [ $"__{upperFirst ifaceName}Wrapper" ])
-                write 4 "var inst = ((%s)obj).RawInterface;" clientWrapperClass
-                // pop args
-                for argName, argType in method.Args do
-                    popValue context writer 4 argType (NewVariable argName)
-                // exec + return
-                let invocation =
-                    sprintf "inst.%s(%s)" (upperFirst method.Name) (argNamesJoined method.Args)
-                if method.Throws.IsEmpty then
-                    pushValue context writer 4 method.Returns invocation (Direct true)
-                else
-                    write 4 "try"
-                    write 4 "{"
-                    pushValue context writer 5 method.Returns invocation (Direct true)
-                    write 4 "}"
-                    for exc in method.Throws do
-                        match exc with
-                        | Resolved (_, ExceptionType) ->
-                            write 4 "catch (%s e)" (typeToCsString context exc)
-                            write 4 "{"
-                            write 5 "e.PushAndSet();"
-                            write 4 "}"
-                        | _ ->
-                            failwith "C# interface wrappers: 'throws' contained non-exception type"
-                write 3 "});"
-    
-    for groupName in group.SubOrder do
-        let sub =
-            group.SubGroups[groupName]
-        let nextContext =
-            { context with GroupContext = sub }
-        assignModuleHandles nextContext writer
+                    write 3 "%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" targetBase method.WrapperName sourceBase method.WrapperName
+                // synthesized dispose method handle
+                write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
+        
+        // exceptions
+        if not group.Exceptions.IsEmpty then
+            for name, _ in group.Exceptions do
+                let source =
+                    mkSourceHandle name
+                let target =
+                    mkTargetHandle name
+                write 3 "%s = NativeImplClient.GetException(_module, \"%s\");" target source
+                write 3 "NativeImplClient.SetExceptionBuilder(%s, %s.BuildAndThrow);" target source
+        
+        // interface method handles, wrappers
+        if not group.Interfaces.IsEmpty then
+            for ifaceName, info in group.Interfaces do
+                let sourceIface =
+                    mkSourceHandle ifaceName
+                let targetIface =
+                    mkTargetHandle ifaceName
+                write 3 "%s = NativeImplClient.GetInterface(_module, \"%s\");" targetIface sourceIface
+                // methods
+                if not info.Methods.IsEmpty then
+                    for method in info.Methods do
+                        // let sourceMethod =
+                        //     sprintf "%s.%s" sourceIface method.Name
+                        let targetMethodHandle =
+                            mkTargetHandle (sprintf "%s_%s" ifaceName method.WrapperName)
+                        write 3 "%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetMethodHandle targetIface method.WrapperName
+                // method wrappers
+                for method in info.Methods do
+                    write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject obj)" targetIface method.WrapperName
+                    write 3 "{"
+                    let clientWrapperClass =
+                        joinNameParts "." (group.Path @ [ $"__{upperFirst ifaceName}Wrapper" ])
+                    write 4 "var inst = ((%s)obj).RawInterface;" clientWrapperClass
+                    // pop args
+                    for argName, argType in method.Args do
+                        popValue context writer 4 argType (NewVariable argName)
+                    // exec + return
+                    let invocation =
+                        sprintf "inst.%s(%s)" (upperFirst method.Name) (argNamesJoined method.Args)
+                    if method.Throws.IsEmpty then
+                        pushValue context writer 4 method.Returns invocation (Direct true)
+                    else
+                        write 4 "try"
+                        write 4 "{"
+                        pushValue context writer 5 method.Returns invocation (Direct true)
+                        write 4 "}"
+                        for exc in method.Throws do
+                            match exc with
+                            | Resolved (_, ExceptionType) ->
+                                write 4 "catch (%s e)" (typeToCsString context exc)
+                                write 4 "{"
+                                write 5 "e.PushAndSet();"
+                                write 4 "}"
+                            | _ ->
+                                failwith "C# interface wrappers: 'throws' contained non-exception type"
+                    write 3 "});"
+        
+        for groupName in group.SubOrder do
+            let nextGroup =
+                group.SubGroups[groupName]
+            assignGroup nextGroup
+            
+    assignGroup context.GroupContext
             
 let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseNamespace: string) (maybeModulePrefix: string option) (className: string) =
     let write, blank = writer.Write, writer.Blank

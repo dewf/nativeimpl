@@ -6,12 +6,11 @@ open Parser
 open Util
 open Generators.Common
 
-open Extensions
 open AppCommon
 
 let resolvedNameToString =
     resolvedNameToStringAbstract "." (fun name _ -> name) None
-        
+    
 let typeToCsString (context: RenderContext) (outerType: NIType) =
     let rec recInner = function
         | UnitType -> "void"
@@ -1387,7 +1386,6 @@ let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
                         | Resolved (_, ExceptionType) ->
                             write 4 "catch (%s e)" (typeToCsString context exc)
                             write 4 "{"
-                            write 5 "NativeImplClient.SetException(_%s);" (lowerFirst (typeToCsString context exc))
                             write 5 "e.PushAndSet();"
                             write 4 "}"
                         | _ ->

@@ -689,9 +689,9 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     // SERVER STUFF ============================
     for nf in methods do
         blankH()
-        writeH 0 "void %s_%s__wrapper(int serverID);" name nf.Name
+        writeH 0 "void %s_%s__wrapper(int serverID);" name nf.WrapperName
         blankCpp()
-        writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.Name
+        writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.WrapperName
         writeCpp 1 "auto wrapper = std::static_pointer_cast<Server%sWrapper>(ServerObject::getByID(serverID));" name
         writeCpp 1 "auto inst = wrapper->rawInterface;"
         for argName, argType in nf.Args do
@@ -1074,7 +1074,7 @@ let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (i
         Resolved ((ThisModule symbolName), OpaqueType)
     let instanceMethods =
         let disposeMethod =
-            { Name = "dispose"; Args = []; Returns = UnitType; Throws = [] }
+            { Name = "dispose"; Args = []; Returns = UnitType; Throws = []; MaybeOverloadId = None }
         (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
         // add "_this" parameter
         |> List.map (fun nf ->
@@ -1098,9 +1098,9 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
         clampedNsPrefix context
         
     blankH()
-    writeH 0 "void %s__wrapper();" namedFunction.Name
+    writeH 0 "void %s__wrapper();" namedFunction.WrapperName
     blankCpp()
-    writeCpp 0 "void %s__wrapper() {" namedFunction.Name
+    writeCpp 0 "void %s__wrapper() {" namedFunction.WrapperName
     for argName, argType in namedFunction.Args do
         popValue context writerCpp 1 argType (Variable argName)
     let invocation =
@@ -1479,7 +1479,7 @@ and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (wr
     // declare various module handles etc at top of group
     for name, info in group.Interfaces do
         for method in info.Methods do
-            writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.Name
+            writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.WrapperName
             
     for name, _ in group.Exceptions do
         writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
@@ -1598,9 +1598,9 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
             group.ModuleMethods @ opaqueMethods
         for namedFunction in allMethods do
             let parts =
-                group.Path @ [ namedFunction.Name ]
+                group.Path @ [ namedFunction.WrapperName ]
             let renamedParts =
-                groupPathRenamed @ [ namedFunction.Name ]
+                groupPathRenamed @ [ namedFunction.WrapperName ]
             writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" renamedParts)
         // interfaces + methods
         for name, info in group.Interfaces do
@@ -1615,10 +1615,10 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
             writeCpp 2 "auto %s = ni_registerInterface(m, \"%s\");" lowerIfaceName (joinNameParts "." parts)
             for method in info.Methods do
                 let targetVarName =
-                    sprintf "%s_%s" (joinNameParts "::" lowerParts) method.Name
+                    sprintf "%s_%s" (joinNameParts "::" lowerParts) method.WrapperName
                 let wrapperName =
-                    sprintf "%s_%s__wrapper" (joinNameParts "::" renamedParts) method.Name
-                writeCpp 2 "%s = ni_registerInterfaceMethod(%s, \"%s\", &%s);" targetVarName lowerIfaceName method.Name wrapperName
+                    sprintf "%s_%s__wrapper" (joinNameParts "::" renamedParts) method.WrapperName
+                writeCpp 2 "%s = ni_registerInterfaceMethod(%s, \"%s\", &%s);" targetVarName lowerIfaceName method.WrapperName wrapperName
         // exceptions
         for name, _ in group.Exceptions do
             let parts =

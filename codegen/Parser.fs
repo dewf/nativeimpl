@@ -350,11 +350,18 @@ let rec parseType (input: TokenAndLocation list) =
 
 type NamedFunction = {
     Name: string
+    MaybeOverloadId: int option
     Args: (string * NIType) list
     Returns: NIType
     Throws: NIType list
-}
-
+} with
+    member this.WrapperName =
+        match this.MaybeOverloadId with
+        | Some value ->
+            sprintf "%s_overload%d" this.Name value
+        | None ->
+            this.Name
+            
 type NamedField = {
     Name: string
     Type_: NIType
@@ -502,14 +509,14 @@ let parseNamedFunction (input: TokenAndLocation list) =
                 parseArgsList loc etc
             match etc with
             | Lookahead 1 ([Semicolon], _, etc) ->
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty }, etc)
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty; MaybeOverloadId = None }, etc)
             | Lookahead 1 ([ThrowsToken], loc, etc) ->
                 let names, loc, etc =
                     NameStuff.parseList Comma Semicolon loc etc
                 let throwsList =
                     names
                     |> List.map (fun name -> Unresolved (UnresolvedIdentifier name, loc, ExceptionConstraint))
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList }, etc)
+                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList; MaybeOverloadId = None }, etc)
             | _ ->
                 failwithf "failed to parse function at %s" (loc.ToString())
         | { Location = loc } :: _ ->
@@ -646,6 +653,22 @@ let unfoldUntil (stopTokens: Token list) (generatorFunc: TokenAndLocation list -
         | _ -> failwith "nope"
     elements, etc
     
+let overloadMapFunc (names: Map<string, int>) (item: NamedFunction) =
+    let key =
+        item.Name.ToLower()
+    if names.ContainsKey key then
+        let existingCount =
+            names[key]
+        let nextNames =
+            names.Add(key, existingCount + 1)
+        nextNames, { item with MaybeOverloadId = Some existingCount }
+    else
+        names.Add(key, 1), item
+    
+let setOverloadIndices (nfList: NamedFunction list) =
+    (Map.empty<string, int>, nfList)
+    ||> List.mapWithContext overloadMapFunc
+    
 let rec parseModuleDefs (input: TokenAndLocation list) =
     let rec parseNext (remaining: TokenAndLocation list) =
         match remaining with
@@ -705,6 +728,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 let methods =
                     methodBlock
                     |> List.unfold parseNamedFunction
+                    |> setOverloadIndices
                     
                 let info =
                     { MaybeParent = maybeParent
@@ -775,6 +799,9 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     None, etc
             let methods, etc =
                 parseFunctionList loc etc
+            let methods =
+                methods
+                |> setOverloadIndices
             if methods.Length > 0 then
                 let info =
                     { Methods = methods; MaybeStaticDefs = maybeStaticDefs }
@@ -847,8 +874,19 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 failwithf "unexpected token %A at %s" token (loc.ToString())
             | [] ->
                 failwith "unexpected end of file"
-    List.unfold parseNext input
-    |> List.collect id
+    let rawDefs =
+        List.unfold parseNext input
+        |> List.collect id
+    // process any module-level/static block overloads (opaque and interface methods already handled above)
+    (Map.empty, rawDefs)
+    ||> List.mapWithContext (fun names md ->
+        match md with
+        | FunctionDef nf ->
+            let nextNames, nextFunc =
+                overloadMapFunc names nf
+            nextNames, FunctionDef nextFunc
+        | _ ->
+            names, md)
 
 let consumeImports (input: TokenAndLocation list) =
     let rec nextImport (revImports: ModuleName list) (remaining: TokenAndLocation list) =

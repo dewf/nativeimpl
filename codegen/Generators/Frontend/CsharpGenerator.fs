@@ -1141,9 +1141,9 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
                 pushValue context writer 4 argType argName (Direct false)
             // invoke remote
             if method.Throws.IsEmpty then
-                write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" (lowerFirst name) method.Name
+                write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" (lowerFirst name) method.WrapperName
             else
-                write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.Name
+                write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.WrapperName
             // return (mindful of safety area nonsense)
             if containsRefs context.ModuleContext method.Returns then
                 popValue context writer 4 method.Returns SafeReturn
@@ -1242,12 +1242,12 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     
     // declare top level function handles
     for namedFunc in groupContext.ModuleMethods do
-        write 2 "internal static ModuleMethodHandle _%s;" namedFunc.Name
+        write 2 "internal static ModuleMethodHandle _%s;" namedFunc.WrapperName
 
     for name, info in groupContext.Opaques do
         // instance methods
         for method in info.Methods do
-            write 2 "internal static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.Name
+            write 2 "internal static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
         // synthesized dispose method
         write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
     
@@ -1255,7 +1255,7 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
     for name, info in groupContext.Interfaces do
         write 2 "internal static InterfaceHandle _%s;" (lowerFirst name)
         for method in info.Methods do
-            write 2 "internal static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.Name
+            write 2 "internal static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
     
     // exceptions
     for name, _ in groupContext.Exceptions do
@@ -1275,9 +1275,9 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
             pushValue context writer 3 argType argName (Direct false)
         // invoke remote
         if namedFunc.Throws.IsEmpty then
-            write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.Name
+            write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.WrapperName
         else
-            write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.Name
+            write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
         // return pop
         popValue context writer 3 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
         write 2 "}"
@@ -1318,8 +1318,8 @@ let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
     // module method handles
     if not group.ModuleMethods.IsEmpty then
         for namedFunc in group.ModuleMethods do
-            let source = mkSourceHandle namedFunc.Name
-            let target = mkTargetHandle namedFunc.Name
+            let source = mkSourceHandle namedFunc.WrapperName
+            let target = mkTargetHandle namedFunc.WrapperName
             write 3 "%s = NativeImplClient.GetModuleMethod(_module, \"%s\");" target source
             
     // opaque method handles
@@ -1331,7 +1331,7 @@ let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
                 mkTargetHandle name
             // instance methods
             for method in info.Methods do
-                write 3 "%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" targetBase method.Name sourceBase method.Name
+                write 3 "%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" targetBase method.WrapperName sourceBase method.WrapperName
             // synthesized dispose method handle
             write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
     
@@ -1359,11 +1359,11 @@ let rec assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
                     // let sourceMethod =
                     //     sprintf "%s.%s" sourceIface method.Name
                     let targetMethodHandle =
-                        mkTargetHandle (sprintf "%s_%s" ifaceName method.Name)
-                    write 3 "%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetMethodHandle targetIface method.Name
+                        mkTargetHandle (sprintf "%s_%s" ifaceName method.WrapperName)
+                    write 3 "%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetMethodHandle targetIface method.WrapperName
             // method wrappers
             for method in info.Methods do
-                write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject obj)" targetIface method.Name
+                write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject obj)" targetIface method.WrapperName
                 write 3 "{"
                 let clientWrapperClass =
                     joinNameParts "." (group.Path @ [ $"__{upperFirst ifaceName}Wrapper" ])

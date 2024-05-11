@@ -224,16 +224,19 @@ let joinedArgNames (args: (string * NIType) list) =
     args
     |> List.map fst
     |> String.concat ", "
-    
-let prefixLastNameSegment (name: string) (prefix: string) =
-    let x =
+
+// super kludgy but super helpful!
+// ideally we'd have a virtual-namespace-aware method of getting relative path prefixes of any symbol
+// but right now doesn't seem worth the effort
+let transformLastNameSegment (name: string) (f: string -> string) =
+    let reversedParts =
         name.Split("::")
         |> Array.toList
         |> List.rev
-    match x with
+    match reversedParts with
     | last :: etc ->
-        (prefix + last) :: etc
-    | _ -> failwith "bleh"
+        (f last) :: etc
+    | _ -> failwith "transformLastNameSegment fail"
     |> List.rev
     |> String.concat "::"
 
@@ -256,7 +259,7 @@ let defaultValueForType (context: CppRenderContext) (outerType: NIType) =
                 // the final segment actually needs __ in front of it, since the opaque struct defs are defined with that
                 // silly kludge for now, because AFAIK we don't need to directly deal with the default opaque structs (prefixed with __) anywhere else in the generation
                 let replaced =
-                    prefixLastNameSegment name "__"
+                    transformLastNameSegment name (fun seg -> "__" + seg)
                 sprintf "new %s()" replaced
             | InterfaceType ->
                 sprintf "std::shared_ptr<%s>()" name
@@ -474,24 +477,36 @@ let pushValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (
         write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
     | _ ->
         write level "// (pushValue not supported yet: %A)" type_
-        
+       
+
 let exceptionTypeAndVariableName (context: CppRenderContext) (resolvedName: ResolvedName) =
     let typeName =
         resolvedNameToString context resolvedName TypeMode
-    let parts =
-        typeName.Split("::")
-        |> Array.toList
-        |> List.rev
-    match parts with
-    | last :: revEtc ->
-        let nsPrefix =
-            List.rev revEtc
-        let variableName =
-            nsPrefix @ [ lowerFirst last ]
-            |> String.concat "::"
-        typeName, variableName
-    | [] ->
-        failwith "exceptionVariableName: shouldn't happen"
+    // sigh @ getting the variable name
+    // really need something cleaner than this
+    let virtualName =
+        // kind of an ugly kludge, we just need the group segments to be prefixed with __
+        // since the namespaces in the wrappers file are "virtual" when inside of interface or struct statics
+        let context =
+            { context with NameMode = WrappersPushPop }
+        resolvedNameToString context resolvedName TypeMode
+    let variableName =
+        transformLastNameSegment virtualName lowerFirst
+    typeName, variableName
+    // let parts =
+    //     virtualName.Split("::")
+    //     |> Array.toList
+    //     |> List.rev
+    // match parts with
+    // | last :: revEtc ->
+    //     let nsPrefix =
+    //         List.rev revEtc
+    //     let variableName =
+    //         nsPrefix @ [ lowerFirst last ]
+    //         |> String.concat "::"
+    //     typeName, variableName
+    // | [] ->
+    //     failwith "exceptionVariableName: shouldn't happen"
 
 let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) (niType: NIType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
@@ -696,7 +711,7 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
                         exceptionTypeAndVariableName context resolvedName
                     writeCpp 1 "catch (const %s& e) {" typeName
                     writeCpp 2 "ni_setException(%s);" variableName
-                    writeCpp 2 "%s__push(e);" typeName
+                    pushValue context writerCpp 2 exc "e" (Direct true) // writeCpp 2 "%s__push(e);" typeName
                     writeCpp 1 "}"
                 | _ ->
                     failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc

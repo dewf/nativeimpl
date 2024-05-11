@@ -113,3 +113,18 @@ module List =
         |> List.rev
         |> List.tail
         |> List.rev
+
+    type MapWithContextAcc<'context, 'b> = {
+        Context: 'context
+        RevResult: 'b list
+    }
+    let mapWithContext (f: 'context -> 'a -> 'context * 'b) (initContext: 'context) (xs: 'a list) =
+        let result =
+            ({ Context = initContext; RevResult = [] }, xs)
+            ||> List.fold (fun acc item ->
+                let nextContext, value =
+                    f acc.Context item
+                { Context = nextContext; RevResult = value :: acc.RevResult })
+        result.RevResult
+        |> List.rev
+        

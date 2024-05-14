@@ -706,7 +706,12 @@ let renderGeneric (context: RenderContext) (writer: IFormatWriter) (gType: NITyp
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
         
-let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
+type GroupRenderMode =
+    | Normal            // render everything, static stuff + opaques/interfaces
+    | RootStatic        // static stuff only
+    | RootClasses       // opaques, interfaces, etc ... this is because C# doesn't support proper modules, and static classes are somewhat limited (notably, they cannot contain classes with the same name as themselves, which is annoying)
+        
+let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) (mode: GroupRenderMode) =
     let write, blank = writer.Write, writer.Blank
     
     match userType with
@@ -721,100 +726,113 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
                 Some resolvedName
             | _ ->
                 None
-        // class definition
-        match maybeInheritsFrom with
-        | Some parentName ->
-            write 2 "public class %s : %s" (upperFirst name) (resolvedNameToString context parentName TypeMode)
-            write 2 "{"
-            // no native handle required
-        | None ->
-            write 2 "public class %s : IDisposable" (upperFirst name)
-            write 2 "{"
-            write 3 "internal readonly IntPtr NativeHandle;"
-            write 3 "protected bool _disposed;"
-        // ctor
-        match maybeInheritsFrom with
-        | None ->
-            // normal ctor
-            write 3 "internal %s(IntPtr nativeHandle)" (upperFirst name)
-            write 3 "{"
-            write 4 "NativeHandle = nativeHandle;"
-            write 3 "}"
-        | Some _ ->
-            // inherited
-            write 3 "internal %s(IntPtr nativeHandle) : base(nativeHandle)" (upperFirst name)
-            write 3 "{"
-            write 3 "}"
-        // dispose
-        let overrideOrVirtual =
+                
+        match mode with
+        | Normal | RootClasses ->
+            // class definition
             match maybeInheritsFrom with
-            | Some _ -> "override"
-            | None -> "virtual"
-        // TODO: we get this C# linting error, look into it:
-        // CA1816: Change Drawing.MutableAttributedString.Dispose() to call GC.SuppressFinalize(object). This will prevent derived types that introduce a finalizer from needing to re-implement 'IDisposable' to call it.
-        // note that every opaque type has its own _dispose method on the server, so we intentionally don't call the parent type's .Dispose() here
-        write 3 "public %s void Dispose()" overrideOrVirtual
-        write 3 "{"
-        write 4 "if (!_disposed)"
-        write 4 "{"
-        pushValue context writer 5 fakeThis "this" (Direct false)
-        write 5 "NativeImplClient.InvokeModuleMethod(_%s_dispose);" (lowerFirst name)
-        write 5 "_disposed = true;"
-        write 4 "}"
-        write 3 "}"
-        let renderInstanceMethods (context: RenderContext) =
-            for namedFunc in info.Methods do
-                let throwsComment =
-                    if namedFunc.Throws.IsEmpty then
-                        ""
-                    else
-                        let joined =
-                            namedFunc.Throws
-                            |> List.map (typeToCsString context)
-                            |> String.concat ", "
-                        sprintf " // throws %s" joined
-                write 3 "public %s %s(%s)%s" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args) throwsComment
+            | Some parentName ->
+                write 2 "public class %s : %s" (upperFirst name) (resolvedNameToString context parentName TypeMode)
+                write 2 "{"
+                // no native handle required
+            | None ->
+                write 2 "public class %s : IDisposable" (upperFirst name)
+                write 2 "{"
+                write 3 "internal readonly IntPtr NativeHandle;"
+                write 3 "protected bool _disposed;"
+            // ctor
+            match maybeInheritsFrom with
+            | None ->
+                // normal ctor
+                write 3 "internal %s(IntPtr nativeHandle)" (upperFirst name)
                 write 3 "{"
-                // push args in reverse
-                for argName, argType in namedFunc.Args |> List.rev do
-                    pushValue context writer 4 argType argName (Direct false)
-                // push self argument
-                pushValue context writer 4 fakeThis "this" (Direct false)
-                // invoke remote
-                if namedFunc.Throws.IsEmpty then
-                    write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.Name
-                else
-                    write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.Name
-                // return pop
-                popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+                write 4 "NativeHandle = nativeHandle;"
                 write 3 "}"
-        // static content
-        match info.MaybeStaticDefs with
-        | Some _ ->
-            let nextContext =
-                context.NavigateToSub(name)
-            renderGroupCommon nextContext (writer.WithExtraIndent 1)
-            // render methods in context of static block, so things aren't necessarily prefixed
-            renderInstanceMethods nextContext
-        | None ->
-            renderInstanceMethods context
-        // end class definition
-        write 2 "}"
-        // push
-        blank()
-        write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static void %s__Push(%s thing)" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        write 3 "NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);"
-        write 2 "}"
-        // pop
-        blank()
-        write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        write 3 "var ptr = NativeImplClient.PopPtr();"
-        write 3 "return ptr != IntPtr.Zero ? new %s(ptr) : null;" (upperFirst name)
-        write 2 "}"
+            | Some _ ->
+                // inherited
+                write 3 "internal %s(IntPtr nativeHandle) : base(nativeHandle)" (upperFirst name)
+                write 3 "{"
+                write 3 "}"
+            // dispose
+            let overrideOrVirtual =
+                match maybeInheritsFrom with
+                | Some _ -> "override"
+                | None -> "virtual"
+            // TODO: we get this C# linting error, look into it:
+            // CA1816: Change Drawing.MutableAttributedString.Dispose() to call GC.SuppressFinalize(object). This will prevent derived types that introduce a finalizer from needing to re-implement 'IDisposable' to call it.
+            // note that every opaque type has its own _dispose method on the server, so we intentionally don't call the parent type's .Dispose() here
+            write 3 "public %s void Dispose()" overrideOrVirtual
+            write 3 "{"
+            write 4 "if (!_disposed)"
+            write 4 "{"
+            pushValue context writer 5 fakeThis "this" (Direct false)
+            write 5 "NativeImplClient.InvokeModuleMethod(_%s_dispose);" (lowerFirst name)
+            write 5 "_disposed = true;"
+            write 4 "}"
+            write 3 "}"
+            let renderInstanceMethods (context: RenderContext) =
+                for namedFunc in info.Methods do
+                    let throwsComment =
+                        if namedFunc.Throws.IsEmpty then
+                            ""
+                        else
+                            let joined =
+                                namedFunc.Throws
+                                |> List.map (typeToCsString context)
+                                |> String.concat ", "
+                            sprintf " // throws %s" joined
+                    write 3 "public %s %s(%s)%s" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args) throwsComment
+                    write 3 "{"
+                    // push args in reverse
+                    for argName, argType in namedFunc.Args |> List.rev do
+                        pushValue context writer 4 argType argName (Direct false)
+                    // push self argument
+                    pushValue context writer 4 fakeThis "this" (Direct false)
+                    // invoke remote
+                    if namedFunc.Throws.IsEmpty then
+                        write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.Name
+                    else
+                        write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.Name
+                    // return pop
+                    popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+                    write 3 "}"
+            // static content
+            match info.MaybeStaticDefs with
+            | Some _ ->
+                let nextContext =
+                    context.NavigateToSub(name)
+                renderGroupCommon nextContext (writer.WithExtraIndent 1) Normal
+                // render methods in context of static block, so things aren't necessarily prefixed
+                renderInstanceMethods nextContext
+            | None ->
+                renderInstanceMethods context
+            // end class definition
+            write 2 "}"
+        | RootStatic ->
+            // no classes in root static mode
+            ()
+            
+        match mode with
+        | Normal | RootStatic ->
+            // push
+            blank()
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+            write 2 "internal static void %s__Push(%s thing)" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);"
+            write 2 "}"
+            // pop
+            blank()
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "var ptr = NativeImplClient.PopPtr();"
+            write 3 "return ptr != IntPtr.Zero ? new %s(ptr) : null;" (upperFirst name)
+            write 2 "}"
+        | RootClasses ->
+            // no push/pop in root classes mode
+            ()
+            
     | StructDef info ->
         let renderContent (context: RenderContext) =
             for field in info.Fields do
@@ -846,7 +864,7 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         | Some _ ->
             let nextContext =
                 context.NavigateToSub(name)
-            renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            renderGroupCommon nextContext (writer.WithExtraIndent 1) Normal
             renderContent nextContext
         | None ->
             renderContent context
@@ -1032,137 +1050,146 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         write 2 "}"
     | InterfaceDef info ->
         blank()
-        // raw interface itself
-        write 2 "public interface %s : IDisposable" (upperFirst name)
-        write 2 "{"
-        write 3 "void IDisposable.Dispose()"
-        write 3 "{"
-        write 4 "// nothing by default"
-        write 3 "}"
-        let renderMethods (context: RenderContext) =
-            for method in info.Methods do
-                let throwsComment =
-                    if method.Throws.IsEmpty then
-                        ""
-                    else
-                        let joined =
-                            method.Throws
-                            |> List.map (typeToCsString context)
-                            |> String.concat ", "
-                        sprintf " // throws %s" joined
-                write 3 "%s %s(%s);%s" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args) throwsComment
-        match info.MaybeStaticDefs with
-        | Some _ ->
-            let nextContext =
-                context.NavigateToSub(name)
-            renderGroupCommon nextContext (writer.WithExtraIndent 1)
-            renderMethods nextContext
-        | None ->
-            renderMethods context
-        write 2 "}"
-        // lookup table and client wrapper
-        blank()
-        write 2 "private static Dictionary<%s, IPushable> __%sToPushable = new();" (upperFirst name) (upperFirst name)
-        write 2 "internal class __%sWrapper : ClientInterfaceWrapper<%s>" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        write 3 "public __%sWrapper(%s rawInterface) : base(rawInterface)" (upperFirst name) (upperFirst name)
-        write 3 "{"
-        write 3 "}"
-        write 3 "protected override void ReleaseExtra()"
-        write 3 "{"
-        write 4 "// remove the raw interface from the lookup table, no longer needed"
-        write 4 "__%sToPushable.Remove(RawInterface);" (upperFirst name)
-        write 3 "}"
-        write 2 "}"
-        // push
-        blank()
-        write 2 "internal static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        write 3 "if (thing != null)"
-        write 3 "{"
-        write 4 "if (__%sToPushable.TryGetValue(thing, out var pushable))" (upperFirst name)
-        write 4 "{"
-        write 5 "// either an already-known client thing, or a server thing"
-        write 5 "pushable.Push(isReturn);"
-        write 4 "}"
-        write 4 "else"
-        write 4 "{"
-        write 5 "// as-yet-unknown client thing - wrap and add to lookup table"
-        write 5 "pushable = new __%sWrapper(thing);" (upperFirst name)
-        write 5 "__%sToPushable.Add(thing, pushable);" (upperFirst name)
-        write 4 "}"
-        write 4 "pushable.Push(isReturn);"
-        write 3 "}"
-        write 3 "else"
-        write 3 "{"
-        write 4 "NativeImplClient.PushNull();"
-        write 3 "}"
-        write 2 "}"
-        // pop
-        blank()
-        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        write 3 "NativeImplClient.PopInstanceId(out var id, out var isClientId);"
-        write 3 "if (id != 0)"
-        write 3 "{"
-        write 4 "if (isClientId)"
-        write 4 "{"
-        write 5 "// we must have sent it over originally, so wrapper must exist"
-        write 5 "var wrapper = (__%sWrapper)ClientObject.GetById(id);" (upperFirst name)
-        write 5 "return wrapper.RawInterface;"
-        write 4 "}"
-        write 4 "else // server ID"
-        write 4 "{"
-        write 5 "var thing = new Server%s(id);" (upperFirst name)
-        write 5 "// add to lookup table before returning"
-        write 5 "__%sToPushable.Add(thing, thing);" (upperFirst name)
-        write 5 "return thing;"
-        write 4 "}"
-        write 3 "}"
-        write 3 "else"
-        write 3 "{"
-        write 4 "return null;"
-        write 3 "}"
-        write 2 "}"
-        // server wrapper
-        blank()
-        write 2 "private class Server%s : ServerObject, %s" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        write 3 "public Server%s(int id) : base(id)" name
-        write 3 "{"
-        write 3 "}"
-        // server wrapper methods
-        for method in info.Methods do
-            blank()
-            write 3 "public %s %s(%s)" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args)
+        match mode with
+        | Normal | RootClasses ->
+            // raw interface itself
+            write 2 "public interface %s : IDisposable" (upperFirst name)
+            write 2 "{"
+            write 3 "void IDisposable.Dispose()"
             write 3 "{"
-            // push args (in reverse!!)
-            for argName, argType in method.Args |> List.rev do
-                pushValue context writer 4 argType argName (Direct false)
-            // invoke remote
-            if method.Throws.IsEmpty then
-                write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" (lowerFirst name) method.WrapperName
-            else
-                write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.WrapperName
-            // return (mindful of safety area nonsense)
-            if containsRefs context.ModuleContext method.Returns then
-                popValue context writer 4 method.Returns SafeReturn
-            else
-                popValue context writer 4 method.Returns Return
+            write 4 "// nothing by default"
             write 3 "}"
-        blank()
-        write 3 "protected override void ReleaseExtra()"
-        write 3 "{"
-        write 4 "// remove from lookup table"
-        write 4 "__%sToPushable.Remove(this);" (upperFirst name)
-        write 3 "}"
-        blank()
-        write 3 "public void Dispose()"
-        write 3 "{"
-        write 4 "// will invoke ReleaseExtra() for us"
-        write 4 "ServerDispose();"
-        write 3 "}"
-        write 2 "}"
+            let renderMethods (context: RenderContext) =
+                for method in info.Methods do
+                    let throwsComment =
+                        if method.Throws.IsEmpty then
+                            ""
+                        else
+                            let joined =
+                                method.Throws
+                                |> List.map (typeToCsString context)
+                                |> String.concat ", "
+                            sprintf " // throws %s" joined
+                    write 3 "%s %s(%s);%s" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args) throwsComment
+            match info.MaybeStaticDefs with
+            | Some _ ->
+                let nextContext =
+                    context.NavigateToSub(name)
+                renderGroupCommon nextContext (writer.WithExtraIndent 1) Normal
+                renderMethods nextContext
+            | None ->
+                renderMethods context
+            write 2 "}"
+        | RootStatic ->
+            ()
+            
+        match mode with
+        | Normal | RootStatic ->
+            // lookup table and client wrapper
+            blank()
+            write 2 "private static Dictionary<%s, IPushable> __%sToPushable = new();" (upperFirst name) (upperFirst name)
+            write 2 "internal class __%sWrapper : ClientInterfaceWrapper<%s>" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "public __%sWrapper(%s rawInterface) : base(rawInterface)" (upperFirst name) (upperFirst name)
+            write 3 "{"
+            write 3 "}"
+            write 3 "protected override void ReleaseExtra()"
+            write 3 "{"
+            write 4 "// remove the raw interface from the lookup table, no longer needed"
+            write 4 "__%sToPushable.Remove(RawInterface);" (upperFirst name)
+            write 3 "}"
+            write 2 "}"
+            // push
+            blank()
+            write 2 "internal static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "if (thing != null)"
+            write 3 "{"
+            write 4 "if (__%sToPushable.TryGetValue(thing, out var pushable))" (upperFirst name)
+            write 4 "{"
+            write 5 "// either an already-known client thing, or a server thing"
+            write 5 "pushable.Push(isReturn);"
+            write 4 "}"
+            write 4 "else"
+            write 4 "{"
+            write 5 "// as-yet-unknown client thing - wrap and add to lookup table"
+            write 5 "pushable = new __%sWrapper(thing);" (upperFirst name)
+            write 5 "__%sToPushable.Add(thing, pushable);" (upperFirst name)
+            write 4 "}"
+            write 4 "pushable.Push(isReturn);"
+            write 3 "}"
+            write 3 "else"
+            write 3 "{"
+            write 4 "NativeImplClient.PushNull();"
+            write 3 "}"
+            write 2 "}"
+            // pop
+            blank()
+            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "NativeImplClient.PopInstanceId(out var id, out var isClientId);"
+            write 3 "if (id != 0)"
+            write 3 "{"
+            write 4 "if (isClientId)"
+            write 4 "{"
+            write 5 "// we must have sent it over originally, so wrapper must exist"
+            write 5 "var wrapper = (__%sWrapper)ClientObject.GetById(id);" (upperFirst name)
+            write 5 "return wrapper.RawInterface;"
+            write 4 "}"
+            write 4 "else // server ID"
+            write 4 "{"
+            write 5 "var thing = new Server%s(id);" (upperFirst name)
+            write 5 "// add to lookup table before returning"
+            write 5 "__%sToPushable.Add(thing, thing);" (upperFirst name)
+            write 5 "return thing;"
+            write 4 "}"
+            write 3 "}"
+            write 3 "else"
+            write 3 "{"
+            write 4 "return null;"
+            write 3 "}"
+            write 2 "}"
+            // server wrapper
+            blank()
+            write 2 "private class Server%s : ServerObject, %s" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "public Server%s(int id) : base(id)" name
+            write 3 "{"
+            write 3 "}"
+            // server wrapper methods
+            for method in info.Methods do
+                blank()
+                write 3 "public %s %s(%s)" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args)
+                write 3 "{"
+                // push args (in reverse!!)
+                for argName, argType in method.Args |> List.rev do
+                    pushValue context writer 4 argType argName (Direct false)
+                // invoke remote
+                if method.Throws.IsEmpty then
+                    write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" (lowerFirst name) method.WrapperName
+                else
+                    write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.WrapperName
+                // return (mindful of safety area nonsense)
+                if containsRefs context.ModuleContext method.Returns then
+                    popValue context writer 4 method.Returns SafeReturn
+                else
+                    popValue context writer 4 method.Returns Return
+                write 3 "}"
+            blank()
+            write 3 "protected override void ReleaseExtra()"
+            write 3 "{"
+            write 4 "// remove from lookup table"
+            write 4 "__%sToPushable.Remove(this);" (upperFirst name)
+            write 3 "}"
+            blank()
+            write 3 "public void Dispose()"
+            write 3 "{"
+            write 4 "// will invoke ReleaseExtra() for us"
+            write 4 "ServerDispose();"
+            write 3 "}"
+            write 2 "}"
+        | RootClasses ->
+            ()
     | ExceptionDef fields ->
         write 2 "public class %s : Exception" name
         write 2 "{"
@@ -1234,71 +1261,84 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         write 3 "return Wrapper;"
         write 2 "}"
 
-and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
+and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) (mode: GroupRenderMode) =
     let write, blank = writer.Write, writer.Blank
     
     let groupContext =
         context.GroupContext
-    
-    // declare top level function handles
-    for namedFunc in groupContext.ModuleMethods do
-        write 2 "internal static ModuleMethodHandle _%s;" namedFunc.WrapperName
+        
+    match mode with
+    | Normal | RootStatic ->
+        // declare top level function handles
+        for namedFunc in groupContext.ModuleMethods do
+            write 2 "internal static ModuleMethodHandle _%s;" namedFunc.WrapperName
 
-    for name, info in groupContext.Opaques do
-        // instance methods
-        for method in info.Methods do
-            write 2 "internal static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
-        // synthesized dispose method
-        write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
-    
-    // interfaces
-    for name, info in groupContext.Interfaces do
-        write 2 "internal static InterfaceHandle _%s;" (lowerFirst name)
-        for method in info.Methods do
-            write 2 "internal static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
-    
-    // exceptions
-    for name, _ in groupContext.Exceptions do
-        write 2 "internal static ExceptionHandle _%s;" (lowerFirst name)
-    
-    // globals declaration
-    for name, type_ in groupContext.Globals do
-        write 2 "public static %s %s { get; internal set; }" (typeToCsString context type_) (upperFirst name)
-    
-    // top-level functions ===========
-    for namedFunc in groupContext.ModuleMethods do
-        blank()
-        write 2 "public static %s %s(%s)" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args)
-        write 2 "{"
-        // push args in reverse
-        for argName, argType in namedFunc.Args |> List.rev do
-            pushValue context writer 3 argType argName (Direct false)
-        // invoke remote
-        if namedFunc.Throws.IsEmpty then
-            write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.WrapperName
-        else
-            write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
-        // return pop
-        popValue context writer 3 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
-        write 2 "}"
-    
-    // render user types + nested groups in order of declaration
-    for def in groupContext.Defs do
-        match def with
-        | UserType(name, userType) ->
-            renderUserType context writer name userType
-        | Group(name, _) ->
-            let group =
-                groupContext.SubGroups[name]
-            let nextContext =
-                { context with GroupContext = group }
-            write 2 "public static class %s" group.Name
+        for name, info in groupContext.Opaques do
+            // instance methods
+            for method in info.Methods do
+                write 2 "internal static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
+            // synthesized dispose method
+            write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
+        
+        // interfaces
+        for name, info in groupContext.Interfaces do
+            write 2 "internal static InterfaceHandle _%s;" (lowerFirst name)
+            for method in info.Methods do
+                write 2 "internal static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
+        
+        // exceptions
+        for name, _ in groupContext.Exceptions do
+            write 2 "internal static ExceptionHandle _%s;" (lowerFirst name)
+        
+        // globals declaration
+        for name, type_ in groupContext.Globals do
+            write 2 "public static %s %s { get; internal set; }" (typeToCsString context type_) (upperFirst name)
+        
+        // top-level functions ===========
+        for namedFunc in groupContext.ModuleMethods do
+            blank()
+            write 2 "public static %s %s(%s)" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args)
             write 2 "{"
-            renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            // push args in reverse
+            for argName, argType in namedFunc.Args |> List.rev do
+                pushValue context writer 3 argType argName (Direct false)
+            // invoke remote
+            if namedFunc.Throws.IsEmpty then
+                write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.WrapperName
+            else
+                write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
+            // return pop
+            popValue context writer 3 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
             write 2 "}"
-            // renderNestedGroup nextContext writer
-        | _ ->
-            ()
+        
+        // render user types + nested groups in order of declaration
+        for def in groupContext.Defs do
+            match def with
+            | UserType(name, userType) ->
+                renderUserType context writer name userType mode
+            | Group(name, _) ->
+                let group =
+                    groupContext.SubGroups[name]
+                let nextContext =
+                    { context with GroupContext = group }
+                write 2 "public static class %s" group.Name
+                write 2 "{"
+                renderGroupCommon nextContext (writer.WithExtraIndent 1) Normal // mode only applies to root level, everything below is always 'normal'
+                write 2 "}"
+            | _ ->
+                ()
+    | RootClasses ->
+        // render only class stuff
+        for def in groupContext.Defs do
+            match def with
+            | UserType(name, userType) ->
+                match userType with
+                | OpaqueDef _ | InterfaceDef _ ->
+                    renderUserType context writer name userType mode
+                | _ ->
+                    ()
+            | _ ->
+                ()
             
 let joinModuleName (ModuleName nameParts) =
     joinNameParts "." nameParts
@@ -1421,18 +1461,20 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     if not m.Imports.IsEmpty then
         write 0 ""
         for importName in m.Imports do
-            write 0 "using static %s.%s;" baseNamespace (joinModuleName importName)
+            write 0 "using %s.%s;" baseNamespace (joinModuleName importName)
+            write 0 "using static %s.%s.ModuleStatic ;" baseNamespace (joinModuleName importName)
 
     write 0 ""
     let moduleNamespace =
         maybeModulePrefix
         |> Option.map (fun mp -> sprintf "%s.%s" baseNamespace mp)
         |> Option.defaultValue baseNamespace
-    write 0 "namespace %s" moduleNamespace
+    write 0 "namespace %s.%s" moduleNamespace className
     write 0 "{"
+    write 1 "using static ModuleStatic;"
     
     // render root group
-    write 1 "public static class %s" className
+    write 1 "public static class ModuleStatic"
     write 1 "{"
     write 2 "private static ModuleHandle _module;"
     
@@ -1440,8 +1482,8 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     for generic in allGenericTypes moduleContext do
         renderGeneric renderContext writer generic
 
-    // now with the common group stuff:
-    renderGroupCommon renderContext writer
+    // now with the common group stuff (excluding root opaques/interfaces - anything that's a class):
+    renderGroupCommon renderContext writer RootStatic
     
     // static init + shutdown ====================================================
     let maybeModuleInit =
@@ -1504,7 +1546,11 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
         write 3 "// no static shutdown"
     write 2 "}"
     write 1 "}" // end of static class <module name>
-    //
+    
+    // now render any class-based stuff (interfaces, opaques), outside the static class
+    renderGroupCommon renderContext (writer.WithExtraIndent -1) RootClasses
+    
+    // end of namespace
     write 0 "}" // end of namespace
     
 let projectDir (outParams: OutParams) =
@@ -1518,7 +1564,7 @@ let generateModule (context: ModuleContext) (outParams: OutParams) =
             maybeModulePrefix
             |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
             |> Option.defaultValue ""
-        sprintf "%s%s" (projectDir outParams) subPath
+        sprintf "%s%s/%s" (projectDir outParams) subPath className
     Directory.CreateDirectory(moduleDir) |> ignore
     let filename =
         sprintf "%s/%s.cs" moduleDir className
@@ -1579,14 +1625,14 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespac
     write 2 "}"
     write 2 "// registrations, static module inits"
     for m in allModules do
-        write 2 "%s.__Init();" (joinModuleName m.Name)
+        write 2 "%s.ModuleStatic.__Init();" (joinModuleName m.Name)
     write 1 "}"
     blank()
     write 1 "public static void Shutdown()"
     write 1 "{"
     write 2 "// module static shutdowns (if any, might be empty)"
     for m in allModules |> List.rev do
-        write 2 "%s.__Shutdown();" (joinModuleName m.Name)
+        write 2 "%s.ModuleStatic.__Shutdown();" (joinModuleName m.Name)
     write 2 "// bye"
     write 2 "NativeImplClient.Shutdown();"
     write 1 "}"

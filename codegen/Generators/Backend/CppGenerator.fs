@@ -1534,7 +1534,7 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
         writeCpp 0 "#include \"%s\"" importPaths.ModuleWrappersHeader
         match importName with
         | ModuleName nameParts ->
-            writeCpp 0 "using namespace %s;" (joinNameParts "::" nameParts)
+            writeCpp 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
 
     // begin root group: ===========================================
     blankH();
@@ -1973,7 +1973,7 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
             write 0 "#include \"%s\"" paths.ModuleHeader
             match importName with
             | ModuleName nameParts ->
-                write 0 "using namespace %s;" (joinNameParts "::" nameParts)
+                write 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
                 // (moduleNameToPathNoExt (Some m.Name) importName) // (importName.Replace(".", "/"))
     blank()
     match m.Name with
@@ -2117,7 +2117,7 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (currentDir: 
     for m in allModules do
         match m.Name with
         | ModuleName nameParts ->
-            write 1 "%s::__register();" (joinNameParts "::" nameParts)
+            write 1 "::%s::__register();" (joinNameParts "::" nameParts)
     write 1 "// should we do module inits here as well?"
     write 1 "// currently they are manually done on the C# side inside the <module>.Init methods (which perform registration first) - and those are individually called by Library.Init, which first calls nativeImplInit"
     write 1 "return 0;"

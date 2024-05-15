@@ -1056,16 +1056,24 @@ let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: s
             |> List.choose (fun importName ->
                 let import =
                     context.Loaded[importName]
-                // strip off any common prefix between identifier and full module path, if the user is trying to use a fully qualified name
-                match removeModuleName importName nameParts with
-                | [] ->
-                    // module name completely consumed nameParts, there would be nothing left to search for!
-                    // seems like an odd thing to happen, how could an identifier refer to something that starts with the name of a module, but doesn't refer to the module? seems like an error ...
-                    None
-                | relativeParts ->
-                    findModuleSymbol import [] relativeParts
-                    |> Option.map (fun res ->
-                        { ImportName = importName; Result = res }))
+                // first look for it as-is, as a relative indentifier within the module (vs. fully qualified)
+                // because what if we're looking for something that starts with the same name as the module itself? don't want to strip that prematurely
+                match findModuleSymbol import [] nameParts with
+                | Some res ->
+                    Some { ImportName = importName; Result = res }
+                | None ->
+                    // no luck that way, now try stripping any common prefix between identifier and full module path, in case the user is attempting to use a fully qualified name
+                    // (BTW, is this the correct precedence? or should it be reversed, and we should look for a fully qualified thing first, and only if that fails resort to a relative name?
+                    match removeModuleName importName nameParts with
+                    | [] ->
+                        // module name completely consumed nameParts, there would be nothing left to search for!
+                        // seems like an odd thing to happen, how could an identifier refer to something that starts with the name of a module, but doesn't refer to the module? seems like an error ...
+                        // well, what if module A exports a symbol that has the same name as module B?
+                        None
+                    | relativeParts ->
+                        findModuleSymbol import [] relativeParts
+                        |> Option.map (fun res ->
+                            { ImportName = importName; Result = res }))
         match importResults with
         | _ :: _ :: _ ->
             // 2+ results, ambiguous = not OK

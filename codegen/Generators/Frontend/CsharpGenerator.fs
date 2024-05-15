@@ -782,9 +782,9 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
                 pushValue context writer 4 fakeThis "this" (Direct false)
                 // invoke remote
                 if namedFunc.Throws.IsEmpty then
-                    write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.Name
+                    write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
                 else
-                    write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.Name
+                    write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
                 // return pop
                 popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
                 write 3 "}"

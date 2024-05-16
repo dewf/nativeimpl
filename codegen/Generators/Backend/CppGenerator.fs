@@ -2162,7 +2162,7 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
     printfn "C++ writing (%s.%s%s)" baseNamespace modulePrefixString className
     
     let wrappersFilenameBase =
-        $"{generatedFilenameNoExt}_Wrappers"
+        $"{generatedFilenameNoExt}_wrappers"
     let implementationHeaderFilename =
         $"{generatedFilenameNoExt}.h"
     let implementationFilename =

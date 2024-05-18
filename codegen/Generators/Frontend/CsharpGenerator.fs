@@ -728,7 +728,7 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             write 2 "{"
             // no native handle required
         | None ->
-            write 2 "public class %s : IDisposable" (upperFirst name)
+            write 2 "public class %s : IDisposable, IComparable" (upperFirst name)
             write 2 "{"
             write 3 "internal readonly IntPtr NativeHandle;"
             write 3 "protected bool _disposed;"
@@ -739,6 +739,15 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             write 3 "internal %s(IntPtr nativeHandle)" (upperFirst name)
             write 3 "{"
             write 4 "NativeHandle = nativeHandle;"
+            write 3 "}"
+            // IComparable implementation, useful to use opaques as Dictionary keys or whatever
+            write 3 "public int CompareTo(object obj)"
+            write 3 "{"
+            write 4 "if (obj is Handle other)"
+            write 4 "{"
+            write 5 "return NativeHandle.CompareTo(other.NativeHandle);"
+            write 4 "}"
+            write 4 "throw new Exception(\"CompareTo: wrong type\");"
             write 3 "}"
         | Some _ ->
             // inherited

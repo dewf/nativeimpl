@@ -743,7 +743,7 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             // IComparable implementation, useful to use opaques as Dictionary keys or whatever
             write 3 "public int CompareTo(object obj)"
             write 3 "{"
-            write 4 "if (obj is Handle other)"
+            write 4 "if (obj is %s other)" (upperFirst name)
             write 4 "{"
             write 5 "return NativeHandle.CompareTo(other.NativeHandle);"
             write 4 "}"

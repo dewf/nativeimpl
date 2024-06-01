@@ -50,7 +50,7 @@ type ResolvedType =
     | TypedefType
     | EnumType
     | SumType
-    | OptionsType
+    | OptionsType // distinct from generic 'option' type ... probably should come up with a less confusing name
     
 type TypeConstraint =
     | DefaultConstraint    // everything but exceptions allowed

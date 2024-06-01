@@ -262,8 +262,18 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
         | _ -> write level "// pushValue not yet supported: Array of %A" niType
     | TupleType _ ->
         write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | SetType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+    | SetType niType ->
+        match niType with
+        | Primitive _ ->
+            write level "__%s__Push(%s);" (typeToName context type_) content
+        | Resolved(_, resolvedType) ->
+            match resolvedType with
+            | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
+                write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+            | _ ->
+                write level "__%s__Push(%s);" (typeToName context type_) content
+        | _ ->
+            write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | BufferType _ ->
         write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | MapType _ ->

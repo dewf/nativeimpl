@@ -22,11 +22,15 @@
     <ClCompile Include="..\First.cpp" />
     <ClCompile Include="..\generated\First_Wrappers.cpp" />
     <ClCompile Include="..\generated\Library.cpp" />
+    <ClCompile Include="..\generated\Second_Wrappers.cpp" />
+    <ClCompile Include="..\Second.cpp" />
     <ClCompile Include="..\support\NativeImplServer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\generated\First.h" />
     <ClInclude Include="..\generated\First_Wrappers.h" />
+    <ClInclude Include="..\generated\Second.h" />
+    <ClInclude Include="..\generated\Second_Wrappers.h" />
     <ClInclude Include="..\support\CoreStuff.h" />
     <ClInclude Include="..\support\NativeImplServer.h" />
     <ClInclude Include="..\support\result.h" />

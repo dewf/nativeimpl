@@ -12,13 +12,15 @@ public static class Library
             return;
         }
         // registrations, static module inits
-        First.__Init();
+        First.ModuleStatic.__Init();
+        Second.ModuleStatic.__Init();
     }
 
     public static void Shutdown()
     {
         // module static shutdowns (if any, might be empty)
-        First.__Shutdown();
+        Second.ModuleStatic.__Shutdown();
+        First.ModuleStatic.__Shutdown();
         // bye
         NativeImplClient.Shutdown();
     }

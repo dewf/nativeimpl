@@ -55,6 +55,7 @@ type ResolvedType =
 type TypeConstraint =
     | DefaultConstraint    // everything but exceptions allowed
     | OpaqueConstraint
+    | InterfaceConstraint
     | ExceptionConstraint
     
 type NIType =
@@ -395,11 +396,12 @@ let isValidEnumWidth (t: NIType) =
     | _ -> false
 
 type OpaqueInfo = {
-    MaybeParent: NIType option          // must be an opaque, obviously
+    MaybeParent: NIType option          // parent opaque
     Methods: NamedFunction list
     MaybeStaticDefs: ModuleDefinition list option
 }
 and InterfaceInfo = {
+    MaybeParent: NIType option          // parent interface
     Methods: NamedFunction list
     MaybeStaticDefs: ModuleDefinition list option
 }
@@ -698,7 +700,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             // empty opaque
             | Lookahead 1 ([Semicolon], _, etc) ->
                 let info =
-                    { MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None }
+                    { OpaqueInfo.MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None }
                 ([UserType (opaqueName, OpaqueDef info)], etc)
                 |> Some
             // opaque with content (methods + optional static {} block)
@@ -731,7 +733,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     |> setOverloadIndices
                     
                 let info =
-                    { MaybeParent = maybeParent
+                    { OpaqueInfo.MaybeParent = maybeParent
                       Methods = methods
                       MaybeStaticDefs = maybeStaticDefs }
                 ([UserType (opaqueName, OpaqueDef info)], afterOpaqueBlock)
@@ -782,33 +784,58 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 args |> List.map (fun (name, type_) -> { Name = name; Type_ = type_ })
             ([UserType (name, ExceptionDef fields)], etc)
             |> Some
-        | Lookahead 3 ([InterfaceToken; Identifier name; LeftBrace], loc, etc) ->
-            // optional static block
-            let maybeStaticDefs, etc =
+        | Lookahead 2 ([InterfaceToken; Identifier interfaceName], loc, etc) ->
+            // inherits anything?
+            let maybeParent, loc, etc =
                 match etc with
-                | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
-                    let defsList, etc  =
-                        unfoldUntil [RightBrace] parseNext etc
-                    let flattened =
-                        defsList
-                        |> List.collect id
-                    let maybeStaticDefs =
-                        if not flattened.IsEmpty then Some flattened else None
-                    maybeStaticDefs, etc
+                | Lookahead 1 ([ExtendsToken], loc, etc) ->
+                    match etc with
+                    | NameStuff.NameParts (parts, loc, etc) ->
+                        let type_ =
+                            Unresolved (UnresolvedIdentifier parts, loc, InterfaceConstraint)
+                        Some type_, loc, etc
+                    | _ ->
+                        failwithf "expected parent interface name @ %A" loc
                 | _ ->
-                    None, etc
-            let methods, etc =
-                parseFunctionList loc etc
-            let methods =
-                methods
-                |> setOverloadIndices
-            if methods.Length > 0 then
+                    None, loc, etc
+            // continue as normal
+            match etc with
+            // empty interface
+            | Lookahead 1 ([Semicolon], _, etc) ->
                 let info =
-                    { Methods = methods; MaybeStaticDefs = maybeStaticDefs }
-                ([UserType (name, InterfaceDef info)], etc)
+                    { InterfaceInfo.MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None }
+                ([UserType (interfaceName, InterfaceDef info)], etc)
                 |> Some
-            else
-                failwithf "interface '%s' @ loc %A - no methods declared" name loc
+            // interface with content (methods + optional static {} block)
+            | Lookahead 1 ([LeftBrace], loc, etc) ->
+                // optional static block
+                let maybeStaticDefs, etc =
+                    match etc with
+                    | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
+                        let defsList, etc  =
+                            unfoldUntil [RightBrace] parseNext etc
+                        let flattened =
+                            defsList
+                            |> List.collect id
+                        let maybeStaticDefs =
+                            if not flattened.IsEmpty then Some flattened else None
+                        maybeStaticDefs, etc
+                    | _ ->
+                        None, etc
+                let methods, etc =
+                    parseFunctionList loc etc
+                let methods =
+                    methods
+                    |> setOverloadIndices
+                if methods.Length > 0 then
+                    let info =
+                        { MaybeParent = maybeParent; Methods = methods; MaybeStaticDefs = maybeStaticDefs }
+                    ([UserType (interfaceName, InterfaceDef info)], etc)
+                    |> Some
+                else
+                    failwithf "interface '%s' @ loc %A - no methods declared" interfaceName loc
+            | _ ->
+                failwithf "error parsing interface token at %s" (loc.ToString())
         | Lookahead 1 ([DelegateToken], _, etc) ->
             parseNamedFunction etc
             |> Option.map (fun (nf, etc2) ->
@@ -1129,6 +1156,12 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                     () // OK
                 | _ ->
                     failwithf "type constraint failed @ %A - must be 'opaque' type" loc
+            | InterfaceConstraint ->
+                match resolvedDef with
+                | InterfaceDef _ ->
+                    () // OK
+                | _ ->
+                    failwithf "type constraint failed @ %A - must be 'interface' type" loc
             | ExceptionConstraint ->
                 match resolvedDef with
                 | ExceptionDef _ ->
@@ -1229,6 +1262,9 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                     |> List.map (resolveFieldType context namespacePath)
                 ExceptionDef nextFieldTypes
             | InterfaceDef info ->
+                let nextMaybeParent =
+                    info.MaybeParent
+                    |> Option.map (resolveType context namespacePath)
                 let nextMethods, nextStaticDefs =
                     match info.MaybeStaticDefs with
                     | Some staticDefs ->
@@ -1249,7 +1285,7 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                             |> List.map (resolveFunctionTypes context namespacePath)
                         nextMethods, None
                 let nextInfo =
-                    { Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
+                    { MaybeParent = nextMaybeParent; Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
                 InterfaceDef nextInfo
             | DelegateDef delegateInfo ->
                 let nextInfo =
@@ -1279,7 +1315,7 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                             |> List.map (resolveFunctionTypes context namespacePath)
                         nextMethods, None
                 let nextInfo =
-                    { MaybeParent = nextMaybeParent; Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
+                    { OpaqueInfo.MaybeParent = nextMaybeParent; Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
                 OpaqueDef nextInfo
             | TypeDef niType ->
                 TypeDef (resolveType context namespacePath niType)

@@ -1,5 +1,8 @@
-﻿using CSharpFunctionalExtensions;
-using Org.Prefixed.KitchenSink;
+﻿using Org.Prefixed.KitchenSink;
+
+using Org.Prefixed.KitchenSink.First;
+using static Org.Prefixed.KitchenSink.First.ModuleStatic;
+
 namespace AppRunner;
 
 internal static class Program
@@ -8,11 +11,10 @@ internal static class Program
     {
         Library.Init();
 
-        var thing1 = new First.Thing1.Value2(3003);
-        var thing2 = new First.Thing2.Variant2(thing1);
-        First.DoSomething(thing2);
-        
+        var x = RootOpaque.MakeOne();
+
         Library.DumpTables();
         Library.Shutdown();
     }
 }
+

@@ -58,6 +58,7 @@ let INPUTS = [
     "MainWindow"
     "Menu"
     "MenuBar"
+    "MessageBox"
     "Painter"
     "PaintResources"
     "PlainTextEdit"

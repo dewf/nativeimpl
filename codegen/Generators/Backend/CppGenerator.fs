@@ -1819,11 +1819,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                         sprintf " // throws %s" joined
                 write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
         // class/interface proper
-        match info.MaybeParent with
-        | Some parentType ->
-            write 0 "class %s : public %s {" name (typeToCppString context parentType)
-        | None ->
-            write 0 "class %s {" name
+        write 0 "class %s {" name
         write 0 "public:"
         match info.MaybeStaticDefs with
         | Some _ ->

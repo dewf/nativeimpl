@@ -3,29 +3,12 @@
 
 namespace First
 {
-    namespace RootGroup {
+    void Thing1__push(std::shared_ptr<Thing1::Base> value, bool isReturn);
+    std::shared_ptr<Thing1::Base> Thing1__pop();
+    void Thing2__push(std::shared_ptr<Thing2::Base> value, bool isReturn);
+    std::shared_ptr<Thing2::Base> Thing2__pop();
 
-        void CoolOpaque1__push(CoolOpaque1Ref value);
-        CoolOpaque1Ref CoolOpaque1__pop();
-        namespace CoolOpaque1 {
-
-            void MyEnum__push(MyEnum value);
-            MyEnum MyEnum__pop();
-
-            void create__wrapper();
-        }
-
-        void CoolOpaque1_dispose__wrapper();
-    }
-
-    void RootOpaque__push(RootOpaqueRef value);
-    RootOpaqueRef RootOpaque__pop();
-    namespace RootOpaque {
-
-        void makeOne__wrapper();
-    }
-
-    void RootOpaque_dispose__wrapper();
+    void doSomething__wrapper();
 
     int __register();
 }

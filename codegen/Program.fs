@@ -8,9 +8,9 @@ let BACK_LANG = "cpp"
 
 // // TESTBENCH
 // let NAMESPACE = "Org.Prefixed"
-// let INPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench"
-// let OUTPUT_PATH = @"C:\Users\Daniel\Desktop\Development\testbench\_output"
-// let INPUTS = [ "First"; "Second"; "SomePackage.Third" ]
+// let INPUT_PATH = @"C:\DataPart\Development\testbench"
+// let OUTPUT_PATH = @"C:\DataPart\Development\testbench\_output"
+// let INPUTS = [ "First" ]
 // let LIBRARY = "TestBench"
 
 // // KITCHENSINK

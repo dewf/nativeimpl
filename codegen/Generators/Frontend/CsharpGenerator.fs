@@ -738,10 +738,15 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             write 2 "{"
             // no native handle required
         | None ->
-            write 2 "public class %s : IDisposable, IComparable" (upperFirst name)
-            write 2 "{"
-            write 3 "internal readonly IntPtr NativeHandle;"
-            write 3 "protected bool _disposed;"
+            if info.NoDispose then
+                write 2 "public class %s : IComparable" (upperFirst name)
+                write 2 "{"
+                write 3 "internal readonly IntPtr NativeHandle;"
+            else
+                write 2 "public class %s : IDisposable, IComparable" (upperFirst name)
+                write 2 "{"
+                write 3 "internal readonly IntPtr NativeHandle;"
+                write 3 "protected bool _disposed;"
         // ctor
         match maybeInheritsFrom with
         | None ->
@@ -764,23 +769,28 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             write 3 "internal %s(IntPtr nativeHandle) : base(nativeHandle)" (upperFirst name)
             write 3 "{"
             write 3 "}"
+
         // dispose
-        let overrideOrVirtual =
-            match maybeInheritsFrom with
-            | Some _ -> "override"
-            | None -> "virtual"
-        // TODO: we get this C# linting error, look into it:
-        // CA1816: Change Drawing.MutableAttributedString.Dispose() to call GC.SuppressFinalize(object). This will prevent derived types that introduce a finalizer from needing to re-implement 'IDisposable' to call it.
-        // note that every opaque type has its own _dispose method on the server, so we intentionally don't call the parent type's .Dispose() here
-        write 3 "public %s void Dispose()" overrideOrVirtual
-        write 3 "{"
-        write 4 "if (!_disposed)"
-        write 4 "{"
-        pushValue context writer 5 fakeThis "this" (Direct false)
-        write 5 "NativeImplClient.InvokeModuleMethod(_%s_dispose);" (lowerFirst name)
-        write 5 "_disposed = true;"
-        write 4 "}"
-        write 3 "}"
+        if info.NoDispose then
+            ()
+        else
+            let overrideOrVirtual =
+                match maybeInheritsFrom with
+                | Some _ -> "override"
+                | None -> "virtual"
+            // TODO: we get this C# linting error, look into it:
+            // CA1816: Change Drawing.MutableAttributedString.Dispose() to call GC.SuppressFinalize(object). This will prevent derived types that introduce a finalizer from needing to re-implement 'IDisposable' to call it.
+            // note that every opaque type has its own _dispose method on the server, so we intentionally don't call the parent type's .Dispose() here
+            write 3 "public %s void Dispose()" overrideOrVirtual
+            write 3 "{"
+            write 4 "if (!_disposed)"
+            write 4 "{"
+            pushValue context writer 5 fakeThis "this" (Direct false)
+            write 5 "NativeImplClient.InvokeModuleMethod(_%s_dispose);" (lowerFirst name)
+            write 5 "_disposed = true;"
+            write 4 "}"
+            write 3 "}"
+            
         let renderInstanceMethods (context: RenderContext) =
             for namedFunc in info.Methods do
                 let throwsComment =
@@ -1268,7 +1278,10 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
         for method in info.Methods do
             write 2 "internal static ModuleMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
         // synthesized dispose method
-        write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
+        if info.NoDispose then
+            ()
+        else
+            write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
     
     // interfaces
     for name, info in groupContext.Interfaces do
@@ -1349,7 +1362,10 @@ let assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
                 for method in info.Methods do
                     write 3 "%s_%s = NativeImplClient.GetModuleMethod(_module, \"%s_%s\");" targetBase method.WrapperName sourceBase method.WrapperName
                 // synthesized dispose method handle
-                write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
+                if info.NoDispose then
+                    ()
+                else
+                    write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
         
         // exceptions
         if not group.Exceptions.IsEmpty then

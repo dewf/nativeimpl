@@ -1073,9 +1073,12 @@ let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (i
             SymbolName (context.GroupContext.Path @ [ opaqueName ])
         Resolved ((ThisModule symbolName), OpaqueType)
     let instanceMethods =
-        let disposeMethod =
-            { Name = "dispose"; Args = []; Returns = UnitType; Throws = []; MaybeOverloadId = None }
-        (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
+        if info.NoDispose then
+            info.Methods
+        else
+            let disposeMethod =
+                { Name = "dispose"; Args = []; Returns = UnitType; Throws = []; MaybeOverloadId = None }
+            (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
         // add "_this" parameter
         |> List.map (fun nf ->
             let nextArgs =

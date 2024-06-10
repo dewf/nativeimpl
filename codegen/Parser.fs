@@ -347,6 +347,10 @@ let rec parseType (input: TokenAndLocation list) =
         failwithf "parseType called on an empty list!"
     | {Location = loc; Token = token} :: _ ->
         failwithf "parseType: unexpected token %A at %A" token loc
+        
+
+type Attribute =
+    | NoDispose
 
 type NamedFunction = {
     Name: string
@@ -398,6 +402,7 @@ type OpaqueInfo = {
     MaybeParent: NIType option          // must be an opaque, obviously
     Methods: NamedFunction list
     MaybeStaticDefs: ModuleDefinition list option
+    NoDispose: bool
 }
 and InterfaceInfo = {
     Methods: NamedFunction list
@@ -441,6 +446,15 @@ type Module = {
     SymbolTable: SymbolTableState
     Defs: ModuleDefinition list
 }
+
+// attribute helper functions
+let applyOpaqueAttrs (attrs: Attribute list) (opaque: OpaqueInfo) =
+    (opaque, attrs)
+    ||> List.fold (fun info attr ->
+        match attr with
+        | NoDispose ->
+            { info with NoDispose = true })
+    
 
 let parseOneField (input: TokenAndLocation list) =
     if input.IsEmpty then
@@ -670,8 +684,14 @@ let setOverloadIndices (nfList: NamedFunction list) =
     ||> List.mapWithContext overloadMapFunc
     
 let rec parseModuleDefs (input: TokenAndLocation list) =
-    let rec parseNext (remaining: TokenAndLocation list) =
+    let rec parseNext (activeAttributes: Attribute list) (remaining: TokenAndLocation list) =
         match remaining with
+        | Lookahead 2 ([AtSign; Identifier attrName], loc, etc) ->
+            let attr = 
+                match attrName with
+                | "nodispose" -> NoDispose
+                | _ -> failwithf "unrecognized attribute type '%s' @ %A" attrName loc
+            parseNext (attr :: activeAttributes) etc
         | Lookahead 3 ([GroupToken; Identifier groupName; LeftBrace], loc, etc) ->
             let contentBlock, etc =
                 contentUntilMatching loc LeftBrace etc
@@ -698,7 +718,8 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             // empty opaque
             | Lookahead 1 ([Semicolon], _, etc) ->
                 let info =
-                    { MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None }
+                    { MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None; NoDispose = false }
+                    |> applyOpaqueAttrs activeAttributes
                 ([UserType (opaqueName, OpaqueDef info)], etc)
                 |> Some
             // opaque with content (methods + optional static {} block)
@@ -733,7 +754,9 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 let info =
                     { MaybeParent = maybeParent
                       Methods = methods
-                      MaybeStaticDefs = maybeStaticDefs }
+                      MaybeStaticDefs = maybeStaticDefs
+                      NoDispose = false }
+                    |> applyOpaqueAttrs activeAttributes
                 ([UserType (opaqueName, OpaqueDef info)], afterOpaqueBlock)
                 |> Some
             | _ ->
@@ -744,7 +767,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 match etc with
                 | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
                     let defsList, etc  =
-                        unfoldUntil [RightBrace] parseNext etc
+                        unfoldUntil [RightBrace] (parseNext []) etc
                     let flattened =
                         defsList
                         |> List.collect id
@@ -788,7 +811,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 match etc with
                 | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
                     let defsList, etc  =
-                        unfoldUntil [RightBrace] parseNext etc
+                        unfoldUntil [RightBrace] (parseNext []) etc
                     let flattened =
                         defsList
                         |> List.collect id
@@ -875,7 +898,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             | [] ->
                 failwith "unexpected end of file"
     let rawDefs =
-        List.unfold parseNext input
+        List.unfold (parseNext []) input
         |> List.collect id
     // process any module-level/static block overloads (opaque and interface methods already handled above)
     (Map.empty, rawDefs)
@@ -1279,7 +1302,7 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                             |> List.map (resolveFunctionTypes context namespacePath)
                         nextMethods, None
                 let nextInfo =
-                    { MaybeParent = nextMaybeParent; Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
+                    { info with MaybeParent = nextMaybeParent; Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
                 OpaqueDef nextInfo
             | TypeDef niType ->
                 TypeDef (resolveType context namespacePath niType)

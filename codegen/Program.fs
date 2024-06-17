@@ -6,73 +6,69 @@ open AppCommon
 let FRONT_LANG = "csharp"
 let BACK_LANG = "cpp"
 
-// // TESTBENCH
-// let NAMESPACE = "Org.Prefixed"
-// let INPUT_PATH = @"C:\DataPart\Development\testbench"
-// let OUTPUT_PATH = @"C:\DataPart\Development\testbench\_output"
-// let INPUTS = [ "First" ]
-// let LIBRARY = "TestBench"
+// TESTBENCH
+let LIBRARY = "TestBench"
+let NAMESPACE = "Org.Prefixed"
+let INPUT_PATH = @"C:\DataPart\Development\testbench"
+let OUTPUT_PATH = @"C:\DataPart\Development\testbench\_output"
+let INPUTS = [ "First" ]
 
 // // KITCHENSINK
+// let LIBRARY = "KitchenSink"
 // let NAMESPACE = "Org.Prefixed"
 // let INPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink"
 // let OUTPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink\_output"
 // let INPUTS = [ "First"; "Second" ]
-// let LIBRARY = "KitchenSink"
 
 // // GUIBASE
+// let LIBRARY = "GuiBase"
 // let NAMESPACE = "Org.Prefixed"
 // let INPUT_PATH = @"C:\DataPart\Development\guibase"
 // let OUTPUT_PATH = @"C:\DataPart\Development\guibase\output"
 // let INPUTS = [ "Windowing"; "Keys"; "Drawing"; "Text"; ]
-// let LIBRARY = "GuiBase"
 
-// // QT TESTING
-// let NAMESPACE = "Org.Whatever"
-// let INPUT_PATH = @"C:\DataPart\Development\QtTesting"
-// let OUTPUT_PATH = @"C:\DataPart\Development\QtTesting\output"
-// let INPUTS = [ "Widgets" ]
+// // Helm
 // let LIBRARY = "QtTesting"
-
-// Helm
-let NAMESPACE = "Org.Whatever"
-let INPUT_PATH = @"C:\DataPart\Development\Helm"
-let OUTPUT_PATH = @"C:\DataPart\Development\Helm\output"
-let INPUTS = [
-    "Action"
-    "AbstractButton"
-    "AbstractScrollArea"
-    "AbstractSlider"
-    "Application"
-    "BoxLayout"
-    "ComboBox"
-    "Common"
-    "Dialog"
-    "Frame"
-    "GridLayout"
-    "GroupBox"
-    "Label"
-    "Layout"
-    "LineEdit"
-    "ListWidget"
-    "MainWindow"
-    "Menu"
-    "MenuBar"
-    "MessageBox"
-    "Painter"
-    "PaintResources"
-    "PlainTextEdit"
-    "ProgressBar"
-    "PushButton"
-    "RadioButton"
-    "ScrollArea"
-    "Signal"
-    "Slider"
-    "TabWidget"
-    "Timer"
-    "Widget"
-]
-let LIBRARY = "QtTesting"
+// let NAMESPACE = "Org.Whatever"
+// let INPUT_PATH = @"C:\DataPart\Development\Helm"
+// let OUTPUT_PATH = @"C:\DataPart\Development\Helm\output"
+// let INPUTS = [
+//     "Action"
+//     "AbstractButton"
+//     "AbstractScrollArea"
+//     "AbstractSlider"
+//     "Application"
+//     "BoxLayout"
+//     "ComboBox"
+//     "Common"
+//     "Dialog"
+//     "DockWidget"
+//     "FileDialog"
+//     "Frame"
+//     "GridLayout"
+//     "GroupBox"
+//     "Icon"
+//     "Label"
+//     "Layout"
+//     "LineEdit"
+//     "ListWidget"
+//     "MainWindow"
+//     "Menu"
+//     "MenuBar"
+//     "MessageBox"
+//     "Painter"
+//     "PaintResources"
+//     "PlainTextEdit"
+//     "ProgressBar"
+//     "PushButton"
+//     "RadioButton"
+//     "ScrollArea"
+//     "Signal"
+//     "Slider"
+//     "TabWidget"
+//     "Timer"
+//     "Widget"
+// ]
 
 let getDependencyOrder (moduleMap: Map<ModuleName, Module>) =
     // create "imported by" map ('name' -> modules importing 'name')

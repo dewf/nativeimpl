@@ -19,7 +19,7 @@ and EnumExpr =
     | Binary of op: EnumBinaryOp * left: EnumExpr * right: EnumExpr
     | Grouping of inner: EnumExpr
     
-let (|MatchLiteral|_|) (input: TokenAndLocation list) =
+let private (|MatchLiteral|_|) (input: TokenAndLocation list) =
     match input with
     | { Token = token } :: etc ->
         match token with
@@ -30,7 +30,7 @@ let (|MatchLiteral|_|) (input: TokenAndLocation list) =
     | _ ->
         None
         
-let (|MatchUnaryOp|_|) (input: TokenAndLocation list) =
+let private (|MatchUnaryOp|_|) (input: TokenAndLocation list) =
     match input with
     | { Token = token } :: etc ->
         match token with
@@ -39,7 +39,7 @@ let (|MatchUnaryOp|_|) (input: TokenAndLocation list) =
     | _ ->
         None
         
-let (|MatchBinaryOp|_|) (input: TokenAndLocation list) =
+let private (|MatchBinaryOp|_|) (input: TokenAndLocation list) =
     match input with
     | { Token = token } ::  etc ->
         match token with
@@ -51,7 +51,7 @@ let (|MatchBinaryOp|_|) (input: TokenAndLocation list) =
     | _ ->
         None
         
-let (|MatchGrouping|_|) (input: TokenAndLocation list) =
+let private (|MatchGrouping|_|) (input: TokenAndLocation list) =
     match input with
     | { Token = LeftParen; Location = loc } :: etc ->
         // scan to matching right paren
@@ -81,12 +81,12 @@ let (|MatchGrouping|_|) (input: TokenAndLocation list) =
         None
 
 [<RequireQualifiedAccess>]
-type StackOp =
+type private StackOp =
     | Unary of op: EnumUnaryOp
     | Binary of op: EnumBinaryOp
     | Sentinel
     
-let precedence = function
+let private precedence = function
     | StackOp.Unary op ->
         match op with
         | BitwiseNot -> 10
@@ -100,7 +100,7 @@ let precedence = function
         // lowest by definition, forces evaluation of all ops
         0
 
-let pushStackOp (operands: EnumExpr list) (opStack: StackOp list) (toPush: StackOp) =
+let private pushStackOp (operands: EnumExpr list) (opStack: StackOp list) (toPush: StackOp) =
     // while precedence opStack.top > precedence op do ...
     let rec removeWhileHigher (operands: EnumExpr list) (opStack: StackOp list) =
         match opStack with
@@ -136,7 +136,7 @@ let pushStackOp (operands: EnumExpr list) (opStack: StackOp list) (toPush: Stack
     // finally, push
     nextOperands, toPush :: nextOpStack
 
-let rec parseEnumValue (operands: EnumExpr list) (opStack: StackOp list) (input: TokenAndLocation list) =
+let rec private parseEnumValue (operands: EnumExpr list) (opStack: StackOp list) (input: TokenAndLocation list) =
     match input with
     | MatchLiteral (literal, etc) ->
         let nextOperands =
@@ -166,6 +166,9 @@ let rec parseEnumValue (operands: EnumExpr list) (opStack: StackOp list) (input:
         | [ result ] -> result
         | _ :: _ -> failwith "parse2: too many operands for final result!"
         | [] -> failwith "parse2: no operands available for final result!"
+        
+let parseEnumExpression (input: TokenAndLocation list) =
+    parseEnumValue [] [] input
                     
 let rec exprString (expr: EnumExpr) =
     match expr with

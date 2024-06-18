@@ -1,6 +1,7 @@
 ﻿module Parser
 open System
 open System.IO
+open EnumParser
 open Tokenizer
 open Extensions
 
@@ -105,9 +106,7 @@ let (|TakeWhile|_|) (pred: Token -> bool) (input: TokenAndLocation list) = // re
     match front with
     | h :: _ ->
         // has at least 1 item
-        let tokens =
-            front |> List.map (_.Token)
-        Some (tokens, h.Location, etc)
+        Some (front, h.Location, etc)
     | _ ->
         None
         
@@ -382,13 +381,8 @@ type DelegateInfo = {
     Throws: NIType list
 }
 
-[<RequireQualifiedAccess>]
-type EnumValue =
-    | Decimal of value: int64 * leftShift: int
-    | Hex of value: int64 * leftShift: int
-    
 type EnumInfo = {
-    Values: (string * EnumValue option) list // name, specified value
+    Values: (string * EnumExpr option) list // name, specified value
     MaybeWidth: NIType option
     FlagsMode: bool
 }
@@ -560,26 +554,21 @@ let parseOneEnumValue (input: TokenAndLocation list) =
         // optional user-specified numeric value?
         let value, etc =
             match etc with
-            | Lookahead 2 ([EqualsToken; Digits valueDigits], _, etc) ->
-                let value = int64 valueDigits
+            | Lookahead 1 ([EqualsToken], loc, etc) ->
+                // grab everything up to comma or end-of-input
+                let pred token =
+                    // not sure why we can't define this inline with the pattern match below, won't parse??
+                    token <> Comma
                 match etc with
-                | Lookahead 2 ([LeftShiftToken; Digits shiftDigits], _, etc) ->
-                    // shifted value
-                    let shift = int32 shiftDigits
-                    (name, EnumValue.Decimal (value, shift) |> Some), etc
+                | TakeWhile pred (exprTokens, loc, etc) when not exprTokens.IsEmpty ->
+                    try
+                        let enumExpr =
+                            parseEnumExpression exprTokens
+                        (name, Some enumExpr), etc
+                    with
+                        | e -> failwithf "error parsing enum expression @ %A [%s]" loc e.Message
                 | _ ->
-                    // unshifted direct value
-                    (name, EnumValue.Decimal (value, 0) |> Some), etc
-            | Lookahead 2 ([EqualsToken; HexDigits valueDigits], _, etc) ->
-                let value = Convert.ToInt64(valueDigits, 16)
-                match etc with
-                | Lookahead 2 ([LeftShiftToken; Digits shiftDigits], _, etc) ->
-                    // shifted value
-                    let shift = int32 shiftDigits
-                    (name, EnumValue.Hex (value, shift) |> Some), etc
-                | _ ->
-                    // unshifted direct value
-                    (name, EnumValue.Hex (value, 0) |> Some), etc
+                    failwithf "expected enum expression @ %A" loc
             | _ ->
                 (name, None), etc
         // comma -> more expected?

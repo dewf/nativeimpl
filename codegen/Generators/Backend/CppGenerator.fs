@@ -1849,16 +1849,19 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
     | TypeDef actual ->
         write 0 "typedef %s %s;" (typeToCppString context actual) name
     | EnumDef info ->
-        let maybeWidth =
+        let widthStr =
             match info.MaybeWidth with
             | Some widthType ->
                 sprintf " : %s" (typeToCppString context widthType)
             | None ->
-                ""
+                if info.FlagsMode then
+                    " : uint32_t"
+                else
+                    ""
         if info.FlagsMode then
-            write 0 "enum %s%s {" name maybeWidth
+            write 0 "enum %s%s {" name widthStr
         else
-            write 0 "enum class %s%s {" name maybeWidth
+            write 0 "enum class %s%s {" name widthStr
         for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
             match maybeSpecifiedValue with
             | Some specValue ->

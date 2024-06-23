@@ -35,6 +35,7 @@ let OUTPUT_PATH = @"C:\DataPart\Development\Helm\output"
 let INPUTS = [
     "Action"
     "AbstractButton"
+    "AbstractListModel"
     "AbstractScrollArea"
     "AbstractSlider"
     "Application"
@@ -58,6 +59,7 @@ let INPUTS = [
     "Menu"
     "MenuBar"
     "MessageBox"
+    "ModelIndex"
     "Object"
     "Painter"
     "PaintResources"
@@ -68,8 +70,11 @@ let INPUTS = [
     "ScrollArea"
     "Signal"
     "Slider"
+    "StatusBar"
     "TabWidget"
     "Timer"
+    "ToolBar"
+    "Variant"
     "Widget"
 ]
 

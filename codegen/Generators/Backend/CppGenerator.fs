@@ -2180,20 +2180,47 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
         paths.GeneratedDir.Split("/")
         |> Array.toList
         
+    let replaceIfDifferent (tempFilename: string) (targetFilename: string) =
+        if File.Exists targetFilename then
+            let tempText =
+                File.ReadAllText tempFilename
+            let targetText =
+                File.ReadAllText targetFilename
+            if tempText <> targetText then
+                File.Move(tempFilename, targetFilename, true)
+        else
+            // doesn't even exist yet
+            File.Move(tempFilename, targetFilename)
+        
     printfn "  - %s.h/.cpp" wrappersFilenameBase
-    use wrappersOutputH =
-        let writer = new StreamWriter(wrappersFilenameBase + ".h")
-        new SimpleFormatWriter(writer, 0)
-    use wrappersOutputCpp =
-        let writer = new StreamWriter(wrappersFilenameBase + ".cpp")
-        new SimpleFormatWriter(writer, 0)
-    generateWrappers context wrappersOutputH wrappersOutputCpp generatedDirParts
+    let wrappersTargetH, wrappersTempH =
+        wrappersFilenameBase + ".h", Path.GetTempFileName()
+    let wrappersTargetCpp, wrappersTempCpp =
+        wrappersFilenameBase + ".cpp", Path.GetTempFileName()
+    let writeWrappers() =
+        // nested scope to force file closure after generateWrappers
+        use wrappersOutputH =
+            let writer = new StreamWriter(wrappersTempH)
+            new SimpleFormatWriter(writer, 0)
+        use wrappersOutputCpp =
+            let writer = new StreamWriter(wrappersTempCpp)
+            new SimpleFormatWriter(writer, 0)
+        generateWrappers context wrappersOutputH wrappersOutputCpp generatedDirParts
+    writeWrappers()
+    replaceIfDifferent wrappersTempH wrappersTargetH
+    replaceIfDifferent wrappersTempCpp wrappersTargetCpp
 
     printfn "  - %s" implementationHeaderFilename
-    use implHeaderOutput =
-        let writer = new StreamWriter(implementationHeaderFilename)
-        new SimpleFormatWriter(writer, 0)
-    generateImplementationH context implHeaderOutput generatedDirParts
+    let implHeaderTarget, implHeaderTemp =
+        implementationHeaderFilename, Path.GetTempFileName()
+    let writeImplHeader() =
+        // nested scope to force file closure
+        use implHeaderOutput =
+            let writer = new StreamWriter(implHeaderTemp)
+            new SimpleFormatWriter(writer, 0)
+        generateImplementationH context implHeaderOutput generatedDirParts
+    writeImplHeader()
+    replaceIfDifferent implHeaderTemp implHeaderTarget
     
     printfn "  - %s" implementationFilename
     use implementationOutput =

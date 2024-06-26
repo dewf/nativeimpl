@@ -10,8 +10,10 @@ open Extensions
 
 type ResolvedNameMode =
     | Normal
+    | ImplementationHeader // always use fully qualified imports, to prevent conflicts in places like Library.cpp
     | Wrappers
     | WrappersPushPop
+    
 type CppRenderContext = {
     RenderContext: RenderContext
     MaybePathClamp: string list option
@@ -63,7 +65,7 @@ let wrappersGroupSegmentRenameFunc (name: string) (prefix: GroupKind list) =
 let resolvedNameToString (context: CppRenderContext) =
     let pathClamp =
         match context.NameMode with
-        | Normal ->
+        | Normal | ImplementationHeader ->
             None
         | Wrappers | WrappersPushPop ->
             // only in these modes do we pass it through
@@ -74,7 +76,9 @@ let resolvedNameToString (context: CppRenderContext) =
             wrappersGroupSegmentRenameFunc
         | _ ->
             (fun name _ -> name)
-    resolvedNameToStringAbstract "::" renameFunc pathClamp context.RenderContext
+    let requireFullyQualifiedImports =
+        context.NameMode = ImplementationHeader
+    resolvedNameToStringAbstract "::" renameFunc pathClamp requireFullyQualifiedImports context.RenderContext
     
 let getRelativePath (currentPath: string list) (targetPath: string list) =
     // remove common segments
@@ -1976,6 +1980,12 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
     | ModuleName nameParts ->
         write 0 "namespace %s" (joinNameParts "::" nameParts)
     write 0 "{"
+    
+    // set a mode that forces all imports to be fully qualified
+    // long story short we were having collision issues in certain files (eg Library.cpp)
+    // but it might have been a more general problem simply not encountered until now
+    let context =
+        { context with NameMode = ImplementationHeader }
 
     // // recursively emit (some) fwd declarations at top of module, to minimize ordering/dependency issues (currently for sumtypes, maybe for interfaces in the future)
     // // ... didn't seem possible to also do opaques here, couldn't prefix their definitions with namespaces?

@@ -9,7 +9,7 @@ open Generators.Common
 open AppCommon
 
 let resolvedNameToString =
-    resolvedNameToStringAbstract "." (fun name _ -> name) None
+    resolvedNameToStringAbstract "." (fun name _ -> name) None false
     
 let typeToCsString (context: RenderContext) (outerType: NIType) =
     let rec recInner = function

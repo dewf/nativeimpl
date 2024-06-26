@@ -730,8 +730,8 @@ type ResolveNameStringMode =
     | IdentifierMode
     | GenericIdentifierMode
 let resolvedNameToStringAbstract
-            (languageNsDelim: string) (partRenameFunc: string -> GroupKind list -> string) (maybePathClamp: string list option)
-            (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+            (languageNsDelim: string) (partRenameFunc: string -> GroupKind list -> string) (maybePathClamp: string list option) (requireFullyQualifiedImports: bool)
+            (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode)  =
     
     let separator, partRenameFunc = // rebind partRenameFunc
         match mode with
@@ -796,7 +796,7 @@ let resolvedNameToStringAbstract
             | SymbolName parts ->
                 // apply the segment rename func
                 renameParts parts
-        if symbolIsUnambiguous context.ModuleContext symbolName then
+        if not requireFullyQualifiedImports && symbolIsUnambiguous context.ModuleContext symbolName then
             joinNameParts separator (symbolParts |> List.map upperFirst)
         else
             match moduleName with

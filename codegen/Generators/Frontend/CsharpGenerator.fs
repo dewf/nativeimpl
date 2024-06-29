@@ -886,9 +886,7 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             | Some widthType ->
                 widthType, sprintf " : %s" (typeToCsString context widthType)
             | None ->
-                let signed =
-                    not info.FlagsMode
-                Primitive(Int(signed,Width32)), ""
+                Primitive(Int(true,Width32)), ""
         if info.FlagsMode then
             write 2 "[Flags]"
         write 2 "public enum %s%s" name widthStr

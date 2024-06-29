@@ -189,14 +189,8 @@ let typeToCppString (context: CppRenderContext) (outerType: NIType) =
                 let definition =
                     requiredSymbolLookup context.ModuleContext resolvedName
                 match definition with
-                | EnumDef enumInfo ->
-                    if enumInfo.FlagsMode then
-                        let widthType =
-                            enumInfo.MaybeWidth
-                            |> Option.defaultValue (Primitive(Int(false, Width32)))
-                        recInner widthType
-                    else
-                        name
+                | EnumDef _ ->
+                    name
                 | _ -> failwith "typeToCppString - problem fetching enum definition"
             | SumType ->
                 sprintf "std::shared_ptr<%s::Base>" name
@@ -835,14 +829,14 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 | EnumDef info -> info
                 | _ -> failwith "C++ ArrayOrSetRenderer: failed to look up enum definition"
             if info.FlagsMode then
-                // TODO: figure out the right width type to use - for now just relying on uint32_t
+                // TODO: figure out the right width type to use - for now just relying on int32_t (used to use uint32_t, but Qt's stuff uses int, and thinking about it, we should default to signed for languages like Java)
                 // PUSH ===================================
                 write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
-                pushValue context writer 1 (ArrayType (Primitive(Int(false,Width32)))) "values" NotApplicable
+                pushValue context writer 1 (ArrayType (Primitive(Int(true,Width32)))) "values" NotApplicable
                 write 0 "}"
                 // POP =====================================
                 write 0 "inline %s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
-                popValue context writer 1  (ArrayType (Primitive(Int(false,Width32)))) PopValueContext.Return
+                popValue context writer 1  (ArrayType (Primitive(Int(true,Width32)))) PopValueContext.Return
                 write 0 "}"
             else
                 let widthType =
@@ -1445,19 +1439,16 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         let widthType =
             match info.MaybeWidth with
             | Some widthType -> widthType
-            | None ->
-                let signed =
-                    not info.FlagsMode
-                Primitive(Int(signed,Width32))
+            | None -> Primitive(Int(true,Width32))
         if info.FlagsMode then
             blankH()
-            writeH 0 "void %s__push(%s value);" name (typeToCppString context widthType)
-            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context widthType)
+            writeH 0 "void %s__push(%s value);" name (typeToCppString context niType)
+            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context niType)
             pushValue context writerCpp 1 widthType "value" NotApplicable
             writeCpp 0 "}"
-            writeH 0 "%s %s__pop();" (typeToCppString context widthType) name
+            writeH 0 "%s %s__pop();" (typeToCppString context niType) name
             blankCpp()
-            writeCpp 0 "%s %s__pop() {" (typeToCppString context widthType) name
+            writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
             popValue context writerCpp 1 widthType Return
             writeCpp 0 "}"
         else
@@ -1853,17 +1844,20 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
     | TypeDef actual ->
         write 0 "typedef %s %s;" (typeToCppString context actual) name
     | EnumDef info ->
-        let widthStr =
+        let widthType, widthStr =
             match info.MaybeWidth with
             | Some widthType ->
-                sprintf " : %s" (typeToCppString context widthType)
+                widthType, sprintf " : %s" (typeToCppString context widthType)
             | None ->
+                let widthType =
+                    Primitive(Int(true, Width32))
                 if info.FlagsMode then
-                    " : uint32_t"
+                    widthType, " : int32_t"
                 else
-                    ""
+                    widthType, ""
         if info.FlagsMode then
-            write 0 "enum %s%s {" name widthStr
+            write 0 "typedef %s %s;" (typeToCppString context widthType) name
+            write 0 "enum %sFlags%s {" name widthStr
         else
             write 0 "enum class %s%s {" name widthStr
         for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do

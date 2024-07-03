@@ -67,6 +67,7 @@ let INPUTS = [
     "Object"
     "Painter"
     "PaintResources"
+    "PersistentModelIndex"
     "Pixmap"
     "PlainTextEdit"
     "ProgressBar"

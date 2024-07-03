@@ -32,6 +32,7 @@ type Token =
     | ThrowsToken
     | StaticToken
     | ExtendsToken
+    | NamedBitsToken
     // generics/collections:
     | ArrayToken
     | MapToken
@@ -247,6 +248,7 @@ let nextToken (loc: Location) (input: char[]) =
             | "throws" -> ThrowsToken
             | "static" -> StaticToken
             | "extends" -> ExtendsToken
+            | "namedbits" -> NamedBitsToken
             // generic types (need specialization)
             | "Array" -> ArrayToken
             | "Map" -> MapToken

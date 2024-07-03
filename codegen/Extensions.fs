@@ -9,6 +9,8 @@ module String =
             None
             
 module List =
+    let zipWithIndex (xs: 'a list) =
+        xs |> List.mapi (fun i x -> (i, x))
 //    let safeTake (n: int) (xs: 'a list) =
 //        if xs.Length >= n then
 //            List.take n xs

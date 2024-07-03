@@ -915,6 +915,8 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         popValue context writer 3 widthType (NewVariable "ret")
         write 3 "return (%s)ret;" (upperFirst name)
         write 2 "}"
+    | NamedBitsDef info ->
+        write 2 "// NAMED BITS HERE!!!! (%s)" name
     | OptionsDef namedFields ->
         // definition
         write 2 "public struct %s" name

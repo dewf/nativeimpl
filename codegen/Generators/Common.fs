@@ -266,6 +266,8 @@ let allGenericTypes (context: ModuleContext) =
                     typeAndSubTypes actual
                 | EnumDef _ ->
                     []
+                | NamedBitsDef _ ->
+                    []
                 | SumTypeDef values ->
                     values
                     |> List.collect (fun value ->
@@ -375,6 +377,8 @@ let containsRefs (context: ModuleContext) (thing: NIType) =
         | TypeDef actual ->
             processType actual
         | EnumDef _ ->
+            false
+        | NamedBitsDef _ ->
             false
         | SumTypeDef values ->
             values
@@ -816,4 +820,43 @@ let countGroupConstants (top: GroupContext) =
         thisCount + subCount
     groupCount top
   
-    
+let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameResolver: ResolvedName -> string) =
+    let allGroups =
+        let rec inheritGroups (title: string) (info: NamedBitsInfo) =
+            let parentGroups =
+                match info.MaybeParent with
+                | Some (Resolved (resolvedName, NamedBitsType)) ->
+                    match requiredSymbolLookup moduleContext resolvedName with
+                    | NamedBitsDef nextInfo ->
+                        let title =
+                            sprintf "from %s:" (nameResolver resolvedName)
+                        inheritGroups title nextInfo
+                    | _ ->
+                        failwith "namedbitsdef: nope"
+                | _ ->
+                    []
+            {| Title = title; BitNames = info.BitNames |} :: parentGroups
+        inheritGroups "ours:" info
+        |> List.rev
+    let indexedGroups, totalCount =
+        let init =
+            {| TotalCount = 0; RevGroups = [] |}
+        (init, allGroups)
+        ||> List.fold (fun acc group ->
+            let startIndex =
+                acc.TotalCount
+            let indexedNames =
+                group.BitNames
+                |> List.mapi (fun i name -> (startIndex + i, name))
+            let nextGroups =
+                {| Title = group.Title; IndexedNames = indexedNames |} :: acc.RevGroups
+            {| TotalCount = acc.TotalCount + group.BitNames.Length; RevGroups = nextGroups |})
+        |> (fun acc -> acc.RevGroups |> List.rev, acc.TotalCount)
+    let widthType =
+        let width =
+            if totalCount <= 31 then
+                Width32
+            else
+                Width64
+        Primitive(Int(true, width))
+    indexedGroups, widthType

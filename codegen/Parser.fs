@@ -50,6 +50,7 @@ type ResolvedType =
     | DelegateType
     | TypedefType
     | EnumType
+    | NamedBitsType
     | SumType
     | OptionsType // distinct from generic 'option' type ... probably should come up with a less confusing name
     
@@ -57,6 +58,7 @@ type TypeConstraint =
     | DefaultConstraint    // everything but exceptions allowed
     | OpaqueConstraint
     | ExceptionConstraint
+    | NamedBitsConstraint
     
 type NIType =
     | UnitType
@@ -387,6 +389,11 @@ type EnumInfo = {
     FlagsMode: bool
 }
 
+type NamedBitsInfo = {
+    MaybeParent: NIType option          // NamedBitsConstraint
+    BitNames: string list
+}
+
 let isValidEnumWidth (t: NIType) =
     match t with
     | Primitive (Int _) -> true
@@ -414,6 +421,7 @@ and UserType =
     | DelegateDef of info: DelegateInfo
     | TypeDef of actual: NIType
     | EnumDef of info: EnumInfo
+    | NamedBitsDef of info: NamedBitsInfo
     | SumTypeDef of values: SumTypeValue list
     | OptionsDef of fields: NamedField list
 and ModuleDefinition =
@@ -591,6 +599,32 @@ let parseEnumValues (loc: Location) (input: TokenAndLocation list) =
         contentUntilMatching loc LeftBrace input
     let values =
         List.unfold parseOneEnumValue content
+    values, etc
+    
+let parseNamedBitsValues (loc: Location) (input: TokenAndLocation list) =
+    let content, etc =
+        contentUntilMatching loc LeftBrace input
+    let parseOneValue input =
+        match input with
+        | Lookahead 1 ([Identifier name], _, etc) ->
+            // will there be more?
+            match etc with
+            | Lookahead 1 ([Comma], _, etc) ->
+                Some (name, etc)
+            | [] ->
+                // no more tokens
+                Some (name, [])
+            | { Location = loc } :: _ ->
+                // anything else
+                failwithf "parsing namedbits value: missing comma before content at %s" (loc.ToString())
+        | { Location = loc } :: _ ->
+            // anything else
+            failwithf "expecting namedbits value name at %s" (loc.ToString())
+        | [] ->
+            None
+    let values =
+        content
+        |> List.unfold parseOneValue
     values, etc
 
 let parseOneSumTypeValue (input: TokenAndLocation list) =
@@ -857,6 +891,41 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 parseEnumValues loc etc
             ([UserType (name, EnumDef {Values = values; MaybeWidth = maybeWidthType; FlagsMode = (which = FlagsToken)})], etc)
             |> Some
+        | Lookahead 2 ([NamedBitsToken; Identifier name], loc, etc) ->
+            // inherits anything?
+            let maybeParent, loc, etc =
+                match etc with
+                | Lookahead 1 ([ExtendsToken], loc, etc) ->
+                    match etc with
+                    | NameStuff.NameParts (parts, loc, etc) ->
+                        let type_ =
+                            Unresolved (UnresolvedIdentifier parts, loc, NamedBitsConstraint)
+                        Some type_, loc, etc
+                    | _ ->
+                        failwithf "expected parent namedbits name @ %A" loc
+                | _ ->
+                    None, loc, etc
+            // continue as normal
+            match etc with
+            | Lookahead 1 ([Semicolon], loc, etc) ->
+                // no content, must inherit (for now)
+                match maybeParent with
+                | Some parent ->
+                    let info =
+                        { MaybeParent = Some parent; BitNames = [] }
+                    ([UserType (name, NamedBitsDef info)], etc)
+                    |> Some
+                | None ->
+                    failwithf "namedbits: expected 'extends [parentname]' or { name1, name2, ... }"
+            | Lookahead 1 ([LeftBrace], loc, etc) ->
+                let bitNames, etc =
+                    parseNamedBitsValues loc etc
+                let info =
+                    { MaybeParent = maybeParent; BitNames = bitNames }
+                ([UserType (name, NamedBitsDef info)], etc)
+                |> Some
+            | _ ->
+                failwithf "namedbits: expected left brace { at %s" (loc.ToString())
         | Lookahead 3 ([SumTypeToken; Identifier name; LeftBrace], loc, etc) ->
             let values, etc2 =
                 parseSumTypeValues loc etc
@@ -1141,6 +1210,12 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                     () // OK
                 | _ ->
                     failwithf "type constraint failed @ %A - must be 'opaque' type" loc
+            | NamedBitsConstraint ->
+                match resolvedDef with
+                | NamedBitsDef _ ->
+                    () // OK
+                | _ ->
+                    failwithf "type constraint failed @ %A - must be 'namedbits' type" loc
             | ExceptionConstraint ->
                 match resolvedDef with
                 | ExceptionDef _ ->
@@ -1155,6 +1230,7 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                 | DelegateDef _ -> DelegateType
                 | TypeDef _ -> TypedefType
                 | EnumDef _ -> EnumType
+                | NamedBitsDef _ -> NamedBitsType
                 | SumTypeDef _ -> SumType
                 | OptionsDef _ -> OptionsType
                 | ExceptionDef _ -> ExceptionType
@@ -1297,6 +1373,13 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                 TypeDef (resolveType context namespacePath niType)
             | EnumDef values ->
                 EnumDef values
+            | NamedBitsDef info ->
+                let nextMaybeParent =
+                    info.MaybeParent
+                    |> Option.map (resolveType context namespacePath)
+                let nextInfo =
+                    { info with MaybeParent = nextMaybeParent }
+                NamedBitsDef nextInfo
             | SumTypeDef enumValues ->
                 let nextValues =
                     resolveSumTypeTypes context namespacePath enumValues

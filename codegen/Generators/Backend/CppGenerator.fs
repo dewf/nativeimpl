@@ -1293,6 +1293,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             | DelegateDef _ -> DelegateType
             | TypeDef _ -> TypedefType
             | EnumDef _ -> EnumType
+            | NamedBitsDef _ -> NamedBitsType
             | SumTypeDef _ -> SumType
             | OptionsDef _ -> OptionsType
         Resolved (ThisModule symbolName, resolvedType)
@@ -1465,6 +1466,21 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             popValue context writerCpp 1 widthType (Variable "tag")
             writeCpp 1 "return (%s)tag;" (typeToCppString context niType)
             writeCpp 0 "}"
+    | NamedBitsDef info ->
+        let _, widthType =
+            let resolver resolvedName =
+                resolvedNameToString context resolvedName TypeMode
+            namedBitsIndexer info context.ModuleContext resolver
+        blankH()
+        writeH 0 "void %s__push(%s value);" name (typeToCppString context niType)
+        writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context niType)
+        pushValue context writerCpp 1 widthType "value" NotApplicable
+        writeCpp 0 "}"
+        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
+        blankCpp()
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
+        popValue context writerCpp 1 widthType Return
+        writeCpp 0 "}"
     | SumTypeDef values ->
         renderWrapperSumType context writerH writerCpp name values niType
 
@@ -1868,6 +1884,19 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                 write 1 "%s = %s%s" value enumValueStr maybeComma
             | None ->
                 write 1 "%s%s" value maybeComma
+        write 0 "};"
+    | NamedBitsDef info ->
+        let indexedGroups, widthType =
+            let resolver resolvedName =
+                resolvedNameToString context resolvedName TypeMode
+            namedBitsIndexer info context.ModuleContext resolver
+        write 0 "typedef %s %s;" (typeToCppString context widthType) name
+        write 0 "enum %sFlags: %s {" name (typeToCppString context widthType)
+        for group, groupCommaStr in indexedGroups |> withTrailingCommas do
+            blank()
+            write 1 "// %s" group.Title
+            for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
+                write 1 "%s = 1 << %d%s" bitName index (if commaStr = "" then groupCommaStr else ",")
         write 0 "};"
     | SumTypeDef enumValues ->
         renderHeaderSumType context writer name enumValues

@@ -81,6 +81,7 @@ let INPUTS = [
     "SortFilterProxyModel"
     "StatusBar"
     "TabWidget"
+    "TextOption"
     "Timer"
     "ToolBar"
     "TreeView"

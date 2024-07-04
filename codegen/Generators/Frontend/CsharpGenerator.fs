@@ -916,7 +916,31 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         write 3 "return (%s)ret;" (upperFirst name)
         write 2 "}"
     | NamedBitsDef info ->
-        write 2 "// NAMED BITS HERE!!!! (%s)" name
+        let indexedGroups, widthType =
+            let resolver resolvedName =
+                resolvedNameToString context resolvedName TypeMode
+            namedBitsIndexer info context.ModuleContext resolver (upperFirst name)
+        write 2 "[Flags]"
+        write 2 "public enum %s" name
+        write 2 "{"
+        for group, groupCommaStr in indexedGroups |> withTrailingCommas do
+            write 3 "// %s" group.Title
+            for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
+                write 3 "%s = 1 << %d%s" bitName index (if commaStr = "" then groupCommaStr else ",")
+        write 2 "}"
+        blank()
+        write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+        write 2 "public static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
+        write 2 "{"
+        pushValue context writer 3 widthType "(int)value" NotApplicable
+        write 2 "}"
+        blank()
+        write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+        write 2 "public static %s %s__Pop()" (upperFirst name) (upperFirst name)
+        write 2 "{"
+        popValue context writer 3 widthType (NewVariable "ret")
+        write 3 "return (%s)ret;" (upperFirst name)
+        write 2 "}"
     | OptionsDef namedFields ->
         // definition
         write 2 "public struct %s" name
@@ -1385,11 +1409,11 @@ let assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
                         write 3 "%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetMethodHandle targetIface method.WrapperName
                 // method wrappers
                 for method in info.Methods do
-                    write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject obj)" targetIface method.WrapperName
+                    write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject __obj)" targetIface method.WrapperName
                     write 3 "{"
                     let clientWrapperClass =
                         joinNameParts "." (group.Path @ [ $"__{upperFirst ifaceName}Wrapper" ])
-                    write 4 "var inst = ((%s)obj).RawInterface;" clientWrapperClass
+                    write 4 "var inst = ((%s)__obj).RawInterface;" clientWrapperClass
                     // pop args
                     for argName, argType in method.Args do
                         popValue context writer 4 argType (NewVariable argName)

@@ -820,7 +820,7 @@ let countGroupConstants (top: GroupContext) =
         thisCount + subCount
     groupCount top
   
-let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameResolver: ResolvedName -> string) =
+let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameResolver: ResolvedName -> string) (rootName: string) =
     let allGroups =
         let rec inheritGroups (title: string) (info: NamedBitsInfo) =
             let parentGroups =
@@ -829,14 +829,14 @@ let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameR
                     match requiredSymbolLookup moduleContext resolvedName with
                     | NamedBitsDef nextInfo ->
                         let title =
-                            sprintf "from %s:" (nameResolver resolvedName)
+                            sprintf "%s:" (nameResolver resolvedName)
                         inheritGroups title nextInfo
                     | _ ->
                         failwith "namedbitsdef: nope"
                 | _ ->
                     []
             {| Title = title; BitNames = info.BitNames |} :: parentGroups
-        inheritGroups "ours:" info
+        inheritGroups $"{rootName}:" info
         |> List.rev
     let indexedGroups, totalCount =
         let init =

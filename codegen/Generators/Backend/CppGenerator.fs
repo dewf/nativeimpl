@@ -1470,7 +1470,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         let _, widthType =
             let resolver resolvedName =
                 resolvedNameToString context resolvedName TypeMode
-            namedBitsIndexer info context.ModuleContext resolver
+            namedBitsIndexer info context.ModuleContext resolver name
         blankH()
         writeH 0 "void %s__push(%s value);" name (typeToCppString context niType)
         writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context niType)
@@ -1889,11 +1889,10 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
         let indexedGroups, widthType =
             let resolver resolvedName =
                 resolvedNameToString context resolvedName TypeMode
-            namedBitsIndexer info context.ModuleContext resolver
+            namedBitsIndexer info context.ModuleContext resolver name
         write 0 "typedef %s %s;" (typeToCppString context widthType) name
         write 0 "enum %sFlags: %s {" name (typeToCppString context widthType)
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
-            blank()
             write 1 "// %s" group.Title
             for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
                 write 1 "%s = 1 << %d%s" bitName index (if commaStr = "" then groupCommaStr else ",")

@@ -27,11 +27,11 @@ let BACK_LANG = "cpp"
 // let OUTPUT_PATH = @"C:\DataPart\Development\guibase\output"
 // let INPUTS = [ "Windowing"; "Keys"; "Drawing"; "Text"; ]
 
-// Helm
-let LIBRARY = "QtTesting"
+// MinimalQtForFSharp
+let LIBRARY = "MinimalQtForFSharp" // note, a .DLL of this will be created, so if you are wrapping a native library, you will want a distinct name to avoid collisions (eg when wrapping a C++ library BigLibrary, call it BigLibrarySharp or -Wrapper or something)
 let NAMESPACE = "Org.Whatever"
-let INPUT_PATH = @"C:\DataPart\Development\Helm"
-let OUTPUT_PATH = @"C:\DataPart\Development\Helm\output"
+let INPUT_PATH = @"C:\DataPart\Development\FSharpQt\MinimalQtForFSharp\interfaces"
+let OUTPUT_PATH = @"C:\DataPart\Development\FSharpQt\MinimalQtForFSharp"
 let INPUTS = [
     "Action"
     "AbstractButton"

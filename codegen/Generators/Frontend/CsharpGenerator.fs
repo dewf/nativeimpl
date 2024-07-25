@@ -1557,7 +1557,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "}" // end of namespace
     
 let projectDir (outParams: OutParams) =
-    sprintf "%s/client/csharp/%sClient" outParams.Path outParams.LibraryName
+    sprintf "%s/client/csharp/%s" outParams.Path outParams.LibraryName
     
 let generateModule (context: ModuleContext) (outParams: OutParams) =
     let baseNamespace, maybeModulePrefix, className =
@@ -1586,7 +1586,7 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "<Project Sdk=\"Microsoft.NET.Sdk\">"
     blank ()
     write 1 "<PropertyGroup>"
-    write 2 "<TargetFramework>net7.0</TargetFramework>"
+    write 2 "<TargetFramework>net8.0</TargetFramework>"
     write 2 "<ImplicitUsings>enable</ImplicitUsings>"
     write 2 "<AllowUnsafeBlocks>true</AllowUnsafeBlocks>"
     let rootNamespace =
@@ -1604,7 +1604,7 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
 
 let generateProject (outParams: OutParams) =
     let filename =
-        sprintf "%s/%sClient.csproj" (projectDir outParams) outParams.LibraryName
+        sprintf "%s/%s.csproj" (projectDir outParams) outParams.LibraryName
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)

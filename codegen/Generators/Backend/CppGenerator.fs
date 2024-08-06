@@ -746,10 +746,10 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
     writeCpp 0 "public:"
     writeCpp 1 "%s_PushVisitor(bool isReturn) : isReturn(isReturn) {}" name
     for i, value in values |> List.indexed do
-        writeCpp 1 "void on%s(const %s::%s* %s) override {" value.Name qualifiedName value.Name (lowerFirst value.Name)
+        writeCpp 1 "void on%s(const %s::%s* %sValue) override {" value.Name qualifiedName value.Name (lowerFirst value.Name)
         for argName, argType in value.Args |> List.rev do
             let content =
-                sprintf "%s->%s" (lowerFirst value.Name) argName
+                sprintf "%sValue->%s" (lowerFirst value.Name) argName
             pushValue context writerCpp 2 argType content (Indirect "isReturn")
         writeCpp 2 "// kind:"
         writeCpp 2 "ni_pushInt32(%d);" i
@@ -1693,7 +1693,7 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
     write 1 "class Visitor {"
     write 1 "public:"
     for value in values do
-        write 2 "virtual void on%s(const %s* %s) = 0;" value.Name value.Name (lowerFirst value.Name)
+        write 2 "virtual void on%s(const %s* value) = 0;" value.Name value.Name // (lowerFirst value.Name)
     write 1 "};"
     
     blank()

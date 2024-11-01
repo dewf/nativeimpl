@@ -30,8 +30,8 @@ let BACK_LANG = "cpp"
 // MinimalQtForFSharp
 let LIBRARY = "MinimalQtForFSharp" // note, a .DLL of this will be created, so if you are wrapping a native library, you will want a distinct name to avoid collisions (eg when wrapping a C++ library BigLibrary, call it BigLibrarySharp or -Wrapper or something)
 let NAMESPACE = "Org.Whatever"
-let INPUT_PATH = @"C:\DataPart\Development\FSharpQt-metaproject\MinimalQtForFSharp\interfaces"
-let OUTPUT_PATH = @"C:\DataPart\Development\FSharpQt-metaproject\MinimalQtForFSharp"
+let INPUT_PATH = @"D:\Development\FSharpQt\MinimalQtForFSharp\interfaces"
+let OUTPUT_PATH = @"D:\Development\FSharpQt\MinimalQtForFSharp"
 let INPUTS = [
     "Action"
     "AbstractButton"
@@ -86,6 +86,7 @@ let INPUTS = [
     "StyledItemDelegate"
     "StyleOption"
     "StyleOptionViewItem"
+    "TabBar"
     "TabWidget"
     "TextOption"
     "Timer"

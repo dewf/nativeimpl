@@ -860,3 +860,74 @@ let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameR
                 Width64
         Primitive(Int(true, width))
     indexedGroups, widthType
+
+// let rec ensureAllNoDispose (context: ModuleContext) (name: ResolvedName) =
+//     // since we don't have a proper validation step after parsing, we'll unfortunately do this here, when rendering
+//     match requiredSymbolLookup context name with
+//     | OpaqueDef info ->
+//         if info.NoDispose then
+//             // good, proceed up the chain
+//             match info.MaybeParent with
+//             | Some (Resolved(resolvedName, OpaqueType)) ->
+//                 ensureAllNoDispose context resolvedName
+//             | None ->
+//                 // reached top, all good
+//                 ()
+//             | _ ->
+//                 failwith "ensureAllNodispose: parent was non-opaque type"
+//         else
+//             failwithf "ensureAllNoDispose: opaque [%A] required to be @nodispose" name
+//     | _ ->
+//         failwithf "ensureAllNoDispose: symbol [%A] not opaque to begin with" name
+        
+let rec ensureAllNoDispose (context: ModuleContext) (name: ResolvedName) =
+    // since we don't have a proper validation step after parsing, we'll unfortunately do this here, when rendering
+    match requiredSymbolLookup context name with
+    | OpaqueDef info ->
+        if info.NoDispose then
+            // good, proceed up the chain
+            match info.MaybeParent with
+            | Some (Resolved(resolvedName, OpaqueType)) ->
+                ensureAllNoDispose context resolvedName
+            | None ->
+                // reached top, all good
+                true
+            | _ ->
+                failwith "ensureAllNodispose: parent was non-opaque type"
+        else
+            false
+    | _ ->
+        failwithf "ensureAllNoDispose: symbol [%A] not opaque to begin with" name
+    
+let isFirstDisposableOpaque (context: ModuleContext) (info: OpaqueInfo) =
+    // if this opaque is disposable (non-@nodispose),
+    // is it the first one in the inheritance chain to be so?
+    if info.NoDispose then
+        false
+    else
+        // this opaque is disposable, what about the parent (if any)?
+        match info.MaybeParent with
+        | Some (Resolved(parentName, OpaqueType)) ->
+            // verify all parents in the inheritance chain are @nodispose
+            ensureAllNoDispose context parentName
+            // // get the info for parent
+            // match requiredSymbolLookup context parentName with
+            // | OpaqueDef parentInfo ->
+            //     if parentInfo.NoDispose then
+            //         // kludgy: while we're at it, verify all classes above this one are @nodispose
+            //         ensureAllNoDispose context parentName
+            //        
+            //         // our parent was @nodispose, but we are not
+            //         // therefore we're the first and will need to implement IDisposable (or whatever)
+            //         true
+            //     else
+            //         // parent was also/already disposable
+            //         // so we don't need to implement anything
+            //         false
+            // | _ ->
+            //     failwith "isFirstDisposableOpaque: parent was not an opaque type??"
+        | None ->
+            // no parent, so root, so yes we're the first
+            true
+        | _ ->
+            failwith "isFirstDisposableOpaque: shouldn't happen"

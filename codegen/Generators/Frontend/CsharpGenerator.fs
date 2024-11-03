@@ -731,25 +731,34 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
                 Some resolvedName
             | _ ->
                 None
-        // class definition
-        match maybeInheritsFrom with
-        | Some parentName ->
-            write 2 "public class %s : %s" (upperFirst name) (resolvedNameToString context parentName TypeMode)
-            write 2 "{"
-            // no native handle required
-        | None ->
-            if info.NoDispose then
-                write 2 "public class %s : IComparable" (upperFirst name)
-                write 2 "{"
-                write 3 "internal readonly IntPtr NativeHandle;"
-            else
-                write 2 "public class %s : IDisposable, IComparable" (upperFirst name)
-                write 2 "{"
-                write 3 "internal readonly IntPtr NativeHandle;"
-                write 3 "protected bool _disposed;"
-        // ctor
-        match maybeInheritsFrom with
-        | None ->
+                
+        // class setup is a bear with all this dispose/nodispose stuff
+        let firstDisposable = isFirstDisposableOpaque context.ModuleContext info
+        let isRoot = maybeInheritsFrom.IsNone
+        let inheritsOrImplementsString =
+            let parentOrComparable =
+                match maybeInheritsFrom with
+                | Some parentName ->
+                    (resolvedNameToString context parentName TypeMode)
+                | None ->
+                    "IComparable"
+                |> Some
+            let maybeDisposableString =
+                if firstDisposable then
+                    Some "IDisposable"
+                else
+                    None
+            [ parentOrComparable; maybeDisposableString ]
+            |> List.choose id
+            |> String.concat ", "
+            
+        write 2 "public class %s : %s" (upperFirst name) inheritsOrImplementsString
+        write 2 "{"
+        if isRoot then
+            write 3 "internal readonly IntPtr NativeHandle;"
+        if firstDisposable then
+            write 3 "protected bool _disposed;"
+        if isRoot then
             // normal ctor
             write 3 "internal %s(IntPtr nativeHandle)" (upperFirst name)
             write 3 "{"
@@ -764,20 +773,21 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             write 4 "}"
             write 4 "throw new Exception(\"CompareTo: wrong type\");"
             write 3 "}"
-        | Some _ ->
+        else
             // inherited
             write 3 "internal %s(IntPtr nativeHandle) : base(nativeHandle)" (upperFirst name)
             write 3 "{"
             write 3 "}"
 
-        // dispose
+        // dispose method
         if info.NoDispose then
             ()
         else
             let overrideOrVirtual =
-                match maybeInheritsFrom with
-                | Some _ -> "override"
-                | None -> "virtual"
+                if firstDisposable then
+                    "virtual"
+                else
+                    "override"
             // TODO: we get this C# linting error, look into it:
             // CA1816: Change Drawing.MutableAttributedString.Dispose() to call GC.SuppressFinalize(object). This will prevent derived types that introduce a finalizer from needing to re-implement 'IDisposable' to call it.
             // note that every opaque type has its own _dispose method on the server, so we intentionally don't call the parent type's .Dispose() here

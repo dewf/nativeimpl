@@ -45,6 +45,7 @@ let INPUTS = [
     "Application"
     "BoxLayout"
     "CalendarWidget"
+    "Color"
     "ComboBox"
     "Common"
     "Cursor"

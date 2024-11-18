@@ -1755,12 +1755,18 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
         write 2 "_%s = value;" field.Name
         write 2 "_usedFields |= Fields::%sField;" (upperFirst field.Name)
         write 1 "}"
-        write 1 "bool has%s(%s *value) {" (upperFirst field.Name) (typeToCppString context field.Type_)
+        write 1 "bool has%s(%s *value) const {" (upperFirst field.Name) (typeToCppString context field.Type_)
         write 2 "if (_usedFields & Fields::%sField) {" (upperFirst field.Name)
         write 3 "*value = _%s;" field.Name
         write 3 "return true;"
         write 2 "}"
         write 2 "return false;"
+        write 1 "}"
+        write 1 "[[nodiscard]] %s getOrDefault%s(%s defaultValue) const {" (typeToCppString context field.Type_) (upperFirst field.Name) (typeToCppString context field.Type_)
+        write 2 "if (_usedFields & Fields::%sField) {" (upperFirst field.Name)
+        write 3 "return _%s;" field.Name 
+        write 2 "}"
+        write 2 "return defaultValue;"
         write 1 "}"
     // done
     write 0 "};"

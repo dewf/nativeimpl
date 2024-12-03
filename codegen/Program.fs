@@ -27,11 +27,18 @@ let BACK_LANG = "cpp"
 // let OUTPUT_PATH = @"C:\DataPart\Development\guibase\output"
 // let INPUTS = [ "Windowing"; "Keys"; "Drawing"; "Text"; ]
 
-// MinimalQtForFSharp
-let LIBRARY = "MinimalQtForFSharp" // note, a .DLL of this will be created, so if you are wrapping a native library, you will want a distinct name to avoid collisions (eg when wrapping a C++ library BigLibrary, call it BigLibrarySharp or -Wrapper or something)
+// // MinimalQtForFSharp
+// let LIBRARY = "MinimalQtForFSharp" // note, a .DLL of this will be created, so if you are wrapping a native library, you will want a distinct name to avoid collisions (eg when wrapping a C++ library BigLibrary, call it BigLibrarySharp or -Wrapper or something)
+// let NAMESPACE = "Org.Whatever"
+// let INPUT_PATH = @"D:\Development\FSharpQt\MinimalQtForFSharp\interfaces"
+// let OUTPUT_PATH = @"D:\Development\FSharpQt\MinimalQtForFSharp"
+
+// MinimalQt
+let LIBRARY = "MinimalQt" // note, a .DLL of this will be created, so if you are wrapping a native library, you will want a distinct name to avoid collisions (eg when wrapping a C++ library BigLibrary, call it BigLibrarySharp or -Wrapper or something)
 let NAMESPACE = "Org.Whatever"
-let INPUT_PATH = @"D:\Development\FSharpQt\MinimalQtForFSharp\interfaces"
-let OUTPUT_PATH = @"D:\Development\FSharpQt\MinimalQtForFSharp"
+let INPUT_PATH = @"D:\Development\MinimalQt\interfaces"
+let OUTPUT_PATH = @"D:\Development\MinimalQt"
+
 let INPUTS = [
     "Action"
     "AbstractButton"

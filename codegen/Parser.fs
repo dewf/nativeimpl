@@ -1096,22 +1096,62 @@ let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: str
         // return name relative to module root
         consumed @ nameParts, thing)
     
-let symbolIsUnambiguous (context: ModuleContext) (SymbolName nameParts) =
-    let imported =
-        context.Module.Imports
-        |> List.map (fun moduleName ->
-            match context.Loaded.TryFind moduleName with
-            | Some value ->
-                value
-            | None ->
-                failwithf "symbolIsUnambiguous: couldn't find modulename %A in the 'Loaded' module map ??" moduleName)
-    let toSearch =
-        context.Module :: imported
-    let found =
-        toSearch
-        |> List.choose (fun m ->
-            findModuleSymbol m [] nameParts)
-    found.Length < 2
+type AmbiguityMode =
+    | DirectImportsOnly
+    | RecursiveImports
+    
+type AmbiguityMemoKey = {
+    ModuleName: ModuleName
+    SymbolName: string list // SymbolName but we're already deconstructing it as a function parameter below
+    Mode: AmbiguityMode
+}
+
+let mutable ambiguityMemoMap: Map<AmbiguityMemoKey, bool> = Map.empty
+
+let symbolIsUnambiguous (context: ModuleContext) (SymbolName nameParts) (mode: AmbiguityMode) =
+    // memoized for speed, this is going to be called many times
+    let innerFunc () =
+        let imported =
+            match mode with
+            | DirectImportsOnly ->
+                context.Module.Imports
+                |> List.map (fun moduleName ->
+                    match context.Loaded.TryFind moduleName with
+                    | Some value ->
+                        value
+                    | None ->
+                        failwithf "symbolIsUnambiguous (direct import mode): couldn't find modulename %A in the 'Loaded' module map ??" moduleName)
+            | RecursiveImports ->
+                let rec recImportFunc m =
+                    m.Imports
+                    |> List.collect (fun moduleName ->
+                        match context.Loaded.TryFind moduleName with
+                        | Some value ->
+                            value :: recImportFunc value
+                        | None ->
+                            failwithf "symbolIsUnambiguous (recursive import mode): couldn't find modulename %A in the 'Loaded' module map ??" moduleName)
+                recImportFunc context.Module
+                |> List.distinct // important!
+        let toSearch =
+            context.Module :: imported
+        let found =
+            toSearch
+            |> List.choose (fun m -> findModuleSymbol m [] nameParts)
+        found.Length < 2
+    // check for existing ...
+    let key = {
+        ModuleName = context.Module.Name
+        SymbolName = nameParts
+        Mode = mode
+    }
+    match ambiguityMemoMap.TryFind key with
+    | Some result ->
+        result
+    | None ->
+        let result =
+            innerFunc()
+        ambiguityMemoMap <- ambiguityMemoMap.Add(key, result)
+        result
 
 type ImportResult = {
     ImportName: ModuleName

@@ -734,8 +734,8 @@ type ResolveNameStringMode =
     | IdentifierMode
     | GenericIdentifierMode
 let resolvedNameToStringAbstract
-            (languageNsDelim: string) (partRenameFunc: string -> GroupKind list -> string) (maybePathClamp: string list option) (requireFullyQualifiedImports: bool)
-            (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode)  =
+            (languageNsDelim: string) (partRenameFunc: string -> GroupKind list -> string) (maybePathClamp: string list option) (ambiguityMode: AmbiguityMode)
+            (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode)=
     
     let separator, partRenameFunc = // rebind partRenameFunc
         match mode with
@@ -800,7 +800,10 @@ let resolvedNameToStringAbstract
             | SymbolName parts ->
                 // apply the segment rename func
                 renameParts parts
-        if not requireFullyQualifiedImports && symbolIsUnambiguous context.ModuleContext symbolName then
+        // below: previously had a 'requireFullyQualifiedImports' flag check that would bypass ('if' short circuit) ambiguity checking altogether
+        // we were using it for C++ because of the "recursive symbol visibility" (header includes) problem
+        // but ambiguity checking is now recursive-capable, so that flag / parameter to this method has been removed
+        if symbolIsUnambiguous context.ModuleContext symbolName ambiguityMode then
             joinNameParts separator (symbolParts |> List.map upperFirst)
         else
             match moduleName with

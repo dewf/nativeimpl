@@ -76,14 +76,7 @@ let resolvedNameToString (context: CppRenderContext) =
             wrappersGroupSegmentRenameFunc
         | _ ->
             (fun name _ -> name)
-    let requireFullyQualifiedImports =
-        // might have to change this, because C++ doesn't have modules, and our `symbolIsUnambiguous` check is not recursive by default, only checks direct imports
-        // but that doesn't work with C++ because of the #include behavior, which pulls in everything! and since we are doing "use <namespace>" by default ... (maybe need to stop that?)
-        // alternatively, create a recursive mode for symbolIsUnabiguous, and C++ will use that to determine ambiguity (if we do that, might be able to drop this 'requireFullyQualifiedImports' on the ImplementationHeader too?)
-        match context.NameMode with
-        | ImplementationHeader -> true //  | Wrappers | WrappersPushPop -> true
-        | _ -> false
-    resolvedNameToStringAbstract "::" renameFunc pathClamp requireFullyQualifiedImports context.RenderContext
+    resolvedNameToStringAbstract "::" renameFunc pathClamp RecursiveImports context.RenderContext
     
 let getRelativePath (currentPath: string list) (targetPath: string list) =
     // remove common segments

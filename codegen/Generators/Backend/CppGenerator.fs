@@ -153,8 +153,12 @@ let typeToName (context: CppRenderContext) (outerType: NIType) =
         | x -> sprintf "(typeToName: not done yet [%A]" x
     recInner false outerType
 
-let typeToCppString (context: CppRenderContext) (outerType: NIType) =
-    let rec recInner = function
+type TypeContext =
+    | Default
+    | FunctionArguments
+    | TypeParams
+let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) (outerType: NIType) =
+    let rec recInner (innerContext: TypeContext) = function
         | UnitType -> "void"
         | Primitive prim ->
             match prim with
@@ -172,7 +176,12 @@ let typeToCppString (context: CppRenderContext) (outerType: NIType) =
                 | false, Width64 -> "uint64_t"
             | Float32 -> "float"
             | Float64 -> "double"
-            | StringType -> "std::string"
+            | StringType ->
+                match innerContext with
+                | FunctionArguments ->
+                    "const std::string&"
+                | _ ->
+                    "std::string"
         | Resolved (resolvedName, resolvedType) ->
             let name =
                 resolvedNameToString context resolvedName TypeMode
@@ -180,7 +189,11 @@ let typeToCppString (context: CppRenderContext) (outerType: NIType) =
             | OpaqueType ->
                 sprintf "%sRef" name
             | InterfaceType ->
-                sprintf "std::shared_ptr<%s>" name
+                match innerContext with
+                | FunctionArguments ->
+                    sprintf "const std::shared_ptr<%s>&" name
+                | _ ->
+                    sprintf "std::shared_ptr<%s>" name
             | DelegateType ->
                 sprintf "std::function<%s>" name
             | EnumType ->
@@ -194,18 +207,18 @@ let typeToCppString (context: CppRenderContext) (outerType: NIType) =
                 sprintf "std::shared_ptr<%s::Base>" name
             | _ ->
                 name
-        | ArrayType niType -> sprintf "std::vector<%s>" (recInner niType)
-        | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (recInner keyType) (recInner valueType)
-        | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map recInner |> String.concat ",")
-        | SetType niType -> sprintf "std::set<%s>" (recInner niType)
-        | OptionType elem -> sprintf "std::optional<%s>" (recInner elem)
-        | ResultType (succ, err) -> sprintf "result::Result<%s, %s>" (recInner succ) (recInner err)
-        | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (recInner elemType)
+        | ArrayType niType -> sprintf "std::vector<%s>" (recInner TypeParams niType)
+        | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (recInner TypeParams keyType) (recInner TypeParams valueType)
+        | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map (recInner TypeParams) |> String.concat ",")
+        | SetType niType -> sprintf "std::set<%s>" (recInner TypeParams niType)
+        | OptionType elem -> sprintf "std::optional<%s>" (recInner TypeParams elem)
+        | ResultType (succ, err) -> sprintf "result::Result<%s, %s>" (recInner TypeParams succ) (recInner TypeParams err)
+        | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (recInner TypeParams elemType)
         | x -> sprintf "(typeToCppString: not done yet [%A])" x
-    recInner outerType
+    recInner outerTypeContext outerType
 
 let joinedFields (context: CppRenderContext) (fields: NamedField list) =
-    [for field in fields -> sprintf "%s %s" (typeToCppString context field.Type_) field.Name]
+    [for field in fields -> sprintf "%s %s" (typeToCppString context Default field.Type_) field.Name]
     |> String.concat ", "
 
 let joinedFieldNames (fields: NamedField list) =
@@ -213,9 +226,9 @@ let joinedFieldNames (fields: NamedField list) =
     |> String.concat ", "
 
 let joinedArgs (context: CppRenderContext) (args: (string * NIType) list) =
-    [for name, type_ in args -> sprintf "%s %s" (typeToCppString context type_) name]
+    [for name, type_ in args -> sprintf "%s %s" (typeToCppString context FunctionArguments type_) name]
     |> String.concat ", "
-
+    
 let joinedArgNames (args: (string * NIType) list) =
     args
     |> List.map fst
@@ -278,17 +291,17 @@ let defaultValueForType (context: CppRenderContext) (outerType: NIType) =
                     failwithf "c++ defaultValueForType: EnumType lookup failed"
             | _ ->
                 "(defaultValueForType: not yet supported)"
-        | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString context niType)
-        | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToCppString context keyType) (typeToCppString context valueType)
+        | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString context TypeParams niType)
+        | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToCppString context TypeParams keyType) (typeToCppString context TypeParams valueType)
         | TupleType tupleTypes ->
             let typesJoined =
-                tupleTypes |> List.map (typeToCppString context) |> String.concat ","
+                tupleTypes |> List.map (typeToCppString context TypeParams) |> String.concat ","
             let defaultsJoined =
                 tupleTypes |> List.map recInner |> String.concat ", "
             sprintf "std::tuple<%s>{ %s }" typesJoined defaultsJoined
-        | SetType niType -> sprintf "std::set<%s>()" (typeToCppString context niType)
-        | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>()" (typeToCppString context elemType)
-        | OptionType elem -> sprintf "std::optional<%s>()" (typeToCppString context elem)
+        | SetType niType -> sprintf "std::set<%s>()" (typeToCppString context TypeParams niType)
+        | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>()" (typeToCppString context TypeParams elemType)
+        | OptionType elem -> sprintf "std::optional<%s>()" (typeToCppString context TypeParams elem)
         | ResultType (succ, _) -> sprintf "result::Ok(%s)" (recInner succ)
         | _ ->
             "(defaultValueForType: not yet supported)"
@@ -315,10 +328,10 @@ let popValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (t
     let write = writer.Write
     let contextPrefix =
         match popContext with
-        | Variable varName -> sprintf "auto %s =" varName
+        | Variable varName -> sprintf "const auto %s =" varName
         | LeftAssign leftSide -> sprintf "%s = " leftSide
         | Return -> "return"
-        | SafeReturn -> "auto __ret ="
+        | SafeReturn -> "const auto __ret ="
         | ExceptionContext -> ""
     match type_ with
     | UnitType ->
@@ -508,8 +521,8 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, _ = writerH.Write, writerH.Blank
     
-    let typeString =
-        typeToCppString context niType
+    // let typeString =
+    //     typeToCppString context niType
         
     let rawDelegateType = // without the std::function<> shell
         match niType with
@@ -519,8 +532,8 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
             failwith "c++ renderWrapperDelegate: uhhh"
         
     // push
-    writeH 0 "void %s__push(%s f);" name typeString
-    writeCpp 0 "void %s__push(%s f) {" name typeString
+    writeH 0 "void %s__push(%s f);" name (typeToCppString context FunctionArguments niType)
+    writeCpp 0 "void %s__push(%s f) {" name (typeToCppString context FunctionArguments niType)
     writeCpp 1 "size_t uniqueKey = 0;"
     writeCpp 1 "if (f) {"
     writeCpp 2 "%s* ptr_fun = f.target<%s>();" rawDelegateType rawDelegateType
@@ -544,7 +557,7 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
             | Resolved (resolvedName, ExceptionType) ->
                 let _, variableName =
                     exceptionTypeAndVariableName context resolvedName
-                writeCpp 2 "catch (const %s& e) {" (typeToCppString context exc)
+                writeCpp 2 "catch (const %s& e) {" (typeToCppString context Default exc)
                 writeCpp 3 "ni_setException(%s);" variableName
                 pushValue context writerCpp 3 exc "e" (Direct true)
                 writeCpp 2 "}"
@@ -554,9 +567,9 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
     writeCpp 1 "pushServerFuncVal(wrapper, uniqueKey);"
     writeCpp 0 "}"
     // pop =============
-    writeH 0 "%s %s__pop();" typeString name
+    writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
     blankCpp()
-    writeCpp 0 "%s %s__pop() {" typeString name
+    writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
     writeCpp 1 "auto id = ni_popClientFunc();"
     writeCpp 1 "auto cf = std::shared_ptr<ClientFuncVal>(new ClientFuncVal(id));"
     writeCpp 1 "auto wrapper = [cf](%s) {" (joinedArgs context info.Args)
@@ -591,7 +604,7 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
         writeCpp 1 "explicit Client%s(int id) : ClientObject(id) {}" name
     // methods
     for namedFunc in info.Methods do
-        writeCpp 1 "%s %s(%s) override {" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args)
+        writeCpp 1 "%s %s(%s) override {" (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args)
         // push args (reverse order)
         for argName, argType in namedFunc.Args |> List.rev do
             pushValue context writerCpp 2 argType argName (Direct false)
@@ -613,9 +626,9 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     
     // PUSH ===================================
     blankH()
-    writeH 0 "void %s__push(%s inst, bool isReturn);" (typeToName context outerType) (typeToCppString context outerType)
+    writeH 0 "void %s__push(%s inst, bool isReturn);" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
     blankCpp()
-    writeCpp 0 "void %s__push(%s inst, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
+    writeCpp 0 "void %s__push(%s inst, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
     writeCpp 1 "if (inst != nullptr) {"
     writeCpp 2 "if (const auto pushable = std::dynamic_pointer_cast<Pushable>(inst); pushable != nullptr) {"
     writeCpp 3 "pushable->push(pushable, isReturn);"
@@ -629,9 +642,9 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     writeCpp 0 "}"
     
     // POP ====================================
-    writeH 0 "%s %s__pop();" (typeToCppString context outerType) (typeToName context outerType)
+    writeH 0 "%s %s__pop();" (typeToCppString context Default outerType) (typeToName context outerType)
     blankCpp()
-    writeCpp 0 "%s %s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+    writeCpp 0 "%s %s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
     writeCpp 1 "bool isClientID;"
     writeCpp 1 "if (auto id = ni_popInstance(&isClientID); id != 0) {"
     writeCpp 2 "if (isClientID) {"
@@ -694,7 +707,7 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
         nsPrefix + name
         
     // push ========
-    writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context niType)
+    writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
     // pushvisitor
     blankCpp()
     writeCpp 0 "class %s_PushVisitor : public %s::Visitor {" name qualifiedName
@@ -714,15 +727,15 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
     writeCpp 0 "};" // end pushvisitor
     // actual push
     blankCpp()
-    writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context niType)
+    writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
     writeCpp 1 "%s_PushVisitor v(isReturn);" name
     writeCpp 1 "value->accept((%s::Visitor*)&v);" qualifiedName
     writeCpp 0 "}"
     
     // pop =======
-    writeH 0 "%s %s__pop();" (typeToCppString context niType) name
+    writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
     blankCpp()
-    writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
+    writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
     writeCpp 1 "%s::Base* __ret = nullptr;" qualifiedName
     writeCpp 1 "switch (ni_popInt32()) {"
     for i, value in values |> List.indexed do
@@ -746,7 +759,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
     // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
     let arrayDefault () =
         // PUSH ========
-        write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
+        write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
         write 1 "for (auto v = values.rbegin(); v != values.rend(); v++) {" // in reverse (for arrays - for sets, order doesn't matter)
         pushValue context writer 2 elemType "*v" (Indirect "isReturn")
         write 1 "}"
@@ -754,8 +767,8 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
         write 0 "}"
         // POP =========
         blank()
-        write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
-        write 1 "%s __ret;" (typeToCppString context outerType)
+        write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
+        write 1 "%s __ret;" (typeToCppString context Default outerType)
         write 1 "auto count = ni_popSizeT();"
         write 1 "for (auto i = 0; i < count; i++) {"
         popValue context writer 2 elemType (Variable "value")
@@ -772,12 +785,12 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
     interface IArrayLikeRenderer with
         member this.TypedefTuple (tt: NIType) =
             // push
-            write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
+            write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
             pushValue context writer 1 (ArrayType tt) "values" (Indirect "isReturn")
             write 0 "}"
             // pop
             blank()
-            write 0 "inline %s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+            write 0 "inline %s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
             popValue context writer 1 (ArrayType tt) Return
             write 0 "}"
         member this.EnumType (name: ResolvedName) =
@@ -788,11 +801,11 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             if info.FlagsMode then
                 // TODO: figure out the right width type to use - for now just relying on int32_t (used to use uint32_t, but Qt's stuff uses int, and thinking about it, we should default to signed for languages like Java)
                 // PUSH ===================================
-                write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
+                write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
                 pushValue context writer 1 (ArrayType (Primitive(Int(true,Width32)))) "values" NotApplicable
                 write 0 "}"
                 // POP =====================================
-                write 0 "inline %s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+                write 0 "inline %s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
                 popValue context writer 1  (ArrayType (Primitive(Int(true,Width32)))) PopValueContext.Return
                 write 0 "}"
             else
@@ -811,18 +824,18 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                             | _ -> Width32
                         Primitive(Int(true, iWidth))
                 // PUSH ================
-                write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
-                write 1 "std::vector<%s> intValues;" (typeToCppString context widthType)
+                write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                write 1 "std::vector<%s> intValues;" (typeToCppString context TypeParams widthType)
                 write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
-                write 2 "intValues.push_back((%s)*i);" (typeToCppString context widthType)
+                write 2 "intValues.push_back((%s)*i);" (typeToCppString context Default widthType)
                 write 1 "}"
                 pushValue context writer 1 (ArrayType widthType) "intValues" (Indirect "isReturn")
                 write 0 "}"
                 // POP ==================
                 blank()
-                write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+                write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
                 popValue context writer 1 (ArrayType widthType) (Variable "intValues")
-                write 1 "%s __ret;" (typeToCppString context outerType)
+                write 1 "%s __ret;" (typeToCppString context Default outerType)
                 write 1 "for (auto i = intValues.begin(); i != intValues.end(); i++) {"
                 let enumTypeStr =
                     resolvedNameToString context name TypeMode
@@ -840,9 +853,9 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             let typeStr =
                 resolvedNameToString context structName TypeMode
             // PUSH ===========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
             for field in namedFields |> List.rev do
-                write 1 "std::vector<%s> %s_values;" (typeToCppString context field.Type_) field.Name
+                write 1 "std::vector<%s> %s_values;" (typeToCppString context TypeParams field.Type_) field.Name
             write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
             for field in namedFields |> List.rev do
                 write 2 "%s_values.push_back(v->%s);" field.Name field.Name
@@ -852,10 +865,10 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "}"
             // POP ============
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+            write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
             for field in namedFields do
                 popValue context writer 1 (ArrayType field.Type_) (Variable (sprintf "%s_values" field.Name))
-            write 1 "%s __ret;" (typeToCppString context outerType)
+            write 1 "%s __ret;" (typeToCppString context Default outerType)
             // use first field to iterate
             write 1 "for (auto i = 0; i < %s_values.size(); i++) {" namedFields.Head.Name
             write 2 "%s __value;" typeStr
@@ -873,9 +886,9 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "}"
         member this.TupleType (tupleTypes: NIType list) =
             // PUSH ========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
             for i, type_ in tupleTypes |> List.indexed do
-                write 1 "std::vector<%s> _%dvalues;" (typeToCppString context type_) i
+                write 1 "std::vector<%s> _%dvalues;" (typeToCppString context TypeParams type_) i
             write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
             for i, _ in tupleTypes |> List.indexed do
                 write 2 "_%dvalues.push_back(std::get<%d>(*i));" i i
@@ -886,10 +899,10 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "}"
             // POP =========
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+            write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
             for i, type_ in tupleTypes |> List.indexed do
                 popValue context writer 1 (ArrayType type_) (Variable (sprintf "_%dvalues" i))
-            write 1 "%s __ret;" (typeToCppString context outerType)
+            write 1 "%s __ret;" (typeToCppString context Default outerType)
             write 1 "for (auto i = 0; i < _0values.size(); i++) {"
             let joined =
                 tupleTypes |> List.indexed |> List.map fst |> List.map (sprintf "_%dvalues[i]") |> String.concat ", "
@@ -913,10 +926,10 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             arrayDefault()
         member this.OptionType elemType =
             // push ==========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
-            write 1 "%s hasValueArray;" (typeToCppString context (ArrayType (Primitive Bool)))
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+            write 1 "%s hasValueArray;" (typeToCppString context Default (ArrayType (Primitive Bool)))
             write 1 "hasValueArray.reserve(values.size());"
-            write 1 "%s valueArray;" (typeToCppString context (ArrayType elemType))
+            write 1 "%s valueArray;" (typeToCppString context Default (ArrayType elemType))
             write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
             write 2 "if (i->has_value()) {"
             write 3 "valueArray.push_back(i->value());"
@@ -931,10 +944,10 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "}"
             // pop ===========
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+            write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
             popValue context writer 1 (ArrayType (Primitive Bool)) (Variable "hasValueArray")
             popValue context writer 1 (ArrayType elemType) (Variable "valueArray")
-            write 1 "%s ret(hasValueArray.size());" (typeToCppString context outerType) // allocate w/ default values = None
+            write 1 "%s ret(hasValueArray.size());" (typeToCppString context Default outerType) // allocate w/ default values = None
             write 1 "auto valuePtr = valueArray.data();"
             write 1 "for (auto i = 0; i < hasValueArray.size(); i++) {"
             write 2 "if (hasValueArray[i]) {"
@@ -945,11 +958,11 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "}"
         member this.ResultType succType errType =
             // push =========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
-            write 1 "%s isSuccessArray;" (typeToCppString context (ArrayType (Primitive Bool)))
+            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+            write 1 "%s isSuccessArray;" (typeToCppString context Default (ArrayType (Primitive Bool)))
             write 1 "isSuccessArray.reserve(values.size());"
-            write 1 "%s successValuesArray;" (typeToCppString context (ArrayType succType))
-            write 1 "%s errorValuesArray;" (typeToCppString context (ArrayType errType))
+            write 1 "%s successValuesArray;" (typeToCppString context Default (ArrayType succType))
+            write 1 "%s errorValuesArray;" (typeToCppString context Default (ArrayType errType))
             write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
             write 2 "if (i->is_ok()) {"
             write 3 "successValuesArray.push_back(i->unwrap());"
@@ -966,11 +979,11 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "}"
             // pop ==========
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+            write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
             popValue context writer 1 (ArrayType (Primitive Bool)) (Variable "isSuccessArray")
             popValue context writer 1 (ArrayType succType) (Variable "successValuesArray")
             popValue context writer 1 (ArrayType errType) (Variable "errorValuesArray")
-            write 1 "%s ret;" (typeToCppString context outerType)
+            write 1 "%s ret;" (typeToCppString context Default outerType)
             write 1 "ret.reserve(isSuccessArray.size());"
             write 1 "auto succPtr = successValuesArray.data();"
             write 1 "auto errPtr = errorValuesArray.data();"
@@ -990,37 +1003,37 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             // primitve arrays are built in, but not sets!
             match outerType with
             | ArrayType _ ->
-                write 0 "// built-in array type: %s" (typeToCppString context outerType)
+                write 0 "// built-in array type: %s" (typeToCppString context Default outerType)
             | SetType niType ->
                 // push ==============
-                write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
-                write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString context (ArrayType niType))
+                write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString context Default (ArrayType niType))
                 pushValue context writer 1 (ArrayType niType) "itemsArr" (Indirect "isReturn")
                 write 0 "}"
                 // pop ===============
                 blank()
-                write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
+                write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
                 popValue context writer 1 (ArrayType niType) (Variable "itemsArr")
-                write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString context outerType)
+                write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString context Default outerType)
                 write 0 "}"
             | _ -> failwith "!!!"
         member this.Opaque () =
             // push
-            write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToCppString context outerType)
+            write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
             write 1 "ni_pushPtrArray((void**)items.data(), items.size());"
             write 0 "}"
             // pop
             blank()
-            write 0 "%s __%s__pop() {" (typeToCppString context outerType) (typeToName context outerType)
-            write 1 "%s *values;" (typeToCppString context elemType)
+            write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
+            write 1 "%s *values;" (typeToCppString context Default elemType)
             write 1 "size_t count;"
             write 1 "ni_popPtrArray((void***)&values, &count);"
-            write 1 "return %s(values, values + count);" (typeToCppString context outerType)
+            write 1 "return %s(values, values + count);" (typeToCppString context Default outerType)
             write 0 "}"
         member this.Options () =
             arrayDefault()
         member this.Other (_: NIType) =
-            write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context outerType)
+            write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context Default outerType)
             
 let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (info: OpaqueInfo) =
     let fakeThis =
@@ -1089,8 +1102,8 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
     | BufferType elemType ->
         // PUSH =====
         blankH()
-        writeH 0 "inline void __%s__push(%s buf, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
-        writeCpp 0 "inline void __%s__push(%s buf, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
+        writeH 0 "inline void __%s__push(%s buf, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeCpp 0 "inline void __%s__push(%s buf, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
         writeCpp 1 "if (buf != nullptr) {"
         writeCpp 2 "auto pushable = std::dynamic_pointer_cast<Pushable>(buf);"
         writeCpp 2 "pushable->push(pushable, isReturn);"
@@ -1100,38 +1113,38 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         writeCpp 1 "}"
         writeCpp 0 "}"
         // POP ======
-        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        writeH 0 "%s __%s__pop();" (typeToCppString context Default gType) (typeToName context gType)
         blankCpp()
-        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context Default gType) (typeToName context gType)
         writeCpp 1 "int id;"
         writeCpp 1 "bool isClientId;"
         writeCpp 1 "ni_BufferDescriptor descriptor;"
         writeCpp 1 "ni_popBuffer(&id, &isClientId, &descriptor);"
         writeCpp 1 "if (id != 0) {"
         writeCpp 2 "if (isClientId) {"
-        writeCpp 3 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString context elemType)
-        writeCpp 3 "return %s(buf);" (typeToCppString context gType)
+        writeCpp 3 "auto buf = new ClientBuffer<%s>(id, descriptor);" (typeToCppString context TypeParams elemType)
+        writeCpp 3 "return %s(buf);" (typeToCppString context Default gType)
         writeCpp 2 "}"
         writeCpp 2 "else {"
-        writeCpp 3 "return ServerBuffer<%s>::getByID(id);" (typeToCppString context elemType)
+        writeCpp 3 "return ServerBuffer<%s>::getByID(id);" (typeToCppString context TypeParams elemType)
         writeCpp 2 "}"
         writeCpp 1 "}"
         writeCpp 1 "else {"
-        writeCpp 2 "return %s();" (typeToCppString context gType)
+        writeCpp 2 "return %s();" (typeToCppString context Default gType)
         writeCpp 1 "}"
         writeCpp 0 "}"
     | TupleType tupleTypes ->
         // PUSH =====
         blankH()
-        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
-        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
+        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
         for i, type_ in tupleTypes |> List.indexed |> List.rev do
             pushValue context writerCpp 1 type_ (sprintf "std::get<%d>(value)" i) (Indirect "isReturn")
         writeCpp 0 "}"
         // POP ======
-        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        writeH 0 "%s __%s__pop();" (typeToCppString context Default gType) (typeToName context gType)
         blankCpp()
-        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context Default gType) (typeToName context gType)
         for i, type_ in tupleTypes |> List.indexed do
             popValue context writerCpp 1 type_ (Variable (sprintf "_%d" i))
         let itemsJoined =
@@ -1139,15 +1152,15 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
             |> List.indexed
             |> List.map (fun (i, _) -> sprintf "_%d" i)
             |> String.concat ", "
-        writeCpp 1 "return %s{ %s };" (typeToCppString context gType) itemsJoined
+        writeCpp 1 "return %s{ %s };" (typeToCppString context Default gType) itemsJoined
         writeCpp 0 "}"
     | MapType (keyType, valueType) ->
         // PUSH =====
         blankH()
-        writeH 0 "void __%s__push(%s _map, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
-        writeCpp 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
-        writeCpp 1 "std::vector<%s> keys;" (typeToCppString context keyType)
-        writeCpp 1 "std::vector<%s> values;" (typeToCppString context valueType)
+        writeH 0 "void __%s__push(%s _map, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeCpp 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeCpp 1 "std::vector<%s> keys;" (typeToCppString context TypeParams keyType)
+        writeCpp 1 "std::vector<%s> values;" (typeToCppString context TypeParams valueType)
         writeCpp 1 "for (auto i = _map.begin(); i != _map.end(); i++) {"
         writeCpp 2 "keys.push_back(i->first);"
         writeCpp 2 "values.push_back(i->second);"
@@ -1156,10 +1169,10 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         pushValue context writerCpp 1 (ArrayType keyType) "keys" (Indirect "isReturn")
         writeCpp 0 "}"
         // POP =====
-        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        writeH 0 "%s __%s__pop();" (typeToCppString context Default gType) (typeToName context gType)
         blankCpp()
-        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
-        writeCpp 1 "%s __ret;" (typeToCppString context gType)
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context Default gType) (typeToName context gType)
+        writeCpp 1 "%s __ret;" (typeToCppString context Default gType)
         popValue context writerCpp 1 (ArrayType keyType) (Variable "keys")
         popValue context writerCpp 1 (ArrayType valueType) (Variable "values")
         writeCpp 1 "for (auto i = 0; i < keys.size(); i++) {"
@@ -1179,8 +1192,8 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         // PUSH =====
         blankH()
         blankCpp()
-        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
-        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
+        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
         writeCpp 1 "if (value.is_ok()) {"
         pushValue context writerCpp 2 succType "value.unwrap()" (Indirect "isReturn")
         pushValue context writerCpp 2 (Primitive Bool) "true" NotApplicable
@@ -1191,9 +1204,9 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         writeCpp 1 "}"
         writeCpp 0 "}"
         // PUSH =====
-        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        writeH 0 "%s __%s__pop();" (typeToCppString context Default gType) (typeToName context gType)
         blankCpp()
-        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context Default gType) (typeToName context gType)
         popValue context writerCpp 1 (Primitive Bool) (Variable "isSuccess")
         writeCpp 1 "if (isSuccess) {"
         popValue context writerCpp 2 succType (Variable "successValue")
@@ -1206,8 +1219,8 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         // PUSH =====
         blankH()
         blankCpp()
-        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context gType)
-        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context gType)
+        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
         writeCpp 1 "if (value.has_value()) {"
         pushValue context writerCpp 2 elem "value.value()" (Indirect "isReturn")
         pushValue context writerCpp 2 (Primitive Bool) "true" NotApplicable
@@ -1217,10 +1230,10 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         writeCpp 1 "}"
         writeCpp 0 "}"
         // POP =====
-        writeH 0 "%s __%s__pop();" (typeToCppString context gType) (typeToName context gType)
+        writeH 0 "%s __%s__pop();" (typeToCppString context Default gType) (typeToName context gType)
         blankCpp()
-        writeCpp 0 "%s __%s__pop() {" (typeToCppString context gType) (typeToName context gType)
-        writeCpp 1 "%s maybeValue;" (typeToCppString context gType)
+        writeCpp 0 "%s __%s__pop() {" (typeToCppString context Default gType) (typeToName context gType)
+        writeCpp 1 "%s maybeValue;" (typeToCppString context Default gType)
         popValue context writerCpp 1 (Primitive Bool) (Variable "hasValue")
         writeCpp 1 "if (hasValue) {"
         popValue context writerCpp 2 elem (LeftAssign "maybeValue")
@@ -1228,7 +1241,7 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         writeCpp 1 "return maybeValue;"
         writeCpp 0 "}"
     | _ ->
-        writeCpp 0 "// push/pop for generic %s" (typeToCppString context gType)
+        writeCpp 0 "// push/pop for generic %s" (typeToCppString context Default gType)
     
     
 let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (userType: UserType) =
@@ -1258,14 +1271,14 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
     match userType with
     | OpaqueDef info ->
         blankH()
-        writeH 0 "void %s__push(%s value);" name (typeToCppString context niType)
-        writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context niType)
+        writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
+        writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
         writeCpp 1 "ni_pushPtr(value);"
         writeCpp 0 "}"
         blankCpp()
-        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
-        writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
-        writeCpp 1 "return (%s)ni_popPtr();" (typeToCppString context niType)
+        writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
+        writeCpp 1 "return (%s)ni_popPtr();" (typeToCppString context Default niType)
         writeCpp 0 "}"
         // nested static block
         match info.MaybeStaticDefs with
@@ -1290,17 +1303,17 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             renderWrapperNamedFunc context writerH writerCpp nf
     | StructDef info ->
         blankH()
-        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context niType)
-        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context niType)
+        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
+        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
         for field in info.Fields |> List.rev do
             pushValue context writerCpp 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
         writeCpp 0 "}"
         blankCpp()
-        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
-        writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
+        writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
         for field in info.Fields do
             popValue context writerCpp 1 field.Type_ (Variable field.Name)
-        writeCpp 1 "return %s { %s };" (typeToCppString context niType) (joinedFieldNames info.Fields)
+        writeCpp 1 "return %s { %s };" (typeToCppString context Default niType) (joinedFieldNames info.Fields)
         writeCpp 0 "}"
         // nested static block
         match info.MaybeStaticDefs with
@@ -1337,10 +1350,10 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             Primitive(Int(true,Width32))
         // push
         blankH()
-        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context niType)
-        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context niType)
+        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
+        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
         for field in namedFields |> List.rev do
-            writeCpp 1 "%s %s;" (typeToCppString context field.Type_) field.Name
+            writeCpp 1 "%s %s;" (typeToCppString context Default field.Type_) field.Name
             writeCpp 1 "if (value.has%s(&%s)) {" (upperFirst field.Name) field.Name
             pushValue context writerCpp 2 field.Type_ field.Name (Indirect "isReturn")
             writeCpp 1 "}"
@@ -1348,12 +1361,12 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         writeCpp 0 "}"
         // pop
         blankCpp()
-        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
-        writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
-        writeCpp 1 "%s value = {};" (typeToCppString context niType)
+        writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
+        writeCpp 1 "%s value = {};" (typeToCppString context Default niType)
         popValue context writerCpp 1 flagsType (LeftAssign "value._usedFields")
         for field in namedFields do
-            writeCpp 1 "if (value._usedFields & %s::Fields::%sField) {" (typeToCppString context niType) (upperFirst field.Name)
+            writeCpp 1 "if (value._usedFields & %s::Fields::%sField) {" (typeToCppString context Default niType) (upperFirst field.Name)
             popValue context writerCpp 2 field.Type_ (Variable "x")
             writeCpp 2 "value.set%s(x);" (upperFirst field.Name)
             writeCpp 1 "}"
@@ -1361,9 +1374,9 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         writeCpp 0 "}"
     | ExceptionDef exFields ->
         blankH()
-        writeH 0 "void %s__push(%s e);" name (typeToCppString context niType)
+        writeH 0 "void %s__push(%s e);" name (typeToCppString context FunctionArguments niType)
         blankCpp()
-        writeCpp 0 "void %s__push(%s e) {" name (typeToCppString context niType)
+        writeCpp 0 "void %s__push(%s e) {" name (typeToCppString context FunctionArguments niType)
         // push field values (reverse order)
         for namedField in exFields |> List.rev do
             let memberVar =
@@ -1377,20 +1390,20 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         for field in exFields do
             popValue context writerCpp 1 field.Type_ (Variable field.Name)
         // joined variables (_0, _1, etc)
-        writeCpp 1 "throw %s(%s);" (typeToCppString context niType) (joinedFieldNames exFields)
+        writeCpp 1 "throw %s(%s);" (typeToCppString context Default niType) (joinedFieldNames exFields)
         writeCpp 0 "}"
     | DelegateDef info ->
         renderWrapperDelegate context writerH writerCpp name info niType
     | TypeDef niType ->
         // ghetto, but for now instead of flattening, just write an inline wrapper
         blankH()
-        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
-        writeCpp 0 "inline %s %s__pop() {" (typeToCppString context niType) name
+        writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
+        writeCpp 0 "inline %s %s__pop() {" (typeToCppString context Default niType) name
         popValue context writerCpp 1 niType Return
         writeCpp 0 "}"
-        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context niType)
+        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
         blankCpp()
-        writeCpp 0 "inline void %s__push(%s value, bool isReturn) {" name (typeToCppString context niType)
+        writeCpp 0 "inline void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
         pushValue context writerCpp 1 niType "value" (Indirect "isReturn")
         writeCpp 0 "}"
     | EnumDef info ->
@@ -1400,28 +1413,28 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             | None -> Primitive(Int(true,Width32))
         if info.FlagsMode then
             blankH()
-            writeH 0 "void %s__push(%s value);" name (typeToCppString context niType)
-            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context niType)
+            writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
+            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
             pushValue context writerCpp 1 widthType "value" NotApplicable
             writeCpp 0 "}"
-            writeH 0 "%s %s__pop();" (typeToCppString context niType) name
+            writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
             blankCpp()
-            writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
+            writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
             popValue context writerCpp 1 widthType Return
             writeCpp 0 "}"
         else
             blankH()
-            writeH 0 "void %s__push(%s value);" name (typeToCppString context niType)
-            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context niType)
+            writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
+            writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
             let content =
-                sprintf "(%s)value" (typeToCppString context widthType)
+                sprintf "(%s)value" (typeToCppString context Default widthType)
             pushValue context writerCpp 1 widthType content NotApplicable
             writeCpp 0 "}"
-            writeH 0 "%s %s__pop();" (typeToCppString context niType) name
+            writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
             blankCpp()
-            writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
+            writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
             popValue context writerCpp 1 widthType (Variable "tag")
-            writeCpp 1 "return (%s)tag;" (typeToCppString context niType)
+            writeCpp 1 "return (%s)tag;" (typeToCppString context Default niType)
             writeCpp 0 "}"
     | NamedBitsDef info ->
         let _, widthType =
@@ -1429,13 +1442,13 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
                 resolvedNameToString context resolvedName TypeMode
             namedBitsIndexer info context.ModuleContext resolver name
         blankH()
-        writeH 0 "void %s__push(%s value);" name (typeToCppString context niType)
-        writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context niType)
+        writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
+        writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
         pushValue context writerCpp 1 widthType "value" NotApplicable
         writeCpp 0 "}"
-        writeH 0 "%s %s__pop();" (typeToCppString context niType) name
+        writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
         blankCpp()
-        writeCpp 0 "%s %s__pop() {" (typeToCppString context niType) name
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
         popValue context writerCpp 1 widthType Return
         writeCpp 0 "}"
     | SumTypeDef values ->
@@ -1622,7 +1635,7 @@ let renderHeaderException (context: CppRenderContext) (writer: IFormatWriter) (e
     write 0 "class %s {" exName
     write 0 "public:"
     for namedField in exFields do
-        write 1 "%s %s;" (typeToCppString context namedField.Type_) namedField.Name
+        write 1 "%s %s;" (typeToCppString context Default namedField.Type_) namedField.Name
     if exFields.IsEmpty then
         write 1 "%s() {}" exName
     else
@@ -1664,7 +1677,7 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
         write 1 "class %s : public Base {" value.Name
         write 1 "public:"
         for name, type_ in value.Args do
-            write 2 "const %s %s;" (typeToCppString context type_) (lowerFirst name)
+            write 2 "const %s %s;" (typeToCppString context Default type_) (lowerFirst name)
         let initializersString =
             let raw = 
                 value.Args
@@ -1696,11 +1709,11 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
     write 1 "};"
     let usedFieldsType =
         Primitive (Int(true, Width32))
-    write 1 "%s _usedFields = %s;" (typeToCppString context usedFieldsType) (defaultValueForType context usedFieldsType)
+    write 1 "%s _usedFields = %s;" (typeToCppString context Default usedFieldsType) (defaultValueForType context usedFieldsType)
     for field in namedFields do
-        write 1 "%s _%s;" (typeToCppString context field.Type_) field.Name
+        write 1 "%s _%s;" (typeToCppString context Default field.Type_) field.Name
     write 0 "protected:"
-    write 1 "%s getUsedFields() {" (typeToCppString context usedFieldsType)
+    write 1 "%s getUsedFields() {" (typeToCppString context Default usedFieldsType)
     write 2 "return _usedFields;"
     write 1 "}"
     write 1 "friend void %s__push(%s value, bool isReturn);" (upperFirst optionsTypeName) (upperFirst optionsTypeName)
@@ -1708,18 +1721,18 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
     write 0 "public:"
     // accessor methods
     for field in namedFields do
-        write 1 "void set%s(%s value) {" (upperFirst field.Name) (typeToCppString context field.Type_)
+        write 1 "void set%s(%s value) {" (upperFirst field.Name) (typeToCppString context FunctionArguments field.Type_)
         write 2 "_%s = value;" field.Name
         write 2 "_usedFields |= Fields::%sField;" (upperFirst field.Name)
         write 1 "}"
-        write 1 "bool has%s(%s *value) const {" (upperFirst field.Name) (typeToCppString context field.Type_)
+        write 1 "bool has%s(%s *value) const {" (upperFirst field.Name) (typeToCppString context FunctionArguments field.Type_)
         write 2 "if (_usedFields & Fields::%sField) {" (upperFirst field.Name)
         write 3 "*value = _%s;" field.Name
         write 3 "return true;"
         write 2 "}"
         write 2 "return false;"
         write 1 "}"
-        write 1 "[[nodiscard]] %s getOrDefault%s(%s defaultValue) const {" (typeToCppString context field.Type_) (upperFirst field.Name) (typeToCppString context field.Type_)
+        write 1 "[[nodiscard]] %s getOrDefault%s(%s defaultValue) const {" (typeToCppString context Default field.Type_) (upperFirst field.Name) (typeToCppString context FunctionArguments field.Type_)
         write 2 "if (_usedFields & Fields::%sField) {" (upperFirst field.Name)
         write 3 "return _%s;" field.Name 
         write 2 "}"
@@ -1758,14 +1771,14 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                 else
                     let joined =
                         namedFunc.Throws
-                        |> List.map (typeToCppString context)
+                        |> List.map (typeToCppString context Default)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
-            write 0 "%s%s %s(%s);%s" staticPrefix (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+            write 0 "%s%s %s(%s);%s" staticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
     | StructDef info ->
         let renderFields (context: CppRenderContext) =
             for field in info.Fields do
-                write 1 "%s %s;" (typeToCppString context field.Type_) field.Name
+                write 1 "%s %s;" (typeToCppString context Default field.Type_) field.Name
         write 0 "struct %s {" name
         match info.MaybeStaticDefs with
         | Some _ ->
@@ -1791,10 +1804,10 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                     else
                         let joined =
                             namedFunc.Throws
-                            |> List.map (typeToCppString context)
+                            |> List.map (typeToCppString context Default)
                             |> String.concat ", "
                         sprintf " // throws %s" joined
-                write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+                write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
         // class/interface proper
         match info.MaybeParent with
         | Some parent ->
@@ -1822,17 +1835,17 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             else
                 let joined =
                     info.Throws
-                    |> List.map (typeToCppString context)
+                    |> List.map (typeToCppString context Default)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
-        write 0 "typedef %s %s(%s);%s" (typeToCppString context info.Returns) name (joinedArgs context info.Args) maybeThrows
+        write 0 "typedef %s %s(%s);%s" (typeToCppString context Default info.Returns) name (joinedArgs context info.Args) maybeThrows
     | TypeDef actual ->
-        write 0 "typedef %s %s;" (typeToCppString context actual) name
+        write 0 "typedef %s %s;" (typeToCppString context Default actual) name
     | EnumDef info ->
         let widthType, widthStr =
             match info.MaybeWidth with
             | Some widthType ->
-                widthType, sprintf " : %s" (typeToCppString context widthType)
+                widthType, sprintf " : %s" (typeToCppString context Default widthType)
             | None ->
                 let widthType =
                     Primitive(Int(true, Width32))
@@ -1841,7 +1854,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                 else
                     widthType, ""
         if info.FlagsMode then
-            write 0 "typedef %s %s;" (typeToCppString context widthType) name
+            write 0 "typedef %s %s;" (typeToCppString context Default widthType) name
             write 0 "enum %sFlags%s {" name widthStr
         else
             write 0 "enum class %s%s {" name widthStr
@@ -1859,8 +1872,8 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             let resolver resolvedName =
                 resolvedNameToString context resolvedName TypeMode
             namedBitsIndexer info context.ModuleContext resolver name
-        write 0 "typedef %s %s;" (typeToCppString context widthType) name
-        write 0 "enum %sFlags: %s {" name (typeToCppString context widthType)
+        write 0 "typedef %s %s;" (typeToCppString context Default widthType) name
+        write 0 "enum %sFlags: %s {" name (typeToCppString context Default widthType)
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
             write 1 "// %s" group.Title
             for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
@@ -1883,7 +1896,7 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
             let extendsComment =
                 match info.MaybeParent with
                 | Some parentType ->
-                    sprintf " // extends %s" (typeToCppString context parentType)
+                    sprintf " // extends %s" (typeToCppString context Default parentType)
                 | None ->
                     ""
             write 0 "struct __%s; typedef struct __%s* %sRef;%s" name name name extendsComment
@@ -1904,7 +1917,7 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                     "static"
                 else
                     "extern"
-            write 0 "%s const %s %s;" storage (typeToCppString context globalType) globalName
+            write 0 "%s const %s %s;" storage (typeToCppString context Default globalType) globalName
         | FunctionDef namedFunc ->
             let throwsComment =
                 if namedFunc.Throws.IsEmpty then
@@ -1912,7 +1925,7 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                 else
                     let joined =
                         namedFunc.Throws
-                        |> List.map (typeToCppString context)
+                        |> List.map (typeToCppString context Default)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
             let maybeStaticPrefix =
@@ -1920,7 +1933,7 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                     "static "
                 else
                     ""
-            write 0 "%s%s %s(%s);%s" maybeStaticPrefix (typeToCppString context namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+            write 0 "%s%s %s(%s);%s" maybeStaticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
         | UserType(name, userType) ->
             renderHeaderUserType context writer name userType
         | Group(groupName, _) ->
@@ -2018,10 +2031,10 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
             else
                 let joined =
                     namedFunc.Throws
-                    |> List.map (typeToCppString context)
+                    |> List.map (typeToCppString context Default)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
-        write 0 "%s %s%s(%s) {%s" (typeToCppString context namedFunc.Returns) nsPrefix namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+        write 0 "%s %s%s(%s) {%s" (typeToCppString context Default namedFunc.Returns) nsPrefix namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
         if namedFunc.Returns <> UnitType then
             write 1 "return %s;" (defaultValueForType context namedFunc.Returns)
         write 0 "}"
@@ -2029,7 +2042,7 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
     for def in group.Defs do
         match def with
         | Global(globalName, globalType) ->
-            write 0 "const %s %s%s = %s;" (typeToCppString context globalType) nsPrefix globalName (defaultValueForType context globalType)
+            write 0 "const %s %s%s = %s;" (typeToCppString context Default globalType) nsPrefix globalName (defaultValueForType context globalType)
         | FunctionDef namedFunc ->
             renderFunc namedFunc
         | UserType(name, userType) ->

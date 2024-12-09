@@ -7,6 +7,9 @@
 #include <vector>
 
 class Pushable {
+protected:
+	~Pushable() = default;
+
 public:
 	virtual void push(std::shared_ptr<Pushable> outer, bool isReturn) = 0;
 };
@@ -17,11 +20,15 @@ private:
 	const char* kind = "unknown";
 protected:
 	int id = -1;
-	ServerResource(const char* kind) : kind(kind) {}
+	explicit ServerResource(const char* kind) : kind(kind) {}
 public:
 	void release();
 	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
+
+protected:
 	~ServerResource();
+
+public:
 	static std::shared_ptr<ServerResource> getResourceById(int id);
 	static void dumpTables();
 protected:
@@ -37,16 +44,20 @@ protected:
 	int id;
 	virtual void nativePush() = 0;
 public:
-	ClientResource(int id) : id(id) {}
+	explicit ClientResource(int id) : id(id) {}
 	void push(std::shared_ptr<Pushable> outer, bool isReturn) override;
 	virtual ~ClientResource();
 };
 
 class ServerObject : public ServerResource {
 public:
+	virtual ~ServerObject() = default;
+
 	ServerObject() : ServerResource("object") {}
 	static std::shared_ptr<ServerObject> getByID(int id);
-protected:
+// protected:
+// 	~ServerObject() = default;
+
 	void nativePush() override;
 };
 
@@ -147,7 +158,6 @@ public:
 		return std::dynamic_pointer_cast<ServerBuffer<T>>(res);
 	}
 };
-
 
 // our "exports" back to core (well, the DLL being built around core)
 extern "C" {

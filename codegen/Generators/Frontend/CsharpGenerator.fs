@@ -1086,12 +1086,17 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
     | InterfaceDef info ->
         blank()
         // raw interface itself
-        write 2 "public interface %s : IDisposable" (upperFirst name)
-        write 2 "{"
-        write 3 "void IDisposable.Dispose()"
-        write 3 "{"
-        write 4 "// nothing by default"
-        write 3 "}"
+        match info.MaybeParent with
+        | Some parent ->
+            write 2 "public interface %s : %s" (upperFirst name) (typeToName context parent)
+            write 2 "{"
+        | None ->
+            write 2 "public interface %s : IDisposable" (upperFirst name)
+            write 2 "{"
+            write 3 "void IDisposable.Dispose()"
+            write 3 "{"
+            write 4 "// nothing by default"
+            write 3 "}"
         let renderMethods (context: RenderContext) =
             for method in info.Methods do
                 let throwsComment =
@@ -1113,43 +1118,12 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         | None ->
             renderMethods context
         write 2 "}"
-        // lookup table and client wrapper
-        blank()
-        write 2 "private static Dictionary<%s, IPushable> __%sToPushable = new();" (upperFirst name) (upperFirst name)
-        write 2 "internal class __%sWrapper : ClientInterfaceWrapper<%s>" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        write 3 "public __%sWrapper(%s rawInterface) : base(rawInterface)" (upperFirst name) (upperFirst name)
-        write 3 "{"
-        write 3 "}"
-        write 3 "protected override void ReleaseExtra()"
-        write 3 "{"
-        write 4 "// remove the raw interface from the lookup table, no longer needed"
-        write 4 "__%sToPushable.Remove(RawInterface);" (upperFirst name)
-        write 3 "}"
-        write 2 "}"
+        // end of raw interface
         // push
         blank()
         write 2 "internal static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
         write 2 "{"
-        write 3 "if (thing != null)"
-        write 3 "{"
-        write 4 "if (__%sToPushable.TryGetValue(thing, out var pushable))" (upperFirst name)
-        write 4 "{"
-        write 5 "// either an already-known client thing, or a server thing"
-        write 5 "pushable.Push(isReturn);"
-        write 4 "}"
-        write 4 "else"
-        write 4 "{"
-        write 5 "// as-yet-unknown client thing - wrap and add to lookup table"
-        write 5 "pushable = new __%sWrapper(thing);" (upperFirst name)
-        write 5 "__%sToPushable.Add(thing, pushable);" (upperFirst name)
-        write 4 "}"
-        write 4 "pushable.Push(isReturn);"
-        write 3 "}"
-        write 3 "else"
-        write 3 "{"
-        write 4 "NativeImplClient.PushNull();"
-        write 3 "}"
+        write 3 "PushInterface(thing, isReturn);"
         write 2 "}"
         // pop
         blank()
@@ -1160,33 +1134,45 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         write 3 "{"
         write 4 "if (isClientId)"
         write 4 "{"
-        write 5 "// we must have sent it over originally, so wrapper must exist"
-        write 5 "var wrapper = (__%sWrapper)ClientObject.GetById(id);" (upperFirst name)
-        write 5 "return wrapper.RawInterface;"
+        write 5 "// if we're popping it, we must have pushed it in the past sometime"
+        write 5 "var wrapper = (ClientInterfaceWrapper)ClientObject.GetById(id);"
+        write 5 "// we don't know exactly what it is, only that it implements %s" name
+        write 5 "return (%s)wrapper.RawInterface;" name
         write 4 "}"
-        write 4 "else // server ID"
-        write 4 "{"
-        write 5 "var thing = new Server%s(id);" (upperFirst name)
-        write 5 "// add to lookup table before returning"
-        write 5 "__%sToPushable.Add(thing, thing);" (upperFirst name)
-        write 5 "return thing;"
-        write 4 "}"
+        write 4 "// always wrap server stuff in a fresh wrapper (no tables involved)"
+        write 4 "return new Server%s(id);" name
         write 3 "}"
-        write 3 "else"
-        write 3 "{"
-        write 4 "return null;"
-        write 3 "}"
+        write 3 "return null;"
         write 2 "}"
         // server wrapper
         blank()
-        write 2 "private class Server%s : ServerObject, %s" (upperFirst name) (upperFirst name)
-        write 2 "{"
-        write 3 "public Server%s(int id) : base(id)" name
+        match info.MaybeParent with
+        | Some parent ->
+            write 2 "private class Server%s(int id) : Server%s(id), %s" (upperFirst name) (typeToName context parent) (upperFirst name)
+            write 2 "{"
+            write 3 "// Dispose() already implemented at hierarchy root"
+        | None ->
+            write 2 "private class Server%s(int id) : ServerObject(id), %s" (upperFirst name) (upperFirst name)
+            write 2 "{"
+            write 3 "public void Dispose()"
+            write 3 "{"
+            write 4 "// will invoke ReleaseExtra() for us"
+            write 4 "ServerDispose();"
+            write 3 "}"
+        write 3 "public override bool Equals(object obj)"
         write 3 "{"
+        write 4 "if (obj is Server%s other)" name
+        write 4 "{"
+        write 5 "return Id == other.Id;"
+        write 4 "}"
+        write 4 "return false;"
+        write 3 "}"
+        write 3 "public override int GetHashCode()"
+        write 3 "{"
+        write 4 "return HashCode.Combine(\"Server%s\", Id);" name
         write 3 "}"
         // server wrapper methods
         for method in info.Methods do
-            blank()
             write 3 "public %s %s(%s)" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args)
             write 3 "{"
             // push args (in reverse!!)
@@ -1203,18 +1189,6 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             else
                 popValue context writer 4 method.Returns Return
             write 3 "}"
-        blank()
-        write 3 "protected override void ReleaseExtra()"
-        write 3 "{"
-        write 4 "// remove from lookup table"
-        write 4 "__%sToPushable.Remove(this);" (upperFirst name)
-        write 3 "}"
-        blank()
-        write 3 "public void Dispose()"
-        write 3 "{"
-        write 4 "// will invoke ReleaseExtra() for us"
-        write 4 "ServerDispose();"
-        write 3 "}"
         write 2 "}"
     | ExceptionDef fields ->
         write 2 "public class %s : Exception" name
@@ -1421,9 +1395,12 @@ let assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
                 for method in info.Methods do
                     write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject __obj)" targetIface method.WrapperName
                     write 3 "{"
-                    let clientWrapperClass =
-                        joinNameParts "." (group.Path @ [ $"__{upperFirst ifaceName}Wrapper" ])
-                    write 4 "var inst = ((%s)__obj).RawInterface;" clientWrapperClass
+                    // let clientWrapperClass =
+                    //     joinNameParts "." (group.Path @ [ $"__{upperFirst ifaceName}Wrapper" ])
+                    let fullyQualifiedInterface =
+                        joinNameParts "." (group.Path @ [ ifaceName ])
+                    write 4 "var wrapper = (ClientInterfaceWrapper)__obj;"
+                    write 4 "var inst = (%s)wrapper.RawInterface;" fullyQualifiedInterface
                     // pop args
                     for argName, argType in method.Args do
                         popValue context writer 4 argType (NewVariable argName)
@@ -1475,6 +1452,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "using CSharpFunctionalExtensions;"
     write 0 "using %s.Support;" baseNamespace
     write 0 "using ModuleHandle = %s.Support.ModuleHandle;" baseNamespace // sigh
+    write 0 "using static %s.Support.ClientObjectHelpers;" baseNamespace
     
     // imports
     if not m.Imports.IsEmpty then

@@ -1,10 +1,7 @@
 ﻿namespace %%TARGET_NAMESPACE%%.Support
 {
-    internal abstract class ServerObject : ServerResource
+    internal abstract class ServerObject(int id) : ServerResource(id)
     {
-        protected ServerObject(int id) : base(id)
-        {
-        }
         protected override void NativePush()
         {
             NativeMethods.pushInstance(Id, false);

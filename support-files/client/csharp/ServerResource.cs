@@ -1,24 +1,20 @@
 ﻿namespace %%TARGET_NAMESPACE%%.Support
 {
-    internal abstract class ServerResource : IPushable
+    internal abstract class ServerResource(int id) : IPushable
     {
         private static readonly List<ServerResource> SafeArea = new(); // place to stash server objects until the other side has finished popping them from stack (in case they only exist as a return value)
         public static void ClearSafeArea()
         {
             SafeArea.Clear();
         }
-        
-        protected readonly int Id;
+
+        public int Id => id;
         private bool _serverDisposed;
-        protected ServerResource(int id)
-        {
-            Id = id;
-        }
 
         ~ServerResource()
         {
             // backstop in case the derived class not manually disposed
-            Console.WriteLine($"ServerResource id {Id} - finalized invoked, calling ServerDispose()");
+            Console.WriteLine($"ServerResource id {Id} - finalize invoked, calling ServerDispose()");
             ServerDispose();
         }
 

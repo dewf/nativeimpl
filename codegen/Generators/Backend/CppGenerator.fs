@@ -204,7 +204,11 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                     name
                 | _ -> failwith "typeToCppString - problem fetching enum definition"
             | SumType ->
-                sprintf "std::shared_ptr<%s::Base>" name
+                match innerContext with
+                | FunctionArguments ->
+                    sprintf "const std::shared_ptr<%s::Base>&" name
+                | _ ->
+                    sprintf "std::shared_ptr<%s::Base>" name
             | _ ->
                 name
         | ArrayType niType -> sprintf "std::vector<%s>" (recInner TypeParams niType)
@@ -708,13 +712,13 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
         
     // push ========
     writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
-    // pushvisitor
+    // pushmatcher
     blankCpp()
-    writeCpp 0 "class %s_PushVisitor : public %s::Visitor {" name qualifiedName
+    writeCpp 0 "class %s_PushMatcher : public %s::Matcher {" name qualifiedName
     writeCpp 0 "private:"
     writeCpp 1 "bool isReturn;"
     writeCpp 0 "public:"
-    writeCpp 1 "%s_PushVisitor(bool isReturn) : isReturn(isReturn) {}" name
+    writeCpp 1 "explicit %s_PushMatcher(bool isReturn) : isReturn(isReturn) {}" name
     for i, value in values |> List.indexed do
         writeCpp 1 "void on%s(const %s::%s* %sValue) override {" value.Name qualifiedName value.Name (lowerFirst value.Name)
         for argName, argType in value.Args |> List.rev do
@@ -724,12 +728,13 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
         writeCpp 2 "// kind:"
         writeCpp 2 "ni_pushInt32(%d);" i
         writeCpp 1 "}"
-    writeCpp 0 "};" // end pushvisitor
+    writeCpp 0 "};" // end pushmatcher
     // actual push
     blankCpp()
     writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
-    writeCpp 1 "%s_PushVisitor v(isReturn);" name
-    writeCpp 1 "value->accept((%s::Visitor*)&v);" qualifiedName
+    writeCpp 1 "%s_PushMatcher v(isReturn);" name
+    // writeCpp 1 "value->match((%s::Matcher*)&v);" qualifiedName // why this one with the casting?
+    writeCpp 1 "value->match(&v);"
     writeCpp 0 "}"
     
     // pop =======
@@ -1660,7 +1665,7 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
         write 1 "class %s;" value.Name
     
     blank()
-    write 1 "class Visitor {"
+    write 1 "class Matcher {"
     write 1 "public:"
     for value in values do
         write 2 "virtual void on%s(const %s* value) = 0;" value.Name value.Name // (lowerFirst value.Name)
@@ -1669,7 +1674,7 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
     blank()
     write 1 "class Base {"
     write 1 "public:"
-    write 2 "virtual void accept(Visitor* visitor) = 0;"
+    write 2 "virtual void match(Matcher* matcher) = 0;"
     write 1 "};"
     
     for value in values do
@@ -1688,9 +1693,9 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
             else
                 ""
         write 2 "%s(%s)%s {}" value.Name (joinedArgs context value.Args) initializersString
-        write 2 "void accept(Visitor* visitor) override {"
-        write 3 "visitor->on%s(this);" value.Name
-        write 2 "}" // end accept()
+        write 2 "void match(Matcher* matcher) override {"
+        write 3 "matcher->on%s(this);" value.Name
+        write 2 "}" // end match()
         write 1 "};" // end value class
     
     if context.InsideInterfaceOrStructStatic then

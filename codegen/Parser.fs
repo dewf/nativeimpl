@@ -866,7 +866,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 let methods =
                     methods
                     |> setOverloadIndices
-                if methods.Length > 0 then
+                if methods.Length > 0 || maybeParent.IsSome then // empty method block allowed when inheriting from another
                     let info =
                         { MaybeParent = maybeParent
                           Methods = methods
@@ -874,7 +874,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     ([UserType (name, InterfaceDef info)], etc)
                     |> Some
                 else
-                    failwithf "interface '%s' @ loc %A - no methods declared" name loc
+                    failwithf "interface '%s' @ loc %A - no methods declared (and none inherited)" name loc
             | _ ->
                 failwithf "expected '{' at %A" loc
         | Lookahead 1 ([DelegateToken], _, etc) ->

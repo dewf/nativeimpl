@@ -216,6 +216,12 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                     sprintf "const std::shared_ptr<%s::Base>&" name
                 | _ ->
                     sprintf "std::shared_ptr<%s::Base>" name
+            | OptionsType ->
+                match innerContext with
+                | FunctionArguments ->
+                    sprintf "const %s&" name
+                | _ ->
+                    name
             | _ ->
                 name
         | ArrayType niType ->
@@ -227,7 +233,12 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
         | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (recInner TypeParams keyType) (recInner TypeParams valueType)
         | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map (recInner TypeParams) |> String.concat ",")
         | SetType niType -> sprintf "std::set<%s>" (recInner TypeParams niType)
-        | OptionType elem -> sprintf "std::optional<%s>" (recInner TypeParams elem)
+        | OptionType elem ->
+            match innerContext with
+            | FunctionArguments ->
+                sprintf "const std::optional<%s>&" (recInner TypeParams elem)
+            | _ ->
+                sprintf "std::optional<%s>" (recInner TypeParams elem)
         | ResultType (succ, err) -> sprintf "result::Result<%s, %s>" (recInner TypeParams succ) (recInner TypeParams err)
         | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (recInner TypeParams elemType)
         | x -> sprintf "(typeToCppString: not done yet [%A])" x
@@ -1737,10 +1748,10 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
     for field in namedFields do
         write 1 "%s _%s;" (typeToCppString context Default field.Type_) field.Name
     write 0 "protected:"
-    write 1 "%s getUsedFields() {" (typeToCppString context Default usedFieldsType)
+    write 1 "[[nodiscard]] %s getUsedFields() const {" (typeToCppString context Default usedFieldsType)
     write 2 "return _usedFields;"
     write 1 "}"
-    write 1 "friend void %s__push(%s value, bool isReturn);" (upperFirst optionsTypeName) (upperFirst optionsTypeName)
+    write 1 "friend void %s__push(const %s& value, bool isReturn);" (upperFirst optionsTypeName) (upperFirst optionsTypeName)
     write 1 "friend %s %s__pop();" (upperFirst optionsTypeName) (upperFirst optionsTypeName)
     write 0 "public:"
     // accessor methods
@@ -1749,7 +1760,7 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
         write 2 "_%s = value;" field.Name
         write 2 "_usedFields |= Fields::%sField;" (upperFirst field.Name)
         write 1 "}"
-        write 1 "bool has%s(%s *value) const {" (upperFirst field.Name) (typeToCppString context FunctionArguments field.Type_)
+        write 1 "bool has%s(%s *value) const {" (upperFirst field.Name) (typeToCppString context Default field.Type_)
         write 2 "if (_usedFields & Fields::%sField) {" (upperFirst field.Name)
         write 3 "*value = _%s;" field.Name
         write 3 "return true;"

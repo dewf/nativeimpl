@@ -157,6 +157,7 @@ type TypeContext =
     | Default
     | FunctionArguments
     | TypeParams
+    | BareType  // ie, no std::shared_ptr<> etc
 let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) (outerType: NIType) =
     let rec recInner (innerContext: TypeContext) = function
         | UnitType -> "void"
@@ -190,12 +191,18 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                 sprintf "%sRef" name
             | InterfaceType ->
                 match innerContext with
+                | BareType ->
+                    name
                 | FunctionArguments ->
                     sprintf "const std::shared_ptr<%s>&" name
                 | _ ->
                     sprintf "std::shared_ptr<%s>" name
             | DelegateType ->
-                sprintf "std::function<%s>" name
+                match innerContext with
+                | FunctionArguments ->
+                    sprintf "const std::function<%s>&" name
+                | _ ->
+                    sprintf "std::function<%s>" name
             | EnumType ->
                 let definition =
                     requiredSymbolLookup context.ModuleContext resolvedName
@@ -211,7 +218,12 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                     sprintf "std::shared_ptr<%s::Base>" name
             | _ ->
                 name
-        | ArrayType niType -> sprintf "std::vector<%s>" (recInner TypeParams niType)
+        | ArrayType niType ->
+            match innerContext with
+            | FunctionArguments ->
+                sprintf "const std::vector<%s>&" (recInner TypeParams niType)
+            | _ ->
+                sprintf "std::vector<%s>" (recInner TypeParams niType)
         | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (recInner TypeParams keyType) (recInner TypeParams valueType)
         | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map (recInner TypeParams) |> String.concat ",")
         | SetType niType -> sprintf "std::set<%s>" (recInner TypeParams niType)
@@ -220,6 +232,13 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
         | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (recInner TypeParams elemType)
         | x -> sprintf "(typeToCppString: not done yet [%A])" x
     recInner outerTypeContext outerType
+
+let classWithPrefix (context: CppRenderContext) (outerType: NIType) (prefix: string) =
+    let x = typeToCppString context BareType outerType
+    let parts = x.Split("::")
+    let lastIndex = parts.Length - 1
+    parts[lastIndex] <- prefix + parts[lastIndex]
+    String.concat "::" parts
 
 let joinedFields (context: CppRenderContext) (fields: NamedField list) =
     [for field in fields -> sprintf "%s %s" (typeToCppString context Default field.Type_) field.Name]
@@ -1816,7 +1835,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
         // class/interface proper
         match info.MaybeParent with
         | Some parent ->
-            write 0 "class %s : public virtual %s {" name (typeToName context parent)
+            write 0 "class %s : public virtual %s {" name (typeToCppString context BareType parent)
             write 0 "public:"
         | None ->
             write 0 "class %s {" name

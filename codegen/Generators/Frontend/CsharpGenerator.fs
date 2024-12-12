@@ -114,6 +114,14 @@ let typeToName (context: RenderContext) (outerType: NIType) =
         | x -> sprintf "(typeToName: not yet supported: %A)" x
     recInner false outerType
 
+let typeWithPrefix (context: RenderContext) (outerType: NIType) (prefix: string) =
+    // function for appropriately-qualified path to parent interface, but with <prefix> inserted just before the final part (eg Org.Whatever.<prefix>Thing)
+    let x = typeToCsString context outerType
+    let parts = x.Split(".")
+    let lastIndex = parts.Length - 1
+    parts[lastIndex] <- prefix + parts[lastIndex]
+    String.concat "." parts
+
 let argsJoined (context: RenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCsString context type_) name]
     |> String.concat ", "
@@ -1148,11 +1156,11 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         blank()
         match info.MaybeParent with
         | Some parent ->
-            write 2 "private class Server%s(int id) : Server%s(id), %s" (upperFirst name) (typeToName context parent) (upperFirst name)
+            write 2 "internal class Server%s(int id) : %s(id), %s" (upperFirst name) (typeWithPrefix context parent "Server") (upperFirst name)
             write 2 "{"
             write 3 "// Dispose() already implemented at hierarchy root"
         | None ->
-            write 2 "private class Server%s(int id) : ServerObject(id), %s" (upperFirst name) (upperFirst name)
+            write 2 "internal class Server%s(int id) : ServerObject(id), %s" (upperFirst name) (upperFirst name)
             write 2 "{"
             write 3 "public void Dispose()"
             write 3 "{"

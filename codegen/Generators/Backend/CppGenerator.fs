@@ -244,13 +244,6 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
         | x -> sprintf "(typeToCppString: not done yet [%A])" x
     recInner outerTypeContext outerType
 
-let classWithPrefix (context: CppRenderContext) (outerType: NIType) (prefix: string) =
-    let x = typeToCppString context BareType outerType
-    let parts = x.Split("::")
-    let lastIndex = parts.Length - 1
-    parts[lastIndex] <- prefix + parts[lastIndex]
-    String.concat "::" parts
-
 let joinedFields (context: CppRenderContext) (fields: NamedField list) =
     [for field in fields -> sprintf "%s %s" (typeToCppString context Default field.Type_) field.Name]
     |> String.concat ", "
@@ -621,41 +614,70 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
     writeCpp 1 "return wrapper;"
     writeCpp 0 "}"
 
+let relativeNamespacePrefixToTarget (context: CppRenderContext) (resolvedName: ResolvedName) =
+    // we want a prefix like "::Module::Group::etc::" that unambiguously points to the base of the symbol (but not the symbol itself)
+    // we can't use the usual resolvedNameToString because that's designed to refer to actual user-defined symbols, and its ambiguity checking will omit unnecessary prefixes
+    // whereas this is designed to preserve the fully qualified prefix, when we need to refer to some internal thing which doesn't participate in the usual symbol table ambiguity checking etc
+    // eg internal stuff like interface method refs
+    // right now this is used exclusively in renderWrapperInterface below, to point to inherited method refs
+    match resolvedName with
+    | ThisModule (SymbolName parts) ->
+        getRelativePath context.GroupContext.Path parts
+        |> List.allButLast
+        |> String.concat "::"
+    | Imported(ModuleName moduleParts, SymbolName symbolParts) ->
+        let x =
+            [""] @ moduleParts @ (symbolParts |> List.allButLast)
+            |> String.concat "::"
+        x + "::"
+        
 let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (outerType: NIType) (name: string) (info: InterfaceInfo) = // (typeContainsRefs: NIType -> bool) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     
+    let rec renderMethods name info relativeHandlePrefix =
+        // depth-first
+        match info.MaybeParent with
+        | None ->
+            ()
+        | Some (Resolved (resolvedName, _) as parent) ->
+            match requiredSymbolLookup context.ModuleContext resolvedName with
+            | InterfaceDef info ->
+                let name =
+                    typeToName context parent
+                let prefix =
+                    relativeNamespacePrefixToTarget context resolvedName
+                renderMethods name info prefix
+            | _ ->
+                failwith "renderWrapperInterface:renderMethods problem #1"
+        | _ ->
+            failwith "renderWrapperInterface:renderMethods problem #2"
+        writeCpp 1 "// %s methods =======" name
+        for namedFunc in info.Methods do
+            writeCpp 1 "%s %s(%s) override {" (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args)
+            // push args (reverse order)
+            for argName, argType in namedFunc.Args |> List.rev do
+                pushValue context writerCpp 2 argType argName (Direct false)
+            // invoke
+            if namedFunc.Throws.IsEmpty then
+                writeCpp 2 "invokeMethod(%s%s_%s);" relativeHandlePrefix (lowerFirst name) namedFunc.Name
+            else
+                writeCpp 2 "invokeMethodWithExceptions(%s%s_%s);" relativeHandlePrefix (lowerFirst name) namedFunc.Name
+            // pop result
+            if containsRefs context.ModuleContext namedFunc.Returns then
+                // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
+                // this is to prevent premature deref which could free the instance before we've gotten ahold of it
+                popValue context writerCpp 2 namedFunc.Returns SafeReturn
+            else
+                popValue context writerCpp 2 namedFunc.Returns Return
+            writeCpp 1 "}"
+    
     // client wrapper
     blankCpp()
-    match info.MaybeParent with
-    | Some parent ->
-        writeCpp 0 "class Client%s : public Client%s, public virtual %s {" name (typeToName context parent) name
-        writeCpp 0 "public:"
-        writeCpp 1 "explicit Client%s(int id) : Client%s(id) {}" name (typeToName context parent)
-    | None ->
-        writeCpp 0 "class Client%s : public ClientObject, public virtual %s {" name name
-        writeCpp 0 "public:"
-        writeCpp 1 "explicit Client%s(int id) : ClientObject(id) {}" name
-    // methods
-    for namedFunc in info.Methods do
-        writeCpp 1 "%s %s(%s) override {" (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args)
-        // push args (reverse order)
-        for argName, argType in namedFunc.Args |> List.rev do
-            pushValue context writerCpp 2 argType argName (Direct false)
-        // invoke
-        if namedFunc.Throws.IsEmpty then
-            writeCpp 2 "invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
-        else
-            writeCpp 2 "invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
-        // pop result
-        if containsRefs context.ModuleContext namedFunc.Returns then
-            // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
-            // this is to prevent premature deref which could free the instance before we've gotten ahold of it
-            popValue context writerCpp 2 namedFunc.Returns SafeReturn
-        else
-            popValue context writerCpp 2 namedFunc.Returns Return
-        writeCpp 1 "}"
-    // end
+    writeCpp 0 "class Client%s : public ClientObject, public %s {" name name
+    writeCpp 0 "public:"
+    writeCpp 1 "explicit Client%s(int id) : ClientObject(id) {}" name
+    renderMethods name info ""
     writeCpp 0 "};"
     
     // PUSH ===================================
@@ -1498,6 +1520,7 @@ and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (wr
     // declare various module handles etc at top of group
     for name, info in group.Interfaces do
         for method in info.Methods do
+            writeH 0 "extern ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.WrapperName
             writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.WrapperName
             
     for name, _ in group.Exceptions do
@@ -1846,7 +1869,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
         // class/interface proper
         match info.MaybeParent with
         | Some parent ->
-            write 0 "class %s : public virtual %s {" name (typeToCppString context BareType parent)
+            write 0 "class %s : public %s {" name (typeToCppString context BareType parent)
             write 0 "public:"
         | None ->
             write 0 "class %s {" name

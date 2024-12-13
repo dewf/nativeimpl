@@ -635,49 +635,48 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     
-    let rec renderMethods name info relativeHandlePrefix =
-        // depth-first
-        match info.MaybeParent with
-        | None ->
-            ()
-        | Some (Resolved (resolvedName, _) as parent) ->
-            match requiredSymbolLookup context.ModuleContext resolvedName with
-            | InterfaceDef info ->
-                let name =
-                    typeToName context parent
-                let prefix =
-                    relativeNamespacePrefixToTarget context resolvedName
-                renderMethods name info prefix
-            | _ ->
-                failwith "renderWrapperInterface:renderMethods problem #1"
-        | _ ->
-            failwith "renderWrapperInterface:renderMethods problem #2"
-        writeCpp 1 "// %s methods =======" name
-        for namedFunc in info.Methods do
-            writeCpp 1 "%s %s(%s) override {" (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args)
-            // push args (reverse order)
-            for argName, argType in namedFunc.Args |> List.rev do
-                pushValue context writerCpp 2 argType argName (Direct false)
-            // invoke
-            if namedFunc.Throws.IsEmpty then
-                writeCpp 2 "invokeMethod(%s%s_%s);" relativeHandlePrefix (lowerFirst name) namedFunc.Name
-            else
-                writeCpp 2 "invokeMethodWithExceptions(%s%s_%s);" relativeHandlePrefix (lowerFirst name) namedFunc.Name
-            // pop result
-            if containsRefs context.ModuleContext namedFunc.Returns then
-                // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
-                // this is to prevent premature deref which could free the instance before we've gotten ahold of it
-                popValue context writerCpp 2 namedFunc.Returns SafeReturn
-            else
-                popValue context writerCpp 2 namedFunc.Returns Return
-            writeCpp 1 "}"
+    // let rec renderMethods name info relativeHandlePrefix =
+    //     // depth-first
+    //     match info.MaybeParent with
+    //     | None ->
+    //         ()
+    //     | Some (Resolved (resolvedName, _) as parent) ->
+    //         match requiredSymbolLookup context.ModuleContext resolvedName with
+    //         | InterfaceDef info ->
+    //             let name =
+    //                 typeToName context parent
+    //             let prefix =
+    //                 relativeNamespacePrefixToTarget context resolvedName
+    //             renderMethods name info prefix
+    //         | _ ->
+    //             failwith "renderWrapperInterface:renderMethods problem #1"
+    //     | _ ->
+    //         failwith "renderWrapperInterface:renderMethods problem #2"
+    //     writeCpp 1 "// %s methods =======" name
     
     // client wrapper
     blankCpp()
     writeCpp 0 "class Client%s : public ClientObject, public %s {" name name
     writeCpp 0 "public:"
     writeCpp 1 "explicit Client%s(int id) : ClientObject(id) {}" name
-    renderMethods name info ""
+    for namedFunc in info.Methods do
+        writeCpp 1 "%s %s(%s) override {" (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args)
+        // push args (reverse order)
+        for argName, argType in namedFunc.Args |> List.rev do
+            pushValue context writerCpp 2 argType argName (Direct false)
+        // invoke
+        if namedFunc.Throws.IsEmpty then
+            writeCpp 2 "invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
+        else
+            writeCpp 2 "invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
+        // pop result
+        if containsRefs context.ModuleContext namedFunc.Returns then
+            // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
+            // this is to prevent premature deref which could free the instance before we've gotten ahold of it
+            popValue context writerCpp 2 namedFunc.Returns SafeReturn
+        else
+            popValue context writerCpp 2 namedFunc.Returns Return
+        writeCpp 1 "}"
     writeCpp 0 "};"
     
     // PUSH ===================================
@@ -1520,7 +1519,7 @@ and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (wr
     // declare various module handles etc at top of group
     for name, info in group.Interfaces do
         for method in info.Methods do
-            writeH 0 "extern ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.WrapperName
+            // writeH 0 "extern ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.WrapperName
             writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.WrapperName
             
     for name, _ in group.Exceptions do

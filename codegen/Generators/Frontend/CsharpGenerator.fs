@@ -1096,7 +1096,7 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         // raw interface itself
         match info.MaybeParent with
         | Some parent ->
-            write 2 "public interface %s : %s" (upperFirst name) (typeToName context parent)
+            write 2 "public interface %s : %s" (upperFirst name) (typeToCsString context parent)
             write 2 "{"
         | None ->
             write 2 "public interface %s : IDisposable" (upperFirst name)

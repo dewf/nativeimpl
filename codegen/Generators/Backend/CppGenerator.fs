@@ -630,7 +630,18 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
 //             [""] @ moduleParts @ (symbolParts |> List.allButLast)
 //             |> String.concat "::"
 //         x + "::"
-        
+
+let typeWithLastPartFormat (context: CppRenderContext) (outerType: NIType) (format: string) =
+    // function for appropriately-qualified path to some type, but to format the final part (interface name) however we want
+    // eg. Module1.Group1.MyInterface -> Module1.Group1.ClientMyInterfaceImpl
+    let x = typeToCppString context BareType outerType
+    let parts = x.Split("::")
+    let lastIndex = parts.Length - 1
+    let formatThing =
+        PrintfFormat<string -> string, unit, string, string>(format)
+    parts[lastIndex] <- sprintf formatThing parts[lastIndex]
+    String.concat "::" parts
+    
 let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (outerType: NIType) (name: string) (info: InterfaceInfo) = // (typeContainsRefs: NIType -> bool) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
@@ -640,14 +651,16 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     blankCpp()
     match info.MaybeParent with
     | Some parent ->
+        let parentType =
+            typeWithLastPartFormat context parent "Client%sImpl"
         let parentName =
             typeToName context parent
-        writeH 0 "class Client%sImpl : public Client%sImpl, public %s {" name parentName name
+        writeH 0 "class Client%sImpl : public %s, public %s {" name parentType name
         writeH 0 "public:"
-        writeH 0 "    explicit Client%sImpl(ClientObject *clientObject) : Client%sImpl(clientObject) {}" name parentName
-        writeH 0 "    %s* __parent%s() override;" (typeToCppString context BareType parent) parentName
+        writeH 0 "    explicit Client%sImpl(ClientObject *clientObject) : %s(clientObject) {}" name parentType
+        writeH 0 "    %s* inherited_%s() override;" (typeToCppString context BareType parent) parentName
         // cpp version of parent getter
-        writeCpp 0 "%s* Client%sImpl::__parent%s() {" (typeToCppString context BareType parent) name parentName
+        writeCpp 0 "%s* Client%sImpl::inherited_%s() {" (typeToCppString context BareType parent) name parentName
         writeCpp 0 "    return this;"
         writeCpp 0 "}"
     | None ->
@@ -1939,8 +1952,10 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
         write 0 "    virtual ~%s() = default;" name
         match info.MaybeParent with
         | Some parent ->
-            write 1 "virtual %s* __parent%s() = 0;" (typeToCppString context BareType parent) (typeToName context parent)
-            write 1 "static %s toShared%s(const std::shared_ptr<%s> &outerThis) {" (typeToCppString context Default parent) (typeToName context parent) name
+            // direct parent only:
+            write 1 "virtual %s* inherited_%s() = 0;" (typeToCppString context BareType parent) (typeToName context parent)
+            // TODO: convenience casts for entire inheritance chain?
+            write 1 "static %s as_%s(const std::shared_ptr<%s> &outerThis) {" (typeToCppString context Default parent) (typeToName context parent) name
             write 1 "    return std::dynamic_pointer_cast<%s>(outerThis);" (typeToCppString context BareType parent)
             write 1 "}"
         | None ->

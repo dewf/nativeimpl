@@ -772,7 +772,20 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             write 3 "{"
             write 4 "NativeHandle = nativeHandle;"
             write 3 "}"
-            // IComparable implementation, useful to use opaques as Dictionary keys or whatever
+            // Equals and GetHashCode overrides, useful for Dictionary keys or whatever
+            write 3 "public override bool Equals(object obj)"
+            write 3 "{"
+            write 4 "if (obj is Handle other)"
+            write 4 "{"
+            write 5 "return NativeHandle == other.NativeHandle;"
+            write 4 "}"
+            write 4 "return false;"
+            write 3 "}"
+            write 3 "public override int GetHashCode()"
+            write 3 "{"
+            write 4 "return NativeHandle.GetHashCode();"
+            write 3 "}"
+            // IComparable implementation
             write 3 "public int CompareTo(object obj)"
             write 3 "{"
             write 4 "if (obj is %s other)" (upperFirst name)

@@ -60,6 +60,7 @@ let INPUTS = [
     "DockWidget"
     "Enums"
     "FileDialog"
+    "Font"
     "Frame"
     "GridLayout"
     "GroupBox"

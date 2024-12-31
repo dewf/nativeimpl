@@ -66,6 +66,8 @@ let INPUTS = [
     "GroupBox"
     "Icon"
     "Image"
+    "ItemSelection"
+    "ItemSelectionModel"
     "KeySequence"
     "Label"
     "Layout"

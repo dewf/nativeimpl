@@ -240,7 +240,10 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
             | _ ->
                 sprintf "std::optional<%s>" (recInner TypeParams elem)
         | ResultType (succ, err) -> sprintf "result::Result<%s, %s>" (recInner TypeParams succ) (recInner TypeParams err)
-        | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (recInner TypeParams elemType)
+        | BufferType elemType ->
+            match innerContext with
+            | FunctionArguments -> sprintf "const std::shared_ptr<NativeBuffer<%s>>&" (recInner TypeParams elemType)
+            | _ -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (recInner TypeParams elemType)
         | x -> sprintf "(typeToCppString: not done yet [%A])" x
     recInner outerTypeContext outerType
 

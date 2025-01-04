@@ -1879,6 +1879,12 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
         write 2 "}"
         write 2 "return defaultValue;"
         write 1 "}"
+        write 1 "[[nodiscard]] auto mapOrDefault%s(auto mapFunc, auto defaultValue) const {" (upperFirst field.Name)
+        write 2 "if (_usedFields & Fields::%sField) {" (upperFirst field.Name)
+        write 3 "return mapFunc(_%s);" field.Name
+        write 2 "}"
+        write 2 "return defaultValue;"
+        write 1 "}"
     // done
     write 0 "};"
     

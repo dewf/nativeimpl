@@ -59,6 +59,7 @@ let INPUTS = [
     "Date"
     "DateTime"
     "Dialog"
+    "Dir"
     "DockWidget"
     "Enums"
     "FileDialog"
@@ -110,6 +111,7 @@ let INPUTS = [
     "Timer"
     "ToolBar"
     "TreeView"
+    "Url"
     "Variant"
     "Widget"
 ]

@@ -1161,8 +1161,10 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
             | ModuleName parts -> parts
         let otherParts =
             context.GroupContext.Path
-        (moduleParts @ otherParts)
-        |> String.concat "::"
+        let joined =
+            (moduleParts @ otherParts)
+            |> String.concat "::"
+        "::" + joined + "::"
         
     blankH()
     writeH 0 "void %s__wrapper();" namedFunction.WrapperName
@@ -1171,7 +1173,7 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
     for argName, argType in namedFunction.Args do
         popValue context writerCpp 1 argType (Variable argName)
     let invocation =
-        sprintf "%s::%s(%s)" nsPrefix namedFunction.Name (joinedArgNames namedFunction.Args) // inserted "::", see nsPrefix comment above
+        sprintf "%s%s(%s)" nsPrefix namedFunction.Name (joinedArgNames namedFunction.Args)
     if namedFunction.Throws.IsEmpty then
         pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
     else

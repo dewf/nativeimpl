@@ -1150,7 +1150,19 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
     let writeH, blankH = writerH.Write, writerH.Blank
     
     let nsPrefix =
-        clampedNsPrefix context
+        // clampedNsPrefix context
+        //
+        // quick hack to get fully-qualified method invocations, to solve a problem:
+        // if this fails to work, or we keep having problems, perhaps a better long-term solution is
+        // to remove all the "using namespace" directives, and fully qualify all imports in generated files, and even in the initial uendited .cpp file
+        // (the developer can optionally write their own "using" in the .cpp file alone to reduce visual noise)
+        let moduleParts =
+            match context.ModuleContext.Module.Name with
+            | ModuleName parts -> parts
+        let otherParts =
+            context.GroupContext.Path
+        (moduleParts @ otherParts)
+        |> String.concat "::"
         
     blankH()
     writeH 0 "void %s__wrapper();" namedFunction.WrapperName
@@ -1159,7 +1171,7 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
     for argName, argType in namedFunction.Args do
         popValue context writerCpp 1 argType (Variable argName)
     let invocation =
-        sprintf "%s%s(%s)" nsPrefix namedFunction.Name (joinedArgNames namedFunction.Args)
+        sprintf "%s::%s(%s)" nsPrefix namedFunction.Name (joinedArgNames namedFunction.Args) // inserted "::", see nsPrefix comment above
     if namedFunction.Throws.IsEmpty then
         pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
     else

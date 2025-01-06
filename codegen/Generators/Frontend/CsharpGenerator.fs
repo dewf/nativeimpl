@@ -8,10 +8,43 @@ open Generators.Common
 
 open AppCommon
 
-let resolvedNameToString =
-    resolvedNameToStringAbstract "." (fun name _ -> name) None DirectImportsOnly
+type CsRenderContext = {
+    RenderContext: RenderContext
+    InOpaqueMethod: OpaqueInfo option         // rendering an opaque method (pop/invocation/push) at the current group/path
+} with
+    member this.ModuleContext =
+        this.RenderContext.ModuleContext
+    member this.GroupContext =
+        this.RenderContext.GroupContext
+    member this.NavigateToSub (name: string) =
+        let nextRenderContext = 
+            this.RenderContext.NavigateToSub name
+        { this with RenderContext = nextRenderContext }
+
+let resolvedNameToString context resolvedName mode =
+    let raw =
+        resolvedNameToStringAbstract "." (fun name _ -> name) None DirectImportsOnly context.RenderContext resolvedName mode
+    match context.InOpaqueMethod with
+    | Some info ->
+        // kludge: verify the first segment (possibly a module name) doesn't collide with a method name at this same level
+        // not sure if this will ultimately belong in the abstract method, doesn't seem like a problem on the C++ side
+        // we could also just have another param on resolvedNameToStringAbstract, "fullyQualifiedImportPrefix", then we could inject eg Org.Whatever.MinimalQt
+        let parts = 
+            raw.Split(".")
+        if parts.Length >= 2 then
+            let collidesWithMethod =
+                info.Methods
+                |> Seq.exists (fun nf -> upperFirst nf.Name = upperFirst parts[0])
+            if collidesWithMethod then
+                "%%%%%." + raw
+            else
+                raw
+        else
+            raw
+    | None ->
+        raw
     
-let typeToCsString (context: RenderContext) (outerType: NIType) =
+let typeToCsString (context: CsRenderContext) (outerType: NIType) =
     let rec recInner = function
         | UnitType -> "void"
         | Primitive prim ->
@@ -64,14 +97,14 @@ let typeToCsString (context: RenderContext) (outerType: NIType) =
     // go
     recInner outerType
 
-let rec newCsArray (context: RenderContext) (ofType: NIType) (countVar: string) =
+let rec newCsArray (context: CsRenderContext) (ofType: NIType) (countVar: string) =
     match ofType with
     | ArrayType niType ->
         sprintf "%s[]" (newCsArray context niType countVar)
     | _ ->
         sprintf "new %s[%s]" (typeToCsString context ofType) countVar
 
-let typeToName (context: RenderContext) (outerType: NIType) =
+let typeToName (context: CsRenderContext) (outerType: NIType) =
     let rec recInner (inGeneric: bool) = function
         | UnitType -> failwith "typeToName: 'unit' type as name?"
         | Primitive prim ->
@@ -114,7 +147,7 @@ let typeToName (context: RenderContext) (outerType: NIType) =
         | x -> sprintf "(typeToName: not yet supported: %A)" x
     recInner false outerType
 
-let typeWithPrefix (context: RenderContext) (outerType: NIType) (prefix: string) =
+let typeWithPrefix (context: CsRenderContext) (outerType: NIType) (prefix: string) =
     // function for appropriately-qualified path to parent interface, but with <prefix> inserted just before the final part (eg Org.Whatever.<prefix>Thing)
     let x = typeToCsString context outerType
     let parts = x.Split(".")
@@ -122,7 +155,7 @@ let typeWithPrefix (context: RenderContext) (outerType: NIType) (prefix: string)
     parts[lastIndex] <- prefix + parts[lastIndex]
     String.concat "." parts
 
-let argsJoined (context: RenderContext) (args: (string * NIType) list) =
+let argsJoined (context: CsRenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCsString context type_) name]
     |> String.concat ", "
 
@@ -130,7 +163,7 @@ let argNamesJoined (args: (string * NIType) list) =
     [for name, _ in args -> name]
     |> String.concat ", "
 
-let fieldsJoined (context: RenderContext) (fields: NamedField list) =
+let fieldsJoined (context: CsRenderContext) (fields: NamedField list) =
     [for f in fields -> sprintf "%s %s" (typeToCsString context f.Type_) f.Name]
     |> String.concat ", "
 
@@ -144,7 +177,7 @@ type PopValueContext =
     | Return
     | SafeReturn
 
-let popValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
+let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
     let write = writer.Write
     let contextPrefix =
         match popContext with
@@ -216,7 +249,7 @@ type PushIsReturn =
     | Indirect of name: string
     | NotApplicable
 
-let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
+let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
     let write = writer.Write
     let isReturnString() =
         match isReturn with
@@ -296,7 +329,7 @@ let pushValue (context: RenderContext) (writer: IFormatWriter) (level: int) (typ
 type ArrayOrSetMode =
     | ArrayMode
     | SetMode
-type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
+type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
     let write, blank = writer.Write, writer.Blank
     let renderDefault () =
         if mode = ArrayMode then
@@ -586,7 +619,7 @@ type ArrayOrSetRenderer(context: RenderContext, writer: IFormatWriter, outerType
                 if mode = ArrayMode then "array" else "set"
             write 2 "// TODO: push/pop for %s of %s" str (typeToCsString context outerType)
 
-let renderGeneric (context: RenderContext) (writer: IFormatWriter) (gType: NIType) =
+let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIType) =
     let write, blank = writer.Write, writer.Blank
     //
     blank()
@@ -724,7 +757,7 @@ let renderGeneric (context: RenderContext) (writer: IFormatWriter) (gType: NITyp
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
         
-let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
+let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
     
     match userType with
@@ -822,7 +855,7 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             write 4 "}"
             write 3 "}"
             
-        let renderInstanceMethods (context: RenderContext) =
+        let renderInstanceMethods (context: CsRenderContext) =
             for namedFunc in info.Methods do
                 let throwsComment =
                     if namedFunc.Throws.IsEmpty then
@@ -835,18 +868,22 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
                         sprintf " // throws %s" joined
                 write 3 "public %s %s(%s)%s" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args) throwsComment
                 write 3 "{"
-                // push args in reverse
-                for argName, argType in namedFunc.Args |> List.rev do
-                    pushValue context writer 4 argType argName (Direct false)
-                // push self argument
-                pushValue context writer 4 fakeThis "this" (Direct false)
-                // invoke remote
-                if namedFunc.Throws.IsEmpty then
-                    write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
-                else
-                    write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
-                // return pop
-                popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+                // nested function here, because we're modifying the render context a bit
+                let renderMethodInvocation (context: CsRenderContext) =
+                    // push args in reverse
+                    for argName, argType in namedFunc.Args |> List.rev do
+                        pushValue context writer 4 argType argName (Direct false)
+                    // push self argument
+                    pushValue context writer 4 fakeThis "this" (Direct false)
+                    // invoke remote
+                    if namedFunc.Throws.IsEmpty then
+                        write 4 "NativeImplClient.InvokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+                    else
+                        write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+                    // return pop
+                    popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+                // go
+                renderMethodInvocation {context with InOpaqueMethod = Some info }
                 write 3 "}"
         // static content
         match info.MaybeStaticDefs with
@@ -876,7 +913,7 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         write 3 "return ptr != IntPtr.Zero ? new %s(ptr) : null;" (upperFirst name)
         write 2 "}"
     | StructDef info ->
-        let renderContent (context: RenderContext) =
+        let renderContent (context: CsRenderContext) =
             for field in info.Fields do
                 write 3 "public %s %s;" (typeToCsString context field.Type_) (upperFirst field.Name)
             // constructor
@@ -1118,7 +1155,7 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
             write 3 "{"
             write 4 "// nothing by default"
             write 3 "}"
-        let renderMethods (context: RenderContext) =
+        let renderMethods (context: CsRenderContext) =
             for method in info.Methods do
                 let throwsComment =
                     if method.Throws.IsEmpty then
@@ -1282,7 +1319,7 @@ let rec renderUserType (context: RenderContext) (writer: IFormatWriter) (name: s
         write 3 "return Wrapper;"
         write 2 "}"
 
-and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
+and renderGroupCommon (context: CsRenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     
     let groupContext =
@@ -1342,7 +1379,9 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
             let group =
                 groupContext.SubGroups[name]
             let nextContext =
-                { context with GroupContext = group }
+                let nextSubRenderContext =
+                    { context.RenderContext with GroupContext = group }
+                { context with RenderContext = nextSubRenderContext } // why doesn't nested update work for us??
             write 2 "public static class %s" group.Name
             write 2 "{"
             renderGroupCommon nextContext (writer.WithExtraIndent 1)
@@ -1354,7 +1393,7 @@ and renderGroupCommon (context: RenderContext) (writer: IFormatWriter) =
 let joinModuleName (ModuleName nameParts) =
     joinNameParts "." nameParts
     
-let assignModuleHandles (context: RenderContext) (writer: IFormatWriter) =
+let assignModuleHandles (context: CsRenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     
     let rec assignGroup (group: GroupContext) =
@@ -1459,7 +1498,8 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     let m =
         moduleContext.Module
     let renderContext =
-        createRenderContext moduleContext
+        { RenderContext = createRenderContext moduleContext
+          InOpaqueMethod = None }
     let root =
         renderContext.GroupContext
         

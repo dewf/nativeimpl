@@ -71,6 +71,7 @@ let INPUTS = [
     "Icon"
     "Image"
     "ItemSelection"
+    "ItemSelectionCommon"
     "ItemSelectionModel"
     "KeySequence"
     "Label"

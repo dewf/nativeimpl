@@ -9,8 +9,9 @@ open Generators.Common
 open AppCommon
 
 type CsRenderContext = {
+    BaseNamespace: string
     RenderContext: RenderContext
-    InOpaqueMethod: OpaqueInfo option         // rendering an opaque method (pop/invocation/push) at the current group/path
+    OpaqueMethodContext: OpaqueInfo option         // rendering an opaque method (pop/invocation/push) at the current group/path, prone to extra collisions on the push/pop statements
 } with
     member this.ModuleContext =
         this.RenderContext.ModuleContext
@@ -24,11 +25,11 @@ type CsRenderContext = {
 let resolvedNameToString context resolvedName mode =
     let raw =
         resolvedNameToStringAbstract "." (fun name _ -> name) None DirectImportsOnly context.RenderContext resolvedName mode
-    match context.InOpaqueMethod with
+    match context.OpaqueMethodContext with
     | Some info ->
         // kludge: verify the first segment (possibly a module name) doesn't collide with a method name at this same level
-        // not sure if this will ultimately belong in the abstract method, doesn't seem like a problem on the C++ side
-        // we could also just have another param on resolvedNameToStringAbstract, "fullyQualifiedImportPrefix", then we could inject eg Org.Whatever.MinimalQt
+        // eg: ModuleName.Thing__Push() ... the "ModuleName" segment can cause problems
+        // long story short, after some experiments this seemed to belong here in the C# codegen, not in 'resolvedNameToStringAbstract'
         let parts = 
             raw.Split(".")
         if parts.Length >= 2 then
@@ -36,7 +37,7 @@ let resolvedNameToString context resolvedName mode =
                 info.Methods
                 |> Seq.exists (fun nf -> upperFirst nf.Name = upperFirst parts[0])
             if collidesWithMethod then
-                "%%%%%." + raw
+                sprintf "%s.%s" context.BaseNamespace raw
             else
                 raw
         else
@@ -883,7 +884,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
                     // return pop
                     popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
                 // go
-                renderMethodInvocation {context with InOpaqueMethod = Some info }
+                renderMethodInvocation {context with OpaqueMethodContext = Some info }
                 write 3 "}"
         // static content
         match info.MaybeStaticDefs with
@@ -1498,8 +1499,9 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     let m =
         moduleContext.Module
     let renderContext =
-        { RenderContext = createRenderContext moduleContext
-          InOpaqueMethod = None }
+        { BaseNamespace = baseNamespace
+          RenderContext = createRenderContext moduleContext
+          OpaqueMethodContext = None }
     let root =
         renderContext.GroupContext
         

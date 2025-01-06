@@ -110,6 +110,7 @@ let INPUTS = [
     "TextOption"
     "Timer"
     "ToolBar"
+    "Transform"
     "TreeView"
     "Url"
     "Variant"

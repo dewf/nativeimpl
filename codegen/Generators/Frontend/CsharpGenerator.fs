@@ -400,6 +400,23 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 2 "}"
             else
                 failwith "ArrayOrSetRenderer: TypedefTuple (set mode) not yet implemented"
+        member this.TypedefPrim (prim: NIPrimitive) =
+            if mode = ArrayMode then
+                // push ==================
+                write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+                write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "{"
+                pushValue context writer 3 (ArrayType (Primitive prim)) "values" (Indirect "isReturn")
+                write 2 "}"
+                // pop ===================
+                blank()
+                write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+                write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+                write 2 "{"
+                popValue context writer 3 (ArrayType (Primitive prim)) Return
+                write 2 "}"
+            else
+                failwith "ArrayOrSetRenderer: TypedefPrim (set mode) not yet implemented"
         member this.EnumType (name: ResolvedName) =
             let widthType =
                 match requiredSymbolLookup context.ModuleContext name with

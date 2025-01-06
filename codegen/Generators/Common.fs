@@ -443,6 +443,7 @@ let symbolToRenderableKey (SymbolName nameParts) (currentNamespace: string list)
 
 type IArrayLikeRenderer =
     abstract TypedefTuple: NIType -> unit
+    abstract TypedefPrim: NIPrimitive -> unit
     abstract EnumType: name: ResolvedName -> unit
     abstract StructType: name: ResolvedName -> NamedField list -> unit
     abstract TupleType: NIType list -> unit
@@ -468,6 +469,8 @@ let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArra
             match content with
             | TypeDef (TupleType _ as tt) ->
                 renderer.TypedefTuple tt
+            | TypeDef (Primitive prim) ->
+                renderer.TypedefPrim prim
             | _ ->
                 failwithf "array of typedef %A: TODO (basic array treatment)" resolvedName
         | EnumType ->

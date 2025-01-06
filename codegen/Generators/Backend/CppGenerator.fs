@@ -877,6 +877,16 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "inline %s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
             popValue context writer 1 (ArrayType tt) Return
             write 0 "}"
+        member this.TypedefPrim (prim: NIPrimitive) =
+            // push
+            write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+            pushValue context writer 1 (ArrayType (Primitive prim)) "values" (Indirect "isReturn")
+            write 0 "}"
+            // pop
+            blank()
+            write 0 "inline %s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
+            popValue context writer 1 (ArrayType (Primitive prim)) Return
+            write 0 "}"
         member this.EnumType (name: ResolvedName) =
             let info =
                 match requiredSymbolLookup context.ModuleContext name with
@@ -1494,16 +1504,15 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         renderWrapperDelegate context writerH writerCpp name info niType
     | TypeDef niType ->
         // ghetto, but for now instead of flattening, just write an inline wrapper
+        // header-only because inline!
         blankH()
-        writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
-        writeCpp 0 "inline %s %s__pop() {" (typeToCppString context Default niType) name
-        popValue context writerCpp 1 niType Return
-        writeCpp 0 "}"
-        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
-        blankCpp()
-        writeCpp 0 "inline void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
-        pushValue context writerCpp 1 niType "value" (Indirect "isReturn")
-        writeCpp 0 "}"
+        writeH 0 "inline %s %s__pop() {" (typeToCppString context Default niType) name
+        popValue context writerH 1 niType Return
+        writeH 0 "}"
+        blankH()
+        writeH 0 "inline void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
+        pushValue context writerH 1 niType "value" (Indirect "isReturn")
+        writeH 0 "}"
     | EnumDef info ->
         let widthType =
             match info.MaybeWidth with

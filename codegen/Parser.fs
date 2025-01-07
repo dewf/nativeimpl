@@ -692,20 +692,38 @@ let unfoldUntil (stopTokens: Token list) (generatorFunc: TokenAndLocation list -
         | _ -> failwith "nope"
     elements, etc
     
-let overloadMapFunc (names: Map<string, int>) (item: NamedFunction) =
+type OverloadMapValue = {
+    Count: int
+    BannedArgs: Set<NIType list>
+}
+let overloadMapFunc (overloads: Map<string, OverloadMapValue>) (item: NamedFunction) =
     let key =
         item.Name.ToLower()
-    if names.ContainsKey key then
-        let existingCount =
-            names[key]
-        let nextNames =
-            names.Add(key, existingCount + 1)
-        nextNames, { item with MaybeOverloadId = Some existingCount }
+    let thisArgs =
+        item.Args |> List.map snd
+    if overloads.ContainsKey key then
+        let value = overloads[key]
+        if not (value.BannedArgs.Contains thisArgs) then
+            // OK to add
+            let nextValue =
+                { Count = value.Count + 1
+                  BannedArgs = value.BannedArgs.Add thisArgs }
+            let nextNames =
+                overloads.Add(key, nextValue)
+            nextNames, { item with MaybeOverloadId = Some value.Count }
+        else
+            // had same args as previous function, fail
+            // I know, we really need to bring the parse location into this error message,
+            // but it's going to take some large-scale modification of parseModuleDefs, and I don't feel like doing that right now
+            failwithf "overloadMapFunc: overload [%s] has identical argument types to a prior method/function in this scope" item.Name
     else
-        names.Add(key, 1), item
+        let value =
+            { Count = 1
+              BannedArgs = Set.ofList [ thisArgs ] }
+        overloads.Add(key, value), item
     
 let setOverloadIndices (nfList: NamedFunction list) =
-    (Map.empty<string, int>, nfList)
+    (Map.empty<string, OverloadMapValue>, nfList)
     ||> List.mapWithContext overloadMapFunc
     
 let rec parseModuleDefs (input: TokenAndLocation list) =
@@ -790,7 +808,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             // optional static block
             let maybeStaticDefs, etc =
                 match etc with
-                | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
+                | Lookahead 2 ([StaticToken; LeftBrace], _, etc) ->
                     let defsList, etc  =
                         unfoldUntil [RightBrace] (parseNext []) etc
                     let flattened =
@@ -850,7 +868,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 // optional static block
                 let maybeStaticDefs, etc =
                     match etc with
-                    | Lookahead 2 ([StaticToken; LeftBrace], loc, etc) ->
+                    | Lookahead 2 ([StaticToken; LeftBrace], _, etc) ->
                         let defsList, etc  =
                             unfoldUntil [RightBrace] (parseNext []) etc
                         let flattened =
@@ -929,7 +947,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     None, loc, etc
             // continue as normal
             match etc with
-            | Lookahead 1 ([Semicolon], loc, etc) ->
+            | Lookahead 1 ([Semicolon], _, etc) ->
                 // no content, must inherit (for now)
                 match maybeParent with
                 | Some parent ->

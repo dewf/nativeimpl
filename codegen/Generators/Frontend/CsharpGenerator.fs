@@ -67,11 +67,15 @@ let typeToCsString (context: CsRenderContext) (outerType: NIType) =
             | StringType -> "string"
         | Resolved (resolvedName, resolvedType) ->
             match resolvedType with
+            | FwdOpaqueType ->
+                match requiredSymbolLookup context.ModuleContext resolvedName with
+                | FwdOpaqueDef parts ->
+                    sprintf "%s.%s" context.BaseNamespace (joinNameParts "." parts)
+                | _ ->
+                    failwith "typeToCsString: failed to find fwdopaque definition"
             | TypedefType ->
                 // no C# typedefs so we just render the type directly
-                let content =
-                    requiredSymbolLookup context.ModuleContext resolvedName
-                match content with
+                match requiredSymbolLookup context.ModuleContext resolvedName with
                 | TypeDef actual ->
                     recInner actual
                 | _ ->
@@ -125,7 +129,7 @@ let typeToName (context: CsRenderContext) (outerType: NIType) =
             | Float32 -> "Float"
             | Float64 -> "Double"
             | StringType -> "String"
-        | Resolved (resolvedName, _) ->
+        | Resolved (resolvedName, resolvedType) ->
             resolvedNameToString context resolvedName (if inGeneric then GenericIdentifierMode else IdentifierMode)
         | TupleType tupleTypes ->
             let joined =
@@ -200,9 +204,19 @@ let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (ty
         | Float32 -> write level "%s NativeImplClient.PopFloat();" contextPrefix
         | Float64 -> write level "%s NativeImplClient.PopDouble();" contextPrefix
         | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
-    | Resolved (resolvedName, _) ->
-        let name =
-            resolvedNameToString context resolvedName TypeMode
+    | Resolved (resolvedName, resolvedType) ->
+        let name = 
+            match resolvedType with
+            | FwdOpaqueType ->
+                // special treatment for these:
+                match requiredSymbolLookup context.ModuleContext resolvedName with
+                | FwdOpaqueDef parts ->
+                    sprintf "%s.%s" context.BaseNamespace (joinNameParts "." parts)
+                | _ ->
+                    failwithf "C# popValue: FwdOpaque trouble, should never happen"
+            | _ ->
+                // all other types:
+                resolvedNameToString context resolvedName TypeMode
         write level "%s %s__Pop();" contextPrefix name
     | ArrayType niType ->
         match niType with
@@ -271,7 +285,17 @@ let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (t
         | StringType -> write level "NativeImplClient.PushString(%s);" content
     | Resolved(resolvedName, resolvedType) ->
         let name =
-            resolvedNameToString context resolvedName TypeMode
+            match resolvedType with
+            | FwdOpaqueType ->
+                // special treatment for fwd opaques:
+                match requiredSymbolLookup context.ModuleContext resolvedName with
+                | FwdOpaqueDef parts ->
+                    sprintf "%s.%s" context.BaseNamespace (joinNameParts "." parts)
+                | _ ->
+                    failwithf "C# pushValue: FwdOpaqueType trouble, shouldn't happen"
+            | _ ->
+                // all other types:
+                resolvedNameToString context resolvedName TypeMode
         match resolvedType with
         | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
             // types that potentially contain refs, need to honor isReturn
@@ -779,6 +803,9 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
     let write, blank = writer.Write, writer.Blank
     
     match userType with
+    | FwdOpaqueDef _ ->
+        // nothing to render in this context, only typeToString will actually render it
+        ()
     | OpaqueDef info ->
         let fakeThis =
             let namePath =

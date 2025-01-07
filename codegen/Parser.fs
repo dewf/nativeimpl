@@ -44,6 +44,7 @@ type UnresolvedIdentifier =
     
 type ResolvedType =
     | OpaqueType
+    | FwdOpaqueType
     | StructType
     | InterfaceType
     | ExceptionType
@@ -417,6 +418,7 @@ and StructInfo = {
 }
 and UserType =
     | OpaqueDef of info: OpaqueInfo
+    | FwdOpaqueDef of parts: string list
     | StructDef of info: StructInfo
     | ExceptionDef of fields: NamedField list      // created as an args list, although they are accessible fields
     | InterfaceDef of info: InterfaceInfo
@@ -742,6 +744,24 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 parseModuleDefs contentBlock
             ([Group (groupName, groupDefs)], etc)
             |> Some
+        | Lookahead 1 ([FwdOpaqueToken], loc, etc) ->
+            // fwdopaque Name = Module[.Group..].Symbol;
+            match etc with
+            | Lookahead 2 ([Identifier name; EqualsToken], loc, etc) ->
+                match etc with
+                | NameStuff.NameParts (fqName, loc, etc) ->
+                    match etc with
+                    | Lookahead 1 ([Semicolon], _, etc) ->
+                        ([UserType (name, FwdOpaqueDef fqName)], etc)
+                        |> Some
+                    | _ ->
+                        failwithf "parsing fwdopaque @ %A - expected semicolon" loc
+                | _ ->
+                    failwithf "parsing fwdopaque @ %A - expected fully qualified name (for external symbol)" loc
+            | Lookahead 1 ([Identifier _], loc, _) ->
+                failwithf "parsing fwdopaque @ %A - expected = <external symbol>;" loc
+            | _ ->
+                failwithf "parsing fwdopaque @ %A - expected: <identifier> = ..." loc
         | Lookahead 2 ([OpaqueToken; Identifier opaqueName], loc, etc) ->
             // inherits anything?
             let maybeParent, loc, etc =
@@ -1310,6 +1330,7 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                     failwithf "type constraint failed @ %A - must be 'exception' type" loc
             let resolvedType =
                 match resolvedDef with
+                | FwdOpaqueDef _ -> FwdOpaqueType
                 | OpaqueDef _ -> OpaqueType
                 | StructDef _ -> StructType
                 | InterfaceDef _ -> InterfaceType
@@ -1432,6 +1453,9 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                 let nextInfo =
                     resolveDelegateTypes context namespacePath delegateInfo
                 DelegateDef nextInfo
+            | FwdOpaqueDef parts ->
+                // no types to resolve
+                FwdOpaqueDef parts
             | OpaqueDef info ->
                 let nextMaybeParent =
                     info.MaybeParent

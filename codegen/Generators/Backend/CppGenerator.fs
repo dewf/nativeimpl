@@ -187,6 +187,18 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
             let name =
                 resolvedNameToString context resolvedName TypeMode
             match resolvedType with
+            | FwdOpaqueType ->
+                // in the future we could do this properly, and emit the real symbol,
+                // importing the pertinent .h files only in .cpp files (module.cpp, wrapper.cpp)
+                // but for now we're just using an empty struct typedef that requires manual casting
+                //
+                // match requiredSymbolLookup context.ModuleContext resolvedName with
+                // | FwdOpaqueDef parts ->
+                //     sprintf "::%sRef" (joinNameParts "::" parts)
+                // | _ ->
+                //     failwithf "typeToCppString/Resolved/FwdOpaqueType - shouldn't happen"
+                //
+                sprintf "%sRef" name
             | OpaqueType ->
                 sprintf "%sRef" name
             | InterfaceType ->
@@ -294,6 +306,8 @@ let defaultValueForType (context: CppRenderContext) (outerType: NIType) =
             let name =
                 resolvedNameToString context resolvedName TypeMode
             match resolvedType with
+            | FwdOpaqueType ->
+                "nullptr"
             | OpaqueType ->
                 // the final segment actually needs __ in front of it, since the opaque struct defs are defined with that
                 // silly kludge for now, because AFAIK we don't need to directly deal with the default opaque structs (prefixed with __) anywhere else in the generation
@@ -1364,6 +1378,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             SymbolName (context.GroupContext.Path @ [ name ])
         let resolvedType =
             match userType with
+            | FwdOpaqueDef _ -> FwdOpaqueType
             | OpaqueDef _ -> OpaqueType
             | StructDef _ -> StructType
             | ExceptionDef _ -> ExceptionType
@@ -1377,6 +1392,19 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         Resolved (ThisModule symbolName, resolvedType)
     
     match userType with
+    | FwdOpaqueDef _ ->
+        // if we ever start referring to the real symbol (see note in typeToCppString),
+        // we would remove this and just use the already-existing push/pop functions
+        blankH()
+        writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
+        writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
+        writeCpp 1 "ni_pushPtr(value);"
+        writeCpp 0 "}"
+        blankCpp()
+        writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
+        writeCpp 1 "return (%s)ni_popPtr();" (typeToCppString context Default niType)
+        writeCpp 0 "}"
     | OpaqueDef info ->
         blankH()
         writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
@@ -1916,6 +1944,9 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
     //
     blank()
     match userType with
+    | FwdOpaqueDef _ ->
+        // nothing to emit here, we do it alongside normal fwd opaque declarations at the top of the group
+        ()
     | OpaqueDef info ->
         match info.MaybeStaticDefs with
         | Some _ ->
@@ -2065,7 +2096,8 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
         context.GroupContext
         
     // emit all group opaque handles at once, to minimize ordering / mutual referencing problems
-    // unfortunately we can't emit them at the very top of the model, because it seems you can't prefix the struct declaration with a namespace?
+    // unfortunately we can't emit them at the very top of the module, because it seems you can't prefix the struct declaration with a namespace?
+    // edit: (what would be wrong with enclosing namespace { ... } at the top of the file? TODO
     if not group.Opaques.IsEmpty then
         blank()
         for name, info in group.Opaques do
@@ -2076,6 +2108,11 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                 | None ->
                     ""
             write 0 "struct __%s; typedef struct __%s* %sRef;%s" name name name extendsComment
+            
+    if not group.FwdOpaques.IsEmpty then
+        blank()
+        for name, parts in group.FwdOpaques do
+            write 0 "struct __%s; typedef struct __%s* %sRef; // non-circular alias for [%s]" name name name (joinNameParts "::" parts)
             
     // emit sumtype fwd decls, so they can be mutually dependent
     if not group.SumTypes.IsEmpty then

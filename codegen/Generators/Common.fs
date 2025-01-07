@@ -214,6 +214,9 @@ let allGenericTypes (context: ModuleContext) =
                             |> List.collect typeAndSubTypes
                         retTypes @ argTypes @ throwTypes)
                 match userType with
+                | FwdOpaqueDef _ ->
+                    // no nested types
+                    []
                 | OpaqueDef info ->
                     let nestedTypes =
                         match info.MaybeStaticDefs with
@@ -361,6 +364,8 @@ let containsRefs (context: ModuleContext) (thing: NIType) =
             processUserType userType
     and processUserType (userType: UserType) =
         match userType with
+        | FwdOpaqueDef _ ->
+            false
         | OpaqueDef _ ->
             false
         | StructDef info ->
@@ -567,6 +572,7 @@ type GroupContext = {
     // broken down for easy use:
     ModuleMethods: NamedFunction list
     Opaques: (string * OpaqueInfo) list
+    FwdOpaques: (string * string list) list
     SumTypes: (string * SumTypeValue list) list
     Interfaces: (string * InterfaceInfo) list
     Exceptions: (string * NamedField list) list
@@ -596,6 +602,13 @@ let createGroups (rootDefs: ModuleDefinition list) =
             |> List.choose (function
                 | UserType (name, OpaqueDef info) ->
                     Some (name, info)
+                | _ ->
+                    None)
+        let fwdOpaques =
+            groupDefs
+            |> List.choose (function
+                | UserType (name, FwdOpaqueDef parts) ->
+                    Some (name, parts)
                 | _ ->
                     None)
         let sumTypes =
@@ -669,6 +682,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
           Defs = groupDefs
           ModuleMethods = moduleMethods
           Opaques = opaques
+          FwdOpaques = fwdOpaques
           SumTypes = sumTypes
           Interfaces = interfaces
           Exceptions = exceptions

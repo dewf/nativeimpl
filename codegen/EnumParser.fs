@@ -8,6 +8,7 @@ type EnumLiteral =
     | EnumIdentifier of id: string
 and EnumUnaryOp =
     | BitwiseNot
+    | Negation
 and EnumBinaryOp =
     | LeftShift
     | BitwiseAnd
@@ -35,6 +36,7 @@ let private (|MatchUnaryOp|_|) (input: TokenAndLocation list) =
     | { Token = token } :: etc ->
         match token with
         | Tilde -> Some (BitwiseNot, etc)
+        | Minus -> Some (Negation, etc)
         | _ -> None
     | _ ->
         None
@@ -89,7 +91,8 @@ type private StackOp =
 let private precedence = function
     | StackOp.Unary op ->
         match op with
-        | BitwiseNot -> 10
+        | BitwiseNot -> 11
+        | Negation -> 10
     | StackOp.Binary op ->
         match op with
         | LeftShift -> 9
@@ -181,6 +184,7 @@ let rec exprString (expr: EnumExpr) =
         let opStr =
             match op with
             | BitwiseNot -> "~"
+            | Negation -> "-"
         sprintf "%s%s" opStr (exprString value)
     | Binary(op, left, right) ->
         let opStr =

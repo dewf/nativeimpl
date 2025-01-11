@@ -884,6 +884,20 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     None, loc, etc
             // continue as normal
             match etc with
+            | Lookahead 1 ([Semicolon], loc, etc) ->
+                // we'll allow empty interfaces if they inherit from something
+                // (just because I haven't given much thought to truly empty interfaces, or what they'd be useful for)
+                match maybeParent with
+                | Some _ ->
+                    let info = {
+                        MaybeParent = maybeParent
+                        Methods = []
+                        MaybeStaticDefs = None
+                    }
+                    ([UserType (name, InterfaceDef info)], etc)
+                    |> Some
+                | None ->
+                    failwithf "totally empty interface @ %A - right now these aren't allowed, must contain either a single method or extend a parent interface" loc
             | Lookahead 1 ([LeftBrace], loc, etc) ->
                 // optional static block
                 let maybeStaticDefs, etc =

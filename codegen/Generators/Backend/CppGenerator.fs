@@ -78,6 +78,12 @@ let resolvedNameToString (context: CppRenderContext) =
             (fun name _ -> name)
     resolvedNameToStringAbstract "::" renameFunc pathClamp RecursiveImports context.RenderContext
     
+let constExprToString =
+    let config =
+        { ConstParser.NullStr = "nullptr"
+          ConstParser.ScopeResStr = "::" }
+    ConstParser.exprString config
+    
 let getRelativePath (currentPath: string list) (targetPath: string list) =
     // remove common segments
     // prefix (currentPath.count) segments with ".."
@@ -270,11 +276,29 @@ let joinedFieldNames (fields: NamedField list) =
 let joinedArgs (context: CppRenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCppString context FunctionArguments type_) name]
     |> String.concat ", "
+
+let joinedNamedFuncArgs (context: CppRenderContext) (showDefaultValue: bool) (args: NamedFunctionArg list) =
+    [for arg in args ->
+        match arg.DefaultValue with
+        | Some value ->
+            if showDefaultValue then
+                sprintf "%s %s = %s" (typeToCppString context FunctionArguments arg.Type) arg.Name (constExprToString value)
+            else
+                sprintf "%s %s /* %s */" (typeToCppString context FunctionArguments arg.Type) arg.Name (constExprToString value)
+        | _ ->
+            sprintf "%s %s" (typeToCppString context FunctionArguments arg.Type) arg.Name ]
+    |> String.concat ", "
     
 let joinedArgNames (args: (string * NIType) list) =
     args
     |> List.map fst
     |> String.concat ", "
+    
+let joinedNamedFuncArgNames (args: NamedFunctionArg list) =
+    args
+    |> List.map (_.Name)
+    |> String.concat ", "
+    
 
 // super kludgy but super helpful!
 // ideally we'd have a virtual-namespace-aware method of getting relative path prefixes of any symbol
@@ -689,15 +713,15 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     for namedFunc in info.Methods do
         let returnType =
             (typeToCppString context Default namedFunc.Returns)
-        let arguments =
-            joinedArgs context namedFunc.Args
         // header version ===================
-        writeH 1 "%s %s(%s) override;" returnType namedFunc.Name arguments
+        let arguments showDefaultArgs =
+            joinedNamedFuncArgs context showDefaultArgs namedFunc.Args
+        writeH 1 "%s %s(%s) override;" returnType namedFunc.Name (arguments true)
         // .cpp version =====================
-        writeCpp 0 "%s Client%sImpl::%s(%s) {" returnType name namedFunc.Name arguments
+        writeCpp 0 "%s Client%sImpl::%s(%s) {" returnType name namedFunc.Name (arguments false)
         // push args (reverse order)
-        for argName, argType in namedFunc.Args |> List.rev do
-            pushValue context writerCpp 1 argType argName (Direct false)
+        for arg in namedFunc.Args |> List.rev do
+            pushValue context writerCpp 1 arg.Type arg.Name (Direct false)
         // invoke
         if namedFunc.Throws.IsEmpty then
             writeCpp 1 "clientObject->invokeMethod(%s_%s);" (lowerFirst name) namedFunc.Name
@@ -759,10 +783,10 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
         blankCpp()
         writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.WrapperName
         writeCpp 1 "const auto inst = std::dynamic_pointer_cast<%s>(ServerObject::getByID(serverID));" name
-        for argName, argType in nf.Args do
-            popValue context writerCpp 1 argType (Variable argName)
+        for arg in nf.Args do
+            popValue context writerCpp 1 arg.Type (Variable arg.Name)
         let invocation =
-            sprintf "inst->%s(%s)" nf.Name (joinedArgNames nf.Args)
+            sprintf "inst->%s(%s)" nf.Name (joinedNamedFuncArgNames nf.Args)
         if nf.Throws.IsEmpty then
             pushValue context writerCpp 1 nf.Returns invocation (Direct true)
         else
@@ -1159,7 +1183,7 @@ let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (i
         |> List.map (fun nf ->
             let nextArgs =
                 let firstArg =
-                    "_this", fakeThis
+                    { Name = "_this"; Type = fakeThis; DefaultValue = None }
                 firstArg :: nf.Args
             { nf with Args = nextArgs })
     // name prefix
@@ -1194,10 +1218,10 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
     writeH 0 "void %s__wrapper();" namedFunction.WrapperName
     blankCpp()
     writeCpp 0 "void %s__wrapper() {" namedFunction.WrapperName
-    for argName, argType in namedFunction.Args do
-        popValue context writerCpp 1 argType (Variable argName)
+    for arg in namedFunction.Args do
+        popValue context writerCpp 1 arg.Type (Variable arg.Name)
     let invocation =
-        sprintf "%s%s(%s)" nsPrefix namedFunction.Name (joinedArgNames namedFunction.Args)
+        sprintf "%s%s(%s)" nsPrefix namedFunction.Name (joinedNamedFuncArgNames namedFunction.Args)
     if namedFunction.Throws.IsEmpty then
         pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
     else
@@ -1975,7 +1999,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                         |> List.map (typeToCppString context Default)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
-            write 0 "%s%s %s(%s);%s" staticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+            write 0 "%s%s %s(%s);%s" staticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedNamedFuncArgs context true namedFunc.Args) throwsComment
     | StructDef info ->
         let renderFields (context: CppRenderContext) =
             for field in info.Fields do
@@ -2008,7 +2032,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                             |> List.map (typeToCppString context Default)
                             |> String.concat ", "
                         sprintf " // throws %s" joined
-                write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+                write 1 "virtual %s %s(%s) = 0;%s" (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedNamedFuncArgs context true namedFunc.Args) throwsComment
         // class/interface proper
         write 0 "class %s {" name
         write 0 "public:"
@@ -2069,7 +2093,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             match maybeSpecifiedValue with
             | Some specValue ->
                 let enumValueStr =
-                    EnumParser.exprString specValue
+                    constExprToString specValue
                 write 1 "%s = %s%s" value enumValueStr maybeComma
             | None ->
                 write 1 "%s%s" value maybeComma
@@ -2146,7 +2170,7 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                     "static "
                 else
                     ""
-            write 0 "%s%s %s(%s);%s" maybeStaticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+            write 0 "%s%s %s(%s);%s" maybeStaticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedNamedFuncArgs context true namedFunc.Args) throwsComment
         | UserType(name, userType) ->
             renderHeaderUserType context writer name userType
         | Group(groupName, _) ->
@@ -2247,7 +2271,7 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
                     |> List.map (typeToCppString context Default)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
-        write 0 "%s %s%s(%s) {%s" (typeToCppString context Default namedFunc.Returns) nsPrefix namedFunc.Name (joinedArgs context namedFunc.Args) throwsComment
+        write 0 "%s %s%s(%s) {%s" (typeToCppString context Default namedFunc.Returns) nsPrefix namedFunc.Name (joinedNamedFuncArgs context false namedFunc.Args) throwsComment
         if namedFunc.Returns <> UnitType then
             write 1 "return %s;" (defaultValueForType context namedFunc.Returns)
         write 0 "}"

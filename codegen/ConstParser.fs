@@ -1,30 +1,39 @@
-﻿module EnumParser
+﻿module ConstParser
 
 open Tokenizer
+open ParseCommon
 
-type EnumLiteral =
+type ConstLiteral =
     | HexNumber of digits: string
     | DecNumber of digits: string
-    | EnumIdentifier of id: string
-and EnumUnaryOp =
+and ConstUnaryOp =
     | BitwiseNot
     | Negation
-and EnumBinaryOp =
+and ConstBinaryOp =
     | LeftShift
     | BitwiseAnd
     | BitwiseXor
     | BitwiseOr
-and EnumExpr =
-    | Literal of value: EnumLiteral
-    | Unary of op: EnumUnaryOp * value: EnumExpr
-    | Binary of op: EnumBinaryOp * left: EnumExpr * right: EnumExpr
-    | Grouping of inner: EnumExpr
+and ConstExpr =
+    | NullValue
+    | Name of parts: string list
+    | Literal of value: ConstLiteral
+    | Unary of op: ConstUnaryOp * value: ConstExpr
+    | Binary of op: ConstBinaryOp * left: ConstExpr * right: ConstExpr
+    | Grouping of inner: ConstExpr
     
+let private (|MatchName|_|) (input: TokenAndLocation list) =
+    match input with
+    | NameStuff.NameParts (parts, loc, etc) ->
+        Some (parts, etc)
+    | _ ->
+        None
+        
 let private (|MatchLiteral|_|) (input: TokenAndLocation list) =
     match input with
     | { Token = token } :: etc ->
         match token with
-        | Identifier text -> Some (EnumIdentifier text, etc)
+        // | Identifier text -> Some (EnumIdentifier text, etc)
         | Digits digits -> Some (DecNumber digits, etc)
         | HexDigits digits -> Some (HexNumber digits, etc)
         | _ -> None
@@ -84,8 +93,8 @@ let private (|MatchGrouping|_|) (input: TokenAndLocation list) =
 
 [<RequireQualifiedAccess>]
 type private StackOp =
-    | Unary of op: EnumUnaryOp
-    | Binary of op: EnumBinaryOp
+    | Unary of op: ConstUnaryOp
+    | Binary of op: ConstBinaryOp
     | Sentinel
     
 let private precedence = function
@@ -103,9 +112,9 @@ let private precedence = function
         // lowest by definition, forces evaluation of all ops
         0
 
-let private pushStackOp (operands: EnumExpr list) (opStack: StackOp list) (toPush: StackOp) =
+let private pushStackOp (operands: ConstExpr list) (opStack: StackOp list) (toPush: StackOp) =
     // while precedence opStack.top > precedence op do ...
-    let rec removeWhileHigher (operands: EnumExpr list) (opStack: StackOp list) =
+    let rec removeWhileHigher (operands: ConstExpr list) (opStack: StackOp list) =
         match opStack with
         | top :: opStackEtc ->
             if precedence top > precedence toPush then
@@ -139,26 +148,33 @@ let private pushStackOp (operands: EnumExpr list) (opStack: StackOp list) (toPus
     // finally, push
     nextOperands, toPush :: nextOpStack
 
-let rec private parseEnumValue (operands: EnumExpr list) (opStack: StackOp list) (input: TokenAndLocation list) =
+let rec private parseConstValue (operands: ConstExpr list) (opStack: StackOp list) (input: TokenAndLocation list) =
     match input with
+    | { Token = NullToken } :: _ ->
+        // null can't be part of any expression, stands alone
+        NullValue
+    | MatchName (parts, etc) ->
+        let nextOperands =
+            Name parts :: operands
+        parseConstValue nextOperands opStack etc
     | MatchLiteral (literal, etc) ->
         let nextOperands =
             Literal literal :: operands
-        parseEnumValue nextOperands opStack etc
+        parseConstValue nextOperands opStack etc
     | MatchUnaryOp (op, etc) ->
         let nextOperands, nextOpStack =
             pushStackOp operands opStack (StackOp.Unary op)
-        parseEnumValue nextOperands nextOpStack etc
+        parseConstValue nextOperands nextOpStack etc
     | MatchGrouping (contents, etc) ->
         let nextOperands =
             let expr =
-                parseEnumValue [] [] contents
+                parseConstValue [] [] contents
             (Grouping expr) :: operands
-        parseEnumValue nextOperands opStack etc
+        parseConstValue nextOperands opStack etc
     | MatchBinaryOp (op, etc) ->
         let nextOperands, nextOpStack =
             pushStackOp operands opStack (StackOp.Binary op)
-        parseEnumValue nextOperands nextOpStack etc
+        parseConstValue nextOperands nextOpStack etc
     | { Token = token; Location = loc } :: _ ->
         failwithf "parse2: unexpected token [%A] @ %A when parsing enum expression" token loc
     | [] ->
@@ -170,32 +186,41 @@ let rec private parseEnumValue (operands: EnumExpr list) (opStack: StackOp list)
         | _ :: _ -> failwith "parse2: too many operands for final result!"
         | [] -> failwith "parse2: no operands available for final result!"
         
-let parseEnumExpression (input: TokenAndLocation list) =
-    parseEnumValue [] [] input
-                    
-let rec exprString (expr: EnumExpr) =
-    match expr with
-    | Literal value ->
-        match value with
-        | HexNumber digits -> digits
-        | DecNumber digits -> digits
-        | EnumIdentifier id -> id
-    | Unary(op, value) ->
-        let opStr =
-            match op with
-            | BitwiseNot -> "~"
-            | Negation -> "-"
-        sprintf "%s%s" opStr (exprString value)
-    | Binary(op, left, right) ->
-        let opStr =
-            match op with
-            | LeftShift -> "<<"
-            | BitwiseAnd -> "&"
-            | BitwiseXor -> "^"
-            | BitwiseOr -> "|"
-        sprintf "%s %s %s" (exprString left) opStr (exprString right)
-    | Grouping inner ->
-        sprintf "(%s)" (exprString inner)
+let parseConstExpression (input: TokenAndLocation list) =
+    parseConstValue [] [] input
+    
+type ConstExprStringConfig = {
+    NullStr: string
+    ScopeResStr: string
+}
+let exprString (config: ConstExprStringConfig) (root: ConstExpr) =
+    let rec recInner expr =
+        match expr with
+        | NullValue ->
+            config.NullStr
+        | Name parts ->
+            String.concat config.ScopeResStr parts
+        | Literal value ->
+            match value with
+            | HexNumber digits -> digits
+            | DecNumber digits -> digits
+        | Unary(op, value) ->
+            let opStr =
+                match op with
+                | BitwiseNot -> "~"
+                | Negation -> "-"
+            sprintf "%s%s" opStr (recInner value)
+        | Binary(op, left, right) ->
+            let opStr =
+                match op with
+                | LeftShift -> "<<"
+                | BitwiseAnd -> "&"
+                | BitwiseXor -> "^"
+                | BitwiseOr -> "|"
+            sprintf "%s %s %s" (recInner left) opStr (recInner right)
+        | Grouping inner ->
+            sprintf "(%s)" (recInner inner)
+    recInner root
 
 // let rec prettyPrintExpr (level: int) (expr: EnumExpr) =
 //     let indent count =

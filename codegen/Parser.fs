@@ -1,9 +1,10 @@
 ﻿module Parser
 open System
 open System.IO
-open EnumParser
+open ConstParser
 open Tokenizer
 open Extensions
+open ParseCommon
 
 type IntWidth =
     | Width8
@@ -82,161 +83,6 @@ let validBufferElementType = function
         prim <> StringType
     | _ ->
         false
-        
-let (|Require|_|) (required: Token list) (input: TokenAndLocation list) =
-    let front, etc =
-        List.safeSplit required.Length input
-    let frontTokens =
-        front |> List.map (_.Token)
-    if frontTokens = required then
-        Some (front.Head.Location, etc)
-    else
-        None
-
-let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
-    let front, etc =
-        List.safeSplit n input
-    if front.Length = n then
-        let tokens =
-            front |> List.map (_.Token)
-        Some (tokens, front.Head.Location, etc)
-    else
-        None
-        
-let (|TakeWhile|_|) (pred: Token -> bool) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
-    let front, etc =
-        input
-        |> List.splitWhile (fun tl -> pred tl.Token)
-    match front with
-    | h :: _ ->
-        // has at least 1 item
-        Some (front, h.Location, etc)
-    | _ ->
-        None
-        
-// let (|TakeWhileAndVerify|_|) (pred: Token -> bool) (verify: Token list -> bool) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
-//     match input with
-//     | TakeWhile pred (tokens, loc, etc) when verify(tokens) ->
-//         Some (tokens, loc, etc)
-//     | _ ->
-//         None
-        
-let splitTokensBefore (matcher: TokenAndLocation list -> bool) (input: TokenAndLocation list) =
-    let rec tryMatch (revBefore: TokenAndLocation list) (remaining: TokenAndLocation list) =
-        if matcher remaining then
-            (List.rev revBefore, remaining)
-            |> Some
-        else
-            match remaining with
-            | [] ->
-                None
-            | h :: etc ->
-                tryMatch (h :: revBefore) etc
-    tryMatch [] input
-
-let whileDoesParse (tryParseOne: TokenAndLocation list -> Option<'a * Location * TokenAndLocation list * bool>) (input: TokenAndLocation list) = // : 'a list * TokenAndLocation list =
-    // apply the function 'f' to input until it fails, returning its generated elements and the remaining 'etc' list
-    let rawParsed =
-        input
-        |> List.unfold (fun state ->
-            let maybe =
-                tryParseOne state
-            match maybe with
-            | Some (item, loc, etc, doContinue) ->
-                if doContinue then
-                    Some ((item, loc, etc), etc) // notice each item includes the remainder, because we need (the last emitted remainder) at the end
-                else
-                    Some ((item, loc, etc), List.Empty)
-            | None ->
-                None)
-    match rawParsed with
-    | [] ->
-        None
-    | (_, loc, _) :: _ ->
-        let parsed =
-            rawParsed
-            |> List.map (fun (thing, _, _) -> thing)
-        let etc =
-            rawParsed
-            |> List.rev
-            |> List.head
-            |> (fun (_, _, etc) -> etc)
-        Some (parsed, loc, etc)
-
-type ContentUntilMatchingState = {
-    LastLoc: Location
-    NestLevel: int
-    Remaining: TokenAndLocation list
-}
-    
-let contentUntilMatching (loc: Location) (startToken: Token) (input: TokenAndLocation list) =
-    // return content, etc (excluding the end token)
-    let endToken =
-        match startToken with
-        | LeftParen -> RightParen
-        | LeftAngleBracket -> RightAngleBracket
-        | LeftBrace -> RightBrace
-        | _ -> failwith "contentUntilMatching: unknown opening token"
-    // find the first instance of endToken that's not balanced by another startToken
-    let content =
-        {LastLoc = loc; NestLevel = 0; Remaining = input}
-        |> List.unfold (fun acc ->
-            match acc.Remaining with
-            | h :: etc ->
-                let nextLastLoc =
-                    h.Location
-                if h.Token = endToken then
-                    if acc.NestLevel = 0 then
-                        None
-                    else
-                        Some(h, { LastLoc = nextLastLoc; NestLevel = acc.NestLevel - 1; Remaining = etc })
-                elif h.Token = startToken then
-                    Some(h, { LastLoc = nextLastLoc; NestLevel = acc.NestLevel + 1; Remaining = etc })
-                else
-                    Some(h, { acc with LastLoc = nextLastLoc; Remaining = etc })
-            | [] ->
-                failwithf "failed to find matching %A at %s" endToken (acc.LastLoc.ToString()))
-    let _, etc =
-        input
-        |> List.splitAt (content.Length + 1) // skip the closing <whatever>
-    content, etc
-
-module NameStuff =
-    let (|NameParts|_|) (input: TokenAndLocation list) =
-        let tryParseOne = function
-            | Lookahead 1 ([Identifier id], loc, etc) ->
-                match etc with
-                | Lookahead 1 ([Dot], loc, etc) ->
-                    // got item, continue
-                    Some (id, loc, etc, true)
-                | _ ->
-                    // got item, was end
-                    Some (id, loc, etc, false)
-            | _ ->
-                // no item
-                None
-        whileDoesParse tryParseOne input
-    let parseList (delimiter: Token) (endToken: Token) (loc: Location) (input: TokenAndLocation list) =
-        // eg ns1.ns2.name, ns1.name, name, ns3.ns4.name;
-        let tryParseOne = function
-            | NameParts (parts, loc, etc) ->
-                match etc with
-                | Lookahead 1 ([delim], loc, etc) when delim = delimiter -> // more to come
-                    Some (parts, loc, etc, true)
-                | _ -> // last one (will check for endToken later)
-                    Some (parts, loc, etc, false)
-            | _ ->
-                None
-        match whileDoesParse tryParseOne input with
-        | Some (names, loc, etc) ->
-            // verify endToken in place
-            match etc with
-            | Lookahead 1 ([t], loc, etc) when t = endToken ->
-                names, loc, etc
-            | _ ->
-                failwithf "NameStuff.parseList: missing required terminator @ %A" loc
-        | _ ->
-            failwithf "NameStuff.parseList: expected name list @ %A" loc
 
 let rec parseType (input: TokenAndLocation list) =
     match input with
@@ -354,11 +200,17 @@ let rec parseType (input: TokenAndLocation list) =
 
 type Attribute =
     | NoDispose
+    
+type NamedFunctionArg = {
+    Name: string
+    Type: NIType
+    DefaultValue: ConstExpr option
+}
 
 type NamedFunction = {
     Name: string
     MaybeOverloadId: int option
-    Args: (string * NIType) list
+    Args: NamedFunctionArg list
     Returns: NIType
     Throws: NIType list
 } with
@@ -386,7 +238,7 @@ type DelegateInfo = {
 }
 
 type EnumInfo = {
-    Values: (string * EnumExpr option) list // name, specified value
+    Values: (string * ConstExpr option) list // name, specified value
     MaybeWidth: NIType option
     FlagsMode: bool
 }
@@ -488,6 +340,22 @@ let parseFields (loc: Location) (input: TokenAndLocation list) =
     let items =
         List.unfold parseOneField content
     items, etc
+    
+let (|ConstExpr|_|) (loc: Location) (input: TokenAndLocation list) =
+    // grab everything up to comma or end-of-input
+    let pred token =
+        // not sure why we can't define this inline with the pattern match below, won't parse??
+        token <> Comma
+    match input with
+    | TakeWhile pred (exprTokens, loc, etc) when not exprTokens.IsEmpty ->
+        try
+            let enumExpr =
+                parseConstExpression exprTokens
+            Some (enumExpr, loc, etc)
+        with
+            | e -> failwithf "error parsing constant expression @ %A [%s]" loc e.Message
+    | _ ->
+        failwithf "expected enum expression @ %A" loc
 
 let parseArg (input: TokenAndLocation list) =
     if input.IsEmpty then
@@ -495,13 +363,41 @@ let parseArg (input: TokenAndLocation list) =
     else
         let type_, etc =
             parseType input
-        // printfn "type_ %A" type_
-        // printfn "etc: %A" (etc |> List.safeTake 20)
+            
         match etc with
-        | Lookahead 2 ([Identifier name; Comma], _, etc2) ->
-            Some ((name, type_), etc2)
-        | [{ Location = _; Token = Identifier name }] -> // TODO: fix lookahead to use N as 'max', so it returns UP TO that many?
-            Some ((name, type_), [])
+        | Lookahead 1 ([Identifier name], loc, etc) ->
+            
+            // does it have a default value?
+            match etc with
+            | Lookahead 1 ([EqualsToken], loc, etc) ->
+                match etc with
+                | ConstExpr loc (expr, loc, etc) ->
+                    let result =
+                        { Name = name; Type = type_; DefaultValue = Some expr }
+                    // consume comma, if it exists
+                    match etc with
+                    | Lookahead 1 ([Comma], _, etc) ->
+                        Some (result, etc)
+                    | [] ->
+                        Some (result, [])
+                    | _ ->
+                        failwithf "expected comma or end of arguments @ %A" loc
+                | _ ->
+                    failwithf "expected constant expression while parsing function arg '%s' @ %A" name loc
+                    
+            | Lookahead 1 ([Comma], _, etc) ->
+                Some ({ Name = name; Type = type_; DefaultValue = None }, etc)
+                
+            | [] ->
+                // no further tokens, we're done
+                Some ({ Name = name; Type = type_; DefaultValue = None }, [])
+                
+            | _ ->
+                failwithf "parsing function argument '%s' @ %A - identifier must be followed by either comma or = <constexpr>" name loc
+                
+        // | [{ Location = _; Token = Identifier name }] -> // TODO: fix lookahead to use N as 'max', so it returns UP TO that many?
+        //     Some ({ Name = name; Type = type_; DefaultValue = None }, [])
+            
         | _ ->
             // 'rewind' to first element of input, since we know it parsed a type successfully
             match input with
@@ -575,7 +471,7 @@ let parseOneEnumValue (input: TokenAndLocation list) =
                 | TakeWhile pred (exprTokens, loc, etc) when not exprTokens.IsEmpty ->
                     try
                         let enumExpr =
-                            parseEnumExpression exprTokens
+                            parseConstExpression exprTokens
                         (name, Some enumExpr), etc
                     with
                         | e -> failwithf "error parsing enum expression @ %A [%s]" loc e.Message
@@ -641,13 +537,21 @@ let parseOneSumTypeValue (input: TokenAndLocation list) =
                 parseArgsList loc etc2
             | _ ->
                 [], etc
+                
+        // 'args' is now a fancier record type (vs. the previous tuple), due to new default-value processing for named function params
+        // but this isn't applicable to sumtypes, so downgrade it back to the tuple
+        // in the future we probably need a separate 'parseArgList' that can work with sumtypes only
+        let args2 =
+            args
+            |> List.map (fun arg -> (arg.Name, arg.Type))
+        
         // will there be more?
         match etc2 with
         | Lookahead 1 ([Comma], _, etc3) ->
-            Some ({ Name = name; Args = args }, etc3)
+            Some ({ Name = name; Args = args2 }, etc3)
         | [] ->
             // we're done, no more tokens
-            Some ({ Name = name; Args = args }, []) // no etc, unfold will stop
+            Some ({ Name = name; Args = args2 }, []) // no etc, unfold will stop
         | { Location = loc } :: _ ->
             // anything else
             failwithf "parsing sum type value: missing comma before content at %s" (loc.ToString())
@@ -701,15 +605,15 @@ type OverloadMapValue = {
 let overloadMapFunc (overloads: Map<string, OverloadMapValue>) (item: NamedFunction) =
     let key =
         item.Name.ToLower()
-    let thisArgs =
-        item.Args |> List.map snd
+    let argTypes =
+        item.Args |> List.map (_.Type)
     if overloads.ContainsKey key then
         let value = overloads[key]
-        if not (value.BannedArgs.Contains thisArgs) then
+        if not (value.BannedArgs.Contains argTypes) then
             // OK to add
             let nextValue =
                 { Count = value.Count + 1
-                  BannedArgs = value.BannedArgs.Add thisArgs }
+                  BannedArgs = value.BannedArgs.Add argTypes }
             let nextNames =
                 overloads.Add(key, nextValue)
             nextNames, { item with MaybeOverloadId = Some value.Count }
@@ -721,7 +625,7 @@ let overloadMapFunc (overloads: Map<string, OverloadMapValue>) (item: NamedFunct
     else
         let value =
             { Count = 1
-              BannedArgs = Set.ofList [ thisArgs ] }
+              BannedArgs = Set.ofList [ argTypes ] }
         overloads.Add(key, value), item
     
 let setOverloadIndices (nfList: NamedFunction list) =
@@ -865,7 +769,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 | _ ->
                     failwithf "error parsing exception: expecting statement end or arguments list, at %s" (loc.ToString())
             let fields =
-                args |> List.map (fun (name, type_) -> { Name = name; Type_ = type_ })
+                args |> List.map (fun arg -> { Name = arg.Name; Type_ = arg.Type })
             ([UserType (name, ExceptionDef fields)], etc)
             |> Some
         | Lookahead 2 ([InterfaceToken; Identifier name], loc, etc) ->
@@ -933,7 +837,10 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             parseNamedFunction etc
             |> Option.map (fun (nf, etc2) ->
                 let result =
-                    UserType (nf.Name, DelegateDef { Args = nf.Args; Returns = nf.Returns; Throws = nf.Throws })
+                    let tupledArgs = // downgrade from new default-value-capable function args
+                        nf.Args
+                        |> List.map (fun arg -> (arg.Name, arg.Type))
+                    UserType (nf.Name, DelegateDef { Args = tupledArgs; Returns = nf.Returns; Throws = nf.Throws })
                 ([result], etc2))
         | Lookahead 1 ([TypedefToken], loc, etc) ->
             let actual, etc2 =
@@ -1365,7 +1272,7 @@ let resolveFieldType (context: ModuleContext) (namespacePath: string list) (ft: 
 let resolveFunctionTypes (context: ModuleContext) (namespacePath: string list) (nf: NamedFunction) =
     let nextArgs =
         nf.Args
-        |> List.map (fun (name, argType) -> (name, resolveType context namespacePath argType))
+        |> List.map (fun arg -> { arg with Type = resolveType context namespacePath arg.Type })
     let nextReturns =
         resolveType context namespacePath nf.Returns
     let nextThrows =

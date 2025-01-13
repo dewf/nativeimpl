@@ -14,7 +14,7 @@ type Token =
     | Float32Token
     | Float64Token
     | StringToken
-    // etc
+    // keywords, user types
     | ModuleToken
     | ImportToken
     | FwdOpaqueToken
@@ -60,6 +60,8 @@ type Token =
     | Tilde
     | Caret
     | Minus
+    // etc:
+    | NullToken
     
 type Location = {
     Line: int
@@ -253,6 +255,8 @@ let nextToken (loc: Location) (input: char[]) =
             | "static" -> StaticToken
             | "extends" -> ExtendsToken
             | "namedbits" -> NamedBitsToken
+            // etc
+            | "null" -> NullToken
             // generic types (need specialization)
             | "Array" -> ArrayToken
             | "Map" -> MapToken

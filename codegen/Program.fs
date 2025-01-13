@@ -16,9 +16,9 @@ let BACK_LANG = "cpp"
 // // TESTBENCH
 // let LIBRARY = "TestBench"
 // let NAMESPACE = "Org.Prefixed"
-// let INPUT_PATH = @"D:\Development\testbench\interfaceinheritance"
-// let OUTPUT_PATH = @"D:\Development\testbench\interfaceinheritance\_output"
-// let INPUTS = [ "First"; "Second" ]
+// let INPUT_PATH = @"D:\Development\testbench\constexpr"
+// let OUTPUT_PATH = @"D:\Development\testbench\constexpr\_output"
+// let INPUTS = [ "First" ]
 
 // // GUIBASE
 // let LIBRARY = "GuiBase"
@@ -52,6 +52,7 @@ let INPUTS = [
     "BoxLayout"
     "Brush"
     "CalendarWidget"
+    "CheckBox"
     "Color"
     "ComboBox"
     "Common"
@@ -87,7 +88,7 @@ let INPUTS = [
     "Object"
     "PaintDevice"
     "Painter"
-    "PaintResources"
+    // "PaintResources"
     "PersistentModelIndex"
     "Pixmap"
     "PlainTextEdit"
@@ -108,6 +109,11 @@ let INPUTS = [
     "StyleOptionViewItem"
     "TabBar"
     "TabWidget"
+    "TextCharFormat"
+    "TextCursor"
+    "TextDocument"
+    "TextEdit"
+    "TextFormat"
     "TextOption"
     "Timer"
     "ToolBar"

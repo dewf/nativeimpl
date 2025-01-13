@@ -194,25 +194,27 @@ let allGenericTypes (context: ModuleContext) =
         | ResultType (succ, err) ->
             t :: (typeAndSubTypes succ @ typeAndSubTypes err)
         | _ -> []
+        
     let rec processDefs (defs: ModuleDefinition list) =
+        let namedFuncHandler (nf: NamedFunction) =
+            let retTypes =
+                typeAndSubTypes nf.Returns
+            let argTypes =
+                nf.Args
+                |> List.map (_.Type)
+                |> List.collect typeAndSubTypes
+            let throwTypes =
+                nf.Throws
+                |> List.collect typeAndSubTypes
+            retTypes @ argTypes @ throwTypes
+        let namedFuncsHandler (namedFunctions: NamedFunction list) =
+            namedFunctions
+            |> List.collect namedFuncHandler
         defs
         |> List.collect (function
             | Group (_, groupDefs) ->
                 processDefs groupDefs
             | UserType(_, userType) ->
-                let namedFuncsHandler (namedFunctions: NamedFunction list) =
-                    namedFunctions
-                    |> List.collect (fun nf ->
-                        let retTypes =
-                            typeAndSubTypes nf.Returns
-                        let argTypes =
-                            nf.Args
-                            |> List.map snd
-                            |> List.collect typeAndSubTypes
-                        let throwTypes =
-                            nf.Throws
-                            |> List.collect typeAndSubTypes
-                        retTypes @ argTypes @ throwTypes)
                 match userType with
                 | FwdOpaqueDef _ ->
                     // no nested types
@@ -280,16 +282,7 @@ let allGenericTypes (context: ModuleContext) =
             | Global (_, niType) ->
                 typeAndSubTypes niType
             | FunctionDef nf ->
-                let retTypes =
-                    typeAndSubTypes nf.Returns
-                let argTypes =
-                    nf.Args
-                    |> List.map snd
-                    |> List.collect typeAndSubTypes
-                let throwTypes =
-                    nf.Throws
-                    |> List.collect typeAndSubTypes
-                retTypes @ argTypes @ throwTypes)
+                namedFuncHandler nf )
     // go
     processDefs context.Module.Defs
     // is this sufficient/correct for dependency order? (we want smaller primitives to be rendered before the composites they comprise)

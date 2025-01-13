@@ -10,7 +10,8 @@
         <Compile Include="Util.fs" />
         <Compile Include="Extensions.fs" />
         <Compile Include="Tokenizer.fs" />
-        <Compile Include="EnumParser.fs" />
+        <Compile Include="ParseCommon.fs" />
+        <Compile Include="ConstParser.fs" />
         <Compile Include="Parser.fs" />
         <Compile Include="AppCommon.fs" />
         <Compile Include="Generators\Common.fs" />

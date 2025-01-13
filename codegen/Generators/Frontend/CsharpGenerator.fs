@@ -45,6 +45,12 @@ let resolvedNameToString context resolvedName mode =
     | None ->
         raw
     
+let constExprToString =
+    let config =
+        { ConstParser.NullStr = "null"
+          ConstParser.ScopeResStr = "." }
+    ConstParser.exprString config
+    
 let typeToCsString (context: CsRenderContext) (outerType: NIType) =
     let rec recInner = function
         | UnitType -> "void"
@@ -160,12 +166,25 @@ let typeWithPrefix (context: CsRenderContext) (outerType: NIType) (prefix: strin
     parts[lastIndex] <- prefix + parts[lastIndex]
     String.concat "." parts
 
-let argsJoined (context: CsRenderContext) (args: (string * NIType) list) =
+let joinedArgs (context: CsRenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCsString context type_) name]
     |> String.concat ", "
+    
+let joinedNameFuncArgs (context: CsRenderContext) (args: NamedFunctionArg list) =
+    [for arg in args ->
+        match arg.DefaultValue with
+        | Some value ->
+            sprintf "%s %s = %s" (typeToCsString context arg.Type) arg.Name (constExprToString value)
+        | None ->
+            sprintf "%s %s" (typeToCsString context arg.Type) arg.Name ]
+    |> String.concat ", "
 
-let argNamesJoined (args: (string * NIType) list) =
+let joinedArgNames (args: (string * NIType) list) =
     [for name, _ in args -> name]
+    |> String.concat ", "
+    
+let joinedNamedFuncArgNames (args: NamedFunctionArg list) =
+    [for arg in args -> arg.Name]
     |> String.concat ", "
 
 let fieldsJoined (context: CsRenderContext) (fields: NamedField list) =
@@ -853,7 +872,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             // Equals and GetHashCode overrides, useful for Dictionary keys or whatever
             write 3 "public override bool Equals(object obj)"
             write 3 "{"
-            write 4 "if (obj is Handle other)"
+            write 4 "if (obj is %s other)" (upperFirst name)
             write 4 "{"
             write 5 "return NativeHandle == other.NativeHandle;"
             write 4 "}"
@@ -911,13 +930,13 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
                             |> List.map (typeToCsString context)
                             |> String.concat ", "
                         sprintf " // throws %s" joined
-                write 3 "public %s %s(%s)%s" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args) throwsComment
+                write 3 "public %s %s(%s)%s" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
                 write 3 "{"
                 // nested function here, because we're modifying the render context a bit
                 let renderMethodInvocation (context: CsRenderContext) =
                     // push args in reverse
-                    for argName, argType in namedFunc.Args |> List.rev do
-                        pushValue context writer 4 argType argName (Direct false)
+                    for arg in namedFunc.Args |> List.rev do
+                        pushValue context writer 4 arg.Type arg.Name (Direct false)
                     // push self argument
                     pushValue context writer 4 fakeThis "this" (Direct false)
                     // invoke remote
@@ -1008,7 +1027,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             match maybeSpecifiedValue with
             | Some specValue ->
                 let enumValueStr =
-                    EnumParser.exprString specValue
+                    constExprToString specValue
                 write 3 "%s = %s%s" (upperFirst value) enumValueStr maybeComma
             | None ->
                 write 3 "%s%s" (upperFirst value) maybeComma
@@ -1135,7 +1154,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             else
                 let upperFirstArgs =
                     value.Args |> List.map (fun (name, t) -> (upperFirst name), t)
-                write 3 "public sealed record %s(%s) : %s" (upperFirst value.Name) (argsJoined context upperFirstArgs) name
+                write 3 "public sealed record %s(%s) : %s" (upperFirst value.Name) (joinedArgs context upperFirstArgs) name
                 write 3 "{"
                 for argName, argType in upperFirstArgs do
                     write 4 "public %s %s { get; } = %s;" (typeToCsString context argType) argName argName
@@ -1152,7 +1171,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             write 4 "{"
             for argName, argType in value.Args do
                 popValue context writer 5 argType (NewVariable argName)
-            write 5 "return new %s(%s);" (upperFirst value.Name) (argNamesJoined value.Args)
+            write 5 "return new %s(%s);" (upperFirst value.Name) (joinedArgNames value.Args)
             write 4 "}" // end popderived
             write 3 "}" // end value record
         write 2 "}" // end base type
@@ -1211,7 +1230,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
                             |> List.map (typeToCsString context)
                             |> String.concat ", "
                         sprintf " // throws %s" joined
-                write 3 "%s %s(%s);%s" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args) throwsComment
+                write 3 "%s %s(%s);%s" (typeToCsString context method.Returns) (upperFirst method.Name) (joinedNameFuncArgs context method.Args) throwsComment
         match info.MaybeStaticDefs with
         | Some _ ->
             let nextContext =
@@ -1276,11 +1295,11 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 3 "}"
         // server wrapper methods
         for method in info.Methods do
-            write 3 "public %s %s(%s)" (typeToCsString context method.Returns) (upperFirst method.Name) (argsJoined context method.Args)
+            write 3 "public %s %s(%s)" (typeToCsString context method.Returns) (upperFirst method.Name) (joinedNameFuncArgs context method.Args)
             write 3 "{"
             // push args (in reverse!!)
-            for argName, argType in method.Args |> List.rev do
-                pushValue context writer 4 argType argName (Direct false)
+            for arg in method.Args |> List.rev do
+                pushValue context writer 4 arg.Type arg.Name (Direct false)
             // invoke remote
             if method.Throws.IsEmpty then
                 write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" (lowerFirst name) method.WrapperName
@@ -1319,7 +1338,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 3 "}"
         write 2 "}"
     | DelegateDef info ->
-        write 2 "public delegate %s %s(%s);" (typeToCsString context info.Returns) name (argsJoined context info.Args)
+        write 2 "public delegate %s %s(%s);" (typeToCsString context info.Returns) name (joinedArgs context info.Args)
         // push
         blank()
         write 2 "internal static void %s__Push(%s callback)" name name
@@ -1329,7 +1348,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         for argName, argType in info.Args do
             popValue context writer 4 argType (NewVariable argName)
         let invocation =
-            sprintf "callback(%s)" (argNamesJoined info.Args)
+            sprintf "callback(%s)" (joinedArgNames info.Args)
         if info.Throws.IsEmpty then
             pushValue context writer 4 info.Returns invocation (Direct true)
         else
@@ -1351,7 +1370,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 2 "{"
         write 3 "var id = NativeImplClient.PopServerFuncValId();"
         write 3 "var remoteFunc = new ServerFuncVal(id);"
-        write 3 "%s Wrapper(%s)" (typeToCsString context info.Returns) (argsJoined context info.Args)
+        write 3 "%s Wrapper(%s)" (typeToCsString context info.Returns) (joinedArgs context info.Args)
         write 3 "{"
         for argName, argType in info.Args |> List.rev do
             pushValue context writer 4 argType argName (Direct false)
@@ -1401,11 +1420,11 @@ and renderGroupCommon (context: CsRenderContext) (writer: IFormatWriter) =
     // top-level functions ===========
     for namedFunc in groupContext.ModuleMethods do
         blank()
-        write 2 "public static %s %s(%s)" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (argsJoined context namedFunc.Args)
+        write 2 "public static %s %s(%s)" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
         write 2 "{"
         // push args in reverse
-        for argName, argType in namedFunc.Args |> List.rev do
-            pushValue context writer 3 argType argName (Direct false)
+        for arg in namedFunc.Args |> List.rev do
+            pushValue context writer 3 arg.Type arg.Name (Direct false)
         // invoke remote
         if namedFunc.Throws.IsEmpty then
             write 3 "NativeImplClient.InvokeModuleMethod(_%s);" namedFunc.WrapperName
@@ -1507,11 +1526,11 @@ let assignModuleHandles (context: CsRenderContext) (writer: IFormatWriter) =
                     write 4 "var wrapper = (ClientInterfaceWrapper)__obj;"
                     write 4 "var inst = (%s)wrapper.RawInterface;" fullyQualifiedInterface
                     // pop args
-                    for argName, argType in method.Args do
-                        popValue context writer 4 argType (NewVariable argName)
+                    for arg in method.Args do
+                        popValue context writer 4 arg.Type (NewVariable arg.Name)
                     // exec + return
                     let invocation =
-                        sprintf "inst.%s(%s)" (upperFirst method.Name) (argNamesJoined method.Args)
+                        sprintf "inst.%s(%s)" (upperFirst method.Name) (joinedNamedFuncArgNames method.Args)
                     if method.Throws.IsEmpty then
                         pushValue context writer 4 method.Returns invocation (Direct true)
                     else
@@ -1597,7 +1616,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     blank()
     match maybeModuleInit with
     | Some initFunc ->
-        write 2 "internal static %s __Init(%s)" (typeToCsString renderContext initFunc.Returns) (argsJoined renderContext initFunc.Args)
+        write 2 "internal static %s __Init(%s)" (typeToCsString renderContext initFunc.Returns) (joinedNameFuncArgs renderContext initFunc.Args)
     | None ->
         write 2 "internal static void __Init()"
     write 2 "{"
@@ -1633,7 +1652,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
                 ""
             | _ ->
                 "return "
-        write 3 "%sModuleInit(%s);" maybeReturn (argNamesJoined initFunc.Args)
+        write 3 "%sModuleInit(%s);" maybeReturn (joinedNamedFuncArgNames initFunc.Args)
     | None ->
         blank()
         write 3 "// no static init"

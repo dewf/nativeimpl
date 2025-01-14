@@ -16,6 +16,7 @@ and ConstBinaryOp =
     | BitwiseOr
 and ConstExpr =
     | NullValue
+    | BoolValue of value: bool
     | Name of parts: string list
     | Literal of value: ConstLiteral
     | Unary of op: ConstUnaryOp * value: ConstExpr
@@ -24,7 +25,7 @@ and ConstExpr =
     
 let private (|MatchName|_|) (input: TokenAndLocation list) =
     match input with
-    | NameStuff.NameParts (parts, loc, etc) ->
+    | NameStuff.NameParts (parts, _, etc) ->
         Some (parts, etc)
     | _ ->
         None
@@ -153,6 +154,9 @@ let rec private parseConstValue (operands: ConstExpr list) (opStack: StackOp lis
     | { Token = NullToken } :: _ ->
         // null can't be part of any expression, stands alone
         NullValue
+    | { Token = BoolValueToken value } :: _ ->
+        // bool can't (currently) be part of any expression, stands alone
+        BoolValue value
     | MatchName (parts, etc) ->
         let nextOperands =
             Name parts :: operands
@@ -198,6 +202,8 @@ let exprString (config: ConstExprStringConfig) (root: ConstExpr) =
         match expr with
         | NullValue ->
             config.NullStr
+        | BoolValue value ->
+            if value then "true" else "false"
         | Name parts ->
             String.concat config.ScopeResStr parts
         | Literal value ->

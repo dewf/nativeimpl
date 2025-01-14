@@ -5,7 +5,7 @@ open System.Text.RegularExpressions
 
 type Token =
     | Identifier of string
-    | Digits of string
+    | Digits of digits: string
     | HexDigits of string
     // primitives
     | SizeTToken
@@ -62,6 +62,7 @@ type Token =
     | Minus
     // etc:
     | NullToken
+    | BoolValueToken of value: bool
     
 type Location = {
     Line: int
@@ -198,6 +199,13 @@ let isAlphaNumeric ch =
 let allowedSymbols =
     ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "."; "->"; "@"; "|"; "&"; "~"; "^"; "-"]
     
+let (|RegexMatch|_|) (pattern: string) (input: string) =
+    let match_ = Regex(pattern).Match(input)
+    if match_.Success then
+        Some match_
+    else
+        None
+        
 let nextToken (loc: Location) (input: char[]) =
     match input with
     | Matches [|'\r'|] (_match, etc) ->
@@ -257,6 +265,8 @@ let nextToken (loc: Location) (input: char[]) =
             | "namedbits" -> NamedBitsToken
             // etc
             | "null" -> NullToken
+            | "true" -> BoolValueToken true
+            | "false" -> BoolValueToken false
             // generic types (need specialization)
             | "Array" -> ArrayToken
             | "Map" -> MapToken
@@ -282,7 +292,9 @@ let nextToken (loc: Location) (input: char[]) =
             | "double" | "float64" -> Float64Token
             | "string" -> StringToken
             | text when Regex(@"^[_a-zA-Z][_a-zA-Z0-9]*$").IsMatch(text) -> Identifier text
-            | text when Regex(@"^[0-9]+$").IsMatch(text) -> Digits text
+            | RegexMatch @"^([0-9]+)(u|l|ul)?$" m ->
+                // was going to separate the suffix, hence the fancier active pattern ... maybe eventually
+                Digits m.Value
             | text when Regex(@"^0x[0-9A-Fa-f]+$").IsMatch(text) -> HexDigits text
             | text ->
                 failwithf "failed to parse string '%s' at %s" text (loc.ToString())

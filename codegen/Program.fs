@@ -66,6 +66,7 @@ let INPUTS = [
     "FileDialog"
     "Font"
     "Frame"
+    "GraphicsEffect"
     "GridLayout"
     "GroupBox"
     "HeaderView"

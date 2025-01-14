@@ -2084,20 +2084,32 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                     widthType, " : int32_t"
                 else
                     widthType, ""
+        let emitValues indent =
+            for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
+                match maybeSpecifiedValue with
+                | Some specValue ->
+                    let enumValueStr =
+                        constExprToString specValue
+                    write indent "%s = %s%s" value enumValueStr maybeComma
+                | None ->
+                    write indent "%s%s" value maybeComma
         if info.FlagsMode then
-            write 0 "typedef %s %s;" (typeToCppString context Default widthType) name
-            write 0 "enum %sFlags%s {" name widthStr
+            let widthTypeString = (typeToCppString context Default widthType)
+            write 0 "struct %s {" name
+            write 1 "%s value = 0;" widthTypeString
+            write 1 "enum Flags : %s {" widthTypeString
+            emitValues 2
+            write 1 "};"
+            write 1 "%s() = default;" name
+            write 1 "%s(const %s initialValue) : value(initialValue) {}" name widthTypeString
+            write 1 "%s &operator=(const %s newval) { value = newval; return *this; }" name widthTypeString
+            write 1 "%s &operator|=(const Flags other) { value |= other; return *this; }" name
+            write 1 "operator %s() const { return value; }" widthTypeString
+            write 0 "};"
         else
             write 0 "enum class %s%s {" name widthStr
-        for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
-            match maybeSpecifiedValue with
-            | Some specValue ->
-                let enumValueStr =
-                    constExprToString specValue
-                write 1 "%s = %s%s" value enumValueStr maybeComma
-            | None ->
-                write 1 "%s%s" value maybeComma
-        write 0 "};"
+            emitValues 1
+            write 0 "};"
     | NamedBitsDef info ->
         let indexedGroups, widthType =
             let resolver resolvedName =

@@ -23,27 +23,24 @@ type CsRenderContext = {
         { this with RenderContext = nextRenderContext }
 
 let resolvedNameToString context resolvedName mode =
-    let raw =
-        resolvedNameToStringAbstract "." (fun name _ -> name) None DirectImportsOnly context.RenderContext resolvedName mode
-    match context.OpaqueMethodContext with
-    | Some info ->
-        // kludge: verify the first segment (possibly a module name) doesn't collide with a method name at this same level
-        // eg: ModuleName.Thing__Push() ... the "ModuleName" segment can cause problems
-        // long story short, after some experiments this seemed to belong here in the C# codegen, not in 'resolvedNameToStringAbstract'
-        let parts = 
-            raw.Split(".")
-        if parts.Length >= 2 then
-            let collidesWithMethod =
-                info.Methods
-                |> Seq.exists (fun nf -> upperFirst nf.Name = upperFirst parts[0])
-            if collidesWithMethod then
-                sprintf "%s.%s" context.BaseNamespace raw
-            else
-                raw
-        else
-            raw
-    | None ->
-        raw
+    let maybeApprovalFunc =
+        match context.OpaqueMethodContext with
+        | Some info ->
+            let approvalFunc (parts: string list) =
+                if parts.Length >= 2 then
+                    let collidesWithMethod =
+                        info.Methods
+                        |> Seq.exists (fun nf -> upperFirst nf.Name = upperFirst parts[0])
+                    if collidesWithMethod then
+                        UseFullyQualified context.BaseNamespace
+                    else
+                        Approved
+                else
+                    Approved
+            Some approvalFunc
+        | None ->
+            None
+    resolvedNameToStringAbstract "." (fun name _ -> name) None DirectImportsOnly maybeApprovalFunc context.RenderContext resolvedName mode
     
 let constExprToString =
     let config =

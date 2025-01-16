@@ -76,7 +76,7 @@ let resolvedNameToString (context: CppRenderContext) =
             wrappersGroupSegmentRenameFunc
         | _ ->
             (fun name _ -> name)
-    resolvedNameToStringAbstract "::" renameFunc pathClamp RecursiveImports context.RenderContext
+    resolvedNameToStringAbstract "::" renameFunc pathClamp RecursiveImports None context.RenderContext
     
 let constExprToString =
     let config =

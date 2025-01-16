@@ -743,8 +743,18 @@ type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
     | GenericIdentifierMode
+    
+
+type ApprovalResult =
+    | Approved
+    | UseFullyQualified of prefix: string
+type ApprovalFunc =
+    // uses the name parts (pre-ambiguity-checking) to decide if the name needs to be fully qualified
+    // used by C# when the first part of a name in a method push/pop context would collide with another method name
+    string list -> ApprovalResult
+
 let resolvedNameToStringAbstract
-            (languageNsDelim: string) (partRenameFunc: string -> GroupKind list -> string) (maybePathClamp: string list option) (ambiguityMode: AmbiguityMode)
+            (languageNsDelim: string) (partRenameFunc: string -> GroupKind list -> string) (maybePathClamp: string list option) (ambiguityMode: AmbiguityMode) (maybeApprovalFunc: ApprovalFunc option)
             (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode)=
     
     let separator, partRenameFunc = // rebind partRenameFunc
@@ -802,7 +812,9 @@ let resolvedNameToStringAbstract
                     else
                         remaining
                 | None -> parts
+        // do we need the approval func in this branch, too?
         joinNameParts separator (parts2 |> List.map upperFirst)
+        
     | Imported(moduleName, symbolName) ->
         // rename the 'symbolParts' segments now, based on their kinds
         let symbolParts =
@@ -810,15 +822,31 @@ let resolvedNameToStringAbstract
             | SymbolName parts ->
                 // apply the segment rename func
                 renameParts parts
-        // below: previously had a 'requireFullyQualifiedImports' flag check that would bypass ('if' short circuit) ambiguity checking altogether
-        // we were using it for C++ because of the "recursive symbol visibility" (header includes) problem
-        // but ambiguity checking is now recursive-capable, so that flag / parameter to this method has been removed
-        if symbolIsUnambiguous context.ModuleContext symbolName ambiguityMode then
-            joinNameParts separator (symbolParts |> List.map upperFirst)
-        else
-            match moduleName with
-            | ModuleName moduleParts ->
-                joinNameParts separator ((moduleParts @ symbolParts) |> List.map upperFirst)
+                
+        let finalParts =
+            if symbolIsUnambiguous context.ModuleContext symbolName ambiguityMode then
+                symbolParts |> List.map upperFirst
+            else
+                match moduleName with
+                | ModuleName moduleParts ->
+                    (moduleParts @ symbolParts) |> List.map upperFirst
+                    
+        match maybeApprovalFunc with
+        | Some func ->
+            match func finalParts with
+            | Approved ->
+                joinNameParts separator finalParts
+            | UseFullyQualified prefix ->
+                // worst-case we're re-doing a bit of work here (from second branch above)
+                // but I didn't want to over-complicate this more than it already is
+                let parts2 =
+                    match moduleName with
+                    | ModuleName moduleParts ->
+                        (moduleParts @ symbolParts) |> List.map upperFirst
+                prefix + separator + joinNameParts separator parts2
+        | None ->
+            joinNameParts separator finalParts
+        
 
 let countGroupConstants (top: GroupContext) =
     let rec groupCount (group: GroupContext) =

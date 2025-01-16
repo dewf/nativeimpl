@@ -63,6 +63,7 @@ let INPUTS = [
     "Dir"
     "DockWidget"
     "Enums"
+    "Event"
     "FileDialog"
     "Font"
     "Frame"

@@ -1152,43 +1152,65 @@ let resolveIdentifier (context: ModuleContext) (loc: Location) (namespacePath: s
             SymbolName fullName
         (ThisModule symbolName, thing)
     | None ->
-        // 2. not in this module, what about imports?
-        let importResults =
-            context.Module.Imports
-            |> List.choose (fun importName ->
-                let import =
-                    context.Loaded[importName]
-                // first look for it as-is, as a relative indentifier within the module (vs. fully qualified)
-                // because what if we're looking for something that starts with the same name as the module itself? don't want to strip that prematurely
-                match findModuleSymbol import [] nameParts with
-                | Some res ->
-                    Some { ImportName = importName; Result = res }
-                | None ->
-                    // no luck that way, now try stripping any common prefix between identifier and full module path, in case the user is attempting to use a fully qualified name
-                    // (BTW, is this the correct precedence? or should it be reversed, and we should look for a fully qualified thing first, and only if that fails resort to a relative name?
-                    match removeModuleName importName nameParts with
-                    | [] ->
-                        // module name completely consumed nameParts, there would be nothing left to search for!
-                        // seems like an odd thing to happen, how could an identifier refer to something that starts with the name of a module, but doesn't refer to the module? seems like an error ...
-                        // well, what if module A exports a symbol that has the same name as module B?
+        // 2. if the first part of the name is the same as the module, try without that part, because maybe it's a module-relative name
+        //    ... in the future it would be fun to have a symbol like $ that represents this-module-root
+        let moduleRelative =
+            match context.Module.Name with
+            | ModuleName moduleNameParts ->
+                match List.removePrefix moduleNameParts nameParts with
+                | Some remainingSymbolParts ->
+                    match findModuleSymbol context.Module [] remainingSymbolParts with // search from root
+                    | Some (fullName, thing) ->
+                        let symbolName =
+                            SymbolName fullName
+                        Some (ThisModule symbolName, thing)
+                    | None ->
+                        // prefix was removed, but symbol still not foudn
                         None
-                    | relativeParts ->
-                        findModuleSymbol import [] relativeParts
-                        |> Option.map (fun res ->
-                            { ImportName = importName; Result = res }))
-        match importResults with
-        | _ :: _ :: _ ->
-            // 2+ results, ambiguous = not OK
-            let matchedNames =
-                importResults
-                |> List.map (fun { ImportName = name } -> name)
-            failwithf "resolveIdentifier: identifier %A in module %A matched symbols in multiple imports %A @ %A" nameParts context.Module.Name matchedNames loc
-        | [ { ImportName = importName; Result = (fullName, thing) } ] ->
-            // single result, OK
-            (Imported (importName, SymbolName fullName), thing)
-        | [] ->
-            // not found at all!
-            failwithf "resolveIdentifier: identifier %A not found in containing module %A nor in any imports @ %A" nameParts context.Module.Name loc
+                | None ->
+                    // failed to remove prefix
+                    None
+        match moduleRelative with
+        | Some found ->
+            found
+        | None ->
+            // 3. not in this module, what about imports?
+            let importResults =
+                context.Module.Imports
+                |> List.choose (fun importName ->
+                    let import =
+                        context.Loaded[importName]
+                    // first look for it as-is, as a relative indentifier within the module (vs. fully qualified)
+                    // because what if we're looking for something that starts with the same name as the module itself? don't want to strip that prematurely
+                    match findModuleSymbol import [] nameParts with
+                    | Some res ->
+                        Some { ImportName = importName; Result = res }
+                    | None ->
+                        // no luck that way, now try stripping any common prefix between identifier and full module path, in case the user is attempting to use a fully qualified name
+                        // (BTW, is this the correct precedence? or should it be reversed, and we should look for a fully qualified thing first, and only if that fails resort to a relative name?
+                        match removeModuleName importName nameParts with
+                        | [] ->
+                            // module name completely consumed nameParts, there would be nothing left to search for!
+                            // seems like an odd thing to happen, how could an identifier refer to something that starts with the name of a module, but doesn't refer to the module? seems like an error ...
+                            // well, what if module A exports a symbol that has the same name as module B?
+                            None
+                        | relativeParts ->
+                            findModuleSymbol import [] relativeParts
+                            |> Option.map (fun res ->
+                                { ImportName = importName; Result = res }))
+            match importResults with
+            | _ :: _ :: _ ->
+                // 2+ results, ambiguous = not OK
+                let matchedNames =
+                    importResults
+                    |> List.map (fun { ImportName = name } -> name)
+                failwithf "resolveIdentifier: identifier %A in module %A matched symbols in multiple imports %A @ %A" nameParts context.Module.Name matchedNames loc
+            | [ { ImportName = importName; Result = (fullName, thing) } ] ->
+                // single result, OK
+                (Imported (importName, SymbolName fullName), thing)
+            | [] ->
+                // not found at all!
+                failwithf "resolveIdentifier: identifier %A not found in containing module %A nor in any imports @ %A" nameParts context.Module.Name loc
 
 let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_: NIType) =
     let applyNested =

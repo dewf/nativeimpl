@@ -795,23 +795,47 @@ let resolvedNameToStringAbstract
         
     match name with
     | ThisModule (SymbolName parts) ->
+        // if symbol is from a shallower level, check to see if it collides with anything here
+        // if so, it needs to be "module-absolute"
+        // check this before 'renameParts' so the symbol lookup works!
+        let renderModuleAbsolute =
+            if parts = context.GroupContext.Path then
+                // happens if we're in eg a static block on a handle, referring to that same handle - not a problem
+                false
+            else
+                if (parts.Length - 1) < context.GroupContext.Path.Length then
+                    match findModuleSymbol context.ModuleContext.Module (context.GroupContext.Path |> List.rev) parts with
+                    | Some _ ->
+                        // found a collision!
+                        true
+                    | None ->
+                        false
+                else
+                    false
+        
         // rename the 'parts' segments now, based on their kinds
         let parts =
             renameParts parts
+            
         // strip current namespace prefix if possible
         // (but not in Generics mode)
         let parts2 =
-            match mode with
-            | GenericIdentifierMode -> parts
-            | _ ->
-                match List.removePrefix currentContextPath parts with
-                | Some remaining ->
-                    if remaining.IsEmpty then
-                        // have to leave at least one segment!
-                        [ parts |> List.last ]
-                    else
-                        remaining
-                | None -> parts
+            if renderModuleAbsolute then
+                match context.ModuleContext.Module.Name with
+                | ModuleName moduleNameParts ->
+                    moduleNameParts @ parts
+            else
+                match mode with
+                | GenericIdentifierMode -> parts
+                | _ ->
+                    match List.removePrefix currentContextPath parts with
+                    | Some remaining ->
+                        if remaining.IsEmpty then
+                            // have to leave at least one segment!
+                            [ parts |> List.last ]
+                        else
+                            remaining
+                    | None -> parts
         // do we need the approval func in this branch, too?
         joinNameParts separator (parts2 |> List.map upperFirst)
         

@@ -1,3 +1,5 @@
+open System
+open System.IO
 open Generators.Backend
 open Generators.Frontend
 open Parser
@@ -57,6 +59,7 @@ let INPUTS = [
     "Color"
     "ComboBox"
     "Common"
+    "Completer"
     "CoreApplication"
     "Cursor"
     "Date"
@@ -180,6 +183,19 @@ let getDependencyOrder (moduleMap: Map<ModuleName, Module>) =
     |> List.map (fun name -> moduleMap[name])
 
 let appRunner (inputPath: string) (inputModules: string list) (outParams: OutParams) (frontLang: string) (backLang: string) =
+    // read last run time from disk
+    let lastRunTimeFilePath =
+        INPUT_PATH + @"/__last_run_time.txt"
+    let maybeLastRunTime =
+        if File.Exists(lastRunTimeFilePath) then
+            let raw = File.ReadAllText(lastRunTimeFilePath)
+            DateTime.Parse(raw)
+            |> Some
+        else
+            None
+    // write current run time for next time
+    File.WriteAllText(lastRunTimeFilePath, DateTime.Now.ToString("O"))
+        
     let moduleMap =
         (Map.empty, inputModules)
         ||> List.fold (fun moduleMap joinedName ->
@@ -187,27 +203,46 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
                 joinedName.Split(".")
                 |> Array.toList
                 |> ModuleName
+                
             printfn "======= processing module %A =======" name
             let currentModule, nextMap =
                 loadModule inputPath moduleMap name Set.empty
             let context =
                 { Module = currentModule; Loaded = nextMap } // nextMap! moduleMap accumulator will not yet be updated!
                 
-            // frontend
-            match frontLang.ToLower() with
-            | "csharp" | "c#" ->
-                printfn "rendering C# frontend code"
-                CsharpGenerator.generateModule context outParams
-            | _ ->
-                failwithf "unsupported frontend language: %s" frontLang
-                
-            // backend
-            match backLang.ToLower() with
-            | "cpp" | "c++" ->
-                printfn "rendering C++ backend code"
-                CppGenerator.generateModule context outParams
-            | _ ->
-                failwithf "unsupported backend language: %s" backLang
+            // can we avoid writing this one?
+            let fileNeedsWriting =
+                match maybeLastRunTime with
+                | Some lastRunTime ->
+                    if currentModule.LastModified >= lastRunTime then
+                        // file itself has been modified since last run
+                        true
+                    else
+                        // what about imports?
+                        currentModule.Imports
+                        |> List.map (fun moduleName -> nextMap[moduleName]) // nextMap! moduleMap accumulator will not yet be updated!
+                        |> List.exists (fun import -> import.LastModified >= lastRunTime)
+                | None ->
+                    true
+                    
+            if fileNeedsWriting then
+                // frontend
+                match frontLang.ToLower() with
+                | "csharp" | "c#" ->
+                    printfn "rendering C# frontend code"
+                    CsharpGenerator.generateModule context outParams
+                | _ ->
+                    failwithf "unsupported frontend language: %s" frontLang
+                    
+                // backend
+                match backLang.ToLower() with
+                | "cpp" | "c++" ->
+                    printfn "rendering C++ backend code"
+                    CppGenerator.generateModule context outParams
+                | _ ->
+                    failwithf "unsupported backend language: %s" backLang
+            else
+                printfn ">> skipping module -  neither module nor its imports have been modified since last run"
             
             nextMap)
 

@@ -300,6 +300,7 @@ type SymbolTableState =
 
 type Module = {
     Name: ModuleName
+    LastModified: DateTime
     Imports: ModuleName list
     SymbolTable: SymbolTableState
     Defs: ModuleDefinition list
@@ -970,7 +971,7 @@ let consumeImports (input: TokenAndLocation list) =
         nextImport [] input
     List.rev rev, etc
     
-let parseModuleToplevel (input: TokenAndLocation list) (outerName: ModuleName) =
+let parseModuleToplevel (input: TokenAndLocation list) (outerName: ModuleName) (lastModified: DateTime) =
     match input with
     | Lookahead 1 ([ModuleToken], loc, etc) ->
         match etc with
@@ -986,6 +987,7 @@ let parseModuleToplevel (input: TokenAndLocation list) (outerName: ModuleName) =
                 let imports, etc =
                     consumeImports etc
                 { Name = internalName
+                  LastModified = lastModified
                   Imports = imports
                   SymbolTable = Init
                   Defs = parseModuleDefs etc }
@@ -1516,11 +1518,13 @@ let rec loadModule (rootPath: string) (moduleMap: Map<ModuleName, Module>) (name
         printfn "loading %A" name
         let filename =
             moduleNameToFilename rootPath name
+        let lastModificationTime =
+            File.GetLastWriteTime(filename)
         let tokens =
             File.ReadAllText filename
             |> tokenize
         let parsed =
-            parseModuleToplevel tokens name
+            parseModuleToplevel tokens name lastModificationTime
         // load imports before performing resolution
         let nextMap =
             let nextForbidden =

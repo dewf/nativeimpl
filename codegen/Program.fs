@@ -105,12 +105,14 @@ let INPUTS = [
     "PersistentModelIndex"
     "Pixmap"
     "PlainTextEdit"
-    // "Point"
+    "Polygon"
+    "PolygonF"
     "ProgressBar"
     "PushButton"
     "RadioButton"
     "Region"
     "RegularExpression"
+    "SafeReturn"
     "Screen"
     "ScrollArea"
     "ScrollBar"
@@ -193,8 +195,9 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             |> Some
         else
             None
-    // write current run time for next time
-    File.WriteAllText(lastRunTimeFilePath, DateTime.Now.ToString("O"))
+    let thisRunTime =
+        // take the current time, in case the user is editing anything while we run ...
+        DateTime.Now
         
     let moduleMap =
         (Map.empty, inputModules)
@@ -270,6 +273,10 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     // generate project files for backend (eg cmake)
     
     // printfn "moduleMap: %A" moduleMap
+    
+    // finally write current run time for next time
+    // (only do this at the very end, because if we have a crash, we've written a false time, and files won't be processed!)
+    File.WriteAllText(lastRunTimeFilePath, thisRunTime.ToString("O"))
 
 let outParams =
     { Path = OUTPUT_PATH; MaybeNamespace = Some NAMESPACE; LibraryName = LIBRARY }

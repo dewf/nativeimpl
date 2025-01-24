@@ -14,6 +14,7 @@ and ConstBinaryOp =
     | BitwiseAnd
     | BitwiseXor
     | BitwiseOr
+    | PlusOp
 and ConstExpr =
     | NullValue
     | BoolValue of value: bool
@@ -59,6 +60,7 @@ let private (|MatchBinaryOp|_|) (input: TokenAndLocation list) =
         | PipeToken -> Some (BitwiseOr, etc)
         | Ampersand -> Some (BitwiseAnd, etc)
         | Caret -> Some (BitwiseXor, etc)
+        | Plus -> Some (PlusOp, etc)
         | _ -> None
     | _ ->
         None
@@ -101,10 +103,11 @@ type private StackOp =
 let private precedence = function
     | StackOp.Unary op ->
         match op with
-        | BitwiseNot -> 11
-        | Negation -> 10
+        | BitwiseNot -> 12
+        | Negation -> 11
     | StackOp.Binary op ->
         match op with
+        | PlusOp -> 10
         | LeftShift -> 9
         | BitwiseAnd -> 8
         | BitwiseXor -> 7
@@ -223,6 +226,7 @@ let exprString (config: ConstExprStringConfig) (root: ConstExpr) =
                 | BitwiseAnd -> "&"
                 | BitwiseXor -> "^"
                 | BitwiseOr -> "|"
+                | PlusOp -> "+"
             sprintf "%s %s %s" (recInner left) opStr (recInner right)
         | Grouping inner ->
             sprintf "(%s)" (recInner inner)

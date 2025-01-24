@@ -60,6 +60,7 @@ type Token =
     | Tilde
     | Caret
     | Minus
+    | Plus
     // etc:
     | NullToken
     | BoolValueToken of value: bool
@@ -197,7 +198,7 @@ let isAlphaNumeric ch =
     ch = '_'
     
 let allowedSymbols =
-    ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "."; "->"; "@"; "|"; "&"; "~"; "^"; "-"]
+    ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "."; "->"; "@"; "|"; "&"; "~"; "^"; "-"; "+"]
     
 let (|RegexMatch|_|) (pattern: string) (input: string) =
     let match_ = Regex(pattern).Match(input)
@@ -238,6 +239,7 @@ let nextToken (loc: Location) (input: char[]) =
             | "~" -> Tilde
             | "^" -> Caret
             | "-" -> Minus
+            | "+" -> Plus
             | _ -> failwithf "unrecognized symbol: %s at line %d, col %d" _match loc.Line loc.Column
         Some token, etc, loc.PlusCol(cols)
     | WhileMatch isAlphaNumeric (_match, cols, etc) ->

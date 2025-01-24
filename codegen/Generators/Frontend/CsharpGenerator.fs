@@ -95,7 +95,7 @@ let typeToCsString (context: CsRenderContext) (outerType: NIType) =
                 |> String.concat ", "
             sprintf "(%s)" joined
         | MapType (keyType, valueType) ->
-            sprintf "Dictionary<%s,%s>" (recInner keyType) (recInner valueType)
+            sprintf "IDictionary<%s,%s>" (recInner keyType) (recInner valueType)
         | OptionType elemType ->
             sprintf "Maybe<%s>" (recInner elemType)
         | ResultType (succType, errType) ->
@@ -744,14 +744,14 @@ let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIT
         renderArrayLike context.ModuleContext elemType renderer
     | MapType (keyType, valueType) ->
         // push
-        write 2 "internal static void __%s__Push(Dictionary<%s, %s> map, bool isReturn)" (typeToName context gType) (typeToCsString context keyType) (typeToCsString context valueType)
+        write 2 "internal static void __%s__Push(IDictionary<%s, %s> map, bool isReturn)" (typeToName context gType) (typeToCsString context keyType) (typeToCsString context valueType)
         write 2 "{"
         pushValue context writer 3 (ArrayType valueType) "map.Values.ToArray()" (Indirect "isReturn")
         pushValue context writer 3 (ArrayType keyType) "map.Keys.ToArray()" (Indirect "isReturn")
         write 2 "}"
         // pop
         blank()
-        write 2 "internal static Dictionary<%s, %s> __%s__Pop()" (typeToCsString context keyType) (typeToCsString context valueType) (typeToName context gType)
+        write 2 "internal static IDictionary<%s, %s> __%s__Pop()" (typeToCsString context keyType) (typeToCsString context valueType) (typeToName context gType)
         write 2 "{"
         popValue context writer 3 (ArrayType keyType) (NewVariable "keys")
         popValue context writer 3 (ArrayType valueType) (NewVariable "values")

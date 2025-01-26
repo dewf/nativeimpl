@@ -112,6 +112,7 @@ let INPUTS = [
     "RadioButton"
     "Region"
     "RegularExpression"
+    "RegularExpressionValidator"
     "SafeReturn"
     "Screen"
     "ScrollArea"

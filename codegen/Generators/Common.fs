@@ -2,6 +2,7 @@
 
 open System
 open System.IO
+open ConstParser
 open Parser
 open Extensions
 open AppCommon
@@ -759,7 +760,7 @@ let resolvedNameToStringAbstract
             (maybeApprovalFunc: ApprovalFunc option)
             (forceFullyQualified: bool)
             // non-curried params:
-            (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode)=
+            (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
     
     let separator, partRenameFunc = // rebind partRenameFunc
         match mode with
@@ -1006,3 +1007,49 @@ let isFirstDisposableOpaque (context: ModuleContext) (info: OpaqueInfo) =
             true
         | _ ->
             failwith "isFirstDisposableOpaque: shouldn't happen"
+
+
+type ConstExprStringConfig = {
+    NullStr: string
+    ScopeResStr: string
+}
+let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: ResolvedName -> string) (root: TypedConstExpr) =
+    let rec recInner expr =
+        match expr with
+        | NullValue ->
+            config.NullStr
+        | BoolValue value ->
+            if value then "true" else "false"
+        | ConstValue(namedValue, _) ->
+            match namedValue with
+            | ForeignName (container, name) ->
+                match container with
+                | Resolved(resolvedName, _) ->
+                    (resolvedNameToString resolvedName) + config.ScopeResStr + name
+                | _ ->
+                    failwith "typedConstExprString: ForeignName wasn't resolved"
+            | LocalName name ->
+                name
+        | Literal value ->
+            match value with
+            | HexNumber digits -> digits
+            | DecNumber digits -> digits
+        | Unary(op, value) ->
+            let opStr =
+                match op with
+                | BitwiseNot -> "~"
+                | Negation -> "-"
+            sprintf "%s%s" opStr (recInner value)
+        | Binary(op, left, right) ->
+            let opStr =
+                match op with
+                | LeftShift -> "<<"
+                | BitwiseAnd -> "&"
+                | BitwiseXor -> "^"
+                | BitwiseOr -> "|"
+                | PlusOp -> "+"
+            sprintf "%s %s %s" (recInner left) opStr (recInner right)
+        | Grouping groupContent ->
+            sprintf "(%s)" (recInner groupContent)
+    recInner root
+

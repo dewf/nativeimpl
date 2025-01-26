@@ -83,11 +83,13 @@ let resolvedNameToString (context: CppRenderContext) =
         | _ -> true
     resolvedNameToStringAbstract "::" renameFunc pathClamp None forceFullyQualified context.RenderContext
     
-let constExprToString =
+let constExprToString (context: CppRenderContext) =
     let config =
-        { ConstParser.NullStr = "nullptr"
-          ConstParser.ScopeResStr = "::" }
-    ConstParser.exprString config
+        { NullStr = "nullptr"
+          ScopeResStr = "::" }
+    let stringFunc resolvedName =
+        resolvedNameToString context resolvedName TypeMode
+    typedConstExprString config stringFunc
     
 let getRelativePath (currentPath: string list) (targetPath: string list) =
     // remove common segments
@@ -287,9 +289,9 @@ let joinedNamedFuncArgs (context: CppRenderContext) (showDefaultValue: bool) (ar
         match arg.DefaultValue with
         | Some value ->
             if showDefaultValue then
-                sprintf "%s %s = %s" (typeToCppString context FunctionArguments arg.Type) arg.Name (constExprToString value)
+                sprintf "%s %s = %s" (typeToCppString context FunctionArguments arg.Type) arg.Name (constExprToString context value)
             else
-                sprintf "%s %s /* %s */" (typeToCppString context FunctionArguments arg.Type) arg.Name (constExprToString value)
+                sprintf "%s %s /* %s */" (typeToCppString context FunctionArguments arg.Type) arg.Name (constExprToString context value)
         | _ ->
             sprintf "%s %s" (typeToCppString context FunctionArguments arg.Type) arg.Name ]
     |> String.concat ", "
@@ -2094,7 +2096,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                 match maybeSpecifiedValue with
                 | Some specValue ->
                     let enumValueStr =
-                        constExprToString specValue
+                        constExprToString context specValue
                     write indent "%s = %s%s" value enumValueStr maybeComma
                 | None ->
                     write indent "%s%s" value maybeComma

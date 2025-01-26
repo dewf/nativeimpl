@@ -62,6 +62,7 @@ type TypeConstraint =
     | InterfaceConstraint
     | ExceptionConstraint
     | NamedBitsConstraint
+    | ConstConstraint      // currently: enum, flags
     
 type NIType =
     | UnitType
@@ -201,10 +202,53 @@ let rec parseType (input: TokenAndLocation list) =
 type Attribute =
     | NoDispose
     
+type NamedConstValue =
+    | ForeignName of container: NIType * name: string
+    | LocalName of name: string
+    
+type TypedConstExpr =
+    | NullValue
+    | BoolValue of value: bool
+    | ConstValue of namedValue: NamedConstValue * loc: Location // useful to always have location since we don't always have the container type
+    | Literal of value: ConstLiteral
+    | Unary of op: ConstUnaryOp * value: TypedConstExpr
+    | Binary of op: ConstBinaryOp * left: TypedConstExpr * right: TypedConstExpr
+    | Grouping of inner: TypedConstExpr
+    
+let untypedToTypedConstExpr (loc: Location) (input: UntypedConstExpr): TypedConstExpr =
+    let rec inner (node: UntypedConstExpr) =
+        match node with
+        | UntypedConstExpr.NullValue ->
+            NullValue
+        | UntypedConstExpr.BoolValue value ->
+            BoolValue value
+        | UntypedConstExpr.Name parts ->
+            let prefix, name =
+                List.splitAtLast parts
+            let value =
+                match prefix with
+                | [] ->
+                    // name will be evaluated in the implicit context of whatever it is (eg SomeEnum arg = [SomeEnum.]Value)
+                    LocalName name
+                | prefixParts ->
+                    let container =
+                        Unresolved ((UnresolvedIdentifier prefixParts), loc, ConstConstraint)
+                    ForeignName (container, name)
+            ConstValue (value, loc)
+        | UntypedConstExpr.Literal value ->
+            Literal value
+        | UntypedConstExpr.Unary(op, value) ->
+            Unary(op, inner value)
+        | UntypedConstExpr.Binary(op, left, right) ->
+            Binary(op, inner left, inner right)
+        | UntypedConstExpr.Grouping groupContent ->
+            Grouping (inner groupContent)
+    inner input
+    
 type NamedFunctionArg = {
     Name: string
     Type: NIType
-    DefaultValue: ConstExpr option
+    DefaultValue: TypedConstExpr option
 }
 
 type NamedFunction = {
@@ -238,7 +282,7 @@ type DelegateInfo = {
 }
 
 type EnumInfo = {
-    Values: (string * ConstExpr option) list // name, specified value
+    Values: (string * TypedConstExpr option) list // name, specified value
     MaybeWidth: NIType option
     FlagsMode: bool
 }
@@ -374,7 +418,9 @@ let parseArg (input: TokenAndLocation list) =
                 match etc with
                 | ConstExpr loc (expr, loc, etc) ->
                     let result =
-                        { Name = name; Type = type_; DefaultValue = Some expr }
+                        let typed =
+                            untypedToTypedConstExpr loc expr
+                        { Name = name; Type = type_; DefaultValue = Some typed }
                     // consume comma, if it exists
                     match etc with
                     | Lookahead 1 ([Comma], _, etc) ->
@@ -464,15 +510,16 @@ let parseOneEnumValue (input: TokenAndLocation list) =
         let value, etc =
             match etc with
             | Lookahead 1 ([EqualsToken], loc, etc) ->
-                // grab everything up to comma or end-of-input
                 let pred token =
                     // not sure why we can't define this inline with the pattern match below, won't parse??
                     token <> Comma
+                // !!!! parse const expr
                 match etc with
                 | TakeWhile pred (exprTokens, loc, etc) when not exprTokens.IsEmpty ->
                     try
                         let enumExpr =
                             parseConstExpression exprTokens
+                            |> untypedToTypedConstExpr loc
                         (name, Some enumExpr), etc
                     with
                         | e -> failwithf "error parsing enum expression @ %A [%s]" loc e.Message
@@ -1255,6 +1302,12 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                     () // OK
                 | _ ->
                     failwithf "type constraint failed @ %A - must be 'exception' type" loc
+            | ConstConstraint ->
+                match resolvedDef with
+                | NamedBitsDef _ | EnumDef _ ->
+                    () // OK
+                | _ ->
+                    failwithf "type constraint failed @ %A - must be a constant (eg enum / flags / namedbits) type" loc
             let resolvedType =
                 match resolvedDef with
                 | FwdOpaqueDef _ -> FwdOpaqueType
@@ -1275,10 +1328,127 @@ let resolveFieldType (context: ModuleContext) (namespacePath: string list) (ft: 
         resolveType context namespacePath ft.Type_
     { ft with Type_ = nextType }
 
+
+let containedNamesLookup (context: ModuleContext) (name: ResolvedName) =
+    let handleSupported (value: UserType) =
+        match value with
+        | EnumDef info ->
+            info.Values
+            |> List.map fst
+        | NamedBitsDef info ->
+            info.BitNames
+        | _ ->
+            failwith "containedNamesLookup: unsupported type"
+    match name with
+    | ThisModule (SymbolName nameParts) ->
+        let table =
+            match context.Module.SymbolTable with
+            | Bootstrap table | Complete table -> table
+            | _ -> failwith "containedNamesLookup: needed a table"
+        match findSymbolHere table nameParts with
+        | Some value ->
+            handleSupported value
+        | None ->
+            failwithf "containedNamesLookup: findSymbolHere failed (for ThisModule) - name: %A" name
+    | Imported (importName, SymbolName nameParts) ->
+        match context.Loaded.TryFind importName with
+        | Some m ->
+            let table =
+                match m.SymbolTable with
+                | Bootstrap table | Complete table -> table
+                | _ -> failwith "containedNamesLookup: imported module symbol table not complete"
+            match findSymbolHere table nameParts with
+            | Some value ->
+                handleSupported value
+            | None ->
+                failwith "containedNamesLookup: findSymbolHere failed (for imported symbol)"
+        | None ->
+            failwith "todo"
+
+
+type LocalConstExprContext =
+    | LValueType of alreadyResolvedType: NIType // must be already-resolved!
+    | LocalEnum of info: EnumInfo
+
+let resolveConstExprTypes (context: ModuleContext) (namespacePath: string list) (localContext: LocalConstExprContext) (outerExpr: TypedConstExpr) =
+    let typeContainsName (niType: NIType) (name: string) =
+        match niType with
+        | Resolved(resolvedName, _) ->
+            List.contains name (containedNamesLookup context resolvedName)
+        | _ ->
+            failwith "resolveConstExprTypes:typeContainsName: resolved names only!"
+            
+    let resolvedTypeToString (resolvedType: NIType) =
+        match resolvedType with
+        | Resolved(resolvedName, ``type``) ->
+            match resolvedName with
+            | ThisModule (SymbolName parts) ->
+                parts
+                |> String.concat "."
+            | Imported(ModuleName moduleParts, SymbolName symbolParts) ->
+                (moduleParts @ symbolParts)
+                |> String.concat "."
+        | _ ->
+            failwith "ack"
+        
+    let rec recInner (expr: TypedConstExpr) =
+        match expr with
+        | NullValue ->
+            NullValue
+        | BoolValue value ->
+            BoolValue value
+        | ConstValue (value, loc) ->
+            match value with
+            | ForeignName (container, name) ->
+                let resolvedContainer =
+                    resolveType context namespacePath container
+                // verify it contains that name before returning
+                if typeContainsName resolvedContainer name then
+                    let nextValue =
+                        ForeignName (resolvedContainer, name)
+                    ConstValue (nextValue, loc)
+                else
+                    failwithf "resolveConstExprTypes: resolved container [%s] contains no name [%s] @ [%A]" (resolvedTypeToString resolvedContainer) name loc
+            | LocalName name ->
+                match localContext with
+                | LValueType alreadyResolvedType ->
+                    // 'upgrade' it to foreign since we have the full type, will allow us to render it with the appropriate path prefix
+                    // and in a default-value context (type arg = defaultValue), we absolutely need this
+                    if typeContainsName alreadyResolvedType name then
+                        let nextValue =
+                            ForeignName (alreadyResolvedType, name)
+                        ConstValue (nextValue, loc)
+                    else
+                        failwithf "resolveConstExprTypes: lvalue container [%s] contains no name [%s] @ [%A]" (resolvedTypeToString alreadyResolvedType) name loc
+                | LocalEnum info ->
+                    // happening inside of eg an enum block, just make sure the referenced name exists
+                    if List.contains name (info.Values |> List.map fst) then
+                        ConstValue (LocalName name, loc)
+                    else
+                        failwithf "resolveConstExprTypes: current enum contains no name [%s] @ [%A]" name loc
+        | Literal value ->
+            Literal value
+        | Unary(op, value) ->
+            Unary(op, recInner value)
+        | Binary(op, left, right) ->
+            Binary(op, recInner left, recInner right)
+        | Grouping groupContent ->
+            Grouping (recInner groupContent)
+    // go
+    recInner outerExpr
+
 let resolveFunctionTypes (context: ModuleContext) (namespacePath: string list) (nf: NamedFunction) =
     let nextArgs =
         nf.Args
-        |> List.map (fun arg -> { arg with Type = resolveType context namespacePath arg.Type })
+        |> List.map (fun arg ->
+            let nextType =
+                resolveType context namespacePath arg.Type
+            let nextDefault =
+                arg.DefaultValue
+                |> Option.map (resolveConstExprTypes context namespacePath (LValueType nextType))
+            { arg with
+                Type = nextType
+                DefaultValue = nextDefault })
     let nextReturns =
         resolveType context namespacePath nf.Returns
     let nextThrows =
@@ -1411,8 +1581,15 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                 OpaqueDef nextInfo
             | TypeDef niType ->
                 TypeDef (resolveType context namespacePath niType)
-            | EnumDef values ->
-                EnumDef values
+            | EnumDef info ->
+                let nextValues =
+                    info.Values
+                    |> List.map (fun (name, maybeExpr) ->
+                        let nextMaybeExpr =
+                            maybeExpr
+                            |> Option.map (resolveConstExprTypes context namespacePath (LocalEnum info))
+                        (name, nextMaybeExpr))
+                EnumDef { info with Values = nextValues }
             | NamedBitsDef info ->
                 let nextMaybeParent =
                     info.MaybeParent

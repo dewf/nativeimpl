@@ -15,14 +15,14 @@ and ConstBinaryOp =
     | BitwiseXor
     | BitwiseOr
     | PlusOp
-and ConstExpr =
+and UntypedConstExpr =
     | NullValue
     | BoolValue of value: bool
     | Name of parts: string list
     | Literal of value: ConstLiteral
-    | Unary of op: ConstUnaryOp * value: ConstExpr
-    | Binary of op: ConstBinaryOp * left: ConstExpr * right: ConstExpr
-    | Grouping of inner: ConstExpr
+    | Unary of op: ConstUnaryOp * value: UntypedConstExpr
+    | Binary of op: ConstBinaryOp * left: UntypedConstExpr * right: UntypedConstExpr
+    | Grouping of groupContent: UntypedConstExpr
     
 let private (|MatchName|_|) (input: TokenAndLocation list) =
     match input with
@@ -116,9 +116,9 @@ let private precedence = function
         // lowest by definition, forces evaluation of all ops
         0
 
-let private pushStackOp (operands: ConstExpr list) (opStack: StackOp list) (toPush: StackOp) =
+let private pushStackOp (operands: UntypedConstExpr list) (opStack: StackOp list) (toPush: StackOp) =
     // while precedence opStack.top > precedence op do ...
-    let rec removeWhileHigher (operands: ConstExpr list) (opStack: StackOp list) =
+    let rec removeWhileHigher (operands: UntypedConstExpr list) (opStack: StackOp list) =
         match opStack with
         | top :: opStackEtc ->
             if precedence top > precedence toPush then
@@ -152,7 +152,7 @@ let private pushStackOp (operands: ConstExpr list) (opStack: StackOp list) (toPu
     // finally, push
     nextOperands, toPush :: nextOpStack
 
-let rec private parseConstValue (operands: ConstExpr list) (opStack: StackOp list) (input: TokenAndLocation list) =
+let rec private parseConstValue (operands: UntypedConstExpr list) (opStack: StackOp list) (input: TokenAndLocation list) =
     match input with
     | { Token = NullToken } :: _ ->
         // null can't be part of any expression, stands alone
@@ -196,42 +196,6 @@ let rec private parseConstValue (operands: ConstExpr list) (opStack: StackOp lis
 let parseConstExpression (input: TokenAndLocation list) =
     parseConstValue [] [] input
     
-type ConstExprStringConfig = {
-    NullStr: string
-    ScopeResStr: string
-}
-let exprString (config: ConstExprStringConfig) (root: ConstExpr) =
-    let rec recInner expr =
-        match expr with
-        | NullValue ->
-            config.NullStr
-        | BoolValue value ->
-            if value then "true" else "false"
-        | Name parts ->
-            String.concat config.ScopeResStr parts
-        | Literal value ->
-            match value with
-            | HexNumber digits -> digits
-            | DecNumber digits -> digits
-        | Unary(op, value) ->
-            let opStr =
-                match op with
-                | BitwiseNot -> "~"
-                | Negation -> "-"
-            sprintf "%s%s" opStr (recInner value)
-        | Binary(op, left, right) ->
-            let opStr =
-                match op with
-                | LeftShift -> "<<"
-                | BitwiseAnd -> "&"
-                | BitwiseXor -> "^"
-                | BitwiseOr -> "|"
-                | PlusOp -> "+"
-            sprintf "%s %s %s" (recInner left) opStr (recInner right)
-        | Grouping inner ->
-            sprintf "(%s)" (recInner inner)
-    recInner root
-
 // let rec prettyPrintExpr (level: int) (expr: EnumExpr) =
 //     let indent count =
 //         List.replicate count "  "

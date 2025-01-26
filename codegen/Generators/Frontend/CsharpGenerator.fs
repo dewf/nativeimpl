@@ -42,11 +42,13 @@ let resolvedNameToString context resolvedName mode =
             None
     resolvedNameToStringAbstract "." (fun name _ -> name) None maybeApprovalFunc false context.RenderContext resolvedName mode
     
-let constExprToString =
+let constExprToString (context: CsRenderContext) =
     let config =
-        { ConstParser.NullStr = "null"
-          ConstParser.ScopeResStr = "." }
-    ConstParser.exprString config
+        { NullStr = "null"
+          ScopeResStr = "." }
+    let strFunc resolvedName =
+        resolvedNameToString context resolvedName TypeMode
+    typedConstExprString config strFunc
     
 let typeToCsString (context: CsRenderContext) (outerType: NIType) =
     let rec recInner = function
@@ -171,7 +173,7 @@ let joinedNameFuncArgs (context: CsRenderContext) (args: NamedFunctionArg list) 
     [for arg in args ->
         match arg.DefaultValue with
         | Some value ->
-            sprintf "%s %s = %s" (typeToCsString context arg.Type) arg.Name (constExprToString value)
+            sprintf "%s %s = %s" (typeToCsString context arg.Type) arg.Name (constExprToString context value)
         | None ->
             sprintf "%s %s" (typeToCsString context arg.Type) arg.Name ]
     |> String.concat ", "
@@ -1024,7 +1026,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             match maybeSpecifiedValue with
             | Some specValue ->
                 let enumValueStr =
-                    constExprToString specValue
+                    constExprToString context specValue
                 write 3 "%s = %s%s" (upperFirst value) enumValueStr maybeComma
             | None ->
                 write 3 "%s%s" (upperFirst value) maybeComma

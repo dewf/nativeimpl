@@ -40,7 +40,7 @@ let resolvedNameToString context resolvedName mode =
             Some approvalFunc
         | None ->
             None
-    resolvedNameToStringAbstract "." (fun name _ -> name) None DirectImportsOnly maybeApprovalFunc context.RenderContext resolvedName mode
+    resolvedNameToStringAbstract "." (fun name _ -> name) None maybeApprovalFunc false context.RenderContext resolvedName mode
     
 let constExprToString =
     let config =

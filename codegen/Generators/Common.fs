@@ -743,7 +743,6 @@ type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
     | GenericIdentifierMode
-    
 
 type ApprovalResult =
     | Approved
@@ -754,7 +753,12 @@ type ApprovalFunc =
     string list -> ApprovalResult
 
 let resolvedNameToStringAbstract
-            (languageNsDelim: string) (partRenameFunc: string -> GroupKind list -> string) (maybePathClamp: string list option) (ambiguityMode: AmbiguityMode) (maybeApprovalFunc: ApprovalFunc option)
+            (languageNsDelim: string)
+            (partRenameFunc: string -> GroupKind list -> string)
+            (maybePathClamp: string list option)
+            (maybeApprovalFunc: ApprovalFunc option)
+            (forceFullyQualified: bool)
+            // non-curried params:
             (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode)=
     
     let separator, partRenameFunc = // rebind partRenameFunc
@@ -847,30 +851,36 @@ let resolvedNameToStringAbstract
                 // apply the segment rename func
                 renameParts parts
                 
-        let finalParts =
-            if symbolIsUnambiguous context.ModuleContext symbolName ambiguityMode then
-                symbolParts |> List.map upperFirst
-            else
+        if forceFullyQualified then
+            let parts2 =
                 match moduleName with
                 | ModuleName moduleParts ->
                     (moduleParts @ symbolParts) |> List.map upperFirst
-                    
-        match maybeApprovalFunc with
-        | Some func ->
-            match func finalParts with
-            | Approved ->
-                joinNameParts separator finalParts
-            | UseFullyQualified prefix ->
-                // worst-case we're re-doing a bit of work here (from second branch above)
-                // but I didn't want to over-complicate this more than it already is
-                let parts2 =
+            separator + joinNameParts separator parts2
+        else
+            let finalParts =
+                if symbolIsUnambiguous context.ModuleContext symbolName then
+                    symbolParts |> List.map upperFirst
+                else
                     match moduleName with
                     | ModuleName moduleParts ->
                         (moduleParts @ symbolParts) |> List.map upperFirst
-                prefix + separator + joinNameParts separator parts2
-        | None ->
-            joinNameParts separator finalParts
-        
+                        
+            match maybeApprovalFunc with
+            | Some func ->
+                match func finalParts with
+                | Approved ->
+                    joinNameParts separator finalParts
+                | UseFullyQualified prefix ->
+                    // worst-case we're re-doing a bit of work here (from second branch above)
+                    // but I didn't want to over-complicate this more than it already is
+                    let parts2 =
+                        match moduleName with
+                        | ModuleName moduleParts ->
+                            (moduleParts @ symbolParts) |> List.map upperFirst
+                    prefix + separator + joinNameParts separator parts2
+            | None ->
+                joinNameParts separator finalParts
 
 let countGroupConstants (top: GroupContext) =
     let rec groupCount (group: GroupContext) =

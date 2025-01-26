@@ -76,7 +76,12 @@ let resolvedNameToString (context: CppRenderContext) =
             wrappersGroupSegmentRenameFunc
         | _ ->
             (fun name _ -> name)
-    resolvedNameToStringAbstract "::" renameFunc pathClamp RecursiveImports None context.RenderContext
+    let forceFullyQualified =
+        // only .cpp files should use direct-import ambiguity checking (but I'm not sure this .NameMode maps 1:1 with the various file types, might need a new context field for FileType or something)
+        match context.NameMode with
+        | Normal -> false               
+        | _ -> true
+    resolvedNameToStringAbstract "::" renameFunc pathClamp None forceFullyQualified context.RenderContext
     
 let constExprToString =
     let config =
@@ -1718,9 +1723,9 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
             let importPaths =
                 getModulePaths currentDir inherited
             writeH 0 "#include \"%s\"" importPaths.ModuleWrappersHeader
-            match inherited with
-            | ModuleName nameParts ->
-                writeH 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
+            // match inherited with
+            // | ModuleName nameParts ->
+            //     writeH 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
     
     // cpp
     writeCpp 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "NativeImplServer"])) // (relativeIncludeFilenameNoExt maybeModulePrefix "$PARENT.support.NativeImplServer")
@@ -1732,9 +1737,9 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
         let importPaths =
             getModulePaths currentDir importName
         writeCpp 0 "#include \"%s\"" importPaths.ModuleWrappersHeader
-        match importName with
-        | ModuleName nameParts ->
-            writeCpp 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
+        // match importName with
+        // | ModuleName nameParts ->
+        //     writeCpp 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
 
     // begin root group: ===========================================
     blankH();
@@ -2224,10 +2229,9 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
             let paths =
                 getModulePaths currentDir importName
             write 0 "#include \"%s\"" paths.ModuleHeader
-            match importName with
-            | ModuleName nameParts ->
-                write 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
-                // (moduleNameToPathNoExt (Some m.Name) importName) // (importName.Replace(".", "/"))
+            // match importName with
+            // | ModuleName nameParts ->
+            //     write 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
     blank()
     match m.Name with
     | ModuleName nameParts ->
@@ -2353,6 +2357,14 @@ let generateImplementationCpp (context: CppRenderContext) (writer: IFormatWriter
         
     write 0 "#include \"generated/%s.h\"" m.Name.LastPart
     blank()
+
+    // the only place it's safe to 'use' namespaces:
+    for import in m.Imports do
+        match import with
+        | ModuleName nameParts ->
+            write 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
+    blank()
+    
     match m.Name with
     | ModuleName nameParts ->
         write 0 "namespace %s" (joinNameParts "::" nameParts)

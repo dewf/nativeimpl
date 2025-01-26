@@ -201,6 +201,10 @@ let rec parseType (input: TokenAndLocation list) =
 
 type Attribute =
     | NoDispose
+    | WithFlags of typeName: string
+let takeAttribute (pred: Attribute -> bool) (attrs: Attribute list) =
+    attrs
+    |> List.extractFirstMatching pred
     
 type NamedConstValue =
     | ForeignName of container: NIType * name: string
@@ -356,7 +360,10 @@ let applyOpaqueAttrs (attrs: Attribute list) (opaque: OpaqueInfo) =
     ||> List.fold (fun info attr ->
         match attr with
         | NoDispose ->
-            { info with NoDispose = true })
+            { info with NoDispose = true }
+        // no other opaque-related attrs yet
+        | _ ->
+            info )
     
 
 let parseOneField (input: TokenAndLocation list) =
@@ -684,10 +691,17 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
     let rec parseNext (activeAttributes: Attribute list) (remaining: TokenAndLocation list) =
         match remaining with
         | Lookahead 2 ([AtSign; Identifier attrName], loc, etc) ->
-            let attr = 
+            let attr, etc =
                 match attrName with
-                | "nodispose" -> NoDispose
-                | _ -> failwithf "unrecognized attribute type '%s' @ %A" attrName loc
+                | "nodispose" -> NoDispose, etc
+                | "withflags" ->
+                    match etc with
+                    | Lookahead 3 ([LeftParen; Identifier targetName; RightParen], _, etc) ->
+                        WithFlags targetName, etc
+                    | _ ->
+                        failwithf "parsing 'withflags' attribute @ %A - expected companion type name (eg: @withflags(MyThingFlags))" loc
+                | _ ->
+                    failwithf "unrecognized attribute type '%s' @ %A" attrName loc
             parseNext (attr :: activeAttributes) etc
         | Lookahead 3 ([GroupToken; Identifier groupName; LeftBrace], loc, etc) ->
             let contentBlock, etc =
@@ -918,8 +932,24 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     failwithf "enum/flags: expecting int width or opening { at %s" (loc.ToString())
             let values, etc =
                 parseEnumValues loc etc
-            ([UserType (name, EnumDef {Values = values; MaybeWidth = maybeWidthType; FlagsMode = (which = FlagsToken)})], etc)
-            |> Some
+            let outputTypes =
+                if which = EnumToken then
+                    [
+                        // enum type:
+                        UserType (name, EnumDef { Values = values; MaybeWidth = maybeWidthType; FlagsMode = false })
+                        // maybe flags type:
+                        match activeAttributes |> takeAttribute (function | WithFlags _ -> true | _ -> false) with
+                        | Some (WithFlags targetName), _ ->
+                            UserType (targetName, EnumDef { Values = values; MaybeWidth = maybeWidthType; FlagsMode = true })
+                        | _ ->
+                            ()
+                    ]
+                else
+                    [
+                        // flag type only
+                        UserType (name, EnumDef { Values = values; MaybeWidth = maybeWidthType; FlagsMode = true })
+                    ]
+            Some (outputTypes, etc)
         | Lookahead 2 ([NamedBitsToken; Identifier name], loc, etc) ->
             // inherits anything?
             let maybeParent, loc, etc =

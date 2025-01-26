@@ -9,6 +9,18 @@ module String =
             None
             
 module List =
+    let extractFirstMatching (pred: 'a -> bool) (xs: 'a list) =
+        let rec recInner (revSkipped: 'a list) (etc: 'a list) =
+            match etc with
+            | [] ->
+                None, xs // original list, since it wasn't found, no need to reverse revSkipped which is the same
+            | h :: etc ->
+                if pred h then
+                    Some h, (List.rev revSkipped) @ etc
+                else
+                    recInner (h :: revSkipped) etc
+        recInner [] xs
+        
     let zipWithIndex (xs: 'a list) =
         xs |> List.mapi (fun i x -> (i, x))
 //    let safeTake (n: int) (xs: 'a list) =

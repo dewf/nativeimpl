@@ -202,6 +202,8 @@ let rec parseType (input: TokenAndLocation list) =
 type Attribute =
     | NoDispose
     | WithFlags of typeName: string
+    | ShadowsExisting                   // C# 'new', shadows existing method
+    
 let takeAttribute (pred: Attribute -> bool) (attrs: Attribute list) =
     attrs
     |> List.extractFirstMatching pred
@@ -258,6 +260,7 @@ type NamedFunctionArg = {
 type NamedFunction = {
     Name: string
     MaybeOverloadId: int option
+    ShadowsExisting: bool
     Args: NamedFunctionArg list
     Returns: NIType
     Throws: NIType list
@@ -467,37 +470,54 @@ let parseArgsList (loc: Location) (input: TokenAndLocation list) =
         List.unfold parseArg argTokens
     args, etc
 
-let parseNamedFunction (input: TokenAndLocation list) =
-    if input.IsEmpty then
-        None
-    else
-        let returnType, etc =
-            parseType input
-        match etc with
-        | Lookahead 2 ([Identifier funcName; LeftParen], loc, etc) ->
-            let args, etc =
-                parseArgsList loc etc
-            match etc with
-            | Lookahead 1 ([Semicolon], _, etc) ->
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty; MaybeOverloadId = None }, etc)
-            | Lookahead 1 ([ThrowsToken], loc, etc) ->
-                let names, loc, etc =
-                    NameStuff.parseList Comma Semicolon loc etc
-                let throwsList =
-                    names
-                    |> List.map (fun name -> Unresolved (UnresolvedIdentifier name, loc, ExceptionConstraint))
-                Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList; MaybeOverloadId = None }, etc)
-            | _ ->
-                failwithf "failed to parse function at %s" (loc.ToString())
-        | { Location = loc } :: _ ->
-            failwithf "was expecting identifier at %s" (loc.ToString())
+let parseNamedFunction (outer: TokenAndLocation list) =
+    let rec parseNext (activeAttributes: Attribute list) (remaining: TokenAndLocation list) =
+        match remaining with
+        | [] ->
+            None
+        | Lookahead 2 ([AtSign; Identifier attrName], loc, etc) ->
+            let attr, etc =
+                match attrName with
+                | "shadows" -> ShadowsExisting, etc
+                | _ ->
+                    failwithf "unrecognized opaque method attribute type '%s' @ %A" attrName loc
+            parseNext (attr :: activeAttributes) etc
         | _ ->
-            // grab location from the start of input, which had at least 1 token (or it would have failed already)
-            match input with
-            | {Location = loc} :: _ ->
-                failwithf "missing expected identifier at %s" (loc.ToString())
+            // continue as normal, all attributes consumed ...
+            let shadowsExisting =
+                match takeAttribute (function | ShadowsExisting -> true | _ -> false) activeAttributes with
+                | Some ShadowsExisting, _ -> true
+                | _ -> false
+                
+            let returnType, etc =
+                parseType remaining
+                
+            match etc with
+            | Lookahead 2 ([Identifier funcName; LeftParen], loc, etc) ->
+                let args, etc =
+                    parseArgsList loc etc
+                match etc with
+                | Lookahead 1 ([Semicolon], _, etc) ->
+                    Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty; MaybeOverloadId = None; ShadowsExisting = shadowsExisting }, etc)
+                | Lookahead 1 ([ThrowsToken], loc, etc) ->
+                    let names, loc, etc =
+                        NameStuff.parseList Comma Semicolon loc etc
+                    let throwsList =
+                        names
+                        |> List.map (fun name -> Unresolved (UnresolvedIdentifier name, loc, ExceptionConstraint))
+                    Some ({ Name = funcName; Args = args; Returns = returnType; Throws = throwsList; MaybeOverloadId = None; ShadowsExisting = shadowsExisting }, etc)
+                | _ ->
+                    failwithf "failed to parse function at %s" (loc.ToString())
+            | { Location = loc } :: _ ->
+                failwithf "was expecting identifier at %s" (loc.ToString())
             | _ ->
-                failwithf "parseNamedFunction: shouldn't happen"
+                // grab location from the start of input, which had at least 1 token (or it would have failed already)
+                match remaining with
+                | {Location = loc} :: _ ->
+                    failwithf "missing expected identifier at %s" (loc.ToString())
+                | _ ->
+                    failwithf "parseNamedFunction: shouldn't happen"
+    parseNext [] outer
 
 let parseFunctionList (loc: Location) (input: TokenAndLocation list) =
     let content, etc =

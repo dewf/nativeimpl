@@ -1184,7 +1184,7 @@ let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (i
             info.Methods
         else
             let disposeMethod =
-                { Name = "dispose"; Args = []; Returns = UnitType; Throws = []; MaybeOverloadId = None }
+                { Name = "dispose"; Args = []; Returns = UnitType; Throws = []; MaybeOverloadId = None; ShadowsExisting = false } // hmm, shouldn't this be 'true' in some cases? but then maybe it doesn't matter on the C++ side ...
             (info.Methods @ [ disposeMethod ]) // seems better at the end of instance methods
         // add "_this" parameter
         |> List.map (fun nf ->

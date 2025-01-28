@@ -929,7 +929,12 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
                             |> List.map (typeToCsString context)
                             |> String.concat ", "
                         sprintf " // throws %s" joined
-                write 3 "public %s %s(%s)%s" (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
+                let shadowsStr =
+                    if namedFunc.ShadowsExisting then
+                        "new "
+                    else
+                        ""
+                write 3 "public %s%s %s(%s)%s" shadowsStr (typeToCsString context namedFunc.Returns) (upperFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
                 write 3 "{"
                 // nested function here, because we're modifying the render context a bit
                 let renderMethodInvocation (context: CsRenderContext) =

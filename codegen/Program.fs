@@ -91,6 +91,7 @@ let INPUTS = [
     "LayoutItem"
     "LineEdit"
     "ListView"
+    "Logging"
     "MainWindow"
     "Menu"
     "MenuBar"

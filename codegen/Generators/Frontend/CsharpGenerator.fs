@@ -1716,6 +1716,7 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     blank ()
     write 1 "<ItemGroup>"
     write 2 "<PackageReference Include=\"CSharpFunctionalExtensions\" Version=\"2.41.0\" />"
+    write 2 "<PackageReference Include=\"Microsoft.Extensions.Logging\" Version=\"9.0.1\" />"
     write 1 "</ItemGroup>"
     blank ()
     write 0 "</Project>"
@@ -1731,17 +1732,18 @@ let generateProject (outParams: OutParams) =
 let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespace: string) =
     let write, blank = writer.Write, writer.Blank
 
+    write 0 "using Microsoft.Extensions.Logging;"
     write 0 "using %s.Support;" baseNamespace
     blank()
     write 0 "namespace %s;" baseNamespace
     blank()
     write 0 "public static class Library"
     write 0 "{"
-    write 1 "public static void Init()"
+    write 1 "public static void Init(ILogger csharpSupportLogger, ILogger cppSupportLogger)"
     write 1 "{"
-    write 2 "if (NativeImplClient.Init() != 0)"
+    write 2 "if (NativeImplClient.Init(csharpSupportLogger, cppSupportLogger) != 0)"
     write 2 "{"
-    write 3 "Console.WriteLine(\"NativeImplClient.Init failed\");"
+    write 3 "csharpSupportLogger.LogCritical(\"{x}\", \"NativeImplClient.Init failed\");";
     write 3 "return;"
     write 2 "}"
     write 2 "// registrations, static module inits"

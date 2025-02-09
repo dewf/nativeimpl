@@ -79,8 +79,8 @@ let resolvedNameToString (context: CppRenderContext) =
     let forceFullyQualified =
         // only .cpp files should use direct-import ambiguity checking (but I'm not sure this .NameMode maps 1:1 with the various file types, might need a new context field for FileType or something)
         match context.NameMode with
-        | Normal -> false               
-        | _ -> true
+        | Normal -> NotForced               
+        | _ -> Forced [""] // a single empty item to force a prefix of ::
     resolvedNameToStringAbstract "::" renameFunc pathClamp None forceFullyQualified context.RenderContext
     
 let constExprToString (context: CppRenderContext) =

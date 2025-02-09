@@ -9,10 +9,12 @@ open Generators.Common
 open AppCommon
 
 type CsRenderContext = {
-    BaseNamespace: string
+    BaseNamespace: string list
     RenderContext: RenderContext
     OpaqueMethodContext: OpaqueInfo option         // rendering an opaque method (pop/invocation/push) at the current group/path, prone to extra collisions on the push/pop statements
 } with
+    member this.BaseNamespaceJoined =
+        joinNameParts "." this.BaseNamespace
     member this.ModuleContext =
         this.RenderContext.ModuleContext
     member this.GroupContext =
@@ -23,24 +25,27 @@ type CsRenderContext = {
         { this with RenderContext = nextRenderContext }
 
 let resolvedNameToString context resolvedName mode =
-    let maybeApprovalFunc =
-        match context.OpaqueMethodContext with
-        | Some info ->
-            let approvalFunc (parts: string list) =
-                if parts.Length >= 2 then
-                    let collidesWithMethod =
-                        info.Methods
-                        |> Seq.exists (fun nf -> upperFirst nf.Name = upperFirst parts[0])
-                    if collidesWithMethod then
-                        UseFullyQualified context.BaseNamespace
-                    else
-                        Approved
-                else
-                    Approved
-            Some approvalFunc
-        | None ->
-            None
-    resolvedNameToStringAbstract "." (fun name _ -> name) None maybeApprovalFunc false context.RenderContext resolvedName mode
+    // let maybeApprovalFunc =
+    //     match context.OpaqueMethodContext with
+    //     | Some info ->
+    //         let approvalFunc (parts: string list) =
+    //             if parts.Length >= 2 then
+    //                 let collidesWithMethod =
+    //                     info.Methods
+    //                     |> Seq.exists (fun nf -> upperFirst nf.Name = upperFirst parts[0])
+    //                 if collidesWithMethod then
+    //                     UseFullyQualified context.BaseNamespace
+    //                 else
+    //                     Approved
+    //             else
+    //                 Approved
+    //         Some approvalFunc
+    //     | None ->
+    //         None
+    // resolvedNameToStringAbstract "." (fun name _ -> name) None maybeApprovalFunc false context.RenderContext resolvedName mode
+    let qualification =
+        Forced context.BaseNamespace 
+    resolvedNameToStringAbstract "." (fun name _ -> name) None None qualification context.RenderContext resolvedName mode
     
 let constExprToString (context: CsRenderContext) =
     let config =
@@ -75,7 +80,7 @@ let typeToCsString (context: CsRenderContext) (outerType: NIType) =
             | FwdOpaqueType ->
                 match requiredSymbolLookup context.ModuleContext resolvedName with
                 | FwdOpaqueDef parts ->
-                    sprintf "%s.%s" context.BaseNamespace (joinNameParts "." parts)
+                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts))
                 | _ ->
                     failwith "typeToCsString: failed to find fwdopaque definition"
             | TypedefType ->
@@ -229,7 +234,7 @@ let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (ty
                 // special treatment for these:
                 match requiredSymbolLookup context.ModuleContext resolvedName with
                 | FwdOpaqueDef parts ->
-                    sprintf "%s.%s" context.BaseNamespace (joinNameParts "." parts)
+                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts))
                 | _ ->
                     failwithf "C# popValue: FwdOpaque trouble, should never happen"
             | _ ->
@@ -308,7 +313,7 @@ let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (t
                 // special treatment for fwd opaques:
                 match requiredSymbolLookup context.ModuleContext resolvedName with
                 | FwdOpaqueDef parts ->
-                    sprintf "%s.%s" context.BaseNamespace (joinNameParts "." parts)
+                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts))
                 | _ ->
                     failwithf "C# pushValue: FwdOpaqueType trouble, shouldn't happen"
             | _ ->
@@ -1566,7 +1571,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     let m =
         moduleContext.Module
     let renderContext =
-        { BaseNamespace = baseNamespace
+        { BaseNamespace = (baseNamespace.Split "." |> Array.toList)
           RenderContext = createRenderContext moduleContext
           OpaqueMethodContext = None }
     let root =
@@ -1584,11 +1589,11 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "using ModuleHandle = %s.Support.ModuleHandle;" baseNamespace // sigh
     write 0 "using static %s.Support.ClientObjectHelpers;" baseNamespace
     
-    // imports
-    if not m.Imports.IsEmpty then
-        write 0 ""
-        for importName in m.Imports do
-            write 0 "using static %s.%s;" baseNamespace (joinModuleName importName)
+    // // imports
+    // if not m.Imports.IsEmpty then
+    //     write 0 ""
+    //     for importName in m.Imports do
+    //         write 0 "using static %s.%s;" baseNamespace (joinModuleName importName)
 
     write 0 ""
     let moduleNamespace =

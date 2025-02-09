@@ -753,12 +753,16 @@ type ApprovalFunc =
     // used by C# when the first part of a name in a method push/pop context would collide with another method name
     string list -> ApprovalResult
 
+type FullQualification =
+    | NotForced
+    | Forced of prefix: string list
+    
 let resolvedNameToStringAbstract
             (languageNsDelim: string)
             (partRenameFunc: string -> GroupKind list -> string)
             (maybePathClamp: string list option)
             (maybeApprovalFunc: ApprovalFunc option)
-            (forceFullyQualified: bool)
+            (importQualification: FullQualification)
             // non-curried params:
             (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
     
@@ -851,14 +855,16 @@ let resolvedNameToStringAbstract
             | SymbolName parts ->
                 // apply the segment rename func
                 renameParts parts
-                
-        if forceFullyQualified then
+        
+        match importQualification with
+        | Forced prefix ->
             let parts2 =
                 match moduleName with
                 | ModuleName moduleParts ->
                     (moduleParts @ symbolParts) |> List.map upperFirst
-            separator + joinNameParts separator parts2
-        else
+            // separator + joinNameParts separator parts2
+            joinNameParts separator (prefix @ parts2)
+        | NotForced ->
             let finalParts =
                 if symbolIsUnambiguous context.ModuleContext symbolName then
                     symbolParts |> List.map upperFirst

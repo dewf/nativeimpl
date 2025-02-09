@@ -745,23 +745,14 @@ type ResolveNameStringMode =
     | IdentifierMode
     | GenericIdentifierMode
 
-type ApprovalResult =
-    | Approved
-    | UseFullyQualified of prefix: string
-type ApprovalFunc =
-    // uses the name parts (pre-ambiguity-checking) to decide if the name needs to be fully qualified
-    // used by C# when the first part of a name in a method push/pop context would collide with another method name
-    string list -> ApprovalResult
-
 type FullQualification =
     | NotForced
     | Forced of prefix: string list
-    
+
 let resolvedNameToStringAbstract
             (languageNsDelim: string)
             (partRenameFunc: string -> GroupKind list -> string)
             (maybePathClamp: string list option)
-            (maybeApprovalFunc: ApprovalFunc option)
             (importQualification: FullQualification)
             // non-curried params:
             (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
@@ -872,22 +863,7 @@ let resolvedNameToStringAbstract
                     match moduleName with
                     | ModuleName moduleParts ->
                         (moduleParts @ symbolParts) |> List.map upperFirst
-                        
-            match maybeApprovalFunc with
-            | Some func ->
-                match func finalParts with
-                | Approved ->
-                    joinNameParts separator finalParts
-                | UseFullyQualified prefix ->
-                    // worst-case we're re-doing a bit of work here (from second branch above)
-                    // but I didn't want to over-complicate this more than it already is
-                    let parts2 =
-                        match moduleName with
-                        | ModuleName moduleParts ->
-                            (moduleParts @ symbolParts) |> List.map upperFirst
-                    prefix + separator + joinNameParts separator parts2
-            | None ->
-                joinNameParts separator finalParts
+            joinNameParts separator finalParts
 
 let countGroupConstants (top: GroupContext) =
     let rec groupCount (group: GroupContext) =

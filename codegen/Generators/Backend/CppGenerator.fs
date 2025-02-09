@@ -81,7 +81,7 @@ let resolvedNameToString (context: CppRenderContext) =
         match context.NameMode with
         | Normal -> NotForced               
         | _ -> Forced [""] // a single empty item to force a prefix of ::
-    resolvedNameToStringAbstract "::" renameFunc pathClamp None forceFullyQualified context.RenderContext
+    resolvedNameToStringAbstract "::" renameFunc pathClamp forceFullyQualified context.RenderContext
     
 let constExprToString (context: CppRenderContext) =
     let config =

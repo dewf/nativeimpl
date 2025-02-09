@@ -25,27 +25,15 @@ type CsRenderContext = {
         { this with RenderContext = nextRenderContext }
 
 let resolvedNameToString context resolvedName mode =
-    // let maybeApprovalFunc =
-    //     match context.OpaqueMethodContext with
-    //     | Some info ->
-    //         let approvalFunc (parts: string list) =
-    //             if parts.Length >= 2 then
-    //                 let collidesWithMethod =
-    //                     info.Methods
-    //                     |> Seq.exists (fun nf -> upperFirst nf.Name = upperFirst parts[0])
-    //                 if collidesWithMethod then
-    //                     UseFullyQualified context.BaseNamespace
-    //                 else
-    //                     Approved
-    //             else
-    //                 Approved
-    //         Some approvalFunc
-    //     | None ->
-    //         None
-    // resolvedNameToStringAbstract "." (fun name _ -> name) None maybeApprovalFunc false context.RenderContext resolvedName mode
     let qualification =
-        Forced context.BaseNamespace 
-    resolvedNameToStringAbstract "." (fun name _ -> name) None None qualification context.RenderContext resolvedName mode
+        let prefix =
+            if mode = GenericIdentifierMode then
+                // colliding with local symbols not a concern in this context, so we can use any (or probably even no) prefix
+                ["G"]
+            else
+                context.BaseNamespace
+        Forced prefix
+    resolvedNameToStringAbstract "." (fun name _ -> name) None qualification context.RenderContext resolvedName mode
     
 let constExprToString (context: CsRenderContext) =
     let config =

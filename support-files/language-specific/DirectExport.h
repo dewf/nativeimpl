@@ -11,6 +11,7 @@
 
 extern "C" {
     QTTESTINGSERVER_EXPORT int nativeImplInit(
+		niClientLogFunc clientLogFunc,
 		niClientFuncExec clientFuncExec,
 		niClientMethodExec clientMethodExec,
 		niClientResourceRelease clientResourceRelease,

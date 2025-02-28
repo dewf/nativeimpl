@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <stddef.h>
+#include <cstddef>
 
 #define NIHANDLE(x) struct ni_##x; typedef struct ni_##x* ni_##x##Ref
 
@@ -12,6 +12,17 @@ NIHANDLE(InterfaceMethod);
 NIHANDLE(Object);
 NIHANDLE(Exception);
 
+enum ni_ClientLogLevel {
+	LogLevel_Trace,
+	LogLevel_Debug,
+	LogLevel_Information,
+	LogLevel_Warning,
+	LogLevel_Error,
+	LogLevel_Critical,
+	LogLevel_None
+};
+
+typedef void (*niClientLogFunc)(ni_ClientLogLevel level, const char *fmt, int length);
 typedef void (*niClientFuncExec)(int id);
 typedef void (*niClientMethodExec)(ni_InterfaceMethodRef method, int objID);
 typedef void (*niClientResourceRelease)(int id);
@@ -51,8 +62,14 @@ extern "C" {
 	extern niClientClearSafetyArea ni_clientClearSafetyArea;
 	extern ni_ExceptionRef ni_currentException;
 
+	// confusing terminology here ... it's called 'clientLogger' but it's meant
+	// as a callback for the server to use, to log server messages
+	// but clientServerLogger seems a bit much
+	void ni_clientLogger(ni_ClientLogLevel level, const char* fmt, ...);
+
 	// mostly client stuff, but some used by server as well
 	int ni_nativeImplInit(
+		niClientLogFunc clientLogFunc,
 		niClientFuncExec clientFuncExec,
 		niClientMethodExec clientMethodExec,
 		niClientResourceRelease clientResourceRelease,
@@ -179,8 +196,6 @@ extern "C" {
 	// the safety area protects until a return value (containing interface references) is fully grabbed
 	void ni_clearClientSafetyArea();
 	void ni_clearServerSafetyArea();
-
-	void ni_dumpTables();
 
 	void ni_setException(ni_ExceptionRef e);
 	ni_ExceptionRef ni_getAndClearException();

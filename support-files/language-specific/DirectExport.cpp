@@ -3,12 +3,14 @@
 #include "core/NativeImplCore.h"
 
 int nativeImplInit(
+    niClientLogFunc clientLogFunc,
     niClientFuncExec clientFuncExec,
     niClientMethodExec clientMethodExec,
     niClientResourceRelease clientResourceRelease,
     niClientClearSafetyArea clientClearSafetyArea)
 {
     return ni_nativeImplInit(
+        clientLogFunc,
         clientFuncExec,
         clientMethodExec,
         clientResourceRelease,

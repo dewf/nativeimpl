@@ -8,7 +8,9 @@
 #include <functional>
 #include <memory>
 #include <vector>
-#include <assert.h>
+#include <cassert>
+#include <cstdarg>
+#include <stdexcept>
 
 // private opaque definitions
 struct ni_Module {
@@ -488,6 +490,7 @@ public:
 };
 
 // null methods for callback defaults (also assigned when client is shut down, to prevent dtors from calling back into client)
+static void nullLogFunc(ni_ClientLogLevel level, const char *text, int length) {}
 static void nullIntMethod(int x) {}
 static void nullVoidMethod() {}
 static void nullMethodExec(ni_InterfaceMethodRef method, int id) {}
@@ -495,10 +498,34 @@ static void nullMethodExec(ni_InterfaceMethodRef method, int id) {}
 // private global stuff ============================
 static std::map<std::string, ni_ModuleRef> modules;
 
+static niClientLogFunc internal_clientLogFunc;
 niClientFuncExec ni_clientFuncExec;
 niClientMethodExec ni_clientMethodExec;
 niClientResourceRelease ni_clientResourceRelease;
 niClientClearSafetyArea ni_clientClearSafetyArea;
+
+// from ChatGPT:
+void ni_clientLogger(const ni_ClientLogLevel level, const char* fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
+
+	// First, determine the required buffer size
+	const auto size = std::vsnprintf(nullptr, 0, fmt, args);
+	va_end(args);
+
+	if (size > 0) {
+		std::vector<char> buffer(size + 1); // +1 for null terminator
+
+		va_start(args, fmt);
+		std::vsnprintf(buffer.data(), buffer.size(), fmt, args);
+		va_end(args);
+
+		internal_clientLogFunc(level, buffer.data(), static_cast<int>(buffer.size()));
+	} else {
+		const auto err = "!!! ni_clientLogger: size was <= 0";
+		internal_clientLogFunc(LogLevel_Error, err, static_cast<int>(strlen(err) + 1));
+	}
+}
 
 struct ThreadLocal {
 	std::stack<std::unique_ptr<StackItem>> vstack;
@@ -540,7 +567,7 @@ ni_ModuleRef ni_registerModule(const char *name)
 	// make sure name doesn't already exist
 	auto found = modules.find(name);
 	if (found != modules.end()) {
-		printf("registerModule: module name [%s] already exists!\n", name);
+		ni_clientLogger(LogLevel_Error, "registerModule: module name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto mod = new ni_Module{ name };
@@ -552,7 +579,7 @@ ni_ModuleMethodRef ni_registerModuleMethod(ni_ModuleRef m, const char *name, Mod
 {
 	auto found = m->methods.find(name);
 	if (found != m->methods.end()) {
-		printf("registerModuleMethod: method name [%s] already exists!\n", name);
+		ni_clientLogger(LogLevel_Error, "registerModuleMethod: method name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto method = new ni_ModuleMethod{ m, name, func };
@@ -562,7 +589,7 @@ ni_ModuleMethodRef ni_registerModuleMethod(ni_ModuleRef m, const char *name, Mod
 
 void ni_registerModuleConstants(ni_ModuleRef m, ConstantsFunc func) {
 	if (m->constantsFunc != nullptr) {
-		printf("Module %s ConstantsFunc already defined\n", m->name.c_str());
+		ni_clientLogger(LogLevel_Error, "Module %s ConstantsFunc already defined", m->name.c_str());
 	}
 	else {
 		m->constantsFunc = func;
@@ -573,7 +600,7 @@ ni_InterfaceRef ni_registerInterface(ni_ModuleRef m, const char *name)
 {
 	auto found = m->interfaces.find(name);
 	if (found != m->interfaces.end()) {
-		printf("registerModuleInterface: interface name [%s] already exists!\n", name);
+		ni_clientLogger(LogLevel_Error, "registerModuleInterface: interface name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto iface = new ni_Interface{ m, name };
@@ -585,7 +612,7 @@ ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const ch
 {
 	auto found = iface->methods.find(name);
 	if (found != iface->methods.end()) {
-		printf("registerInterfaceMethod: iface method name [%s] already exists!\n", name);
+		ni_clientLogger(LogLevel_Error, "registerInterfaceMethod: iface method name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto method = new ni_InterfaceMethod{ iface, name, ifunc };
@@ -596,7 +623,7 @@ ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const ch
 ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char *name, ExceptionBuilder buildAndThrow) {
 	auto found = m->exceptions.find(name);
 	if (found != m->exceptions.end()) {
-		printf("registerException: method exception name [%s] already exists!\n", name);
+		ni_clientLogger(LogLevel_Error, "registerException: method exception name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto exception = new ni_Exception{ m, name, buildAndThrow };
@@ -607,16 +634,20 @@ ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char *name, Exception
 // client methods (some used by server as well) ===============================
 
 int ni_nativeImplInit(
+	niClientLogFunc clientLogFunc,
 	niClientFuncExec clientFuncExec,
 	niClientMethodExec clientMethodExec,
 	niClientResourceRelease clientResourceRelease,
 	niClientClearSafetyArea clientClearSafetyArea
 	)
 {
+	::internal_clientLogFunc = clientLogFunc;
 	::ni_clientFuncExec = clientFuncExec;
 	::ni_clientMethodExec = clientMethodExec;
 	::ni_clientResourceRelease = clientResourceRelease;
 	::ni_clientClearSafetyArea = clientClearSafetyArea;
+
+	ni_clientLogger(LogLevel_Information, "ni_nativeImplInit");
 
 	// library-specific registrations etc
 	return nativeLibraryInit();
@@ -624,16 +655,17 @@ int ni_nativeImplInit(
 
 void ni_nativeImplShutdown()
 {
-	printf("nativeImplShutdown\n");
+	ni_clientLogger(LogLevel_Information, "ni_nativeImplShutdown");
 
 	// de-fang the callbacks so they don't wreak havoc
+	internal_clientLogFunc = &nullLogFunc;
 	ni_clientFuncExec = &nullIntMethod;
 	ni_clientMethodExec = &nullMethodExec;
 	ni_clientResourceRelease = &nullIntMethod;
 	ni_clientClearSafetyArea = &nullVoidMethod;
 
-	printf(" - callbacks disabled\n");
-	fflush(stdout);
+	ni_clientLogger(LogLevel_Information, " - callbacks disabled");
+	//fflush(stdout);
 
 	nativeLibraryShutdown();
 }

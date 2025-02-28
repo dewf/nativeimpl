@@ -1,8 +1,9 @@
 ﻿using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 
 namespace %%TARGET_NAMESPACE%%.Support
 {
-    public class ClientBuffer<T> : ClientResource, INativeBuffer<T>
+    public class ClientBuffer<T> : ClientResource, INativeBuffer<T> where T : unmanaged
     {
         private IntPtr _block;
         private bool _disposed;
@@ -18,7 +19,45 @@ namespace %%TARGET_NAMESPACE%%.Support
             _totalSize = _totalCount * _elementSize;
             _block = Marshal.AllocHGlobal((IntPtr)_totalSize);
             GC.AddMemoryPressure(_totalSize);
-            Console.WriteLine("ClientBuffer {0} allocated", _block);
+            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {0} allocated (from dimensions)", _block);
+        }
+        private static unsafe void GenericArrayCopy(T[] sourceArray, IntPtr destination) 
+        {
+            var byteCount = sourceArray.Length * sizeof(T);
+            fixed (T* srcPtr = sourceArray)
+            {
+                Buffer.MemoryCopy(srcPtr, (void*)destination, byteCount, byteCount);
+            }
+        }
+        private static unsafe void GenericSpanCopy(Span<T> sourceSpan, IntPtr destination)
+        {
+            var byteCount = sourceSpan.Length * sizeof(T);
+            fixed (T* srcPtr = sourceSpan)
+            {
+                Buffer.MemoryCopy(srcPtr, (void*)destination, byteCount, byteCount);
+            }
+        }
+        public ClientBuffer(T[] data)
+        {
+            _dims = [data.Length];
+            _elementSize = Marshal.SizeOf<T>();
+            _totalCount = data.Length;
+            _totalSize = _totalCount * _elementSize;
+            _block = Marshal.AllocHGlobal((IntPtr)_totalSize);
+            GC.AddMemoryPressure(_totalSize);
+            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {0} allocated (from array)", _block);
+            GenericArrayCopy(data, _block);
+        }
+        public ClientBuffer(Span<T> data)
+        {
+            _dims = [data.Length];
+            _elementSize = Marshal.SizeOf<T>();
+            _totalCount = data.Length;
+            _totalSize = _totalCount * _elementSize;
+            _block = Marshal.AllocHGlobal((IntPtr)_totalSize);
+            GC.AddMemoryPressure(_totalSize);
+            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {0} allocated (from span)", _block);
+            GenericSpanCopy(data, _block);
         }
         
         // // currently this just makes a copy
@@ -38,7 +77,7 @@ namespace %%TARGET_NAMESPACE%%.Support
         //         Buffer.MemoryCopy(sourcePtr.ToPointer(), _block.ToPointer(), _totalSize, _totalSize);
         //     }
         //     // done
-        //     Console.WriteLine("ClientBuffer {0} allocated", _block);
+        //     InternalLogger.Log(LogLevel.Trace, "ClientBuffer {0} allocated", _block);
         // }
         
         public Span<T> GetSpan(out int length)
@@ -71,7 +110,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             if (_disposed) return;
             Marshal.FreeHGlobal(_block);
             GC.RemoveMemoryPressure(_totalSize);
-            Console.WriteLine("ClientBuffer {0} disposed", _block);
+            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {0} disposed", _block);
             _block = IntPtr.Zero;
             _disposed = true;
         }

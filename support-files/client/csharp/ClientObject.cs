@@ -1,6 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-
-namespace %%TARGET_NAMESPACE%%.Support;
+﻿namespace %%TARGET_NAMESPACE%%.Support;
 
 internal abstract class ClientObject : ClientResource
 {

@@ -4,6 +4,16 @@ namespace %%TARGET_NAMESPACE%%.Support
 {
     internal static partial class NativeMethods
     {
+        internal enum ClientLogLevel {
+            Trace,
+            Debug,
+            Information,
+            Warning,
+            Error,
+            Critical,
+            None
+        }
+        internal delegate void ClientLogFuncDelegate(ClientLogLevel level, IntPtr strData, int length);
         internal delegate void ExecFunctionDelegate(int id);
         internal delegate void ClientMethodDelegate(IntPtr methodHandle, int objectId);
         internal delegate void ClientResourceReleaseDelegate(int id);
@@ -12,6 +22,7 @@ namespace %%TARGET_NAMESPACE%%.Support
         [LibraryImport("%%SERVER_DLL_NAME%%")]
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial int nativeImplInit(
+            ClientLogFuncDelegate logFuncDelegate,
             ExecFunctionDelegate execFunctionDelegate,
             ClientMethodDelegate methodDelegate,
             ClientResourceReleaseDelegate resourceReleaseDelegate,
@@ -22,23 +33,23 @@ namespace %%TARGET_NAMESPACE%%.Support
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial void nativeImplShutdown();
 
-        [LibraryImport("%%SERVER_DLL_NAME%%", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
+        [LibraryImport("MinimalQtServer", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr getModule(string name);
 
-        [LibraryImport("%%SERVER_DLL_NAME%%", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
+        [LibraryImport("MinimalQtServer", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr getModuleMethod(IntPtr module, string name);
 
-        [LibraryImport("%%SERVER_DLL_NAME%%", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
+        [LibraryImport("MinimalQtServer", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr getInterface(IntPtr module, string name);
 
-        [LibraryImport("%%SERVER_DLL_NAME%%", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
+        [LibraryImport("MinimalQtServer", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr getInterfaceMethod(IntPtr iface, string name);
 
-        [LibraryImport("%%SERVER_DLL_NAME%%", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
+        [LibraryImport("MinimalQtServer", StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(System.Runtime.InteropServices.Marshalling.AnsiStringMarshaller))]
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr getException(IntPtr module, string name);
 

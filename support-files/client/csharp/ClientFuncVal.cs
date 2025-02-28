@@ -28,7 +28,7 @@
         
         public static ClientFuncVal AddFuncVal(FuncValWrapper wrapper, IntPtr uniqueKey)
         {
-            Console.WriteLine($"Func Val Unique Key: {uniqueKey}");
+            SupportLogger.Trace($"Func Val Unique Key: {uniqueKey}");
             if (ReverseFuncValDict.TryGetValue(uniqueKey, out var id))
             {
                 // return existing

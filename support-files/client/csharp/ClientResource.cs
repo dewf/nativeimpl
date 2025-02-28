@@ -33,13 +33,13 @@
                 _id = _nextClientResourceId++;
                 RefCount = 1;
                 ClientResources[Id] = this;
-                Console.WriteLine($"C# ClientObject: pushed {Id}");
+                SupportLogger.Trace($"C# ClientObject: pushed {Id}");
             }
             else
             {
                 // just increase refcount as we pass it over
                 RefCount++;
-                Console.WriteLine($"C# ClientObject: increased refcount to {RefCount}");
+                SupportLogger.Trace($"C# ClientObject: increased refcount to {RefCount}");
             }
             NativePush();
         }
@@ -49,7 +49,7 @@
             RefCount -= 1;
             if (RefCount == 0)
             {
-                Console.WriteLine($"C# Release on ClientResource {Id} - refCount 0, removing from clientObjects table");
+                SupportLogger.Trace($"C# Release on ClientResource {Id} - refCount 0, removing from clientObjects table");
                 ClientResources.Remove(Id);
                 _id = null; // reset ID, since we're not in the object table anymore
                 // all this does is remove this object from the 'checked-out' table -
@@ -69,7 +69,7 @@
         {
             foreach (var (key, value) in ClientResources)
             {
-                Console.WriteLine($" - obj {value.Id}: refcount {value.RefCount}");
+                SupportLogger.Trace($" - obj {value.Id}: refcount {value.RefCount}");
             }
         }
     }

@@ -1,5 +1,7 @@
 ﻿using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace %%TARGET_NAMESPACE%%.Support
 {
@@ -9,6 +11,7 @@ namespace %%TARGET_NAMESPACE%%.Support
     internal static class NativeImplClient
     {
         // these MUST be saved, else GC will take the delegates out from under us. ohnononono!
+        private static NativeMethods.ClientLogFuncDelegate _savedClientLogFuncDelegate;
         private static NativeMethods.ExecFunctionDelegate _savedExecFunctionDelegate;
         private static NativeMethods.ClientMethodDelegate _savedClientMethodDelegate;
         private static NativeMethods.ClientResourceReleaseDelegate _savedClientResourceReleaseDelegate;
@@ -23,6 +26,16 @@ namespace %%TARGET_NAMESPACE%%.Support
             var funcVal = ClientFuncVal.AddFuncVal(wrapper, uniqueKey);
             ((IPushable)funcVal).Push(false); // isReturn = false (more correctly, "not applicable") - client resources don't need to be protected on return
         }
+
+        private static ILogger _cppSupportLogger = NullLogger.Instance;
+        private static void ClientLogger(NativeMethods.ClientLogLevel level, IntPtr strData, int length)
+        {
+            if (length > 0)
+            {
+                var message = Marshal.PtrToStringUTF8(strData, length);
+                _cppSupportLogger.Log((LogLevel)level, "{}", message);
+            }
+        }
         
         private static void FuncValExecutor(int id)
         {
@@ -34,15 +47,22 @@ namespace %%TARGET_NAMESPACE%%.Support
             ClientResource.GetResourceById(id).Release();
         }
         
-        public static int Init()
+        public static int Init(ILogger csharpSupportLogger, ILogger cppSupportLogger)
         {
+            // used as the C++ support logger callback (see above):
+            _cppSupportLogger = cppSupportLogger;
+            // used as our C# support code logger:
+            SupportLogger.SetLogger(csharpSupportLogger);
+            
             // delegates must be saved from GC until the end of the program, kthx
+            _savedClientLogFuncDelegate = ClientLogger;
             _savedExecFunctionDelegate = FuncValExecutor;
             _savedClientMethodDelegate = InvokeClientMethod;
             _savedClientResourceReleaseDelegate = ReleaseClientResourceId;
             _savedClientClearSafetyAreaDelegate = ClientClearSafetyArea;
 
             return NativeMethods.nativeImplInit(
+                _savedClientLogFuncDelegate,
                 _savedExecFunctionDelegate,
                 _savedClientMethodDelegate,
                 _savedClientResourceReleaseDelegate,
@@ -53,9 +73,9 @@ namespace %%TARGET_NAMESPACE%%.Support
         public static void Shutdown()
         {
             RemoteIsShutdown = true; // don't free any remote delegates after this!
-            Console.WriteLine("C# NativeImplClient Shutdown (before native)");
+            SupportLogger.Info("C# NativeImplClient Shutdown (before native)");
             NativeMethods.nativeImplShutdown();
-            Console.WriteLine("C# NativeImplClient Shutdown (after native)");
+            SupportLogger.Info("C# NativeImplClient Shutdown (after native)");
         }
 
         public static ModuleHandle GetModule(string name)
@@ -588,23 +608,23 @@ namespace %%TARGET_NAMESPACE%%.Support
 
         private static void ClientClearSafetyArea()
         {
-            Console.WriteLine("C#: before ClientClearSafetyArea");
+            SupportLogger.Trace("C#: before ClientClearSafetyArea");
             ServerResource.ClearSafeArea();
-            Console.WriteLine("C#: after ClientClearSafetyArea");
+            SupportLogger.Trace("C#: after ClientClearSafetyArea");
         }
         
         public static void DumpTables()
         {
-            Console.WriteLine("============Dump Tables==================");
-            Console.WriteLine("Native tables----------------------------");
+            SupportLogger.Info("============Dump Tables==================");
+            SupportLogger.Info("Native tables----------------------------");
             NativeMethods.dumpTables();
             
-            Console.WriteLine("Local tables-----------------------------");
+            SupportLogger.Info("Local tables-----------------------------");
             
-            Console.WriteLine("== C# client resources:");
+            SupportLogger.Info("== C# client resources:");
             ClientResource.DumpTables();
             
-            Console.WriteLine("=========================================");
+            SupportLogger.Info("=========================================");
         }
         
         public static void SetExceptionBuilder(ExceptionHandle eh, ExceptionBuildAndThrowDelegate builder)

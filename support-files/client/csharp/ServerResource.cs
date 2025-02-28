@@ -14,7 +14,7 @@
         ~ServerResource()
         {
             // backstop in case the derived class not manually disposed
-            Console.WriteLine($"ServerResource id {Id} - finalize invoked, calling ServerDispose()");
+            SupportLogger.Trace($"ServerResource id {Id} - finalize invoked, calling ServerDispose()");
             ServerDispose();
         }
 

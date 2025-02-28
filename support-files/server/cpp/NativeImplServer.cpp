@@ -283,28 +283,26 @@ std::shared_ptr<ServerResource> ServerResource::getResourceById(int id) {
 
 void ServerResource::dumpTables()
 {
-	printf("== C++ server resources:\n");
-	for (auto i = serverResources.begin(); i != serverResources.end(); i++) {
-		printf(" - id %d (%s): refcount %d\n",  i->first, i->second->kind, i->second->refCount);
+	ni_clientLogger(LogLevel_Information, "== C++ server resources:");
+	for (auto i = serverResources.begin(); i != serverResources.end(); ++i) {
+		ni_clientLogger(LogLevel_Information, " - id %d (%s): refcount %d",  i->first, i->second->kind, i->second->refCount);
 	}
 }
 
 ServerResource::~ServerResource()
 {
-	printf("ServerResource::~ServerResource()\n");
-	ServerResource::releaseExtra();
-	printf("releaseExtra() was called\n");
+	releaseExtra();
 }
 
 void ServerResource::release()
 {
 	refCount -= 1;
 	if (refCount == 0) {
-		printf("C++: releasing server obj %d\n", id); // only removes from table, still might exist on this side somewhere
+		ni_clientLogger(LogLevel_Trace, "C++: releasing server obj %d", id); // only removes from table, still might exist on this side somewhere
 		serverResources.erase(id);
 	}
 	else {
-		printf("C++: releaseServerInstID(%d) - refCount still %d\n", id, refCount);
+		ni_clientLogger(LogLevel_Trace, "C++: releaseServerInstID(%d) - refCount still %d", id, refCount);
 	}
 }
 
@@ -314,12 +312,12 @@ void ServerResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 		id = nextServerObjId++;
 		refCount = 1;
 		serverResources[id] = std::dynamic_pointer_cast<ServerResource>(outer);
-		//printf("ServerObject::soPush()ed into serverObjects[%d]\n", id);
+		//ni_clientLogger(LogLevel_Trance, "ServerObject::soPush()ed into serverObjects[%d]", id);
 	}
 	else {
 		// add ref to existing
 		refCount++; // this assumes that it's going across a boundary which will be balanced by an eventual deref. is that always true?
-		printf("bumped server ID %d refcount to %d\n", id, refCount);
+		ni_clientLogger(LogLevel_Trace, "bumped server ID %d refcount to %d", id, refCount);
 	}
 	nativePush();
 }
@@ -349,15 +347,15 @@ static std::vector<std::shared_ptr<ClientResource>> safeArea;
 
 // clear server resources from safety area (protects values being returned with no other shared_ptrs existing on this side)
 void ni_clearServerSafetyArea() {
-	printf("C++ before safety clear =====\n");
+	ni_clientLogger(LogLevel_Trace, "C++ before safety clear =====");
 	safeArea.clear();
-	printf("C++ after safety clear!! ====\n");
+	ni_clientLogger(LogLevel_Trace, "C++ after safety clear!! ====");
 }
 
 void ClientResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	if (isReturn) {
 		// for return values, to keep them alive until other side has taken them
-		printf("C++ ClientObject %d safepush\n", id);
+		ni_clientLogger(LogLevel_Trace, "C++ ClientObject %d safepush", id);
 		// preserve for return values etc
 		auto clientOuter = std::dynamic_pointer_cast<ClientResource>(outer);
 		safeArea.push_back(clientOuter);
@@ -366,8 +364,8 @@ void ClientResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 }
 
 ClientResource::~ClientResource() {
-	printf("C++ ClientResource::dtor (id %d), remote releasing\n", id);
-	fflush(stdout);
+	ni_clientLogger(LogLevel_Trace, "C++ ClientResource::dtor (id %d), remote releasing", id);
+	//fflush(stdout);
 	::ni_clientResourceRelease(id);
 }
 
@@ -400,7 +398,7 @@ void ClientFuncVal::nativePush()
 {
 	// currently this should never be called, only server func values can be pushed from server
 	// (a client function returned would be wrapped as a server func)
-	throw std::exception("ClientFuncVal::nativePush - oops");
+	throw "ClientFuncVal::nativePush - oops";
 }
 
 void ServerFuncVal::nativePush()
@@ -434,6 +432,6 @@ std::shared_ptr<ServerFuncVal> ServerFuncVal::create(std::function<void()> wrapp
 
 void ServerFuncVal::releaseExtra()
 {
-	printf("server releaseFuncVal(%d): refcount 0, releasing\n", id);
+	ni_clientLogger(LogLevel_Trace, "server releaseFuncVal(%d): refcount 0, releasing", id);
 	reverseServerFuncVals.erase(uniqueKey);
 }

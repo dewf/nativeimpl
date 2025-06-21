@@ -1,0 +1,65 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "NativeImpl",
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#types"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#userdefined"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.nativeimpl",
+					"match": "\\b(module|import|group|throws|static|extends)\\b"
+				}
+			]
+		},
+		"types": {
+			"patterns": [
+				{
+					"name": "storage.type",
+					"match": "\\b(void|unit|size_t|bool|sbyte|char|int8|byte|uchar|uint8|short|int16|ushort|uint16|int|int32|uint|uint32|long|int64|ulong|uint64|float|float32|double|float64|string)\\b"
+				}
+			]
+		},
+		"strings": {
+			"name": "string.quoted.double.nativeimpl",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.nativeimpl",
+					"match": "\\\\."
+				}
+			]
+		},
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.line.double-slash.nativeimpl",
+					"match": "//.*$"
+				}
+			]
+		},
+		"userdefined": {
+			"patterns": [{
+				"name": "storage.type.class.natveimpl",
+				"match": "\\b(fwdopaque|opaque|struct|exception|interface|enum|flags|sumtype|options|delegate|typedef|namedbits)\\b"
+			}]
+		}
+	},
+	"scopeName": "source.nativeimpl"
+}

@@ -5,157 +5,10 @@ open Generators.Frontend
 open Parser
 open AppCommon
 
-let FRONT_LANG = "csharp"
-let BACK_LANG = "cpp"
+let PROJECT_PATH = @"R:\projects\nativeimpl\gauntlet\project.toml"
+let projectInfo =
+    ProjectParser.parseProjectInfo PROJECT_PATH
 
-// // KITCHENSINK
-// let LIBRARY = "KitchenSink"
-// let NAMESPACE = "Org.Prefixed"
-// let INPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink"
-// let OUTPUT_PATH = @"C:\DataPart\Development\nativeimpl\kitchensink\_output"
-// let INPUTS = [ "First"; "Second" ]
-
-// // TESTBENCH
-// let LIBRARY = "TestBench"
-// let NAMESPACE = "Org.Prefixed"
-// let INPUT_PATH = @"D:\Development\testbench\constexpr"
-// let OUTPUT_PATH = @"D:\Development\testbench\constexpr\_output"
-// let INPUTS = [ "First" ]
-
-// // GUIBASE
-// let LIBRARY = "GuiBase"
-// let NAMESPACE = "Org.Prefixed"
-// let INPUT_PATH = @"C:\DataPart\Development\guibase"
-// let OUTPUT_PATH = @"C:\DataPart\Development\guibase\output"
-// let INPUTS = [ "Windowing"; "Keys"; "Drawing"; "Text"; ]
-
-// // MinimalQtForFSharp
-// let LIBRARY = "MinimalQtForFSharp" // note, a .DLL of this will be created, so if you are wrapping a native library, you will want a distinct name to avoid collisions (eg when wrapping a C++ library BigLibrary, call it BigLibrarySharp or -Wrapper or something)
-// let NAMESPACE = "Org.Whatever"
-// let INPUT_PATH = @"D:\Development\FSharpQt\MinimalQtForFSharp\interfaces"
-// let OUTPUT_PATH = @"D:\Development\FSharpQt\MinimalQtForFSharp"
-
-// MinimalQt
-let LIBRARY = "MinimalQt" // note, a .DLL of this will be created, so if you are wrapping a native library, you will want a distinct name to avoid collisions (eg when wrapping a C++ library BigLibrary, call it BigLibrarySharp or -Wrapper or something)
-let NAMESPACE = "Org.Whatever"
-let INPUT_PATH = @"D:\Development\MinimalQt\interfaces"
-let OUTPUT_PATH = @"D:\Development\MinimalQt"
-let INPUTS = [
-    "Action"
-    "AbstractButton"
-    "AbstractItemDelegate"
-    "AbstractItemModel"
-    "AbstractItemView"
-    "AbstractListModel"
-    "AbstractProxyModel"
-    "AbstractScrollArea"
-    "AbstractSlider"
-    "AbstractSpinBox"
-    "Application"
-    "BoxLayout"
-    "Brush"
-    "CalendarWidget"
-    "CheckBox"
-    "Color"
-    "ComboBox"
-    "Completer"
-    "CoreApplication"
-    "Cursor"
-    "Date"
-    "DateTime"
-    "Dialog"
-    "Dir"
-    "DockWidget"
-    "Drag"
-    "Enums"
-    "Event"
-    "FileDialog"
-    "Font"
-    "FormLayout"
-    "Frame"
-    "Gradient"
-    "GraphicsEffect"
-    "GridLayout"
-    "GroupBox"
-    "GuiApplication"
-    "HeaderView"
-    "Icon"
-    "Image"
-    "ItemSelection"
-    "ItemSelectionCommon"
-    "ItemSelectionModel"
-    "KeySequence"
-    "Label"
-    "Layout"
-    "LayoutItem"
-    "LineEdit"
-    "ListView"
-    "Logging"
-    "MainWindow"
-    "Margins"
-    "MarginsF"
-    "Menu"
-    "MenuBar"
-    "MessageBox"
-    "MimeData"
-    "ModelIndex"
-    "Object"
-    "PaintDevice"
-    "Painter"
-    "PainterPath"
-    "Pen"
-    "PersistentModelIndex"
-    "Pixmap"
-    "PlainTextEdit"
-    "Point"
-    "PointF"
-    "Polygon"
-    "PolygonF"
-    "ProgressBar"
-    "PushButton"
-    "RadioButton"
-    "Rect"
-    "RectF"
-    "Region"
-    "RegularExpression"
-    "RegularExpressionValidator"
-    "SafeReturn"
-    "Screen"
-    "ScrollArea"
-    "ScrollBar"
-    "SessionManager"
-    "Size"
-    "SizeF"
-    "SizePolicy"
-    "Slider"
-    "SortFilterProxyModel"
-    "SpinBox"
-    "Splitter"
-    "SplitterHandle"
-    "StandardItem"
-    "StandardItemModel"
-    "StatusBar"
-    "StyledItemDelegate"
-    "StyleOption"
-    "StyleOptionViewItem"
-    "TabBar"
-    "TabWidget"
-    "TextCharFormat"
-    "TextCursor"
-    "TextDocument"
-    "TextEdit"
-    "TextFormat"
-    "TextOption"
-    "Timer"
-    "ToolBar"
-    "Transform"
-    "TreeView"
-    "Url"
-    "Validator"
-    "Variant"
-    "Widget"
-    "Window"
-]
 
 let getDependencyOrder (moduleMap: Map<ModuleName, Module>) =
     // create "imported by" map ('name' -> modules importing 'name')
@@ -196,7 +49,7 @@ let getDependencyOrder (moduleMap: Map<ModuleName, Module>) =
 let appRunner (inputPath: string) (inputModules: string list) (outParams: OutParams) (frontLang: string) (backLang: string) =
     // read last run time from disk
     let lastRunTimeFilePath =
-        INPUT_PATH + @"/__last_run_time.txt"
+        projectInfo.InputPath + @"/__last_run_time.txt"
     let maybeLastRunTime =
         if File.Exists(lastRunTimeFilePath) then
             let raw = File.ReadAllText(lastRunTimeFilePath)
@@ -288,5 +141,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     File.WriteAllText(lastRunTimeFilePath, thisRunTime.ToString("O"))
 
 let outParams =
-    { Path = OUTPUT_PATH; MaybeNamespace = Some NAMESPACE; LibraryName = LIBRARY }
-appRunner INPUT_PATH INPUTS outParams FRONT_LANG BACK_LANG
+    { Path = projectInfo.OutputPath
+      MaybeNamespace = Some projectInfo.Namespace
+      LibraryName = projectInfo.LibraryName }
+appRunner projectInfo.InputPath projectInfo.Inputs outParams projectInfo.FrontLang projectInfo.BackLang

@@ -1716,7 +1716,7 @@ let resolveUserTypes (loaded: Map<ModuleName, Module>) (module_: Module) =
 let moduleNameToFilename (rootPath: string) (ModuleName nameParts) =
     let pathParts =
         String.Join("/", nameParts)
-    $"{rootPath}/{pathParts}.nimpl"
+    $"{rootPath}/{pathParts}.ni"
 
 let rec loadModule (rootPath: string) (moduleMap: Map<ModuleName, Module>) (name: ModuleName) (forbidden: Set<ModuleName>) =
     match moduleMap.TryFind name with

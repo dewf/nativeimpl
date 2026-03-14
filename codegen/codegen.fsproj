@@ -14,6 +14,7 @@
         <Compile Include="ConstParser.fs" />
         <Compile Include="Parser.fs" />
         <Compile Include="AppCommon.fs" />
+        <Compile Include="SupportCopier.fs" />
         <Compile Include="Generators\Common.fs" />
 <!--        <Compile Include="Generators\DepsResolver.fs" />-->
 <!--        <Compile Include="Generators\Ordering.fs" />-->
@@ -21,6 +22,12 @@
         <Compile Include="Generators\Backend\CppGenerator.fs" />
         <Compile Include="ProjectParser.fs" />
         <Compile Include="Program.fs" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="support-files\**\*">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
     </ItemGroup>
 
     <ItemGroup>

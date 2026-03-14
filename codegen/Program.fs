@@ -5,10 +5,9 @@ open Generators.Frontend
 open Parser
 open AppCommon
 
-let PROJECT_PATH = @"R:\projects\nativeimpl\gauntlet\project.toml"
+let PROJECT_PATH = @"R:\projects\gauntlet\project.toml"
 let projectInfo =
     ProjectParser.parseProjectInfo PROJECT_PATH
-
 
 let getDependencyOrder (moduleMap: Map<ModuleName, Module>) =
     // create "imported by" map ('name' -> modules importing 'name')
@@ -114,6 +113,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     printfn "======= generating library files ======="
     // get dependency order first
     let depsOrder = getDependencyOrder moduleMap
+
     // frontend
     match frontLang.ToLower() with
     | "csharp" | "c#" ->
@@ -132,8 +132,10 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     
     // generate project files:
     CsharpGenerator.generateProject outParams
+    CsharpGenerator.copySupportFiles outParams
+
     // generate project files for backend (eg cmake)
-    
+
     // printfn "moduleMap: %A" moduleMap
     
     // finally write current run time for next time
@@ -142,6 +144,6 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
 
 let outParams =
     { Path = projectInfo.OutputPath
-      MaybeNamespace = Some projectInfo.Namespace
+      MaybeNamespace = Some projectInfo.Namespace // more of a prefix, really - still will inlcude LibraryName at the end
       LibraryName = projectInfo.LibraryName }
 appRunner projectInfo.InputPath projectInfo.Inputs outParams projectInfo.FrontLang projectInfo.BackLang

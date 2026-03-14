@@ -1780,3 +1780,18 @@ let generateLibraryFile (allModules: Module list) (outParams: OutParams) =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
     writeLibrary allModules output baseNamespace
+
+let copySupportFiles (outParams: OutParams) =
+    let destRoot =
+        sprintf "%s/Support" (projectDir outParams)
+    let copyFunc =
+        let replaceMap =
+            let targetNamespace =
+                match outParams.MaybeNamespace with
+                | Some ns -> sprintf "%s.%s" ns outParams.LibraryName
+                | None -> outParams.LibraryName
+            [ ("%%TARGET_NAMESPACE%%", targetNamespace)
+              ("%%SERVER_DLL_NAME%%", outParams.LibraryName + "Server") ]
+            |> Map.ofList
+        SupportCopier.replaceCopyFunc replaceMap
+    SupportCopier.copyFiles "client/csharp" destRoot true ["*.cs"] true (Some copyFunc)

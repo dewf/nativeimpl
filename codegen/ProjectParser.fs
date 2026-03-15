@@ -5,6 +5,7 @@ open Tomlyn
 open Tomlyn.Model
 
 type ProjectInfo = {
+    ProjectFileLocation: string
     FrontLang: string
     BackLang: string
     LibraryName: string
@@ -18,6 +19,11 @@ let parseProjectInfo (tomlPath: string) =
     let content = File.ReadAllText(tomlPath)
     let root = TomlSerializer.Deserialize<TomlTable>(content)
     
+    let projectFileLocation =
+        tomlPath
+        |> Path.GetFullPath
+        |> Path.GetDirectoryName
+
     let projectTable =
         match root["project"] with
         | :? TomlTable as t -> t
@@ -45,12 +51,22 @@ let parseProjectInfo (tomlPath: string) =
         
     let inputPath =
         match projectTable["input_path"] with
-        | :? string as s -> s
+        | :? string as s ->
+            if Path.IsPathFullyQualified s then
+                s
+            else
+                Path.Combine(projectFileLocation, s)
+                |> Path.GetFullPath
         | _ -> failwith "TOML project missing 'input_path' value"
     
     let outputPath =
         match projectTable["output_path"] with
-        | :? string as s -> s
+        | :? string as s ->
+            if Path.IsPathFullyQualified s then
+                s
+            else
+                Path.Combine(projectFileLocation, s)
+                |> Path.GetFullPath
         | _ -> failwith "TOML project missing 'output_path' value"
         
     let inputs =
@@ -58,7 +74,8 @@ let parseProjectInfo (tomlPath: string) =
         | :? TomlArray as arr -> arr |> Seq.map string |> Seq.toList
         | _ -> failwith "TOML project missing 'inputs' value"
         
-    { FrontLang = frontLang
+    { ProjectFileLocation = projectFileLocation
+      FrontLang = frontLang
       BackLang = backLang
       LibraryName = libraryName
       Namespace = namespace_

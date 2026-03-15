@@ -48,7 +48,8 @@ let getDependencyOrder (moduleMap: Map<ModuleName, Module>) =
 let appRunner (inputPath: string) (inputModules: string list) (outParams: OutParams) (frontLang: string) (backLang: string) =
     // read last run time from disk
     let lastRunTimeFilePath =
-        projectInfo.InputPath + @"/__last_run_time.txt"
+        Path.Combine(projectInfo.ProjectFileLocation, "__last_run_time.txt")
+
     let maybeLastRunTime =
         if File.Exists(lastRunTimeFilePath) then
             let raw = File.ReadAllText(lastRunTimeFilePath)
@@ -59,7 +60,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     let thisRunTime =
         // take the current time, in case the user is editing anything while we run ...
         DateTime.Now
-        
+
     let moduleMap =
         (Map.empty, inputModules)
         ||> List.fold (fun moduleMap joinedName ->
@@ -67,13 +68,13 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
                 joinedName.Split(".")
                 |> Array.toList
                 |> ModuleName
-                
+
             printfn "======= processing module %A =======" name
             let currentModule, nextMap =
                 loadModule inputPath moduleMap name Set.empty
             let context =
                 { Module = currentModule; Loaded = nextMap } // nextMap! moduleMap accumulator will not yet be updated!
-                
+
             // can we avoid writing this one?
             let fileNeedsWriting =
                 match maybeLastRunTime with
@@ -88,7 +89,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
                         |> List.exists (fun import -> import.LastModified >= lastRunTime)
                 | None ->
                     true
-                    
+
             if fileNeedsWriting then
                 // frontend
                 match frontLang.ToLower() with
@@ -97,7 +98,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
                     CsharpGenerator.generateModule context outParams
                 | _ ->
                     failwithf "unsupported frontend language: %s" frontLang
-                    
+
                 // backend
                 match backLang.ToLower() with
                 | "cpp" | "c++" ->
@@ -107,7 +108,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
                     failwithf "unsupported backend language: %s" backLang
             else
                 printfn ">> skipping module -  neither module nor its imports have been modified since last run"
-            
+
             nextMap)
 
     printfn "======= generating library files ======="
@@ -121,7 +122,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
         CsharpGenerator.generateLibraryFile depsOrder outParams
     | _ ->
         failwithf "unsupported frontend language: %s" frontLang
-        
+
     // backend
     match backLang.ToLower() with
     | "cpp" | "c++" ->
@@ -129,7 +130,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
         CppGenerator.generateLibrary depsOrder outParams
     | _ ->
         failwithf "unsupported backend language: %s" backLang
-    
+
     // generate project files:
     CsharpGenerator.generateProject outParams
     CsharpGenerator.copySupportFiles outParams
@@ -137,7 +138,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     // generate project files for backend (eg cmake)
 
     // printfn "moduleMap: %A" moduleMap
-    
+
     // finally write current run time for next time
     // (only do this at the very end, because if we have a crash, we've written a false time, and files won't be processed!)
     File.WriteAllText(lastRunTimeFilePath, thisRunTime.ToString("O"))

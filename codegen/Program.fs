@@ -118,24 +118,29 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     // frontend
     match frontLang.ToLower() with
     | "csharp" | "c#" ->
-        printfn "rendering C# library file"
+        printfn "rendering C# library files"
         CsharpGenerator.generateLibraryFile depsOrder outParams
+        CsharpGenerator.generateProject outParams
+        CsharpGenerator.copySupportFiles outParams
     | _ ->
         failwithf "unsupported frontend language: %s" frontLang
 
     // backend
     match backLang.ToLower() with
     | "cpp" | "c++" ->
-        printfn "rendering C++ library file"
+        printfn "rendering C++ library files"
         CppGenerator.generateLibrary depsOrder outParams
+        CppGenerator.copySupportFiles outParams
+        let modules =
+            moduleMap
+            |> Map.toList
+            |> List.map snd
+            |> List.sortDescending
+        CppGenerator.generateProject modules outParams
     | _ ->
         failwithf "unsupported backend language: %s" backLang
 
-    // generate project files:
-    CsharpGenerator.generateProject outParams
-    CsharpGenerator.copySupportFiles outParams
-
-    // generate project files for backend (eg cmake)
+    // core/DLL project (statically linked to backend)
 
     // printfn "moduleMap: %A" moduleMap
 

@@ -5,17 +5,18 @@ open System.IO
 
 let private SUPPORT_ROOT =
     Path.Combine(AppContext.BaseDirectory, "support-files")
-    
+
 type CustomCopyFunc =
     // (sourceRoot, destRoot, relativePath)
     string -> string -> string -> unit
 
 let private defaultCopyFunc (sourceBase: string) (destBase: string) (relativePath: string) =
-    printfn "default copy: [%s] -> [%s] (file: [%s])" sourceBase destBase relativePath
-    // let sourceAbs = sourceBase + "/" + relativePath
-    // let destAbs = destBase + "/" + relativePath
-    // File.Copy
-    
+    // printfn "default copy: [%s] -> [%s] (file: [%s])" sourceBase destBase relativePath
+    let sourceAbs = sourceBase + "/" + relativePath
+    let destAbs = destBase + "/" + relativePath
+    File.Copy(sourceAbs, destAbs, true)
+    printfn "== created support file: [%s]" destAbs
+
 let replaceCopyFunc (replaceMap: Map<string, string>) (sourceBase: string) (destBase: string) (relativePath: string) =
     // printfn "replaceCopyFunc map: %A" replaceMap
     // printfn "REPLACE copy: [%s] -> [%s] (file: [%s])" sourceBase destBase relativePath
@@ -40,18 +41,18 @@ let copyFiles (sourceRoot: string) (destRoot: string) (createDest: bool)
 
         // create destination
         Directory.CreateDirectory(destRoot) |> ignore
-        
+
         // identify all files matching the globs
         let filesToCopy =
             globs
             |> Seq.collect (fun glob ->
                 Directory.EnumerateFiles(sourceAbsolute, glob, SearchOption.AllDirectories))
             |> Seq.distinct // shouldn't be any overlap in most cases ...
-            
+
         let copyFunc =
             customCopyFunc
             |> Option.defaultValue defaultCopyFunc
-            
+
         printfn "=== files to copy: ==="
         for file in filesToCopy do
             let relativePath =

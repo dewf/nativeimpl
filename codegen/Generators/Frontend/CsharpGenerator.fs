@@ -20,7 +20,7 @@ type CsRenderContext = {
     member this.GroupContext =
         this.RenderContext.GroupContext
     member this.NavigateToSub (name: string) =
-        let nextRenderContext = 
+        let nextRenderContext =
             this.RenderContext.NavigateToSub name
         { this with RenderContext = nextRenderContext }
 
@@ -34,7 +34,7 @@ let resolvedNameToString context resolvedName mode =
                 context.BaseNamespace
         Forced prefix
     resolvedNameToStringAbstract "." (fun name _ -> name) None qualification context.RenderContext resolvedName mode
-    
+
 let constExprToString (context: CsRenderContext) =
     let config =
         { NullStr = "null"
@@ -42,7 +42,7 @@ let constExprToString (context: CsRenderContext) =
     let strFunc resolvedName =
         resolvedNameToString context resolvedName TypeMode
     typedConstExprString config strFunc
-    
+
 let typeToCsString (context: CsRenderContext) (outerType: NIType) =
     let rec recInner = function
         | UnitType -> "void"
@@ -161,7 +161,7 @@ let typeWithPrefix (context: CsRenderContext) (outerType: NIType) (prefix: strin
 let joinedArgs (context: CsRenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCsString context type_) name]
     |> String.concat ", "
-    
+
 let joinedNameFuncArgs (context: CsRenderContext) (args: NamedFunctionArg list) =
     [for arg in args ->
         match arg.DefaultValue with
@@ -174,7 +174,7 @@ let joinedNameFuncArgs (context: CsRenderContext) (args: NamedFunctionArg list) 
 let joinedArgNames (args: (string * NIType) list) =
     [for name, _ in args -> name]
     |> String.concat ", "
-    
+
 let joinedNamedFuncArgNames (args: NamedFunctionArg list) =
     [for arg in args -> arg.Name]
     |> String.concat ", "
@@ -216,7 +216,7 @@ let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (ty
         | Float64 -> write level "%s NativeImplClient.PopDouble();" contextPrefix
         | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
     | Resolved (resolvedName, resolvedType) ->
-        let name = 
+        let name =
             match resolvedType with
             | FwdOpaqueType ->
                 // special treatment for these:
@@ -361,7 +361,7 @@ let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (t
         write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
     | _ ->
         write level "// pushValue %A not yet supported" type_
-        
+
 type ArrayOrSetMode =
     | ArrayMode
     | SetMode
@@ -809,10 +809,10 @@ let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIT
         write 2 "}"
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
-        
+
 let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
-    
+
     match userType with
     | FwdOpaqueDef _ ->
         // nothing to render in this context, only typeToString will actually render it
@@ -828,7 +828,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
                 Some resolvedName
             | _ ->
                 None
-                
+
         // class setup is a bear with all this dispose/nodispose stuff
         let firstDisposable = isFirstDisposableOpaque context.ModuleContext info
         let isRoot = maybeInheritsFrom.IsNone
@@ -848,7 +848,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             [ parentOrComparable; maybeDisposableString ]
             |> List.choose id
             |> String.concat ", "
-            
+
         write 2 "public class %s : %s" (upperFirst name) inheritsOrImplementsString
         write 2 "{"
         if isRoot then
@@ -910,7 +910,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             write 5 "_disposed = true;"
             write 4 "}"
             write 3 "}"
-            
+
         let renderInstanceMethods (context: CsRenderContext) =
             for namedFunc in info.Methods do
                 let throwsComment =
@@ -1382,10 +1382,10 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
 
 and renderGroupCommon (context: CsRenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
-    
+
     let groupContext =
         context.GroupContext
-    
+
     // declare top level function handles
     for namedFunc in groupContext.ModuleMethods do
         write 2 "internal static ModuleMethodHandle _%s;" namedFunc.WrapperName
@@ -1399,21 +1399,21 @@ and renderGroupCommon (context: CsRenderContext) (writer: IFormatWriter) =
             ()
         else
             write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
-    
+
     // interfaces
     for name, info in groupContext.Interfaces do
         write 2 "internal static InterfaceHandle _%s;" (lowerFirst name)
         for method in info.Methods do
             write 2 "internal static InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
-    
+
     // exceptions
     for name, _ in groupContext.Exceptions do
         write 2 "internal static ExceptionHandle _%s;" (lowerFirst name)
-    
+
     // globals declaration
     for name, type_ in groupContext.Globals do
         write 2 "public static %s %s { get; internal set; }" (typeToCsString context type_) (upperFirst name)
-    
+
     // top-level functions ===========
     for namedFunc in groupContext.ModuleMethods do
         blank()
@@ -1430,7 +1430,7 @@ and renderGroupCommon (context: CsRenderContext) (writer: IFormatWriter) =
         // return pop
         popValue context writer 3 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
         write 2 "}"
-    
+
     // render user types + nested groups in order of declaration
     for def in groupContext.Defs do
         match def with
@@ -1450,26 +1450,23 @@ and renderGroupCommon (context: CsRenderContext) (writer: IFormatWriter) =
             // renderNestedGroup nextContext writer
         | _ ->
             ()
-            
-let joinModuleName (ModuleName nameParts) =
-    joinNameParts "." nameParts
-    
+
 let assignModuleHandles (context: CsRenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
-    
+
     let rec assignGroup (group: GroupContext) =
         let mkSourceHandle name =
             joinNameParts "." (group.Path @ [ name ])
         let mkTargetHandle name =
             joinNameParts "." (group.Path @ [ "_" + lowerFirst name ])
-        
+
         // module method handles
         if not group.ModuleMethods.IsEmpty then
             for namedFunc in group.ModuleMethods do
                 let source = mkSourceHandle namedFunc.WrapperName
                 let target = mkTargetHandle namedFunc.WrapperName
                 write 3 "%s = NativeImplClient.GetModuleMethod(_module, \"%s\");" target source
-                
+
         // opaque method handles
         if not group.Opaques.IsEmpty then
             for name, info in group.Opaques do
@@ -1485,7 +1482,7 @@ let assignModuleHandles (context: CsRenderContext) (writer: IFormatWriter) =
                     ()
                 else
                     write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
-        
+
         // exceptions
         if not group.Exceptions.IsEmpty then
             for name, _ in group.Exceptions do
@@ -1495,7 +1492,7 @@ let assignModuleHandles (context: CsRenderContext) (writer: IFormatWriter) =
                     mkTargetHandle name
                 write 3 "%s = NativeImplClient.GetException(_module, \"%s\");" target source
                 write 3 "NativeImplClient.SetExceptionBuilder(%s, %s.BuildAndThrow);" target source
-        
+
         // interface method handles, wrappers
         if not group.Interfaces.IsEmpty then
             for ifaceName, info in group.Interfaces do
@@ -1545,17 +1542,17 @@ let assignModuleHandles (context: CsRenderContext) (writer: IFormatWriter) =
                             | _ ->
                                 failwith "C# interface wrappers: 'throws' contained non-exception type"
                     write 3 "});"
-        
+
         for groupName in group.SubOrder do
             let nextGroup =
                 group.SubGroups[groupName]
             assignGroup nextGroup
-            
+
     assignGroup context.GroupContext
-            
+
 let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseNamespace: string) (maybeModulePrefix: string option) (className: string) =
     let write, blank = writer.Write, writer.Blank
-    
+
     let m =
         moduleContext.Module
     let renderContext =
@@ -1564,7 +1561,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
           OpaqueMethodContext = None }
     let root =
         renderContext.GroupContext
-        
+
     // handles for methods etc
     write 0 "using System;"
     write 0 "using System.Diagnostics;"
@@ -1576,7 +1573,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "using %s.Support;" baseNamespace
     write 0 "using ModuleHandle = %s.Support.ModuleHandle;" baseNamespace // sigh
     write 0 "using static %s.Support.ClientObjectHelpers;" baseNamespace
-    
+
     // // imports
     // if not m.Imports.IsEmpty then
     //     write 0 ""
@@ -1590,19 +1587,19 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
         |> Option.defaultValue baseNamespace
     write 0 "namespace %s" moduleNamespace
     write 0 "{"
-    
+
     // render root group
     write 1 "public static class %s" className
     write 1 "{"
     write 2 "private static ModuleHandle _module;"
-    
+
     // render all the generics at the root level only
     for generic in allGenericTypes moduleContext do
         renderGeneric renderContext writer generic
 
     // now with the common group stuff:
     renderGroupCommon renderContext writer
-    
+
     // static init + shutdown ====================================================
     let maybeModuleInit =
         root.ModuleMethods
@@ -1618,7 +1615,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
         write 2 "internal static void __Init()"
     write 2 "{"
     write 3 "_module = NativeImplClient.GetModule(\"%s\");" (joinModuleName m.Name)
-    
+
     // pop module constants, if any
     if countGroupConstants root > 0 then
         write 3 "// assign module constants"
@@ -1633,12 +1630,12 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
                 let sub = group.SubGroups[subName]
                 popConstants sub
         popConstants root
-        
+
     // assign all the other method handles etc
     // no sense creating a bunch of nested .Init() methods since we have all that information now!
     write 3 "// assign module handles"
     assignModuleHandles renderContext writer
-    
+
     // invoke user's ModuleInit, if it exists
     match maybeModuleInit with
     | Some initFunc ->
@@ -1666,10 +1663,10 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 1 "}" // end of static class <module name>
     //
     write 0 "}" // end of namespace
-    
+
 let projectDir (outParams: OutParams) =
     sprintf "%s/client/csharp/%s" outParams.Path outParams.LibraryName
-    
+
 let generateModule (context: ModuleContext) (outParams: OutParams) =
     let baseNamespace, maybeModulePrefix, className =
         namespaceParts outParams context.Module.Name
@@ -1691,7 +1688,7 @@ let generateModule (context: ModuleContext) (outParams: OutParams) =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
     writeModule context output baseNamespace maybeModulePrefix className
-    
+
 let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     let write, blank = writer.Write, writer.Blank
     write 0 "<Project Sdk=\"Microsoft.NET.Sdk\">"
@@ -1721,7 +1718,7 @@ let generateProject (outParams: OutParams) =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
     writeProject output outParams
-    
+
 let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespace: string) =
     let write, blank = writer.Write, writer.Blank
 

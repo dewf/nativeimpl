@@ -158,18 +158,6 @@ public:
 	}
 };
 
-
-// our "exports" back to core (well, the DLL being built around core)
-extern "C" {
-	int nativeLibraryInit();
-	void nativeLibraryShutdown();
-	void ni_dumpTables();
-	void ni_execServerFunc(int id);
-	ni_ExceptionRef ni_execServerFuncWithExceptions(int id);
-	void ni_releaseServerResource(int id);
-	void ni_clearServerSafetyArea();
-}
-
 void pushServerFuncVal(std::function<void()> wrapper, size_t key);
 
 void pushStringInternal(std::string str);

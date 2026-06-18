@@ -11,6 +11,9 @@ open Util
 let joinNameParts (separator: string) (parts: string list) =
     String.Join(separator, parts)
 
+let joinModuleName (ModuleName nameParts) =
+    joinNameParts "." nameParts
+
 let rec typeToInternalKey = function
     | UnitType -> "void"
     | Primitive prim ->
@@ -129,7 +132,7 @@ let requiredSymbolLookup (context: ModuleContext) (name: ResolvedName) =
             | None ->
                 failwith "requiredSymbolLookup: findSymbolHere failed (for imported symbol)"
         | None -> failwith "todo"
-        
+
 let allGenericTypes (context: ModuleContext) =
     let rec typeAndSubTypes (t: NIType) =
         let tupleHandling (tupleOuter: NIType) =
@@ -195,7 +198,7 @@ let allGenericTypes (context: ModuleContext) =
         | ResultType (succ, err) ->
             t :: (typeAndSubTypes succ @ typeAndSubTypes err)
         | _ -> []
-        
+
     let rec processDefs (defs: ModuleDefinition list) =
         let namedFuncHandler (nf: NamedFunction) =
             let retTypes =
@@ -296,7 +299,7 @@ type RenderableEntry =
     | RenderableHybrid of thing: UserOrGeneric * sub: RenderableTable
 and RenderableTable =
     Map<string, RenderableEntry>
-    
+
 let rec userToRenderable (symbolTable: SymbolTable): RenderableTable =
     symbolTable
     |> Map.map (fun _ entry ->
@@ -311,7 +314,7 @@ let rec userToRenderable (symbolTable: SymbolTable): RenderableTable =
             let sub =
                 userToRenderable table
             RenderableHybrid (UserOrGeneric.User thing, sub))
-    
+
 let userTypesAndGenerics (context: ModuleContext) =
     // create combined map
     let userTypes =
@@ -328,7 +331,7 @@ let userTypesAndGenerics (context: ModuleContext) =
         let name =
             (typeToInternalKey type_)
         newMap.Add(name, RenderableDirect (UserOrGeneric.Generic type_)))
-    
+
 let containsRefs (context: ModuleContext) (thing: NIType) =
     // does pushing this type push any ref types in the process?
     let rec processType (t: NIType) =
@@ -388,13 +391,13 @@ let containsRefs (context: ModuleContext) (thing: NIType) =
             fields
             |> List.exists (fun f -> processType f.Type_)
     processType thing
-    
+
 type NamespaceRelation =
     | NSEqual
     | NSDescendsFrom   // B descends from A
     | NSAncestorOf     // B ancestor of A
     | NSUnrelated      // parallel / alien (they'll have a common ancestor somewhere, if only at root)
-    
+
 let getNamespaceRelation (a: string list) (b: string list) =
     // how does B relate to A?
     if a = b then
@@ -412,7 +415,7 @@ let getNamespaceRelation (a: string list) (b: string list) =
             | None ->
                 // neither was a prefix of the other
                 NSUnrelated
-    
+
 let symbolToRenderableKey (SymbolName nameParts) (currentNamespace: string list) =
     let key, symbolNamespace =
         match nameParts |> List.rev with
@@ -533,7 +536,7 @@ let namespaceSplitter (namespace': string) =
         parts
         |> Array.splitAt (parts.Length - 1)
     (pre |> String.concat "."), post[0]
-    
+
 let maybeJoinedPrefix (parts: string list) =
     match parts with
     | _ :: _ ->
@@ -541,7 +544,7 @@ let maybeJoinedPrefix (parts: string list) =
         |> Some
     | _ ->
         None
-        
+
 let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
     let baseNamespace =
         outParams.MaybeNamespace
@@ -550,7 +553,7 @@ let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
     let modulePrefix, className =
         List.splitAtLast nameParts
     baseNamespace, maybeJoinedPrefix modulePrefix, className
-    
+
 type GroupKind =
     | NormalGroup
     | OpaqueStatic
@@ -571,7 +574,7 @@ type GroupContext = {
     Interfaces: (string * InterfaceInfo) list
     Exceptions: (string * NamedField list) list
     Globals: (string * NIType) list
-    SubOrder: string list                
+    SubOrder: string list
     SubGroups: Map<string, GroupContext> // will be rendered in definition order, interleaved with user types, so better to have a name-keyed Map ... but we also store order for when we are dealing only with groups
 }
 
@@ -630,7 +633,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
                 | Global(name, niType) -> Some (name, niType)
                 | _ -> None)
         let subOrder, subGroups =
-            let pairs = 
+            let pairs =
                 groupDefs
                 |> List.choose (function
                     | Group(name, defs) ->
@@ -684,14 +687,14 @@ let createGroups (rootDefs: ModuleDefinition list) =
           SubOrder = subOrder
           SubGroups = subGroups }
     recInner "$ROOT$" NormalGroup rootDefs []
-    
+
 let createRenderContext (moduleContext: ModuleContext) =
     let root =
         createGroups moduleContext.Module.Defs
     { ModuleContext = moduleContext; GroupContext = root }
-    
+
 let resolvedNamePathToKindPath (m: ModuleContext) (name: ResolvedName) =
-    let m, parts = 
+    let m, parts =
         match name with
         | ThisModule (SymbolName parts) ->
             m.Module, parts
@@ -739,7 +742,7 @@ let renameGroupPath (renameFunc: string -> GroupKind list -> string) (joinedPath
         let name =
             namePath |> List.last
         renameFunc name kindPath)
-    
+
 type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
@@ -756,12 +759,12 @@ let resolvedNameToStringAbstract
             (importQualification: FullQualification)
             // non-curried params:
             (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
-    
+
     let separator, partRenameFunc = // rebind partRenameFunc
         match mode with
         | TypeMode -> languageNsDelim, partRenameFunc
         | IdentifierMode | GenericIdentifierMode -> "_", (fun name _ -> name) // no part renaming in identifier modes
-        
+
     // sigh, this part is a mess
     // but sadly to make things work with C++, we need the ability to rename namespace segments anywhere they might appear
     // other backend languages might not have to use this functionality
@@ -780,7 +783,7 @@ let resolvedNameToStringAbstract
             joinedPathPrefix
             |> renameGroupPath partRenameFunc
         renamedPathPrefix @ [parts |> List.last] // re-append the final element, sigh
-        
+
     let currentContextPath =
         let path, kindPath =
             match maybePathClamp with
@@ -792,7 +795,7 @@ let resolvedNameToStringAbstract
         // perform rename as well! otherwise it won't match / be properly stripped with List.removePrefix below :(
         List.zip path kindPath
         |> renameGroupPath partRenameFunc
-        
+
     match name with
     | ThisModule (SymbolName parts) ->
         // if symbol is from a shallower level, check to see if it collides with anything here
@@ -812,11 +815,11 @@ let resolvedNameToStringAbstract
                         false
                 else
                     false
-        
+
         // rename the 'parts' segments now, based on their kinds
         let parts =
             renameParts parts
-            
+
         // strip current namespace prefix if possible
         // (but not in Generics mode)
         let parts2 =
@@ -838,7 +841,7 @@ let resolvedNameToStringAbstract
                     | None -> parts
         // do we need the approval func in this branch, too?
         joinNameParts separator (parts2 |> List.map upperFirst)
-        
+
     | Imported(moduleName, symbolName) ->
         // rename the 'symbolParts' segments now, based on their kinds
         let symbolParts =
@@ -846,7 +849,7 @@ let resolvedNameToStringAbstract
             | SymbolName parts ->
                 // apply the segment rename func
                 renameParts parts
-        
+
         match importQualification with
         | Forced prefix ->
             let parts2 =
@@ -877,7 +880,7 @@ let countGroupConstants (top: GroupContext) =
             |> List.sumBy (fun name -> groupCount group.SubGroups[name])
         thisCount + subCount
     groupCount top
-  
+
 let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameResolver: ResolvedName -> string) (rootName: string) =
     let allGroups =
         let rec inheritGroups (title: string) (info: NamedBitsInfo) =
@@ -937,7 +940,7 @@ let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameR
 //             failwithf "ensureAllNoDispose: opaque [%A] required to be @nodispose" name
 //     | _ ->
 //         failwithf "ensureAllNoDispose: symbol [%A] not opaque to begin with" name
-        
+
 let rec ensureAllNoDispose (context: ModuleContext) (name: ResolvedName) =
     // since we don't have a proper validation step after parsing, we'll unfortunately do this here, when rendering
     match requiredSymbolLookup context name with
@@ -956,7 +959,7 @@ let rec ensureAllNoDispose (context: ModuleContext) (name: ResolvedName) =
             false
     | _ ->
         failwithf "ensureAllNoDispose: symbol [%A] not opaque to begin with" name
-    
+
 let isFirstDisposableOpaque (context: ModuleContext) (info: OpaqueInfo) =
     // if this opaque is disposable (non-@nodispose),
     // is it the first one in the inheritance chain to be so?
@@ -974,7 +977,7 @@ let isFirstDisposableOpaque (context: ModuleContext) (info: OpaqueInfo) =
             //     if parentInfo.NoDispose then
             //         // kludgy: while we're at it, verify all classes above this one are @nodispose
             //         ensureAllNoDispose context parentName
-            //        
+            //
             //         // our parent was @nodispose, but we are not
             //         // therefore we're the first and will need to implement IDisposable (or whatever)
             //         true

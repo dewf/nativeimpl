@@ -13,7 +13,7 @@ type ResolvedNameMode =
     | ImplementationHeader // always use fully qualified imports, to prevent conflicts in places like Library.cpp
     | Wrappers
     | WrappersPushPop
-    
+
 type CppRenderContext = {
     RenderContext: RenderContext
     MaybePathClamp: string list option
@@ -61,7 +61,7 @@ let wrappersGroupSegmentRenameFunc (name: string) (prefix: GroupKind list) =
     match inFakeWrapperNamespace, kind with
     | true, _ -> name + "__"
     | _ -> name
-        
+
 let resolvedNameToString (context: CppRenderContext) =
     let pathClamp =
         match context.NameMode with
@@ -79,10 +79,10 @@ let resolvedNameToString (context: CppRenderContext) =
     let forceFullyQualified =
         // only .cpp files should use direct-import ambiguity checking (but I'm not sure this .NameMode maps 1:1 with the various file types, might need a new context field for FileType or something)
         match context.NameMode with
-        | Normal -> NotForced               
+        | Normal -> NotForced
         | _ -> Forced [""] // a single empty item to force a prefix of ::
     resolvedNameToStringAbstract "::" renameFunc pathClamp forceFullyQualified context.RenderContext
-    
+
 let constExprToString (context: CppRenderContext) =
     let config =
         { NullStr = "nullptr"
@@ -90,7 +90,7 @@ let constExprToString (context: CppRenderContext) =
     let stringFunc resolvedName =
         resolvedNameToString context resolvedName TypeMode
     typedConstExprString config stringFunc
-    
+
 let getRelativePath (currentPath: string list) (targetPath: string list) =
     // remove common segments
     // prefix (currentPath.count) segments with ".."
@@ -99,7 +99,7 @@ let getRelativePath (currentPath: string list) (targetPath: string list) =
         (currentPath, targetPath)
         ||> List.skipWhile2 (fun a b -> a = b)
     List.replicate current.Length ".." @ target
-    
+
 let moduleNameToPathNoExt (current: ModuleName option) (target: ModuleName) =
     let currentParts =
         match current with
@@ -110,7 +110,7 @@ let moduleNameToPathNoExt (current: ModuleName option) (target: ModuleName) =
         let relative =
             getRelativePath currentParts targetParts
         String.concat "/" relative
-        
+
 type ModulePaths = {
     ModuleDir: string             // base/
     GeneratedDir: string          // base/generated/
@@ -295,17 +295,17 @@ let joinedNamedFuncArgs (context: CppRenderContext) (showDefaultValue: bool) (ar
         | _ ->
             sprintf "%s %s" (typeToCppString context FunctionArguments arg.Type) arg.Name ]
     |> String.concat ", "
-    
+
 let joinedArgNames (args: (string * NIType) list) =
     args
     |> List.map fst
     |> String.concat ", "
-    
+
 let joinedNamedFuncArgNames (args: NamedFunctionArg list) =
     args
     |> List.map (_.Name)
     |> String.concat ", "
-    
+
 
 // super kludgy but super helpful!
 // ideally we'd have a virtual-namespace-aware method of getting relative path prefixes of any symbol
@@ -561,7 +561,7 @@ let pushValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (
         write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
     | _ ->
         write level "// (pushValue not supported yet: %A)" type_
-       
+
 
 let exceptionTypeAndVariableName (context: CppRenderContext) (resolvedName: ResolvedName) =
     let typeName =
@@ -595,17 +595,17 @@ let exceptionTypeAndVariableName (context: CppRenderContext) (resolvedName: Reso
 let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (info: DelegateInfo) (niType: NIType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, _ = writerH.Write, writerH.Blank
-    
+
     // let typeString =
     //     typeToCppString context niType
-        
+
     let rawDelegateType = // without the std::function<> shell
         match niType with
         | Resolved(resolvedName, DelegateType) ->
             resolvedNameToString context resolvedName TypeMode
         | _ ->
             failwith "c++ renderWrapperDelegate: uhhh"
-        
+
     // push
     writeH 0 "void %s__push(%s f);" name (typeToCppString context FunctionArguments niType)
     writeCpp 0 "void %s__push(%s f) {" name (typeToCppString context FunctionArguments niType)
@@ -689,11 +689,11 @@ let typeWithLastPartFormat (context: CppRenderContext) (outerType: NIType) (form
         PrintfFormat<string -> string, unit, string, string>(format)
     parts[lastIndex] <- sprintf formatThing parts[lastIndex]
     String.concat "::" parts
-    
+
 let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (outerType: NIType) (name: string) (info: InterfaceInfo) = // (typeContainsRefs: NIType -> bool) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
-    
+
     // client<Whatever>Impl (composeable/inheritable interface "deltas" which implement the non-inherited methods)
     blankH()
     blankCpp()
@@ -744,14 +744,14 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
         writeCpp 0 "}"
     // end class
     writeH 0 "};"
-    
+
     // actual pushable ClientObject
     blankCpp()
     writeCpp 0 "class Client%sWrapper : public ClientObject, public Client%sImpl {" name name
     writeCpp 0 "public:"
     writeCpp 0 "    explicit Client%sWrapper(int id) : ClientObject(id), Client%sImpl(this) {}" name name
     writeCpp 0 "};"
-    
+
     // PUSH ===================================
     blankH()
     writeH 0 "void %s__push(%s inst, bool isReturn);" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
@@ -761,14 +761,14 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     writeCpp 2 "if (const auto pushable = std::dynamic_pointer_cast<Pushable>(inst); pushable != nullptr) {"
     writeCpp 3 "pushable->push(pushable, isReturn);"
     writeCpp 2 "} else {"
-    writeCpp 3 "ni_clientLogger(LogLevel_Critical, \"%s__push(): could not cast to 'Pushable' - server-side interface implementations must inherit from ServerObject!\");" name   
+    writeCpp 3 "ni_clientLogger(LogLevel_Critical, \"%s__push(): could not cast to 'Pushable' - server-side interface implementations must inherit from ServerObject!\");" name
     writeCpp 3 "exit(-100);"
     writeCpp 2 "}"
     writeCpp 1 "} else {"
     writeCpp 2 "ni_pushNull();"
     writeCpp 1 "}"
     writeCpp 0 "}"
-    
+
     // POP ====================================
     writeH 0 "%s %s__pop();" (typeToCppString context Default outerType) (typeToName context outerType)
     blankCpp()
@@ -782,7 +782,7 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     writeCpp 1 "}"
     writeCpp 1 "return {};"
     writeCpp 0 "}"
-    
+
     // SERVER STUFF ============================
     for nf in info.Methods do
         blankH()
@@ -797,7 +797,7 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
         if nf.Throws.IsEmpty then
             pushValue context writerCpp 1 nf.Returns invocation (Direct true)
         else
-            writeCpp 1 "try {" 
+            writeCpp 1 "try {"
             pushValue context writerCpp 2 nf.Returns invocation (Direct true)
             writeCpp 1 "}"
             for exc in nf.Throws do
@@ -812,7 +812,7 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
                 | _ ->
                     failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
         writeCpp 0 "}"
-        
+
 let clampedNsPrefix (context: CppRenderContext) =
     match context.MaybePathClamp with
     | Some clampPath ->
@@ -833,7 +833,7 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
         let nsPrefix =
             clampedNsPrefix context
         nsPrefix + name
-        
+
     // push ========
     writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
     // pushmatcher
@@ -860,7 +860,7 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
     // writeCpp 1 "value->match((%s::Matcher*)&v);" qualifiedName // why this one with the casting?
     writeCpp 1 "value->match(&v);"
     writeCpp 0 "}"
-    
+
     // pop =======
     writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
     blankCpp()
@@ -1173,7 +1173,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             arrayDefault()
         member this.Other (_: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context Default outerType)
-            
+
 let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (info: OpaqueInfo) =
     let fakeThis =
         let symbolName =
@@ -1199,11 +1199,11 @@ let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (i
         let nextName =
             sprintf "%s_%s" opaqueName nf.Name
         { nf with Name = nextName })
-    
+
 let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (namedFunction: NamedFunction) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
-    
+
     let nsPrefix =
         // clampedNsPrefix context
         //
@@ -1220,7 +1220,7 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
             (moduleParts @ otherParts)
             |> String.concat "::"
         "::" + joined + "::"
-        
+
     blankH()
     writeH 0 "void %s__wrapper();" namedFunction.WrapperName
     blankCpp()
@@ -1395,12 +1395,12 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         writeCpp 0 "}"
     | _ ->
         writeCpp 0 "// push/pop for generic %s" (typeToCppString context Default gType)
-    
-    
+
+
 let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (name: string) (userType: UserType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
-    
+
     // necessary to have as an NIType in many places
     // especially since we can't actually dive into namespaces for interface/struct statics,
     // and have to rely on typeToCppString to emit path prefixes
@@ -1421,7 +1421,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             | SumTypeDef _ -> SumType
             | OptionsDef _ -> OptionsType
         Resolved (ThisModule symbolName, resolvedType)
-    
+
     match userType with
     | FwdOpaqueDef _ ->
         // if we ever start referring to the real symbol (see note in typeToCppString),
@@ -1625,15 +1625,15 @@ and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (wr
     let writeH, _ = writerH.Write, writerH.Blank
     let group =
         context.GroupContext
-        
+
     // declare various module handles etc at top of group
     for name, info in group.Interfaces do
         for method in info.Methods do
             writeCpp 0 "ni_InterfaceMethodRef %s_%s;" (lowerFirst name) method.WrapperName
-            
+
     for name, _ in group.Exceptions do
         writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
-        
+
     // go!
     for def in group.Defs do
         match def with
@@ -1695,16 +1695,16 @@ let computeInheritedInterfaceModules (module_: Module) =
         |> List.distinct
     | _ ->
         failwith "x"
-        
+
 let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (currentDir: string list) = // (maybeModulePrefix: string option) (className: string) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
     let m =
         context.ModuleContext.Module
-        
+
     // change the resolved name mode, so that it's emitting the correct prefixes from the clamp point
     // (because the common resolved name computation has no concept of path clamping, which is currently unique to C++ rendering)
-    // see resolvedNameToString to see what we do differently in 'Wrappers' mode 
+    // see resolvedNameToString to see what we do differently in 'Wrappers' mode
     let context =
         { context with NameMode = Wrappers }
 
@@ -1712,7 +1712,7 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
     // header
     writeH 0 "#pragma once"
     writeH 0 "#include \"%s.h\"" m.Name.LastPart
-    
+
     // figure out which XXXX_wrapper.h files need to be imported even in the header here,
     // because we are doing inheritance with Client<whatever>Impl classes
     // if we have problems with this in the future, I guess we'll move such things to a separate XXXX_interfaces.h file
@@ -1728,7 +1728,7 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
             // match inherited with
             // | ModuleName nameParts ->
             //     writeH 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
-    
+
     // cpp
     writeCpp 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "NativeImplServer"])) // (relativeIncludeFilenameNoExt maybeModulePrefix "$PARENT.support.NativeImplServer")
     writeCpp 0 "#include \"%s_wrappers.h\"" m.Name.LastPart
@@ -1752,18 +1752,18 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
         writeCpp 0 "namespace %s" (joinNameParts "::" nameParts)
     writeH 0 "{"
     writeCpp 0 "{"
-    
+
     // first render all generic stuff in the root group
     for gType in allGenericTypes context.ModuleContext do
         renderWrapperGeneric context (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1) gType
-        
+
     // then the group content
     renderWrappersGroup context (writerH.WithExtraIndent 1) (writerCpp.WithExtraIndent 1)
-    
+
     // globals/constants func
     let allGlobalsCount =
         countGroupConstants context.GroupContext
-        
+
     if allGlobalsCount > 0 then
         blankCpp()
         writeCpp 1 "void __constantsFunc() {"
@@ -1778,7 +1778,7 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
                 pushValue context writerCpp 2 globalType content (Direct false) // hmm for isReturn? I guess not because the variable is global and not going anywhere, so it doesn't need to be in the safe area
         pushGroupConstants context.GroupContext
         writeCpp 1 "}"
-        
+
     // library registration method
     blankH()
     writeH 1 "int __register();"
@@ -1787,7 +1787,7 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
     writeCpp 2 "auto m = ni_registerModule(\"%s\");" m.Name.LastPart
     if allGlobalsCount > 0 then
         writeCpp 2 "ni_registerModuleConstants(m, &__constantsFunc);"
-        
+
     // register all nested group methods/interfaces/etc
     let rec registerGroupMethods (group: GroupContext) (writer: IFormatWriter) =
         // apply any renaming rules to the group path segments
@@ -1796,7 +1796,7 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
             ||> List.zip
             |> renameGroupPath wrappersGroupSegmentRenameFunc
             // ||> List.map2 groupSegmentRenameFuncWrappersFunc
-            
+
         // module methods (+ synthesized opaque)
         let opaqueMethods =
             group.Opaques
@@ -1881,20 +1881,20 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
     // Base still needs to be emitted at group level to allow for mutual recursion
     for value in values do
         write 1 "class %s;" value.Name
-    
+
     blank()
     write 1 "class Matcher {"
     write 1 "public:"
     for value in values do
         write 2 "virtual void on%s(const %s* value) = 0;" value.Name value.Name // (lowerFirst value.Name)
     write 1 "};"
-    
+
     blank()
     write 1 "class Base {"
     write 1 "public:"
     write 2 "virtual void match(Matcher* matcher) = 0;"
     write 1 "};"
-    
+
     for value in values do
         blank()
         write 1 "class %s : public Base {" value.Name
@@ -1902,7 +1902,7 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
         for name, type_ in value.Args do
             write 2 "const %s %s;" (typeToCppString context Default type_) (lowerFirst name)
         let initializersString =
-            let raw = 
+            let raw =
                 value.Args
                 |> List.map (fun (name, _) -> sprintf "%s(%s)" name name)
                 |> String.concat ", "
@@ -1915,12 +1915,12 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
         write 3 "matcher->on%s(this);" value.Name
         write 2 "}" // end match()
         write 1 "};" // end value class
-    
+
     if context.InsideInterfaceOrStructStatic then
         write 0 "};" // end class
     else
         write 0 "}"  // end namespace
-    
+
 let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) (optionsTypeName: string) (namedFields: NamedField list) =
     let write, _ = writer.Write, writer.Blank
     //
@@ -1957,7 +1957,7 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
         write 1 "}"
         write 1 "[[nodiscard]] %s getOrDefault%s(%s defaultValue) const {" (typeToCppString context Default field.Type_) (upperFirst field.Name) (typeToCppString context FunctionArguments field.Type_)
         write 2 "if (_usedFields & Fields::%sField) {" (upperFirst field.Name)
-        write 3 "return _%s;" field.Name 
+        write 3 "return _%s;" field.Name
         write 2 "}"
         write 2 "return defaultValue;"
         write 1 "}"
@@ -1969,7 +1969,7 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
         write 1 "}"
     // done
     write 0 "};"
-    
+
 let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
     //
@@ -2131,13 +2131,13 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
         write 0 "};"
     | SumTypeDef enumValues ->
         renderHeaderSumType context writer name enumValues
-    
+
 and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
-    
+
     let group =
         context.GroupContext
-        
+
     // emit all group opaque handles at once, to minimize ordering / mutual referencing problems
     // unfortunately we can't emit them at the very top of the module, because it seems you can't prefix the struct declaration with a namespace?
     // edit: (what would be wrong with enclosing namespace { ... } at the top of the file? TODO
@@ -2151,12 +2151,12 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                 | None ->
                     ""
             write 0 "struct __%s; typedef struct __%s* %sRef;%s" name name name extendsComment
-            
+
     if not group.FwdOpaques.IsEmpty then
         blank()
         for name, parts in group.FwdOpaques do
             write 0 "struct __%s; typedef struct __%s* %sRef; // non-circular alias for [%s]" name name name (joinNameParts "::" parts)
-            
+
     // emit sumtype fwd decls, so they can be mutually dependent
     if not group.SumTypes.IsEmpty then
         blank()
@@ -2164,7 +2164,7 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
             write 0 "namespace %s {" name
             write 1 "class Base;"
             write 0 "}"
-    
+
     for def in context.GroupContext.Defs do
         match def with
         | Global(globalName, globalType) ->
@@ -2206,7 +2206,7 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                 write 0 "namespace %s {" groupName
                 renderContent()
                 write 0 "}"
-        
+
 let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) (currentDir: string list) = // (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank
     let m =
@@ -2223,7 +2223,7 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
     write 0 "#include <set>"
     write 0 "#include <optional>"
     write 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "result"]))
-    
+
     // imports
     if not m.Imports.IsEmpty then
         blank()
@@ -2239,7 +2239,7 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
     | ModuleName nameParts ->
         write 0 "namespace %s" (joinNameParts "::" nameParts)
     write 0 "{"
-    
+
     // set a mode that forces all imports to be fully qualified
     // long story short we were having collision issues in certain files (eg Library.cpp)
     // but it might have been a more general problem simply not encountered until now
@@ -2265,10 +2265,10 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
     //             group.SubGroups[subName]
     //         renderFwdDeclarations sub writer
     // renderFwdDeclarations context.GroupContext (writer.WithExtraIndent 1)
-    
+
     renderImplementationHeaderGroup context (writer.WithExtraIndent 1)
     write 0 "}"
-    
+
 let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank
     let group =
@@ -2278,7 +2278,7 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
     // then compute what the relative namespace prefix has to be, for emitting globals and function names
     let nsPrefix =
         clampedNsPrefix context
-            
+
     let renderFunc (namedFunc: NamedFunction) =
         let throwsComment =
             if namedFunc.Throws.IsEmpty then
@@ -2293,7 +2293,7 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
         if namedFunc.Returns <> UnitType then
             write 1 "return %s;" (defaultValueForType context namedFunc.Returns)
         write 0 "}"
-        
+
     for def in group.Defs do
         match def with
         | Global(globalName, globalType) ->
@@ -2356,7 +2356,7 @@ let generateImplementationCpp (context: CppRenderContext) (writer: IFormatWriter
     let write, blank = writer.Write, writer.Blank
     let m =
         context.ModuleContext.Module
-        
+
     write 0 "#include \"generated/%s.h\"" m.Name.LastPart
     blank()
 
@@ -2366,26 +2366,28 @@ let generateImplementationCpp (context: CppRenderContext) (writer: IFormatWriter
         | ModuleName nameParts ->
             write 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
     blank()
-    
+
     match m.Name with
     | ModuleName nameParts ->
         write 0 "namespace %s" (joinNameParts "::" nameParts)
     write 0 "{"
     renderImplementationCppGroup context (writer.WithExtraIndent 1)
     write 0 "}"
-    
-        
+
+
 let projectDir (outParams: OutParams) =
     sprintf "%s/server/cpp/%sImpl" outParams.Path outParams.LibraryName
-    
+
 let writeLibrary (allModules: Module list) (writer: IFormatWriter) (currentDir: string list) = // (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank
-    
+
     for m in allModules do
         let paths =
             getModulePaths currentDir m.Name
         write 0 "#include \"%s\"" paths.ModuleWrappersHeader // (moduleNameToPathNoExt None m.Name) // (relativeIncludeFilenameNoExt None m.Name)
-            
+
+    blank()
+    write 0 "#include \"../support/Library.h\""
     blank()
     write 0 "extern \"C\" int nativeLibraryInit() {"
     for m in allModules do
@@ -2400,13 +2402,13 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (currentDir: 
     write 0 "extern \"C\" void nativeLibraryShutdown() {"
     write 1 "// module shutdowns? see note above"
     write 0 "}"
-    
+
 let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
     let m =
         moduleContext.Module
     let paths =
         getModulePaths [] m.Name
-        
+
     let baseNamespace, maybeModulePrefix, className =
         namespaceParts outParams m.Name
     let moduleDir =
@@ -2416,25 +2418,25 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
             |> Option.defaultValue ""
         sprintf "%s%s" (projectDir outParams) subPath
     Directory.CreateDirectory(moduleDir) |> ignore
-    
+
     let generatedDir =
         $"{moduleDir}/generated"
     Directory.CreateDirectory(generatedDir) |> ignore
-    
+
     let filenameNoExt =
         // for .cpp implementation
         sprintf "%s/%s" moduleDir className
-        
+
     let generatedFilenameNoExt =
         // for wrappers/.h
         sprintf "%s/%s" generatedDir className
-        
+
     let modulePrefixString =
         maybeModulePrefix
         |> Option.map (fun mp -> $"{mp}.")
         |> Option.defaultValue ""
     printfn "C++ writing (%s.%s%s)" baseNamespace modulePrefixString className
-    
+
     let wrappersFilenameBase =
         $"{generatedFilenameNoExt}_wrappers"
     let implementationHeaderFilename =
@@ -2448,16 +2450,16 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
             $"{filenameNoExt}.cpp.new"
         else
             default'
-            
+
     let context =
         { RenderContext = createRenderContext moduleContext
           MaybePathClamp = None
           NameMode = Normal }
-        
+
     let generatedDirParts =
         paths.GeneratedDir.Split("/")
         |> Array.toList
-        
+
     let replaceIfDifferent (tempFilename: string) (targetFilename: string) =
         if File.Exists targetFilename then
             let tempText =
@@ -2469,7 +2471,7 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
         else
             // doesn't even exist yet
             File.Move(tempFilename, targetFilename)
-        
+
     printfn "  - %s.h/.cpp" wrappersFilenameBase
     let wrappersTargetH, wrappersTempH =
         wrappersFilenameBase + ".h", Path.GetTempFileName()
@@ -2499,7 +2501,7 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
         generateImplementationH context implHeaderOutput generatedDirParts
     writeImplHeader()
     replaceIfDifferent implHeaderTemp implHeaderTarget
-    
+
     printfn "  - %s" implementationFilename
     use implementationOutput =
         let writer = new StreamWriter(implementationFilename)
@@ -2516,24 +2518,75 @@ let generateLibrary (allModules: Module list) (outParams: OutParams) =
             |> Option.defaultValue ""
         sprintf "%s%s" (projectDir outParams) subPath
     Directory.CreateDirectory(moduleDir) |> ignore
-    
+
     let generatedDir =
         $"{moduleDir}/generated"
     Directory.CreateDirectory(generatedDir) |> ignore
-    
+
     let generatedFilenameNoExt =
         // for wrappers/.h
         sprintf "%s/%s" generatedDir className
-        
+
     let modulePrefixString =
         maybeModulePrefix
         |> Option.map (fun mp -> $"{mp}.")
         |> Option.defaultValue ""
     printfn "C++ writing (%s.%s%s)" baseNamespace modulePrefixString className
-    
+
     let filename =
         $"{generatedFilenameNoExt}.cpp"
     use libraryWriter =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
     writeLibrary allModules libraryWriter ["generated"]
+
+let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: OutParams) =
+    let write, blank = writer.Write, writer.Blank
+    write 0 "# generated file - any edits will be overwritten!"
+    write 0 "cmake_minimum_required(VERSION 4.2)"
+    write 0 "project(%sImpl)" outParams.LibraryName
+    blank()
+    write 0 "set(CMAKE_CXX_STANDARD 20)"
+    blank()
+    write 0 "add_library(%sImpl STATIC)" outParams.LibraryName
+    blank()
+    write 0 "target_sources(%sImpl" outParams.LibraryName
+    write 2 "PRIVATE"
+    write 2 "# support"
+    write 2 "support/CoreStuff.h"
+    write 2 "support/NativeImplServer.h"
+    write 2 "support/NativeImplServer.cpp"
+    write 2 "support/result.h"
+    blank()
+    for m in allModules do
+        let paths =
+            getModulePaths [] m.Name
+        write 2 "# module %s" (joinModuleName m.Name)
+        write 2 "%s" paths.ModuleHeader
+        write 2 "%s" paths.ModuleWrappersHeader
+        write 2 "%s" paths.ModuleWrappersCpp
+        write 2 "%s" paths.ModuleCpp
+    blank()
+    write 2 "# library implementation"
+    write 2 "generated/Library.cpp"
+    blank()
+    write 2 "PUBLIC"
+    write 2 "FILE_SET HEADERS"
+    write 2 "BASE_DIRS"
+    write 3 "support"
+    write 2 "FILES"
+    write 3 "support/Library.h"
+    write 0 ")"
+
+let generateProject (allModules: Module list) (outParams: OutParams) =
+    let filename =
+        sprintf "%s/CMakeLists.txt" (projectDir outParams)
+    use output =
+        let writer = new StreamWriter(filename)
+        new SimpleFormatWriter(writer, 0)
+    writeProject output allModules outParams
+
+let copySupportFiles (outParams: OutParams) =
+    let destRoot =
+        sprintf "%s/support" (projectDir outParams)
+    SupportCopier.copyFiles "server/cpp" destRoot true ["*.h"; "*.cpp"] true None

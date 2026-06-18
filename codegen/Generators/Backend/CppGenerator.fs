@@ -2387,8 +2387,6 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (currentDir: 
         write 0 "#include \"%s\"" paths.ModuleWrappersHeader // (moduleNameToPathNoExt None m.Name) // (relativeIncludeFilenameNoExt None m.Name)
 
     blank()
-    write 0 "#include \"../support/Library.h\""
-    blank()
     write 0 "extern \"C\" int nativeLibraryInit() {"
     for m in allModules do
         match m.Name with
@@ -2569,13 +2567,6 @@ let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: O
     blank()
     write 2 "# library implementation"
     write 2 "generated/Library.cpp"
-    blank()
-    write 2 "PUBLIC"
-    write 2 "FILE_SET HEADERS"
-    write 2 "BASE_DIRS"
-    write 3 "support"
-    write 2 "FILES"
-    write 3 "support/Library.h"
     write 0 ")"
 
 let generateProject (allModules: Module list) (outParams: OutParams) =

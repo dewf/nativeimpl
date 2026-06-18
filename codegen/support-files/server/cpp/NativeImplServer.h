@@ -6,6 +6,20 @@
 #include <functional>
 #include <vector>
 
+// our "exports" back to core (well, the DLL being built around core)
+extern "C" {
+	// these two will be part of the generated Library.cpp (need to initialize all the modules etc)
+	int nativeLibraryInit();
+	void nativeLibraryShutdown();
+
+	// implemented in NativeImplServer.cpp
+	void ni_dumpTables();
+	void ni_execServerFunc(int id);
+	ni_ExceptionRef ni_execServerFuncWithExceptions(int id);
+	void ni_releaseServerResource(int id);
+	void ni_clearServerSafetyArea();
+}
+
 class Pushable {
 public:
 	virtual void push(std::shared_ptr<Pushable> outer, bool isReturn) = 0;

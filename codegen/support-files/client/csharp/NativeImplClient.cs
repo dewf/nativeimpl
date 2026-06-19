@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -11,11 +11,11 @@ namespace %%TARGET_NAMESPACE%%.Support
     internal static class NativeImplClient
     {
         // these MUST be saved, else GC will take the delegates out from under us. ohnononono!
-        private static NativeMethods.ClientLogFuncDelegate _savedClientLogFuncDelegate;
-        private static NativeMethods.ExecFunctionDelegate _savedExecFunctionDelegate;
-        private static NativeMethods.ClientMethodDelegate _savedClientMethodDelegate;
-        private static NativeMethods.ClientResourceReleaseDelegate _savedClientResourceReleaseDelegate;
-        private static NativeMethods.ClientClearSafetyAreaDelegate _savedClientClearSafetyAreaDelegate;
+        private static NativeMethods.ClientLogFuncDelegate? _savedClientLogFuncDelegate;
+        private static NativeMethods.ExecFunctionDelegate? _savedExecFunctionDelegate;
+        private static NativeMethods.ClientMethodDelegate? _savedClientMethodDelegate;
+        private static NativeMethods.ClientResourceReleaseDelegate? _savedClientResourceReleaseDelegate;
+        private static NativeMethods.ClientClearSafetyAreaDelegate? _savedClientClearSafetyAreaDelegate;
 
         public static bool RemoteIsShutdown;
         private static readonly Dictionary<IntPtr, MethodWrapper> MethodWrappers = new();
@@ -30,11 +30,13 @@ namespace %%TARGET_NAMESPACE%%.Support
         private static ILogger _cppSupportLogger = NullLogger.Instance;
         private static void ClientLogger(NativeMethods.ClientLogLevel level, IntPtr strData, int length)
         {
+            #if DEBUG
             if (length > 0)
             {
                 var message = Marshal.PtrToStringUTF8(strData, length);
-                _cppSupportLogger.Log((LogLevel)level, "{}", message);
+                _cppSupportLogger.Log((LogLevel)level, "[NativeImpl Native]: {}", message);
             }
+            #endif
         }
         
         private static void FuncValExecutor(int id)
@@ -47,12 +49,12 @@ namespace %%TARGET_NAMESPACE%%.Support
             ClientResource.GetResourceById(id).Release();
         }
         
-        public static int Init(ILogger csharpSupportLogger, ILogger cppSupportLogger)
+        public static int Init(ILogger logger)
         {
             // used as the C++ support logger callback (see above):
-            _cppSupportLogger = cppSupportLogger;
+            _cppSupportLogger = logger;
             // used as our C# support code logger:
-            SupportLogger.SetLogger(csharpSupportLogger);
+            SupportLogger.SetLogger(logger);
             
             // delegates must be saved from GC until the end of the program, kthx
             _savedClientLogFuncDelegate = ClientLogger;

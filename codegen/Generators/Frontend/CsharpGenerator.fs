@@ -1694,7 +1694,7 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "<Project Sdk=\"Microsoft.NET.Sdk\">"
     blank ()
     write 1 "<PropertyGroup>"
-    write 2 "<TargetFramework>net8.0</TargetFramework>"
+    write 2 "<TargetFramework>net10.0</TargetFramework>"
     write 2 "<ImplicitUsings>enable</ImplicitUsings>"
     write 2 "<AllowUnsafeBlocks>true</AllowUnsafeBlocks>"
     let rootNamespace =
@@ -1702,11 +1702,12 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
         |> Option.map (fun ns -> $"{ns}.{outParams.LibraryName}")
         |> Option.defaultValue outParams.LibraryName
     write 2 "<RootNamespace>%s</RootNamespace>" rootNamespace
+    write 2 "<Nullable>enable</Nullable>"
     write 1 "</PropertyGroup>"
     blank ()
     write 1 "<ItemGroup>"
     write 2 "<PackageReference Include=\"CSharpFunctionalExtensions\" Version=\"2.41.0\" />"
-    write 2 "<PackageReference Include=\"Microsoft.Extensions.Logging\" Version=\"9.0.1\" />"
+    write 2 "<PackageReference Include=\"Microsoft.Extensions.Logging.Abstractions\" Version=\"10.0.9\" />"
     write 1 "</ItemGroup>"
     blank ()
     write 0 "</Project>"
@@ -1723,17 +1724,24 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespac
     let write, blank = writer.Write, writer.Blank
 
     write 0 "using Microsoft.Extensions.Logging;"
+    write 0 "using Microsoft.Extensions.Logging.Abstractions;"
     write 0 "using %s.Support;" baseNamespace
     blank()
     write 0 "namespace %s;" baseNamespace
     blank()
+    write 0 "public sealed class LibraryOptions"
+    write 0 "{"
+    write 1 "public ILogger NativeImplLogger { get; init; } = NullLogger.Instance;"
+    write 0 "}"
+    blank()
     write 0 "public static class Library"
     write 0 "{"
-    write 1 "public static void Init(ILogger csharpSupportLogger, ILogger cppSupportLogger)"
+    write 1 "public static void Init(LibraryOptions? options = null)"
     write 1 "{"
-    write 2 "if (NativeImplClient.Init(csharpSupportLogger, cppSupportLogger) != 0)"
+    write 2 "options ??= new LibraryOptions();"
+    write 2 "if (NativeImplClient.Init(options.NativeImplLogger) != 0)"
     write 2 "{"
-    write 3 "csharpSupportLogger.LogCritical(\"{x}\", \"NativeImplClient.Init failed\");";
+    write 3 "options.NativeImplLogger.LogCritical(\"{x}\", \"NativeImplClient.Init failed\");";
     write 3 "return;"
     write 2 "}"
     write 2 "// registrations, static module inits"

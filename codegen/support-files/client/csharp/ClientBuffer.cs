@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
 namespace %%TARGET_NAMESPACE%%.Support
@@ -19,7 +19,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             _totalSize = _totalCount * _elementSize;
             _block = Marshal.AllocHGlobal((IntPtr)_totalSize);
             GC.AddMemoryPressure(_totalSize);
-            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {0} allocated (from dimensions)", _block);
+            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {block} allocated (from dimensions)", _block);
         }
         private static unsafe void GenericArrayCopy(T[] sourceArray, IntPtr destination) 
         {
@@ -45,7 +45,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             _totalSize = _totalCount * _elementSize;
             _block = Marshal.AllocHGlobal((IntPtr)_totalSize);
             GC.AddMemoryPressure(_totalSize);
-            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {0} allocated (from array)", _block);
+            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {block} allocated (from array)", _block);
             GenericArrayCopy(data, _block);
         }
         public ClientBuffer(Span<T> data)
@@ -56,7 +56,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             _totalSize = _totalCount * _elementSize;
             _block = Marshal.AllocHGlobal((IntPtr)_totalSize);
             GC.AddMemoryPressure(_totalSize);
-            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {0} allocated (from span)", _block);
+            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {block} allocated (from span)", _block);
             GenericSpanCopy(data, _block);
         }
         
@@ -110,7 +110,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             if (_disposed) return;
             Marshal.FreeHGlobal(_block);
             GC.RemoveMemoryPressure(_totalSize);
-            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {0} disposed", _block);
+            SupportLogger.Log(LogLevel.Trace, "ClientBuffer {block} disposed", _block);
             _block = IntPtr.Zero;
             _disposed = true;
         }

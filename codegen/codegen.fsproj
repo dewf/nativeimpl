@@ -18,6 +18,7 @@
         <Compile Include="Generators\Common.fs" />
         <Compile Include="Generators\Frontend\CsharpGenerator.fs" />
         <Compile Include="Generators\Backend\CppGenerator.fs" />
+        <Compile Include="DynlibGenerator.fs" />
         <Compile Include="ProjectParser.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>

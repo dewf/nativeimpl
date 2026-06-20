@@ -140,7 +140,9 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     | _ ->
         failwithf "unsupported backend language: %s" backLang
 
-    // core/DLL project (statically linked to backend)
+    // core/DLL project (native implementation will be statically linked to it)
+    DynlibGenerator.copySupportFiles outParams
+    DynlibGenerator.generateProject outParams
 
     // printfn "moduleMap: %A" moduleMap
 

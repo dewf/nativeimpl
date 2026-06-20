@@ -46,7 +46,12 @@ let copyFiles (sourceRoot: string) (destRoot: string) (createDest: bool)
         let filesToCopy =
             globs
             |> Seq.collect (fun glob ->
-                Directory.EnumerateFiles(sourceAbsolute, glob, SearchOption.AllDirectories))
+                let opt =
+                    if recursive then
+                        SearchOption.AllDirectories
+                    else
+                        SearchOption.TopDirectoryOnly
+                Directory.EnumerateFiles(sourceAbsolute, glob, opt))
             |> Seq.distinct // shouldn't be any overlap in most cases ...
 
         let copyFunc =

@@ -2571,7 +2571,12 @@ let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: O
 
 let generateProject (allModules: Module list) (outParams: OutParams) =
     let filename =
-        sprintf "%s/CMakeLists.txt" (projectDir outParams)
+        let default_ =
+            sprintf "%s/CMakeLists.txt" (projectDir outParams)
+        if File.Exists default_ then
+            default_ + ".new"
+        else
+            default_
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)

@@ -1702,7 +1702,8 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
         |> Option.map (fun ns -> $"{ns}.{outParams.LibraryName}")
         |> Option.defaultValue outParams.LibraryName
     write 2 "<RootNamespace>%s</RootNamespace>" rootNamespace
-    write 2 "<Nullable>enable</Nullable>"
+    // no nullability yet, need to rewrite a lot of C# codegen stuff :(
+    // write 2 "<Nullable>enable</Nullable>"
     write 1 "</PropertyGroup>"
     blank ()
     write 1 "<ItemGroup>"
@@ -1736,7 +1737,7 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespac
     blank()
     write 0 "public static class Library"
     write 0 "{"
-    write 1 "public static void Init(LibraryOptions? options = null)"
+    write 1 "public static void Init(LibraryOptions options = null)"
     write 1 "{"
     write 2 "options ??= new LibraryOptions();"
     write 2 "if (NativeImplClient.Init(options.NativeImplLogger) != 0)"

@@ -11,11 +11,11 @@ namespace %%TARGET_NAMESPACE%%.Support
     internal static class NativeImplClient
     {
         // these MUST be saved, else GC will take the delegates out from under us. ohnononono!
-        private static NativeMethods.ClientLogFuncDelegate? _savedClientLogFuncDelegate;
-        private static NativeMethods.ExecFunctionDelegate? _savedExecFunctionDelegate;
-        private static NativeMethods.ClientMethodDelegate? _savedClientMethodDelegate;
-        private static NativeMethods.ClientResourceReleaseDelegate? _savedClientResourceReleaseDelegate;
-        private static NativeMethods.ClientClearSafetyAreaDelegate? _savedClientClearSafetyAreaDelegate;
+        private static NativeMethods.ClientLogFuncDelegate _savedClientLogFuncDelegate;
+        private static NativeMethods.ExecFunctionDelegate _savedExecFunctionDelegate;
+        private static NativeMethods.ClientMethodDelegate _savedClientMethodDelegate;
+        private static NativeMethods.ClientResourceReleaseDelegate _savedClientResourceReleaseDelegate;
+        private static NativeMethods.ClientClearSafetyAreaDelegate _savedClientClearSafetyAreaDelegate;
 
         public static bool RemoteIsShutdown;
         private static readonly Dictionary<IntPtr, MethodWrapper> MethodWrappers = new();

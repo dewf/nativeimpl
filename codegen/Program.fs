@@ -5,7 +5,7 @@ open Generators.Frontend
 open Parser
 open AppCommon
 
-let PROJECT_PATH = @"R:\projects\gauntlet\project.toml"
+let PROJECT_PATH = @"R:\projects\QtProjects\MinimalQt\project.toml"
 let projectInfo =
     ProjectParser.parseProjectInfo PROJECT_PATH
 

@@ -23,13 +23,19 @@ let private writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "project(%sServer)" outParams.LibraryName
     blank()
     write 0 "set(CMAKE_CXX_STANDARD 20)"
+    write 0 "set(CMAKE_CXX_VISIBILITY_PRESET hidden)"
     blank()
-    write 0 "add_library(%sServer SHARED" outParams.LibraryName
-    write 4 "core/NativeImplCore.h"
-    write 4 "core/NativeImplCore.cpp"
-    write 4 "DirectExport.h"
-    write 4 "DirectExport.cpp"
-    write 4 "dllmain.cpp)"
+    write 0 "set(SOURCES"
+    write 1 "core/NativeImplCore.h"
+    write 1 "core/NativeImplCore.cpp"
+    write 1 "DirectExport.h"
+    write 1 "DirectExport.cpp)"
+    blank()
+    write 0 "if (WIN32)"
+    write 1 "list(APPEND SOURCES dllmain.cpp)"
+    write 0 "endif()"
+    blank()
+    write 0 "add_library(%sServer SHARED ${SOURCES})" outParams.LibraryName
     blank()
     write 0 "# link to actual library implementation"
     write 0 "add_library(%sImpl STATIC IMPORTED GLOBAL)" outParams.LibraryName
@@ -48,6 +54,7 @@ let private writeProject (writer: IFormatWriter) (outParams: OutParams) =
 let generateProject (outParams: OutParams) =
     let filename =
         sprintf "%s/CMakeLists.txt" (projectDir outParams)
+        |> safeFilename ".new"
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)

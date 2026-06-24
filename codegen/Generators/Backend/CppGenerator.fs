@@ -2442,12 +2442,8 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
     let implementationFilename =
         // in the future we may auto-populate .cpp.new from the existing .cpp,
         //   but will never overwrite something the user has worked on
-        let default' =
-            $"{filenameNoExt}.cpp"
-        if File.Exists(default') then
-            $"{filenameNoExt}.cpp.new"
-        else
-            default'
+        $"{filenameNoExt}.cpp"
+        |> safeFilename ".new"
 
     let context =
         { RenderContext = createRenderContext moduleContext
@@ -2571,12 +2567,8 @@ let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: O
 
 let generateProject (allModules: Module list) (outParams: OutParams) =
     let filename =
-        let default_ =
-            sprintf "%s/CMakeLists.txt" (projectDir outParams)
-        if File.Exists default_ then
-            default_ + ".new"
-        else
-            default_
+        sprintf "%s/CMakeLists.txt" (projectDir outParams)
+        |> safeFilename ".new"
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)

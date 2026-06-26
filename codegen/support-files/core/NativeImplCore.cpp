@@ -11,6 +11,7 @@
 #include <cassert>
 #include <cstdarg>
 #include <stdexcept>
+#include <cstring>
 
 // private opaque definitions
 struct ni_Module {

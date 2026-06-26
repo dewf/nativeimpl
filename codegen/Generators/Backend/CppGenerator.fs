@@ -2536,7 +2536,6 @@ let generateLibrary (allModules: Module list) (outParams: OutParams) =
 
 let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: OutParams) =
     let write, blank = writer.Write, writer.Blank
-    write 0 "# generated file - any edits will be overwritten!"
     write 0 "cmake_minimum_required(VERSION 4.2)"
     write 0 "project(%sImpl)" outParams.LibraryName
     blank()

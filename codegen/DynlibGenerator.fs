@@ -23,7 +23,11 @@ let private writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "project(%sServer)" outParams.LibraryName
     blank()
     write 0 "set(CMAKE_CXX_STANDARD 20)"
+    blank()
+    write 0 "set(CMAKE_POSITION_INDEPENDENT_CODE ON)"
     write 0 "set(CMAKE_CXX_VISIBILITY_PRESET hidden)"
+    blank()
+    write 0 "add_compile_definitions(DLLPROJECT_EXPORTS)"
     blank()
     write 0 "set(SOURCES"
     write 1 "core/NativeImplCore.h"

@@ -1,13 +1,34 @@
 open System
 open System.IO
+open Argu
 open Generators.Backend
 open Generators.Frontend
 open Parser
 open AppCommon
 
-let PROJECT_PATH = @"R:\projects\QtProjects\MinimalQt\project.toml"
+type AppArguments =
+    | [<MainCommand; ExactlyOnce; Last>] Project of path: string
+    interface IArgParserTemplate with
+        member s.Usage =
+            match s with
+            | Project _ -> "specify the .toml project file"
+
+let projectFile =
+    let parser =
+        ArgumentParser.Create<AppArguments>(programName = "nativeimpl")
+    let results =
+        try
+            parser.ParseCommandLine(raiseOnUsage=true)
+        with
+        | :? ArguParseException as ex ->
+            eprintfn "%s" ex.Message
+            exit 1
+    results.GetAllResults()
+    |> Seq.tryPick (function | Project path -> Some path)
+    |> Option.get
+
 let projectInfo =
-    ProjectParser.parseProjectInfo PROJECT_PATH
+    ProjectParser.parseProjectInfo projectFile
 
 let getDependencyOrder (moduleMap: Map<ModuleName, Module>) =
     // create "imported by" map ('name' -> modules importing 'name')

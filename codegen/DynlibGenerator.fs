@@ -5,7 +5,7 @@ open AppCommon
 open Generators.Common
 
 let private projectDir (outParams: OutParams) =
-    sprintf "%s/server/_dllproject" outParams.Path
+    sprintf "%s/server/cpp/_dllproject" outParams.Path
 
 let copySupportFiles (outParams: OutParams) =
     let destRoot =
@@ -45,10 +45,10 @@ let private writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "add_library(%sImpl STATIC IMPORTED GLOBAL)" outParams.LibraryName
     write 0 "set_target_properties(%sImpl PROPERTIES" outParams.LibraryName
     write 2 "IMPORTED_LOCATION_DEBUG"
-    write 2 "\"${CMAKE_CURRENT_SOURCE_DIR}/../cpp/%sImpl/cmake-build-debug/%sImpl.lib\"" outParams.LibraryName outParams.LibraryName
+    write 2 "\"${CMAKE_CURRENT_SOURCE_DIR}/../%sImpl/cmake-build-debug/%sImpl.lib\"" outParams.LibraryName outParams.LibraryName
     blank()
     write 2 "IMPORTED_LOCATION_RELEASE"
-    write 2 "\"${CMAKE_CURRENT_SOURCE_DIR}/../cpp/%sImpl/cmake-build-release/%sImpl.lib\"" outParams.LibraryName outParams.LibraryName
+    write 2 "\"${CMAKE_CURRENT_SOURCE_DIR}/../%sImpl/cmake-build-release/%sImpl.lib\"" outParams.LibraryName outParams.LibraryName
     blank()
     write 2 "MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release"
     write 2 "MAP_IMPORTED_CONFIG_MINSIZEREL Release"

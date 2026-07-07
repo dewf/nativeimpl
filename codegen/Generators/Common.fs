@@ -550,9 +550,9 @@ let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
         outParams.MaybeNamespace
         |> Option.map (fun ns -> sprintf "%s.%s" ns outParams.LibraryName)
         |> Option.defaultValue outParams.LibraryName
-    let modulePrefix, className =
+    let modulePrefix, simpleName =
         List.splitAtLast nameParts
-    baseNamespace, maybeJoinedPrefix modulePrefix, className
+    baseNamespace, maybeJoinedPrefix modulePrefix, simpleName
 
 type GroupKind =
     | NormalGroup

@@ -140,7 +140,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
                         CsharpGenerator.generateModule context outParams
                     | Dlang ->
                         printfn "rendering Dlang frontend code"
-                        printfn "(TODO)"
+                        DlangGenerator.generateModule context outParams
                     | _ ->
                         failwithf "unsupported frontend language: %A" frontLang
 
@@ -170,7 +170,9 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             CsharpGenerator.copySupportFiles outParams
         | Dlang ->
             printfn "rendering Dlang library files"
-            printfn "(TODO)"
+            DlangGenerator.generateLibraryFile depsOrder outParams
+            DlangGenerator.generateProject outParams
+            DlangGenerator.copySupportFiles outParams
         | _ ->
             failwithf "unsupported frontend language: %A" frontLang
 
@@ -186,12 +188,16 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             |> List.map snd
             |> List.sortDescending
         CppGenerator.generateProject modules outParams
+
+        // TODO: move these into the CppGenerator module,
+        // because we've discovered that statically linking between languages is a real problem,
+        // and so the same language will have to be used for both Core and Impl
+        DynlibGenerator.copySupportFiles outParams
+        DynlibGenerator.generateProject outParams
     | _ ->
         failwithf "unsupported backend language: %A" backLang
 
-    // core/DLL project (native implementation will be statically linked to it)
-    DynlibGenerator.copySupportFiles outParams
-    DynlibGenerator.generateProject outParams
+    // core/DLL project
 
     // printfn "moduleMap: %A" moduleMap
 

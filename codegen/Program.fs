@@ -5,15 +5,27 @@ open Generators.Backend
 open Generators.Frontend
 open Parser
 open AppCommon
+open ProjectParser
 
 type AppArguments =
     | [<MainCommand; ExactlyOnce; Last>] Project of path: string
+    | Force_Write
     interface IArgParserTemplate with
         member s.Usage =
             match s with
             | Project _ -> "specify the .toml project file"
+            | Force_Write -> "always generate code even if module definitions have not changed"
 
-let projectFile =
+type AppConfig = {
+    ProjectPath: string
+    AlwaysWrite: bool
+} with
+    static member Empty = {
+        ProjectPath = ""     // a required command line argument, so not optional
+        AlwaysWrite = false
+    }
+
+let appConfig =
     let parser =
         ArgumentParser.Create<AppArguments>(programName = "nativeimpl")
     let results =
@@ -23,12 +35,17 @@ let projectFile =
         | :? ArguParseException as ex ->
             eprintfn "%s" ex.Message
             exit 1
-    results.GetAllResults()
-    |> Seq.tryPick (function | Project path -> Some path)
-    |> Option.get
+    (AppConfig.Empty, results.GetAllResults())
+    ||> List.fold (fun acc arg ->
+        match arg with
+        | Project path ->
+            { acc with ProjectPath = path }
+        | Force_Write ->
+            { acc with AlwaysWrite = true }
+        )
 
 let projectInfo =
-    ProjectParser.parseProjectInfo projectFile
+    parseProjectInfo appConfig.ProjectPath
 
 let getDependencyOrder (moduleMap: Map<ModuleName, Module>) =
     // create "imported by" map ('name' -> modules importing 'name')
@@ -66,7 +83,7 @@ let getDependencyOrder (moduleMap: Map<ModuleName, Module>) =
     |> List.distinct
     |> List.map (fun name -> moduleMap[name])
 
-let appRunner (inputPath: string) (inputModules: string list) (outParams: OutParams) (frontLang: string) (backLang: string) =
+let appRunner (inputPath: string) (inputModules: string list) (outParams: OutParams) (frontLangs: Language list) (backLang: Language) =
     // read last run time from disk
     let lastRunTimeFilePath =
         Path.Combine(projectInfo.ProjectFileLocation, "__last_run_time.txt")
@@ -98,35 +115,42 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
 
             // can we avoid writing this one?
             let fileNeedsWriting =
-                match maybeLastRunTime with
-                | Some lastRunTime ->
-                    if currentModule.LastModified >= lastRunTime then
-                        // file itself has been modified since last run
-                        true
-                    else
-                        // what about imports?
-                        currentModule.Imports
-                        |> List.map (fun moduleName -> nextMap[moduleName]) // nextMap! moduleMap accumulator will not yet be updated!
-                        |> List.exists (fun import -> import.LastModified >= lastRunTime)
-                | None ->
+                if appConfig.AlwaysWrite then
                     true
+                else
+                    match maybeLastRunTime with
+                    | Some lastRunTime ->
+                        if currentModule.LastModified >= lastRunTime then
+                            // file itself has been modified since last run
+                            true
+                        else
+                            // what about imports?
+                            currentModule.Imports
+                            |> List.map (fun moduleName -> nextMap[moduleName]) // nextMap! moduleMap accumulator will not yet be updated!
+                            |> List.exists (fun import -> import.LastModified >= lastRunTime)
+                    | None ->
+                        true
 
             if fileNeedsWriting then
-                // frontend
-                match frontLang.ToLower() with
-                | "csharp" | "c#" ->
-                    printfn "rendering C# frontend code"
-                    CsharpGenerator.generateModule context outParams
-                | _ ->
-                    failwithf "unsupported frontend language: %s" frontLang
+                // frontend(s)
+                for frontLang in frontLangs do
+                    match frontLang with
+                    | CSharp ->
+                        printfn "rendering C# frontend code"
+                        CsharpGenerator.generateModule context outParams
+                    | Dlang ->
+                        printfn "rendering Dlang frontend code"
+                        printfn "(TODO)"
+                    | _ ->
+                        failwithf "unsupported frontend language: %A" frontLang
 
                 // backend
-                match backLang.ToLower() with
-                | "cpp" | "c++" ->
+                match backLang with
+                | Cpp ->
                     printfn "rendering C++ backend code"
                     CppGenerator.generateModule context outParams
                 | _ ->
-                    failwithf "unsupported backend language: %s" backLang
+                    failwithf "unsupported backend language: %A" backLang
             else
                 printfn ">> skipping module -  neither module nor its imports have been modified since last run"
 
@@ -137,18 +161,22 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     let depsOrder = getDependencyOrder moduleMap
 
     // frontend
-    match frontLang.ToLower() with
-    | "csharp" | "c#" ->
-        printfn "rendering C# library files"
-        CsharpGenerator.generateLibraryFile depsOrder outParams
-        CsharpGenerator.generateProject outParams
-        CsharpGenerator.copySupportFiles outParams
-    | _ ->
-        failwithf "unsupported frontend language: %s" frontLang
+    for frontLang in frontLangs do
+        match frontLang with
+        | CSharp ->
+            printfn "rendering C# library files"
+            CsharpGenerator.generateLibraryFile depsOrder outParams
+            CsharpGenerator.generateProject outParams
+            CsharpGenerator.copySupportFiles outParams
+        | Dlang ->
+            printfn "rendering Dlang library files"
+            printfn "(TODO)"
+        | _ ->
+            failwithf "unsupported frontend language: %A" frontLang
 
     // backend
-    match backLang.ToLower() with
-    | "cpp" | "c++" ->
+    match backLang with
+    | Cpp ->
         printfn "rendering C++ library files"
         CppGenerator.generateLibrary depsOrder outParams
         CppGenerator.copySupportFiles outParams
@@ -159,7 +187,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             |> List.sortDescending
         CppGenerator.generateProject modules outParams
     | _ ->
-        failwithf "unsupported backend language: %s" backLang
+        failwithf "unsupported backend language: %A" backLang
 
     // core/DLL project (native implementation will be statically linked to it)
     DynlibGenerator.copySupportFiles outParams
@@ -175,4 +203,4 @@ let outParams =
     { Path = projectInfo.OutputPath
       MaybeNamespace = Some projectInfo.Namespace // more of a prefix, really - still will inlcude LibraryName at the end
       LibraryName = projectInfo.LibraryName }
-appRunner projectInfo.InputPath projectInfo.Inputs outParams projectInfo.FrontLang projectInfo.BackLang
+appRunner projectInfo.InputPath projectInfo.Inputs outParams projectInfo.FrontLangs projectInfo.BackLang

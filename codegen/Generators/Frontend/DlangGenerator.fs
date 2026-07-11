@@ -264,7 +264,7 @@ let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) 
         write level "// popValue %A not yet supported" type_
     match popContext with
     | SafeReturn ->
-        write level "ni.serverClearSafetyArea();"
+        write level "ni.clearServerSafetyArea();"
         write level "return __ret;"
     | _ ->
         ()
@@ -373,6 +373,46 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
     let write, blank = writer.Write, writer.Blank
 
     match userType with
+    | ExceptionDef fields ->
+        blank()
+        write 0 "public class %s : Exception {" name
+        if not fields.IsEmpty then
+            write 0 "private:"
+            for f in fields do
+                write 1 "%s %s;" (typeToDlangString context f.Type_) (lowerFirstWithUnderscore f.Name)
+        write 0 "public:"
+        for f in fields do
+            write 1 "%s %s() => %s;" (typeToDlangString context f.Type_) (lowerFirst f.Name) (lowerFirstWithUnderscore f.Name)
+        // ctor
+        if fields.IsEmpty then
+            write 1 "this(string file = __FILE__, size_t line = __LINE__) {"
+        else
+            write 1 "this(%s, string file = __FILE__, size_t line = __LINE__) {" (fieldsJoined context fields)
+            for f in fields do
+                write 2 "this.%s = %s;" (lowerFirstWithUnderscore f.Name) (lowerFirst f.Name)
+        write 2 "super(\"%s\", file, line);" name
+        write 1 "}"
+        write 0 "package:"
+        // push + set
+        write 1 "void pushAndSet() {"
+        if fields.IsEmpty then
+            write 2 "// no params"
+        else
+            for f in fields |> List.rev do
+                pushValue context writer 2 f.Type_ (lowerFirstWithUnderscore f.Name) (Direct true) // true since pushed exceptions are basically returns, any reference fields need to be safely pushed
+        write 2 "ni.setException(%s);" (lowerFirstWithUnderscore name)
+        write 1 "}"
+        // build and throw (pop)
+        write 1 "static void buildAndThrow() {"
+        if fields.IsEmpty then
+            write 2 "// no params"
+        else
+            for f in fields do
+                popValue context writer 2 f.Type_ (NewVariable f.Name)
+        write 2 "throw new %s(%s);" name (fieldNamesJoined fields)
+        write 1 "}"
+        write 0 "} // end %s" name // end exception
+
     | DelegateDef info ->
         blank()
         write 0 "// %s type + push/pop ======" name
@@ -456,7 +496,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
 
     // globals declaration
     for name, type_ in groupContext.Globals do
-        write 0 "%s %s;" (typeToDlangString context type_) (lowerFirst name)
+        write 0 "%s %s;" (typeToDlangString context type_) (lowerFirstWithUnderscore name)
 
     // blank()
     // write 0 "public:"

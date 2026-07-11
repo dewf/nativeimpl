@@ -170,9 +170,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             CsharpGenerator.copySupportFiles outParams
         | Dlang ->
             printfn "rendering Dlang library files"
-            DlangGenerator.generateLibraryFile depsOrder outParams
-            DlangGenerator.generateProject outParams
-            DlangGenerator.copySupportFiles outParams
+            printfn "**** TODO ****"
         | _ ->
             failwithf "unsupported frontend language: %A" frontLang
 

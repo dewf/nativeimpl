@@ -4,9 +4,12 @@ open System
 
 let lower (text: string) =
     text.ToLower()
-    
+
 let lowerFirst (text: string) =
     Char.ToLower(text[0]).ToString() + text.Substring(1)
+
+let lowerFirstWithUnderscore (text: string) =
+    "_" + lowerFirst text
 
 let lowerFirstLetter (text: string) =
     Char.ToLower(text[0]).ToString()
@@ -32,7 +35,7 @@ let tryParseInt64 (str: string) =
     match Int64.TryParse(str) with
     | true, value -> Some value
     | _ -> None
-    
+
 let unfoldState (f: 'state -> 'state option) (init: 'state): 'state =
     let rec recInner (current: 'state) =
         match f current with

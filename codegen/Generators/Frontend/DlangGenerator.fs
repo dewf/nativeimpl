@@ -227,7 +227,7 @@ let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) 
             | _ ->
                 // all other types:
                 resolvedNameToString context resolvedName TypeMode
-        write level "%s %s__pop();" contextPrefix name
+        write level "%s __%s__pop();" contextPrefix name
     | ArrayType niType ->
         match niType with
         | Primitive prim ->
@@ -309,9 +309,9 @@ let pushValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int)
         match resolvedType with
         | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
             // types that potentially contain refs, need to honor isReturn
-            write level "%s__push(%s, %s);" name content (isReturnString())
+            write level "__%s__push(%s, %s);" name content (isReturnString())
         | _ ->
-            write level "%s__push(%s);" name content
+            write level "__%s__push(%s);" name content
     | ArrayType niType ->
         match niType with
         | Primitive prim ->
@@ -372,10 +372,152 @@ let joinedTypes (context: DlangRenderContext) (typesList: NIType list) =
 let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
 
+    blank()
     match userType with
-    | ExceptionDef fields ->
+    | OpaqueDef info ->
+        let fakeThis =
+            let namePath =
+                context.GroupContext.Path @ [ name ]
+            Resolved (ThisModule (SymbolName namePath), OpaqueType)
+        let maybeInheritsFrom =
+            match info.MaybeParent with
+            | Some (Resolved(resolvedName, OpaqueType)) ->
+                Some resolvedName
+            | _ ->
+                None
+
+        // class setup is a bear with all this dispose/nodispose stuff :(
+        let firstDisposable = isFirstDisposableOpaque context.ModuleContext info
+        let isRoot = maybeInheritsFrom.IsNone
+        let inheritsOrImplementsSuffix =
+            let finalList =
+                let maybeParentOpaque =
+                    maybeInheritsFrom
+                    |> Option.map (fun parentName ->
+                        resolvedNameToString context parentName TypeMode)
+                let maybeDisposableString =
+                    if firstDisposable then
+                        Some "ni.IDisposable"
+                    else
+                        None
+                [ maybeParentOpaque; maybeDisposableString ]
+                |> List.choose id
+            if finalList.IsEmpty then
+                ""
+            else
+                sprintf " : %s" (String.concat ", " finalList)
+
+        write 0 "class %s%s {" (upperFirst name) inheritsOrImplementsSuffix
+        write 0 "protected:"
+        if isRoot then
+            write 1 "void *thisPtr;"
+        if firstDisposable then
+            write 1 "bool disposed;"
+        if isRoot then
+            // normal ctor
+            write 1 "this(void *ptr) {"
+            write 2 "this.thisPtr = ptr;"
+            write 1 "}"
+            // public switch
+            write 0 "public:"
+            // equals and hash
+            write 1 "override bool opEquals(Object o) const {"
+            write 2 "if (auto other = cast(MyOpaque)o) {"
+            write 3 "return thisPtr == other.thisPtr;"
+            write 2 "}"
+            write 2 "return false;"
+            write 1 "}"
+            write 1 "override hash_t toHash() const {"
+            write 2 "return typeid(thisPtr).getHash(&thisPtr);"
+            write 1 "}"
+        else
+            // inherited
+            write 1 "this(void *ptr) {"
+            write 2 "super(ptr);"
+            write 1 "}"
+            // public switch
+            write 0 "public:"
+
+        // dispose method
+        if info.NoDispose then
+            ()
+        else
+            write 1 "override void dispose() {"
+            write 2 "if (!disposed) {"
+            pushValue context writer 3 fakeThis "this" (Direct false)
+            write 3 "ni.invokeModuleMethod(_%s_dispose);" (lowerFirst name)
+            write 3 "disposed = true;"
+            write 2 "}"
+            write 1 "}"
+
+        // nested function for convenience:
+        let renderInstanceMethods (context: DlangRenderContext) =
+            for namedFunc in info.Methods do
+                let throwsComment =
+                    if namedFunc.Throws.IsEmpty then
+                        ""
+                    else
+                        let joined =
+                            namedFunc.Throws
+                            |> List.map (typeToDlangString context)
+                            |> String.concat ", "
+                        sprintf " // throws %s" joined
+                let shadowsStr =
+                    if namedFunc.ShadowsExisting then
+                        "new "
+                    else
+                        ""
+                write 1 "%s%s %s(%s)%s" shadowsStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
+                write 1 "{"
+                // another nested function here, because we're modifying the render context a bit
+                let renderMethodInvocation (context: DlangRenderContext) =
+                    // push args in reverse
+                    for arg in namedFunc.Args |> List.rev do
+                        pushValue context writer 2 arg.Type arg.Name (Direct false)
+                    // push self argument
+                    pushValue context writer 2 fakeThis "this" (Direct false)
+                    // invoke remote
+                    if namedFunc.Throws.IsEmpty then
+                        write 2 "ni.invokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+                    else
+                        write 2 "ni.invokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+                    // return pop
+                    popValue context writer 2 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+                // go
+                renderMethodInvocation {context with OpaqueMethodContext = Some info }
+                write 1 "}"
+
+        // static content
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            failwith "DlangGenerator: OpaqueDef static rendering disabled for the moment"
+            // let nextContext =
+            //     context.NavigateToSub(name)
+            // renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            // // render methods in context of static block, so static types etc aren't unnecessarily prefixed
+            // renderInstanceMethods nextContext
+        | None ->
+            renderInstanceMethods context
+        // end class definition
+        write 0 "}"
+
+        // push =============
         blank()
-        write 0 "public class %s : Exception {" name
+        write 0 "pragma(inline)"
+        write 0 "package void __%s__push(%s thing) {" (upperFirst name) (upperFirst name)
+        write 1 "ni.pushPtr(thing !is null ? thing.thisPtr : null);"
+        write 0 "}"
+
+        // pop ==============
+        blank()
+        write 0 "pragma(inline)"
+        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 1 "auto ptr = ni.popPtr();"
+        write 1 "return ptr !is null ? new %s(ptr) : null;" (upperFirst name)
+        write 0 "}"
+
+    | ExceptionDef fields ->
+        write 0 "class %s : Exception {" name
         if not fields.IsEmpty then
             write 0 "private:"
             for f in fields do
@@ -414,16 +556,15 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "} // end %s" name // end exception
 
     | DelegateDef info ->
-        blank()
         write 0 "// %s type + push/pop ======" name
         let throwsList =
             match info.Throws with
             | [] -> ""
             | _ -> " // throws " + joinedTypes context info.Throws
-        write 0 "public alias %s = %s delegate(%s);%s" name (typeToDlangString context info.Returns) (joinedArgs context info.Args) throwsList
+        write 0 "alias %s = %s delegate(%s);%s" name (typeToDlangString context info.Returns) (joinedArgs context info.Args) throwsList
         // push
         blank()
-        write 0 "package void %s__push(%s func) {" (lowerFirst name) name
+        write 0 "package void __%s__push(%s func) {" name name
         write 1 "void wrapper() {"
         for argName, argType in info.Args do
             popValue context writer 2 argType (NewVariable argName)
@@ -443,7 +584,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}"
         // pop
         blank()
-        write 0 "package %s %s__pop() {" name (lowerFirst name)
+        write 0 "package %s __%s__pop() {" name name
         write 1 "auto f = ni.popServerFuncVal();"
         write 1 "%s wrapper(%s) {" (typeToDlangString context info.Returns) (joinedArgs context info.Args)
         for argName, argType in info.Args |> List.rev do
@@ -466,9 +607,9 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     let groupContext =
         context.GroupContext
 
-    // blank()
-    // write 0 "private:"
-    // blank()
+    blank()
+    write 0 "private:"
+    blank()
 
     // declare top level function handles
     for namedFunc in groupContext.ModuleMethods do
@@ -498,14 +639,14 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     for name, type_ in groupContext.Globals do
         write 0 "%s %s;" (typeToDlangString context type_) (lowerFirstWithUnderscore name)
 
-    // blank()
-    // write 0 "public:"
-    // blank()
+    blank()
+    write 0 "public:"
+    blank()
 
     // top-level functions ===========
     for namedFunc in groupContext.ModuleMethods do
         blank()
-        write 0 "public %s %s(%s)" (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
+        write 0 "%s %s(%s)" (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
         write 0 "{"
         // push args in reverse
         for arg in namedFunc.Args |> List.rev do

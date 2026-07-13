@@ -516,6 +516,90 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 1 "return ptr !is null ? new %s(ptr) : null;" (upperFirst name)
         write 0 "}"
 
+    | InterfaceDef info ->
+        // raw interface itself
+        let parentInterface =
+            match info.MaybeParent with
+            | Some parent ->
+                typeToDlangString context parent
+            | None ->
+                "ni.IDisposable"
+        write 0 "interface %s : %s {" (upperFirst name) parentInterface
+
+        // nested function for convenience
+        let renderMethods (context: DlangRenderContext) =
+            for method in info.Methods do
+                let throwsComment =
+                    if method.Throws.IsEmpty then
+                        ""
+                    else
+                        let joined =
+                            method.Throws
+                            |> List.map (typeToDlangString context)
+                            |> String.concat ", "
+                        sprintf " // throws %s" joined
+                write 1 "%s %s(%s);%s" (typeToDlangString context method.Returns) (lowerFirst method.Name) (joinedNameFuncArgs context method.Args) throwsComment
+
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            failwith "Dlang InterfaceDef rendering: static block not yet supported"
+            // let nextContext =
+            //     context.NavigateToSub(name)
+            // renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            // renderMethods nextContext
+        | None ->
+            renderMethods context
+        // end of raw interface
+        write 0 "}"
+        // push
+        blank()
+        write 0 "package void __%s__push(%s thing, bool isReturn) {" (upperFirst name) (upperFirst name)
+        write 1 "ni.pushInterface(thing, isReturn);"
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 1 "bool isClientId;"
+        write 1 "auto id = ni.popInstance(&isClientId);"
+        write 1 "if (id != 0) {"
+        write 2 "if (isClientId) {"
+        write 3 "// if we're popping it, we must have pushed it in the past sometime"
+        write 3 "return ni.getClientInterfaceAs!%s(id);" (upperFirst name)
+        write 2 "}"
+        write 2 "// always wrap server stuff in a fresh wrapper (no tables involved)"
+        write 2 "return new Server%s(id);" (upperFirst name)
+        write 1 "}"
+        write 1 "return null;"
+        write 0 "}"
+        // server wrapper
+        blank()
+        let parentClass =
+            match info.MaybeParent with
+            | Some parent -> typeWithPrefix context parent "Server"
+            | None -> "ni.ServerObject"
+        write 0 "package class Server%s : %s, %s {" (upperFirst name) parentClass (upperFirst name)
+        write 0 "public:"
+        write 1 "this(int id) {"
+        write 2 "super(id);"
+        write 1 "}"
+        // server wrapper methods
+        for method in info.Methods do
+            write 1 "%s %s(%s) {" (typeToDlangString context method.Returns) (lowerFirst method.Name) (joinedNameFuncArgs context method.Args)
+            // push args in reverse
+            for arg in method.Args |> List.rev do
+                pushValue context writer 2 arg.Type arg.Name (Direct false)
+            // invoke remote
+            if method.Throws.IsEmpty then
+                write 2 "ni.invokeInterfaceMethod(_%s_%s, id);" (lowerFirst name) method.WrapperName
+            else
+                write 2 "ni.invokeInterfaceMethodWithExceptions(_%s_%s, id);" (lowerFirst name) method.WrapperName
+            // return (mindful of safety area nonsense)
+            if containsRefs context.ModuleContext method.Returns then
+                popValue context writer 2 method.Returns SafeReturn
+            else
+                popValue context writer 2 method.Returns Return
+            write 1 "}"
+        write 0 "}"
     | ExceptionDef fields ->
         write 0 "class %s : Exception {" name
         if not fields.IsEmpty then
@@ -553,10 +637,9 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                 popValue context writer 2 f.Type_ (NewVariable f.Name)
         write 2 "throw new %s(%s);" name (fieldNamesJoined fields)
         write 1 "}"
-        write 0 "} // end %s" name // end exception
+        write 0 "}"
 
     | DelegateDef info ->
-        write 0 "// %s type + push/pop ======" name
         let throwsList =
             match info.Throws with
             | [] -> ""
@@ -577,7 +660,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             pushValue context writer 3 info.Returns invocation (Direct true)
             for exc in info.Throws do
                 write 2 "} catch (%s e) {" (typeToDlangString context exc)
-                write 3 "e.PushAndSet();"
+                write 3 "e.pushAndSet();"
             write 2 "}"
         write 1 "}" // end wrapper
         write 1 "ni.pushClientFuncVal(&wrapper, func.ptr, func.funcptr);"
@@ -597,7 +680,6 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 1 "}"
         write 1 "return &wrapper;"
         write 0 "}"
-        write 0 "// ====== end %s delegate" name
     | _ ->
         write 0 "// unhandled user type %s" name
 
@@ -655,7 +737,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         if namedFunc.Throws.IsEmpty then
             write 1 "ni.invokeModuleMethod(_%s);" namedFunc.WrapperName
         else
-            write 1 "ni.nvokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
+            write 1 "ni.invokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
         // return pop
         popValue context writer 1 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
         write 0 "}"

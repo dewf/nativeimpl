@@ -205,7 +205,7 @@ let allGenericTypes (context: ModuleContext) =
                 typeAndSubTypes nf.Returns
             let argTypes =
                 nf.Args
-                |> List.map (_.Type)
+                |> List.map _.Type
                 |> List.collect typeAndSubTypes
             let throwTypes =
                 nf.Throws
@@ -562,7 +562,8 @@ let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
     baseNamespace, maybeJoinedPrefix modulePrefix, simpleName
 
 type GroupKind =
-    | NormalGroup
+    | RootGroup
+    | NamedGroup
     | OpaqueStatic
     | InterfaceStatic
     | StructStatic
@@ -646,7 +647,8 @@ let createGroups (rootDefs: ModuleDefinition list) =
                     | Group(name, defs) ->
                         let group =
                             let subKind =
-                                NormalGroup
+                                NamedGroup
+
                             let nextRevPath =
                                 (name, subKind) :: revPath
                             recInner name subKind defs nextRevPath
@@ -693,7 +695,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
           Globals = globals
           SubOrder = subOrder
           SubGroups = subGroups }
-    recInner "$ROOT$" NormalGroup rootDefs []
+    recInner "$ROOT$" RootGroup rootDefs []
 
 let createRenderContext (moduleContext: ModuleContext) =
     let root =
@@ -720,7 +722,7 @@ let resolvedNamePathToKindPath (m: ModuleContext) (name: ResolvedName) =
                 | Direct _ ->
                     failwithf "resolvedNameToGroupKindPrefix: encounted 'Direct' entry in middle of path?"
                 | SubTable table ->
-                    NormalGroup, table
+                    NamedGroup, table
                 | Hybrid(thing, table) ->
                     match thing with
                     | OpaqueDef _ ->

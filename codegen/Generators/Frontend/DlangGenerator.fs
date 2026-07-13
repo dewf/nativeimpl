@@ -725,14 +725,10 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     let groupContext =
         context.GroupContext
 
-    let isRootGroup =
-        groupContext.Name = "$ROOT$"
-
-    let contentPrefix =
-        if isRootGroup then
-            ""
-        else
-            "static "
+    let isRootGroup, contentPrefix =
+        match groupContext.Kind with
+        | RootGroup -> true, ""
+        | _ -> false, "static "
 
     if isRootGroup then
         blank()

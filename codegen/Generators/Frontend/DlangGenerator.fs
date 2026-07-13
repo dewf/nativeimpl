@@ -694,6 +694,11 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     write 0 "private:"
     blank()
 
+    // root module handle, if necessary
+    // (would be nicer to do outside, BUT I like having it neatly below a single "private:"
+    if groupContext.Name = "$ROOT$" then
+        write 0 "ni.ModuleHandle _module;"
+
     // declare top level function handles
     for namedFunc in groupContext.ModuleMethods do
         write 0 "ni.ModuleMethodHandle _%s;" namedFunc.WrapperName
@@ -886,10 +891,11 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     //
     write 0 "import std.typecons: Tuple, tuple;"
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
-    blank()
-    write 0 "private:"
-    blank()
-    write 0 "ni.ModuleHandle _module;"
+
+    // blank()
+    // write 0 "private:"
+    // blank()
+
     //
     // TODO: render generics just once, at root level
     //
@@ -924,15 +930,16 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     assignModuleHandles renderContext writer
 
     // invoke user's ModuleInit, if it exists
+    // ideally we wouldn't have to check its signature, would be nice if a validator caught that
     let maybeModuleInit =
         root.ModuleMethods
-        |> List.tryFind (fun nf -> nf.Name = "moduleInit")
+        |> List.tryFind (fun nf -> nf.Name = "moduleInit" && nf.Returns = UnitType && nf.Args = [])
     blank()
     match maybeModuleInit with
     | Some _ ->
         write 1 "ni.invokeModuleMethod(_moduleInit);"
     | None ->
-        write 1 "// no static init"
+        write 1 "// no static init [signature must be: void moduleInit()]"
     write 0 "}" // end of __init()
 
     // shutdown
@@ -940,12 +947,12 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "package void __shutdown() {"
     let maybeModuleShutdown =
         root.ModuleMethods
-        |> List.tryFind (fun nf -> nf.Name = "moduleShutdown")
+        |> List.tryFind (fun nf -> nf.Name = "moduleShutdown" && nf.Returns = UnitType && nf.Args = [])
     match maybeModuleShutdown with
     | Some _ ->
         write 1 "ni.invokeModuleMethod(_moduleShutdown);"
     | None ->
-        write 1 "// no static shutdown"
+        write 1 "// no static shutdown [signature must be: void moduleShutdown()]"
     write 0 "}" // end of __shutdown()
 
 let projectDir (outParams: OutParams) =

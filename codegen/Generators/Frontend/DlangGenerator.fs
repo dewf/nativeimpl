@@ -778,9 +778,11 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         blank()
     else
         write -1 "public:"
+        writer.EatBlank()
 
     // public getters for globals ===========
     for name, type_ in groupContext.Globals do
+        blank()
         write 0 "%s%s %s() => %s;" contentPrefix (typeToDlangString context type_) (lowerFirst name) (lowerFirstWithUnderscore name)
 
     // top-level functions ===========
@@ -939,10 +941,6 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     //
     write 0 "import std.typecons: Tuple, tuple;"
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
-
-    // blank()
-    // write 0 "private:"
-    // blank()
 
     //
     // TODO: render generics just once, at root level

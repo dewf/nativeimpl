@@ -512,11 +512,13 @@ let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArra
 // workaround for not being able to pass functions which take format strings
 // (formerly necessitated fully declaring 'write' and 'blank' anew in every function)
 type IFormatWriter =
-    abstract Write : int -> FSharp.Core.Printf.TextWriterFormat<'T> -> 'T
+    abstract Write : int -> Printf.TextWriterFormat<'T> -> 'T
     abstract Blank : unit -> unit
+    abstract EatBlank : unit -> unit
     abstract WithExtraIndent : int -> IFormatWriter
 
 type SimpleFormatWriter(writer: TextWriter, baseIndent: int) =
+    let mutable ignoreNextBlank = false
     interface IDisposable with
         member this.Dispose() =
             writer.Dispose()
@@ -525,7 +527,12 @@ type SimpleFormatWriter(writer: TextWriter, baseIndent: int) =
             writer.Write(String.replicate (baseIndent + indent) "    ")
             fprintfn writer fmt
         member this.Blank() =
-            writer.WriteLine()
+            if ignoreNextBlank then
+                ignoreNextBlank <- false
+            else
+                writer.WriteLine()
+        member this.EatBlank() =
+            ignoreNextBlank <- true
         member this.WithExtraIndent value =
             new SimpleFormatWriter(writer, baseIndent + value)
 

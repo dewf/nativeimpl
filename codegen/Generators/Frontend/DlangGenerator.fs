@@ -732,20 +732,24 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
 
     // top-level functions ===========
     for namedFunc in groupContext.ModuleMethods do
-        blank()
-        write 0 "%s %s(%s)" (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
-        write 0 "{"
-        // push args in reverse
-        for arg in namedFunc.Args |> List.rev do
-            pushValue context writer 1 arg.Type arg.Name (Direct false)
-        // invoke remote
-        if namedFunc.Throws.IsEmpty then
-            write 1 "ni.invokeModuleMethod(_%s);" namedFunc.WrapperName
+        if namedFunc.Name = "moduleInit" || namedFunc.Name = "moduleShutdown" then
+            // ignore, we invoke it manually in the __init/__shutdown functions - no public wrapper wanted
+            ()
         else
-            write 1 "ni.invokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
-        // return pop
-        popValue context writer 1 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
-        write 0 "}"
+            blank()
+            write 0 "%s %s(%s)" (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
+            write 0 "{"
+            // push args in reverse
+            for arg in namedFunc.Args |> List.rev do
+                pushValue context writer 1 arg.Type arg.Name (Direct false)
+            // invoke remote
+            if namedFunc.Throws.IsEmpty then
+                write 1 "ni.invokeModuleMethod(_%s);" namedFunc.WrapperName
+            else
+                write 1 "ni.invokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
+            // return pop
+            popValue context writer 1 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+            write 0 "}"
 
     // render user types + nested groups in order of declaration
     for def in groupContext.Defs do
@@ -926,7 +930,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     blank()
     match maybeModuleInit with
     | Some _ ->
-        write 1 "moduleInit();"
+        write 1 "ni.invokeModuleMethod(_moduleInit);"
     | None ->
         write 1 "// no static init"
     write 0 "}" // end of __init()
@@ -939,7 +943,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
         |> List.tryFind (fun nf -> nf.Name = "moduleShutdown")
     match maybeModuleShutdown with
     | Some _ ->
-        write 1 "moduleShutdown();"
+        write 1 "ni.invokeModuleMethod(_moduleShutdown);"
     | None ->
         write 1 "// no static shutdown"
     write 0 "}" // end of __shutdown()

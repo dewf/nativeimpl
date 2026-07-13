@@ -110,6 +110,10 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             printfn "======= processing module %A =======" name
             let currentModule, nextMap =
                 loadModule inputPath moduleMap name Set.empty
+
+            // TODO: validation step for module?
+            // for example, would be nice to check certain things, like making sure initModule() is void(void)
+
             let context =
                 { Module = currentModule; Loaded = nextMap } // nextMap! moduleMap accumulator will not yet be updated!
 

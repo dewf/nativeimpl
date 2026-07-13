@@ -517,6 +517,39 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 1 "return ptr !is null ? new %s(ptr) : null;" (upperFirst name)
         write 0 "}"
 
+    | EnumDef info ->
+        let widthType, widthStr =
+            match info.MaybeWidth with
+            | Some widthType ->
+                widthType, sprintf " : %s" (typeToDlangString context widthType)
+            | None ->
+                Primitive(Int(true,Width32)), ""
+        // flags mode handling?
+        write 0 "enum %s%s {" name widthStr
+        for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
+            match maybeSpecifiedValue with
+            | Some specValue ->
+                let enumValueStr =
+                    constExprToString context specValue
+                write 1 "%s = %s%s" (upperFirst value) enumValueStr maybeComma
+            | None ->
+                write 1 "%s%s" (upperFirst value) maybeComma
+        write 0 "}"
+        // push
+        blank()
+        write 0 "pragma(inline)"
+        write 0 "package void __%s__push(%s value) {" (upperFirst name) (upperFirst name)
+        let content =
+            sprintf "cast(%s) value" (typeToDlangString context widthType)
+        pushValue context writer 1 widthType content NotApplicable
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "pragma(inline)"
+        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        popValue context writer 1 widthType (NewVariable "ret")
+        write 1 "return cast(%s) ret;" (upperFirst name)
+        write 0 "}"
     | InterfaceDef info ->
         // raw interface itself
         let parentInterface =
@@ -690,50 +723,64 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     let groupContext =
         context.GroupContext
 
-    blank()
-    write 0 "private:"
-    blank()
+    let isRootGroup =
+        groupContext.Name = "$ROOT$"
+
+    let contentPrefix =
+        if isRootGroup then
+            ""
+        else
+            "static "
+
+    if isRootGroup then
+        blank()
+        write 0 "private:"
+        blank()
+    else
+        write -1 "private:"
 
     // root module handle, if necessary
     // (would be nicer to do outside, BUT I like having it neatly below a single "private:"
-    if groupContext.Name = "$ROOT$" then
+    if isRootGroup then
         write 0 "ni.ModuleHandle _module;"
 
     // declare top level function handles
     for namedFunc in groupContext.ModuleMethods do
-        write 0 "ni.ModuleMethodHandle _%s;" namedFunc.WrapperName
+        write 0 "%sni.ModuleMethodHandle _%s;" contentPrefix namedFunc.WrapperName
 
     for name, info in groupContext.Opaques do
         // instance methods
         for method in info.Methods do
-            write 0 "ni.ModuleMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
+            write 0 "%sni.ModuleMethodHandle _%s_%s;" contentPrefix (lowerFirst name) method.WrapperName
         // synthesized dispose method
         if info.NoDispose then
             ()
         else
-            write 0 "ni.ModuleMethodHandle _%s_dispose;" (lowerFirst name)
+            write 0 "%sni.ModuleMethodHandle _%s_dispose;" contentPrefix (lowerFirst name)
 
     // interfaces
     for name, info in groupContext.Interfaces do
-        write 0 "ni.InterfaceHandle _%s;" (lowerFirst name)
+        write 0 "%sni.InterfaceHandle _%s;" contentPrefix (lowerFirst name)
         for method in info.Methods do
-            write 0 "ni.InterfaceMethodHandle _%s_%s;" (lowerFirst name) method.WrapperName
+            write 0 "%sni.InterfaceMethodHandle _%s_%s;" contentPrefix (lowerFirst name) method.WrapperName
 
     // exceptions
     for name, _ in groupContext.Exceptions do
-        write 0 "ni.ExceptionHandle _%s;" (lowerFirst name)
+        write 0 "%sni.ExceptionHandle _%s;" contentPrefix (lowerFirst name)
 
     // globals declaration
     for name, type_ in groupContext.Globals do
-        write 0 "%s %s;" (typeToDlangString context type_) (lowerFirstWithUnderscore name)
+        write 0 "%s%s %s;" contentPrefix (typeToDlangString context type_) (lowerFirstWithUnderscore name)
 
     blank()
-    write 0 "public:"
-    blank()
+    if isRootGroup then
+        write 0 "public:"
+    else
+        write -1 "public:"
 
     // public getters for globals ===========
     for name, type_ in groupContext.Globals do
-        write 0 "%s %s() => %s;"  (typeToDlangString context type_) (lowerFirst name) (lowerFirstWithUnderscore name)
+        write 0 "%s%s %s() => %s;" contentPrefix (typeToDlangString context type_) (lowerFirst name) (lowerFirstWithUnderscore name)
 
     // top-level functions ===========
     for namedFunc in groupContext.ModuleMethods do
@@ -742,8 +789,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
             ()
         else
             blank()
-            write 0 "%s %s(%s)" (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
-            write 0 "{"
+            write 0 "%s%s %s(%s) {" contentPrefix (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
             // push args in reverse
             for arg in namedFunc.Args |> List.rev do
                 pushValue context writer 1 arg.Type arg.Name (Direct false)
@@ -768,11 +814,11 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
                 let nextSubRenderContext =
                     { context.RenderContext with GroupContext = group }
                 { context with RenderContext = nextSubRenderContext } // why doesn't nested update work for us??
-            write 0 "public static class %s" group.Name
-            write 0 "{"
+            blank()
+            write 0 "// named group: %s" group.Name
+            write 0 "static class %s {" group.Name
             renderGroupCommon nextContext (writer.WithExtraIndent 1)
             write 0 "}"
-            // renderNestedGroup nextContext writer
         | _ ->
             ()
 
@@ -862,6 +908,7 @@ let assignModuleHandles (context: DlangRenderContext) (writer: IFormatWriter) =
         for groupName in group.SubOrder do
             let nextGroup =
                 group.SubGroups[groupName]
+            blank()
             assignGroup nextGroup
 
     assignGroup context.GroupContext

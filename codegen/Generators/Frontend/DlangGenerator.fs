@@ -70,12 +70,13 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
                 | _ ->
                     failwith "typeToDlangString: failed to find fwdopaque definition"
             | TypedefType ->
-                // no C# typedefs so we just render the type directly
-                match requiredSymbolLookup context.ModuleContext resolvedName with
-                | TypeDef actual ->
-                    recInner actual
-                | _ ->
-                    failwithf "typeToDlangString: failed to find typedef definition"
+                failwith "Dlang typeToDlangString : Resolved(...) : TypedefType - needs inspection"
+                // // no C# typedefs so we just render the type directly
+                // match requiredSymbolLookup context.ModuleContext resolvedName with
+                // | TypeDef actual ->
+                //     recInner actual
+                // | _ ->
+                //     failwithf "typeToDlangString: failed to find typedef definition"
             | _ ->
                 resolvedNameToString context resolvedName TypeMode
         | ArrayType elemType -> sprintf "%s[]" (recInner elemType)
@@ -725,6 +726,10 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     write 0 "public:"
     blank()
 
+    // public getters for globals ===========
+    for name, type_ in groupContext.Globals do
+        write 0 "%s %s() => %s;"  (typeToDlangString context type_) (lowerFirst name) (lowerFirstWithUnderscore name)
+
     // top-level functions ===========
     for namedFunc in groupContext.ModuleMethods do
         blank()
@@ -762,6 +767,96 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         | _ ->
             ()
 
+let assignModuleHandles (context: DlangRenderContext) (writer: IFormatWriter) =
+    let write, blank = writer.Write, writer.Blank
+
+    let rec assignGroup (group: GroupContext) =
+        let mkSourceHandle name =
+            joinNameParts "." (group.Path @ [ name ])
+        let mkTargetHandle name =
+            joinNameParts "." (group.Path @ [ "_" + lowerFirst name ])
+
+        // module method handles
+        if not group.ModuleMethods.IsEmpty then
+            for namedFunc in group.ModuleMethods do
+                let source = mkSourceHandle namedFunc.WrapperName
+                let target = mkTargetHandle namedFunc.WrapperName
+                write 1 "%s = ni.getModuleMethod(_module, \"%s\");" target source
+
+        // opaque method handles
+        if not group.Opaques.IsEmpty then
+            for name, info in group.Opaques do
+                let sourceBase =
+                    mkSourceHandle name
+                let targetBase =
+                    mkTargetHandle name
+                // instance methods
+                for method in info.Methods do
+                    write 1 "%s_%s = ni.getModuleMethod(_module, \"%s_%s\");" targetBase method.WrapperName sourceBase method.WrapperName
+                // synthesized dispose method handle
+                if info.NoDispose then
+                    ()
+                else
+                    write 1 "%s_dispose = ni.getModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
+
+        // exceptions
+        if not group.Exceptions.IsEmpty then
+            for name, _ in group.Exceptions do
+                blank()
+                let source =
+                    mkSourceHandle name
+                let target =
+                    mkTargetHandle name
+                write 1 "%s = ni.getException(_module, \"%s\");" target source
+                write 1 "ni.setExceptionBuilder(%s, &%s.buildAndThrow);" target source
+
+        // interface method handles, wrappers
+        if not group.Interfaces.IsEmpty then
+            for ifaceName, info in group.Interfaces do
+                let sourceIface =
+                    mkSourceHandle ifaceName
+                let targetIface =
+                    mkTargetHandle ifaceName
+                write 1 "%s = ni.getInterface(_module, \"%s\");" targetIface sourceIface
+                // methods + wrappers
+                if not info.Methods.IsEmpty then
+                    for method in info.Methods do
+                        blank()
+                        // let sourceMethod =
+                        //     sprintf "%s.%s" sourceIface method.Name
+                        let targetMethodHandle =
+                            mkTargetHandle (sprintf "%s_%s" ifaceName method.WrapperName)
+                        write 1 "%s = ni.getInterfaceMethod(%s, \"%s\");" targetMethodHandle targetIface method.WrapperName
+                        // wrapper ======
+                        write 1 "ni.setClientMethodWrapper(%s_%s, (%s inst) {" targetIface method.WrapperName (upperFirst ifaceName)
+                        // pop args
+                        for arg in method.Args do
+                            popValue context writer 2 arg.Type (NewVariable arg.Name)
+                        // exec + return
+                        let invocation =
+                            sprintf "inst.%s(%s)" (lowerFirst method.Name) (joinedNamedFuncArgNames method.Args)
+                        if method.Throws.IsEmpty then
+                            pushValue context writer 2 method.Returns invocation (Direct true)
+                        else
+                            write 2 "try {"
+                            pushValue context writer 3 method.Returns invocation (Direct true)
+                            for exc in method.Throws do
+                                match exc with
+                                | Resolved (_, ExceptionType) ->
+                                    write 2 "} catch (%s e) {" (typeToDlangString context exc)
+                                    write 3 "e.pushAndSet();"
+                                | _ ->
+                                    failwith "Dlang interface wrappers: 'throws' contained non-exception type"
+                            write 2 "}"
+                        write 1 "});"
+
+        for groupName in group.SubOrder do
+            let nextGroup =
+                group.SubGroups[groupName]
+            assignGroup nextGroup
+
+    assignGroup context.GroupContext
+
 let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseNamespace: string) (libraryName: string) (maybeModulePrefix: string option) (simpleName: string) =
     let write, blank = writer.Write, writer.Blank
     let m =
@@ -797,8 +892,57 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     // now with the common group stuff:
     renderGroupCommon renderContext writer
 
-    // TODO: init/shutdown methods
+    // static init + shutdown ==========================================
+    blank()
+    write 0 "package void __init() {"
+    write 1 "_module = ni.getModule(\"%s\");" (joinModuleName m.Name)
 
+    // pop module constants, if any
+    if countGroupConstants root > 0 then
+        blank()
+        write 1 "// assign module constants"
+        write 1 "ni.pushModuleConstants(_module);"
+        // recursively pop and assign module constants
+        let rec popConstants (group: GroupContext) =
+            for name, type_ in group.Globals do
+                let target =
+                    joinNameParts "." (group.Path @ [ lowerFirstWithUnderscore name ])
+                popValue renderContext writer 1 type_ (ExistingVar target)
+            for subName in group.SubOrder do
+                let sub = group.SubGroups[subName]
+                popConstants sub
+        popConstants root
+
+    // assign all the other method handles etc
+    // no sense creating a bunch of nested .Init() methods since we have all that information now!
+    blank()
+    write 1 "// assign module handles"
+    assignModuleHandles renderContext writer
+
+    // invoke user's ModuleInit, if it exists
+    let maybeModuleInit =
+        root.ModuleMethods
+        |> List.tryFind (fun nf -> nf.Name = "moduleInit")
+    blank()
+    match maybeModuleInit with
+    | Some _ ->
+        write 1 "moduleInit();"
+    | None ->
+        write 1 "// no static init"
+    write 0 "}" // end of __init()
+
+    // shutdown
+    blank()
+    write 0 "package void __shutdown() {"
+    let maybeModuleShutdown =
+        root.ModuleMethods
+        |> List.tryFind (fun nf -> nf.Name = "moduleShutdown")
+    match maybeModuleShutdown with
+    | Some _ ->
+        write 1 "moduleShutdown();"
+    | None ->
+        write 1 "// no static shutdown"
+    write 0 "}" // end of __shutdown()
 
 let projectDir (outParams: OutParams) =
     sprintf "%s/client/dlang/%s" outParams.Path (lower outParams.LibraryName)

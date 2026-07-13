@@ -423,7 +423,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             write 0 "public:"
             // equals and hash
             write 1 "override bool opEquals(Object o) const {"
-            write 2 "if (auto other = cast(MyOpaque)o) {"
+            write 2 "if (auto other = cast(%s)o) {" (upperFirst name)
             write 3 "return thisPtr == other.thisPtr;"
             write 2 "}"
             write 2 "return false;"
@@ -611,7 +611,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             match info.MaybeParent with
             | Some parent -> typeWithPrefix context parent "Server"
             | None -> "ni.ServerObject"
-        write 0 "package class Server%s : %s, %s {" (upperFirst name) parentClass (upperFirst name)
+        write 0 "private class Server%s : %s, %s {" (upperFirst name) parentClass (upperFirst name)
         write 0 "public:"
         write 1 "this(int id) {"
         write 2 "super(id);"
@@ -775,6 +775,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     blank()
     if isRootGroup then
         write 0 "public:"
+        blank()
     else
         write -1 "public:"
 

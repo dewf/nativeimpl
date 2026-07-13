@@ -420,6 +420,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             write 2 "this.thisPtr = ptr;"
             write 1 "}"
             // public switch
+            blank()
             write 0 "public:"
             // equals and hash
             write 1 "override bool opEquals(Object o) const {"
@@ -437,6 +438,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             write 2 "super(ptr);"
             write 1 "}"
             // public switch
+            blank()
             write 0 "public:"
 
         // dispose method
@@ -454,6 +456,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         // nested function for convenience:
         let renderInstanceMethods (context: DlangRenderContext) =
             for namedFunc in info.Methods do
+                blank()
                 let throwsComment =
                     if namedFunc.Throws.IsEmpty then
                         ""
@@ -491,12 +494,11 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         // static content
         match info.MaybeStaticDefs with
         | Some _ ->
-            failwith "DlangGenerator: OpaqueDef static rendering disabled for the moment"
-            // let nextContext =
-            //     context.NavigateToSub(name)
-            // renderGroupCommon nextContext (writer.WithExtraIndent 1)
-            // // render methods in context of static block, so static types etc aren't unnecessarily prefixed
-            // renderInstanceMethods nextContext
+            let nextContext =
+                context.NavigateToSub(name)
+            renderGroupCommon nextContext (writer.WithExtraIndent 1)
+            // render methods in context of static block, so static types etc aren't unnecessarily prefixed
+            renderInstanceMethods nextContext
         | None ->
             renderInstanceMethods context
         // end class definition

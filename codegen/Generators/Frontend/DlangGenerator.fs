@@ -373,6 +373,10 @@ let joinedTypes (context: DlangRenderContext) (typesList: NIType list) =
 let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
 
+    // TODO: need to handle context-specific prefix
+    // ie, 'static' on push/pop methods for user types, when in a static context
+    // (named group, opaque static, etc)
+
     blank()
     match userType with
     | OpaqueDef info ->

@@ -552,6 +552,73 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         popValue context writer 1 widthType (NewVariable "ret")
         write 1 "return cast(%s) ret;" (upperFirst name)
         write 0 "}"
+
+    | OptionsDef namedFields ->
+        if namedFields.Length > 31 then
+            failwithf "DlangGenerator:renderUserType: options '%s' has more than 31 fields, the max currently supported" name
+        let usedFieldsType =
+            Primitive(Int(true, Width32))
+        // definition
+        write 0 "struct %s {" name
+        write 0 "private:"
+        write 1 "enum Fields {"
+        for (i, field), maybeComma in namedFields |> List.indexed |> withTrailingCommas do
+            write 2 "%s = %d%s" (upperFirst field.Name) (1 <<< i) maybeComma
+        write 1 "}"
+        write 1 "%s _usedFields;" (typeToDlangString context usedFieldsType)
+        for field in namedFields do
+            blank()
+            write 1 "// %s" (upperFirst field.Name)
+            let fieldTypeStr =
+                typeToDlangString context field.Type_
+            // storage
+            write 1 "%s %s;" fieldTypeStr (lowerFirstWithUnderscore field.Name)
+            // setter
+            write 1 "@property"
+            write 1 "public void %s(%s value) {" (lowerFirst field.Name) fieldTypeStr
+            write 2 "%s = value;" (lowerFirstWithUnderscore field.Name)
+            write 2 "_usedFields |= Fields.%s;" (upperFirst field.Name)
+            write 1 "}"
+            // 'hasField' getter
+            write 1 "public bool has%s(out %s dest) {" (upperFirst field.Name) fieldTypeStr
+            write 2 "if (_usedFields & Fields.%s) {" (upperFirst field.Name)
+            write 3 "dest = %s;" (lowerFirstWithUnderscore field.Name)
+            write 3 "return true;"
+            write 2 "}"
+            // write 2 "dest = %s.init;" fieldTypeStr; // skipped for now, not sure if good idea
+            write 2 "return false;"
+            write 1 "}"
+            // getOrDefault (we'll probably remove this when/if we have a proper Option!T getter
+            write 1 "public %s getOrDefault%s(%s defaultValue) {" fieldTypeStr (upperFirst field.Name) fieldTypeStr
+            write 2 "if (_usedFields & Fields.%s) {" (upperFirst field.Name)
+            write 3 "return %s;" (lowerFirstWithUnderscore field.Name)
+            write 2 "}"
+            write 2 "return defaultValue;"
+            write 1 "}"
+        // close struct
+        write 0 "}"
+        // push
+        blank()
+        write 0 "package void __%s__push(ref %s value, bool isReturn) {" (upperFirst name) (upperFirst name)
+        for field in namedFields |> List.rev do
+            write 1 "%s out%s;" (typeToDlangString context field.Type_) (upperFirst field.Name)
+            write 1 "if (value.has%s(out%s)) {" (upperFirst field.Name) (upperFirst field.Name)
+            pushValue context writer 2 field.Type_ $"out{upperFirst field.Name}" (Indirect "isReturn")
+            write 1 "}"
+        pushValue context writer 1 usedFieldsType "cast(int)value._usedFields" NotApplicable
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 1 "%s opts;" (upperFirst name)
+        popValue context writer 1 usedFieldsType (ExistingVar "opts._usedFields")
+        for field in namedFields do
+            write 1 "if (opts._usedFields & %s.Fields.%s) {" (upperFirst name) (upperFirst field.Name)
+            popValue context writer 2 field.Type_ (ExistingVar $"opts.{lowerFirstWithUnderscore field.Name}")
+            write 1 "}"
+        write 1 "return opts;"
+        write 0 "}"
+
     | InterfaceDef info ->
         // raw interface itself
         let parentInterface =
@@ -776,7 +843,8 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         blank()
     else
         write -1 "public:"
-        writer.EatBlank()
+
+    writer.EatBlank()
 
     // public getters for globals ===========
     for name, type_ in groupContext.Globals do

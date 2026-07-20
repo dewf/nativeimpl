@@ -81,7 +81,10 @@ let resolvedNameToString (context: CppRenderContext) =
         match context.NameMode with
         | Normal -> NotForced
         | _ -> Forced [""] // a single empty item to force a prefix of ::
-    resolvedNameToStringAbstract "::" renameFunc pathClamp forceFullyQualified context.RenderContext
+    let capsPolicy = {
+        ModulePolicy = PascalCase
+    }
+    resolvedNameToStringAbstract "::" renameFunc pathClamp forceFullyQualified capsPolicy context.RenderContext
 
 let constExprToString (context: CppRenderContext) =
     let config =
@@ -2554,7 +2557,7 @@ let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: O
     for m in allModules do
         let paths =
             getModulePaths [] m.Name
-        write 2 "# module %s" (joinModuleName m.Name)
+        write 2 "# module %s" (joinModuleName PascalCase m.Name)
         write 2 "%s" paths.ModuleHeader
         write 2 "%s" paths.ModuleWrappersHeader
         write 2 "%s" paths.ModuleWrappersCpp

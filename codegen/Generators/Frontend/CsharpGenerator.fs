@@ -33,7 +33,10 @@ let resolvedNameToString context resolvedName mode =
             else
                 context.BaseNamespace
         Forced prefix
-    resolvedNameToStringAbstract "." (fun name _ -> name) None qualification context.RenderContext resolvedName mode
+    let capsPolicy = {
+        ModulePolicy = PascalCase
+    }
+    resolvedNameToStringAbstract "." (fun name _ -> name) None qualification capsPolicy context.RenderContext resolvedName mode
 
 let constExprToString (context: CsRenderContext) =
     let config =
@@ -1614,7 +1617,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     | None ->
         write 2 "internal static void __Init()"
     write 2 "{"
-    write 3 "_module = NativeImplClient.GetModule(\"%s\");" (joinModuleName m.Name)
+    write 3 "_module = NativeImplClient.GetModule(\"%s\");" (joinModuleName Preserve m.Name)
 
     // pop module constants, if any
     if countGroupConstants root > 0 then
@@ -1747,14 +1750,14 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (baseNamespac
     write 2 "}"
     write 2 "// registrations, static module inits"
     for m in allModules do
-        write 2 "%s.__Init();" (joinModuleName m.Name)
+        write 2 "%s.__Init();" (joinModuleName PascalCase m.Name)
     write 1 "}"
     blank()
     write 1 "public static void Shutdown()"
     write 1 "{"
     write 2 "// module static shutdowns (if any, might be empty)"
     for m in allModules |> List.rev do
-        write 2 "%s.__Shutdown();" (joinModuleName m.Name)
+        write 2 "%s.__Shutdown();" (joinModuleName PascalCase m.Name)
     write 2 "// bye"
     write 2 "NativeImplClient.Shutdown();"
     write 1 "}"

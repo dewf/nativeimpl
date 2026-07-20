@@ -8,11 +8,33 @@ open Extensions
 open AppCommon
 open Util
 
+type CapsConvention =
+    | Preserve
+    | LowerOnly
+    | CamelCase
+    | PascalCase
+    | SnakeCase
+
+type CapsPolicy = {
+    ModulePolicy: CapsConvention
+}
+
+let applyCapsPolicy (policy: CapsConvention) (parts: string list) =
+    let capsFunc =
+        match policy with
+        | Preserve | PascalCase -> id
+        | LowerOnly -> lower
+        | CamelCase -> lowerFirst
+        | SnakeCase -> failwith "applyCapsPolicy: SnakeCase not yet implemented"
+    parts
+    |> List.map capsFunc
+
 let joinNameParts (separator: string) (parts: string list) =
     String.Join(separator, parts)
 
-let joinModuleName (ModuleName nameParts) =
-    joinNameParts "." nameParts
+let joinModuleName (capsPolicy: CapsConvention) (ModuleName nameParts) =
+    applyCapsPolicy capsPolicy nameParts
+    |> joinNameParts "."
 
 let rec typeToInternalKey = function
     | UnitType -> "void"
@@ -562,7 +584,7 @@ let namespaceParts (outParams: OutParams) (ModuleName nameParts) =
     baseNamespace, maybeJoinedPrefix modulePrefix, simpleName
 
 type GroupKind =
-    | RootGroup
+    | ModuleRoot
     | NamedGroup
     | OpaqueStatic
     | InterfaceStatic
@@ -695,7 +717,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
           Globals = globals
           SubOrder = subOrder
           SubGroups = subGroups }
-    recInner "$ROOT$" RootGroup rootDefs []
+    recInner "$ROOT$" ModuleRoot rootDefs []
 
 let createRenderContext (moduleContext: ModuleContext) =
     let root =
@@ -756,6 +778,7 @@ type ResolveNameStringMode =
     | TypeMode
     | IdentifierMode
     | GenericIdentifierMode
+    | WrapperMethodMode of format: string // simple "___%s_____" format of some kind - accepts one string
 
 type FullQualification =
     | NotForced
@@ -766,12 +789,13 @@ let resolvedNameToStringAbstract
             (partRenameFunc: string -> GroupKind list -> string)
             (maybePathClamp: string list option)
             (importQualification: FullQualification)
+            (capsPolicy: CapsPolicy)
             // non-curried params:
             (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
 
     let separator, partRenameFunc = // rebind partRenameFunc
         match mode with
-        | TypeMode -> languageNsDelim, partRenameFunc
+        | TypeMode | WrapperMethodMode _ -> languageNsDelim, partRenameFunc
         | IdentifierMode | GenericIdentifierMode -> "_", (fun name _ -> name) // no part renaming in identifier modes
 
     // sigh, this part is a mess
@@ -805,77 +829,101 @@ let resolvedNameToStringAbstract
         List.zip path kindPath
         |> renameGroupPath partRenameFunc
 
-    match name with
-    | ThisModule (SymbolName parts) ->
-        // if symbol is from a shallower level, check to see if it collides with anything here
-        // if so, it needs to be "module-absolute"
-        // check this before 'renameParts' so the symbol lookup works!
-        let renderModuleAbsolute =
-            if parts = context.GroupContext.Path then
-                // happens if we're in eg a static block on a handle, referring to that same handle - not a problem
-                false
-            else
-                if (parts.Length - 1) < context.GroupContext.Path.Length then
-                    match findModuleSymbol context.ModuleContext.Module (context.GroupContext.Path |> List.rev) parts with
-                    | Some _ ->
-                        // found a collision!
-                        true
-                    | None ->
-                        false
-                else
+    let finalParts =
+        match name with
+        | ThisModule (SymbolName parts) ->
+            // if symbol is from a shallower level, check to see if it collides with anything here
+            // if so, it needs to be "module-absolute"
+            // check this before 'renameParts' so the symbol lookup works!
+            let renderModuleAbsolute =
+                if parts = context.GroupContext.Path then
+                    // happens if we're in eg a static block on a handle, referring to that same handle - not a problem
                     false
+                else
+                    if (parts.Length - 1) < context.GroupContext.Path.Length then
+                        match findModuleSymbol context.ModuleContext.Module (context.GroupContext.Path |> List.rev) parts with
+                        | Some _ ->
+                            // found a collision!
+                            true
+                        | None ->
+                            false
+                    else
+                        false
 
-        // rename the 'parts' segments now, based on their kinds
-        let parts =
-            renameParts parts
-
-        // strip current namespace prefix if possible
-        // (but not in Generics mode)
-        let parts2 =
-            if renderModuleAbsolute then
-                match context.ModuleContext.Module.Name with
-                | ModuleName moduleNameParts ->
-                    moduleNameParts @ parts
-            else
-                match mode with
-                | GenericIdentifierMode -> parts
-                | _ ->
-                    match List.removePrefix currentContextPath parts with
-                    | Some remaining ->
-                        if remaining.IsEmpty then
-                            // have to leave at least one segment!
-                            [ parts |> List.last ]
-                        else
-                            remaining
-                    | None -> parts
-        // do we need the approval func in this branch, too?
-        joinNameParts separator (parts2 |> List.map upperFirst)
-
-    | Imported(moduleName, symbolName) ->
-        // rename the 'symbolParts' segments now, based on their kinds
-        let symbolParts =
-            match symbolName with
-            | SymbolName parts ->
-                // apply the segment rename func
+            // rename the 'parts' segments now, based on their kinds
+            let parts =
                 renameParts parts
 
-        match importQualification with
-        | Forced prefix ->
+            // strip current namespace prefix if possible
+            // (but not in Generics mode)
             let parts2 =
-                match moduleName with
-                | ModuleName moduleParts ->
-                    (moduleParts @ symbolParts) |> List.map upperFirst
-            // separator + joinNameParts separator parts2
-            joinNameParts separator (prefix @ parts2)
-        | NotForced ->
-            let finalParts =
-                if symbolIsUnambiguous context.ModuleContext symbolName then
-                    symbolParts |> List.map upperFirst
+                if renderModuleAbsolute then
+                    match context.ModuleContext.Module.Name with
+                    | ModuleName moduleNameParts ->
+                        // apply module caps policy
+                        let moduleNameParts' =
+                            moduleNameParts
+                            |> applyCapsPolicy capsPolicy.ModulePolicy
+                        moduleNameParts' @ parts
                 else
+                    match mode with
+                    | GenericIdentifierMode -> parts
+                    | _ ->
+                        match List.removePrefix currentContextPath parts with
+                        | Some remaining ->
+                            if remaining.IsEmpty then
+                                // have to leave at least one segment!
+                                [ parts |> List.last ]
+                            else
+                                remaining
+                        | None -> parts
+            // do we need the approval func in this branch, too?
+            parts2 // |> List.map upperFirst
+
+        | Imported(moduleName, symbolName) ->
+            // rename the 'symbolParts' segments now, based on their kinds
+            let symbolParts =
+                match symbolName with
+                | SymbolName parts ->
+                    // apply the segment rename func
+                    renameParts parts
+
+            match importQualification with
+            | Forced prefix ->
+                let parts2 =
                     match moduleName with
                     | ModuleName moduleParts ->
-                        (moduleParts @ symbolParts) |> List.map upperFirst
-            joinNameParts separator finalParts
+                        // apply caps policy
+                        let moduleParts' =
+                            moduleParts
+                            |> applyCapsPolicy capsPolicy.ModulePolicy
+                        (moduleParts' @ symbolParts) // |> List.map upperFirst
+                // separator + joinNameParts separator parts2
+                prefix @ parts2
+            | NotForced ->
+                let finalParts =
+                    if symbolIsUnambiguous context.ModuleContext symbolName then
+                        symbolParts // |> List.map upperFirst
+                    else
+                        match moduleName with
+                        | ModuleName moduleParts ->
+                            (moduleParts @ symbolParts) // |> List.map upperFirst
+                finalParts
+
+    // final name segment formatting for Wrapper mode
+    match mode with
+    | WrapperMethodMode format ->
+        let init, last =
+            List.splitAtLast finalParts
+        let formatted =
+            let format' =
+                Printf.StringFormat<string -> string>(format)
+            sprintf format' last
+        init @ [ formatted ]
+        |> joinNameParts separator
+    | _ ->
+        finalParts
+        |> joinNameParts separator
 
 let countGroupConstants (top: GroupContext) =
     let rec groupCount (group: GroupContext) =

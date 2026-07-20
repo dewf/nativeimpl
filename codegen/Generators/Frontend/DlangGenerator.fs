@@ -7,12 +7,15 @@ open Parser
 open Util
 
 type DlangRenderContext = {
-    BaseNamespace: string list
+    LibraryName: string
     RenderContext: RenderContext
     OpaqueMethodContext: OpaqueInfo option         // rendering an opaque method (pop/invocation/push) at the current group/path, prone to extra collisions on the push/pop statements
 } with
-    member this.BaseNamespaceJoined =
-        joinNameParts "." this.BaseNamespace
+    member this.LibraryPrefix =
+        [ this.LibraryName ]
+        |> List.map lower
+    // member this.BaseNamespaceJoined =
+    //     joinNameParts "." this.BaseNamespace
     member this.ModuleContext =
         this.RenderContext.ModuleContext
     member this.GroupContext =
@@ -29,9 +32,12 @@ let resolvedNameToString (context: DlangRenderContext) (resolvedName: ResolvedNa
                 // colliding with local symbols not a concern in this context, so we can use any (or probably even no) prefix
                 ["G"]
             else
-                context.BaseNamespace
+                context.LibraryPrefix
         Forced prefix
-    resolvedNameToStringAbstract "." (fun name _ -> name) None qualification context.RenderContext resolvedName mode
+    let capsPolicy = {
+        ModulePolicy = LowerOnly
+    }
+    resolvedNameToStringAbstract "." (fun name _ -> name) None qualification capsPolicy context.RenderContext resolvedName mode
 
 let constExprToString (context: DlangRenderContext) =
     let config =
@@ -66,7 +72,7 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
             | FwdOpaqueType ->
                 match requiredSymbolLookup context.ModuleContext resolvedName with
                 | FwdOpaqueDef parts ->
-                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts))
+                    sprintf "%s" (joinNameParts "." (context.LibraryPrefix @ parts))
                 | _ ->
                     failwith "typeToDlangString: failed to find fwdopaque definition"
             | TypedefType ->
@@ -222,13 +228,13 @@ let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) 
                 // special treatment for these:
                 match requiredSymbolLookup context.ModuleContext resolvedName with
                 | FwdOpaqueDef parts ->
-                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts))
+                    sprintf "%s" (joinNameParts "." (context.LibraryPrefix @ parts))
                 | _ ->
                     failwithf "Dlang popValue: FwdOpaque trouble, should never happen"
             | _ ->
                 // all other types:
-                resolvedNameToString context resolvedName TypeMode
-        write level "%s __%s__pop();" contextPrefix name
+                resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // annoying way of preserving the necessary prefix to the type, while injecting a `__` just before the name (eg. module.prefix.NamedGroup.__Type)
+        write level "%s %s__pop();" contextPrefix name
     | ArrayType niType ->
         match niType with
         | Primitive prim ->
@@ -301,18 +307,18 @@ let pushValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int)
                 // special treatment for fwd opaques:
                 match requiredSymbolLookup context.ModuleContext resolvedName with
                 | FwdOpaqueDef parts ->
-                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts))
+                    sprintf "%s" (joinNameParts "." (context.LibraryPrefix @ parts))
                 | _ ->
                     failwithf "Dlang pushValue: FwdOpaqueType trouble, shouldn't happen"
             | _ ->
                 // all other types:
-                resolvedNameToString context resolvedName TypeMode
+                resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // see note above in this same branch of popValue
         match resolvedType with
         | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
             // types that potentially contain refs, need to honor isReturn
-            write level "__%s__push(%s, %s);" name content (isReturnString())
+            write level "%s__push(%s, %s);" name content (isReturnString())
         | _ ->
-            write level "__%s__push(%s);" name content
+            write level "%s__push(%s);" name content
     | ArrayType niType ->
         match niType with
         | Primitive prim ->
@@ -798,7 +804,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
 
     let isRootGroup, contentPrefix =
         match groupContext.Kind with
-        | RootGroup -> true, ""
+        | ModuleRoot -> true, ""
         | _ -> false, "static "
 
     if isRootGroup then
@@ -991,7 +997,8 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     let m =
         moduleContext.Module
     let renderContext =
-        { BaseNamespace = (baseNamespace.Split "." |> Array.toList)
+        { LibraryName = libraryName
+          // BaseNamespace = (baseNamespace.Split "." |> Array.toList)
           RenderContext = createRenderContext moduleContext
           OpaqueMethodContext = None }
     let root =
@@ -1005,10 +1012,15 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
         prefix + "." + simpleName
         |> _.ToLower()
     write 0 "module %s;" fullyQualifiedModulename
+
+    // imports
+    if not m.Imports.IsEmpty then
+        blank()
+        write 0 "// module imports"
+        for importName in m.Imports do
+            write 0 "import %s.%s;" (lower libraryName) (joinModuleName LowerOnly importName) // baseNamespace not currently used in D
+
     blank()
-    //
-    // TODO: other module imports!
-    //
     write 0 "import std.typecons: Tuple, tuple;"
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
 
@@ -1021,7 +1033,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     // static init + shutdown ==========================================
     blank()
     write 0 "package void __init() {"
-    write 1 "_module = ni.getModule(\"%s\");" (joinModuleName m.Name)
+    write 1 "_module = ni.getModule(\"%s\");" (joinModuleName Preserve m.Name)
 
     // pop module constants, if any
     if countGroupConstants root > 0 then

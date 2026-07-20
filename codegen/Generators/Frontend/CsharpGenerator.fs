@@ -230,7 +230,7 @@ let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (ty
                     failwithf "C# popValue: FwdOpaque trouble, should never happen"
             | _ ->
                 // all other types:
-                resolvedNameToString context resolvedName TypeMode
+                resolvedNameToString context resolvedName (WrapperMethodMode "__%s")
         write level "%s %s__Pop();" contextPrefix name
     | ArrayType niType ->
         match niType with
@@ -309,7 +309,7 @@ let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (t
                     failwithf "C# pushValue: FwdOpaqueType trouble, shouldn't happen"
             | _ ->
                 // all other types:
-                resolvedNameToString context resolvedName TypeMode
+                resolvedNameToString context resolvedName (WrapperMethodMode "__%s")
         match resolvedType with
         | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
             // types that potentially contain refs, need to honor isReturn
@@ -964,14 +964,14 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         // push
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static void %s__Push(%s thing)" (upperFirst name) (upperFirst name)
+        write 2 "internal static void __%s__Push(%s thing)" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "NativeImplClient.PushPtr(thing?.NativeHandle ?? IntPtr.Zero);"
         write 2 "}"
         // pop
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+        write 2 "internal static %s __%s__Pop()" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "var ptr = NativeImplClient.PopPtr();"
         write 3 "return ptr != IntPtr.Zero ? new %s(ptr) : null;" (upperFirst name)
@@ -989,14 +989,14 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             write 2 "}"
             // push
             blank()
-            write 2 "internal static void %s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "internal static void __%s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
             write 2 "{"
             for field in info.Fields |> List.rev do
                 pushValue context writer 3 field.Type_ (sprintf "value.%s" (upperFirst field.Name)) (Indirect "isReturn")
             write 2 "}"
             // pop
             blank()
-            write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+            write 2 "internal static %s __%s__Pop()" (upperFirst name) (upperFirst name)
             write 2 "{"
             for field in info.Fields do
                 popValue context writer 3 field.Type_ (NewVariable field.Name)
@@ -1034,7 +1034,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 2 "}"
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
+        write 2 "internal static void __%s__Push(%s value)" (upperFirst name) (upperFirst name)
         write 2 "{"
         let content =
             sprintf "(%s)value" (typeToCsString context widthType)
@@ -1042,7 +1042,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 2 "}"
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+        write 2 "internal static %s __%s__Pop()" (upperFirst name) (upperFirst name)
         write 2 "{"
         popValue context writer 3 widthType (NewVariable "ret")
         write 3 "return (%s)ret;" (upperFirst name)
@@ -1062,13 +1062,13 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 2 "}"
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "public static void %s__Push(%s value)" (upperFirst name) (upperFirst name)
+        write 2 "public static void __%s__Push(%s value)" (upperFirst name) (upperFirst name)
         write 2 "{"
         pushValue context writer 3 widthType "(int)value" NotApplicable
         write 2 "}"
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "public static %s %s__Pop()" (upperFirst name) (upperFirst name)
+        write 2 "public static %s __%s__Pop()" (upperFirst name) (upperFirst name)
         write 2 "{"
         popValue context writer 3 widthType (NewVariable "ret")
         write 3 "return (%s)ret;" (upperFirst name)
@@ -1109,7 +1109,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             write 3 "}"
         write 2 "}"
         // push
-        write 2 "internal static void %s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
+        write 2 "internal static void __%s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
         write 2 "{"
         for field in namedFields |> List.rev do
             write 3 "if (value.Has%s(out var %s))" (upperFirst field.Name) field.Name
@@ -1119,7 +1119,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         pushValue context writer 3 (Primitive(Int(true, Width32))) "(int)value.UsedFields" NotApplicable
         write 2 "}"
         // pop
-        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+        write 2 "internal static %s __%s__Pop()" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "var opts = new %s" (upperFirst name)
         write 3 "{"
@@ -1178,14 +1178,14 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         // PUSH
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
+        write 2 "internal static void __%s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "thing.Push(isReturn);"
         write 2 "}"
         // POP
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+        write 2 "internal static %s __%s__Pop()" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "return %s.Pop();" (upperFirst name)
         write 2 "}"
@@ -1194,14 +1194,14 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         // (at least it will make wrapper funcs a bit clearer)
         // PUSH
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static void %s__Push(%s value, bool isReturn)" name (typeToCsString context niType)
+        write 2 "internal static void __%s__Push(%s value, bool isReturn)" name (typeToCsString context niType)
         write 2 "{"
         pushValue context writer 3 niType "value" (Indirect "isReturn")
         write 2 "}"
         // POP
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static %s %s__Pop()" (typeToCsString context niType) name
+        write 2 "internal static %s __%s__Pop()" (typeToCsString context niType) name
         write 2 "{"
         popValue context writer 3 niType Return
         write 2 "}"
@@ -1243,13 +1243,13 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         // end of raw interface
         // push
         blank()
-        write 2 "internal static void %s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
+        write 2 "internal static void __%s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "PushInterface(thing, isReturn);"
         write 2 "}"
         // pop
         blank()
-        write 2 "internal static %s %s__Pop()" (upperFirst name) (upperFirst name)
+        write 2 "internal static %s __%s__Pop()" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "NativeImplClient.PopInstanceId(out var id, out var isClientId);"
         write 3 "if (id != 0)"
@@ -1341,7 +1341,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 2 "public delegate %s %s(%s);" (typeToCsString context info.Returns) name (joinedArgs context info.Args)
         // push
         blank()
-        write 2 "internal static void %s__Push(%s callback)" name name
+        write 2 "internal static void __%s__Push(%s callback)" name name
         write 2 "{"
         write 3 "void CallbackWrapper()"
         write 3 "{"
@@ -1366,7 +1366,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 2 "}"
         // pop
         blank()
-        write 2 "internal static %s %s__Pop()" name name
+        write 2 "internal static %s __%s__Pop()" name name
         write 2 "{"
         write 3 "var id = NativeImplClient.PopServerFuncValId();"
         write 3 "var remoteFunc = new ServerFuncVal(id);"

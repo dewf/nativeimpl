@@ -629,6 +629,83 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 1 "return opts;"
         write 0 "}"
 
+    | SumTypeDef sumTypeValues ->
+        // definition
+        write 0 "struct %s {" (upperFirst name)
+        let joinedValueNames =
+            sumTypeValues
+            |> List.map (fun value -> upperFirst value.Name)
+            |> String.concat ", "
+        write 1 "alias T = SumType!(%s);" joinedValueNames
+        write 1 "T value;"
+        write 1 "alias value this;"
+        write 1 "private enum Tag {"
+        for value, maybeComma in withTrailingCommas sumTypeValues do
+            write 2 "%s%s" (upperFirst value.Name) maybeComma
+        write 1 "}"
+        // value definitions + factory method
+        for value in sumTypeValues do
+            blank()
+            let joinedParams =
+                joinedArgs context value.Args
+            write 1 "// %s" (upperFirst value.Name)
+            write 1 "class %s {" (upperFirst value.Name)
+            if value.Args.IsEmpty then
+                write 2 "// no params"
+                write 2 "private this() {}"
+            else
+                for argName, argType in value.Args do
+                    write 2 "const %s %s;" (typeToDlangString context argType) argName
+                write 2 "private this(%s) {" joinedParams
+                for argName, _ in value.Args do
+                    let lower = lowerFirst argName
+                    write 3 "this.%s = %s;" lower lower
+                write 2 "}"
+            write 1 "}" // end class
+            // factory method
+            write 1 "static %s create%s(%s) {" (upperFirst name) (upperFirst value.Name) joinedParams
+            write 2 "return %s(cast(%s.T) new %s(%s));" (upperFirst name) (upperFirst name) (upperFirst value.Name) (joinedArgNames value.Args)
+            write 1 "}"
+        write 0 "}" // end struct definition
+        // push
+        blank()
+        write 0 "package void __%s__push(%s value, bool isReturn) {" (upperFirst name) (upperFirst name)
+        write 1 "value.match!("
+        for value, maybeComma in withTrailingCommas sumTypeValues do
+            write 2 "(%s.%s actual) {" (upperFirst name) (upperFirst value.Name)
+            if value.Args.IsEmpty then
+                write 3 "// no params"
+            else
+                for argName, argType in value.Args |> List.rev do
+                    let content =
+                        sprintf "actual.%s" (lowerFirst argName)
+                    pushValue context writer 3 argType content (Indirect "isReturn")
+            // always write Tag of course
+            write 3 "ni.pushInt32(%s.Tag.%s);" (upperFirst name) (upperFirst value.Name)
+            write 2 "}%s" maybeComma
+        write 1 ");" // end match
+        write 0 "}" // end push
+        // pop
+        blank()
+        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 1 "auto tag = cast(%s.Tag) ni.popInt32();" (upperFirst name)
+        write 1 "switch (tag) {"
+        for value in sumTypeValues do
+            write 2 "case %s.Tag.%s: {" (upperFirst name) (upperFirst value.Name)
+            // pop params (if any) to variables of same name
+            if value.Args.IsEmpty then
+                write 3 "// no params"
+            else
+                for argName, argType in value.Args do
+                    popValue context writer 3 argType (NewVariable (lowerFirst argName))
+            write 3 "return %s.create%s(%s);" (upperFirst name) (upperFirst value.Name) (joinedArgNames value.Args)
+            write 2 "}" // end case
+        // default case (unreachable)
+        write 2 "default:"
+        write 3 "assert(0);"
+        write 1 "}" // end switch
+        write 0 "}" // end pop
+
     | InterfaceDef info ->
         // raw interface itself
         let parentInterface =
@@ -1022,6 +1099,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
 
     blank()
     write 0 "import std.typecons: Tuple, tuple;"
+    write 0 "import std.sumtype;"
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
 
     //

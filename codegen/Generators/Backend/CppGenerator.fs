@@ -30,7 +30,7 @@ type CppRenderContext = {
         match this.MaybePathClamp with
         | Some _ -> true
         | None -> false
-    member this.NavigateToSub(name: string) =
+    member this.NavigateToSub (name: string) =
         let nextRenderContext =
             this.RenderContext.NavigateToSub(name)
         let nextPathClamp =
@@ -250,6 +250,8 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                     sprintf "const %s&" name
                 | _ ->
                     name
+            | NamedBitsType ->
+                sprintf "Flags<%s>" name
             | _ ->
                 name
         | ArrayType niType ->
@@ -391,6 +393,7 @@ type PopValueContext =
     | Return
     | SafeReturn
     | ExceptionContext
+    | CastReturn of targetType: NIType
 
 let popValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
     let context =
@@ -411,6 +414,7 @@ let popValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (t
         | Return -> "return"
         | SafeReturn -> "const auto __ret ="
         | ExceptionContext -> ""
+        | CastReturn _ -> "const auto __ret ="
     match type_ with
     | UnitType ->
         match popContext with
@@ -474,6 +478,8 @@ let popValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (t
     | SafeReturn ->
         write level "ni_clearClientSafetyArea();"
         write level "return __ret;"
+    | CastReturn targetType ->
+        write level "return static_cast<%s>(__ret);" (typeToCppString context TypeParams targetType)
     | _ ->
         ()
 
@@ -1613,12 +1619,12 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         blankH()
         writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
         writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
-        pushValue context writerCpp 1 widthType "value" NotApplicable
+        pushValue context writerCpp 1 widthType "value.bits()" NotApplicable
         writeCpp 0 "}"
         writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
         blankCpp()
         writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
-        popValue context writerCpp 1 widthType Return
+        popValue context writerCpp 1 widthType (CastReturn niType)
         writeCpp 0 "}"
     | SumTypeDef values ->
         renderWrapperSumType context writerH writerCpp name values niType
@@ -2125,12 +2131,18 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             let resolver resolvedName =
                 resolvedNameToString context resolvedName TypeMode
             namedBitsIndexer info context.ModuleContext resolver name
-        write 0 "typedef %s %s;" (typeToCppString context Default widthType) name
-        write 0 "enum %sFlags: %s {" name (typeToCppString context Default widthType)
+        write 0 "enum class %s : %s {" (upperFirst name) (typeToCppString context Default widthType)
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
-            write 1 "// %s" group.Title
+            match group.MaybeTitle with
+            | Some title ->
+                // bit group 'title' (inheritance source)
+                write 1 "// %s" title
+            | None ->
+                ()
             for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
-                write 1 "%s = 1 << %d%s" bitName index (if commaStr = "" then groupCommaStr else ",")
+                let maybeComma =
+                    if commaStr = "" then groupCommaStr else ","
+                write 1 "%s = 1 << %d%s" bitName index maybeComma
         write 0 "};"
     | SumTypeDef enumValues ->
         renderHeaderSumType context writer name enumValues
@@ -2210,6 +2222,55 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                 renderContent()
                 write 0 "}"
 
+// didn't end up needing this, but it's maybe a nice example for future template nonsense, if we ever need it
+// though I'd like to eschew that kind of complexity if possible ...
+
+// let optInNamedBits (context: CppRenderContext) (writer: IFormatWriter) =
+//     let write, blank = writer.Write, writer.Blank
+//     let moduleNameParts =
+//         match context.ModuleContext.Module.Name with
+//         | ModuleName parts -> parts
+//     let rec recInner (context: CppRenderContext) =
+//         let group =
+//             context.GroupContext
+//         for def in group.Defs do
+//             match def with
+//             | UserType (userTypeName, type_) ->
+//                 let staticDefsDescend (maybeDefs: ModuleDefinition list option) =
+//                     match maybeDefs with
+//                     | Some _ ->
+//                         let nextContext =
+//                             context.NavigateToSub userTypeName
+//                         recInner nextContext
+//                     | None ->
+//                         ()
+//                 match type_ with
+//                 | NamedBitsDef _ ->
+//                     // need the fully qualified module + groups path of the named bits
+//                     let qualifiedName =
+//                         moduleNameParts @ group.Path @ [userTypeName]
+//                         |> String.concat "::"
+//                     blank()
+//                     write 0 "template<>"
+//                     write 0 "inline constexpr bool EnableBitMaskOperators<%s> = true;" qualifiedName
+//                 | OpaqueDef info ->
+//                     staticDefsDescend info.MaybeStaticDefs
+//                 | StructDef info ->
+//                     staticDefsDescend info.MaybeStaticDefs
+//                 | InterfaceDef info ->
+//                     staticDefsDescend info.MaybeStaticDefs
+//                 | _ ->
+//                     // ignore
+//                     ()
+//             | Group (groupName, _) ->
+//                 let nextContext =
+//                     context.NavigateToSub(groupName)
+//                 recInner nextContext
+//             | _ ->
+//                 // irrelevant, ignore
+//                 ()
+//     recInner context
+
 let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) (currentDir: string list) = // (maybeModulePrefix: string option) =
     let write, blank = writer.Write, writer.Blank
     let m =
@@ -2226,6 +2287,8 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
     write 0 "#include <set>"
     write 0 "#include <optional>"
     write 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "result"]))
+    write 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "flags"]))
+    write 0 "using namespace flags;"
 
     // imports
     if not m.Imports.IsEmpty then
@@ -2271,6 +2334,12 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
 
     renderImplementationHeaderGroup context (writer.WithExtraIndent 1)
     write 0 "}"
+
+    // // some C++ template stuff has to occur in global namespace, so we handle that here
+    // blank()
+    // write 0 "// C++ template voodoo"
+    // writer.EatBlank()
+    // optInNamedBits context writer
 
 let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank

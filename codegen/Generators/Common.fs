@@ -940,21 +940,29 @@ let countGroupConstants (top: GroupContext) =
 
 let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameResolver: ResolvedName -> string) (rootName: string) =
     let allGroups =
-        let rec inheritGroups (title: string) (info: NamedBitsInfo) =
+        let rec inheritGroups (title: string) (info: NamedBitsInfo) (isRoot: bool) =
             let parentGroups =
                 match info.MaybeParent with
                 | Some (Resolved (resolvedName, NamedBitsType)) ->
                     match requiredSymbolLookup moduleContext resolvedName with
                     | NamedBitsDef nextInfo ->
                         let title =
-                            sprintf "%s:" (nameResolver resolvedName)
-                        inheritGroups title nextInfo
+                            sprintf "from %s:" (nameResolver resolvedName)
+                        inheritGroups title nextInfo false
                     | _ ->
                         failwith "namedbitsdef: nope"
                 | _ ->
                     []
-            {| Title = title; BitNames = info.BitNames |} :: parentGroups
-        inheritGroups $"{rootName}:" info
+            // used by language-specific code to determine whether to write a group title comment
+            // admittedly silly to put this sort of thing in here, but it does avoid redundancy across languages
+            let maybeTitle =
+                if isRoot && parentGroups.IsEmpty then
+                    // sole group, doesn't need a title
+                    None
+                else
+                    Some title
+            {| MaybeTitle = maybeTitle; BitNames = info.BitNames |} :: parentGroups
+        inheritGroups "ours:" info true
         |> List.rev
     let indexedGroups, totalCount =
         let init =
@@ -967,7 +975,7 @@ let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameR
                 group.BitNames
                 |> List.mapi (fun i name -> (startIndex + i, name))
             let nextGroups =
-                {| Title = group.Title; IndexedNames = indexedNames |} :: acc.RevGroups
+                {| MaybeTitle = group.MaybeTitle; IndexedNames = indexedNames |} :: acc.RevGroups
             {| TotalCount = acc.TotalCount + group.BitNames.Length; RevGroups = nextGroups |})
         |> (fun acc -> acc.RevGroups |> List.rev, acc.TotalCount)
     let widthType =

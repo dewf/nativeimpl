@@ -1056,7 +1056,12 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 2 "public enum %s" name
         write 2 "{"
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
-            write 3 "// %s" group.Title
+            match group.MaybeTitle with
+            | Some title ->
+                // title = bits inheritance origin
+                write 3 "// %s" title
+            | None ->
+                ()
             for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
                 write 3 "%s = 1 << %d%s" bitName index (if commaStr = "" then groupCommaStr else ",")
         write 2 "}"

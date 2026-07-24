@@ -254,6 +254,12 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                 match innerContext with
                 | BareType -> name
                 | _ -> sprintf "Flags<%s>" name
+            | StructType ->
+                match innerContext with
+                | FunctionArguments ->
+                    sprintf "const %s&" name
+                | _ ->
+                    name
             | _ ->
                 name
         | ArrayType niType ->
@@ -1604,14 +1610,14 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
             writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
             let content =
-                sprintf "(%s)value" (typeToCppString context Default widthType)
+                sprintf "static_cast<%s>(value)" (typeToCppString context Default widthType)
             pushValue context writerCpp 1 widthType content NotApplicable
             writeCpp 0 "}"
             writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
             blankCpp()
             writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
             popValue context writerCpp 1 widthType (Variable "tag")
-            writeCpp 1 "return (%s)tag;" (typeToCppString context Default niType)
+            writeCpp 1 "return static_cast<%s>(tag);" (typeToCppString context Default niType)
             writeCpp 0 "}"
     | NamedBitsDef info ->
         let _, widthType =

@@ -195,6 +195,7 @@ type PopValueContext =
     | ExistingVar of name: string
     | Return
     | SafeReturn
+    | CastReturn of targetType: string // string for now (see similar Dlang comment)
 
 let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
     let write = writer.Write
@@ -204,6 +205,7 @@ let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (ty
         | ExistingVar name -> sprintf "%s =" name
         | Return -> "return"
         | SafeReturn -> "var __ret ="
+        | CastReturn _ -> "var __ret ="
     match type_ with
     | UnitType ->
         match popContext with
@@ -270,6 +272,8 @@ let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (ty
     | SafeReturn ->
         write level "NativeImplClient.ServerClearSafetyArea();"
         write level "return __ret;"
+    | CastReturn targetType ->
+        write level "return (%s)__ret;" targetType
     | _ ->
         ()
 
@@ -1073,16 +1077,17 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 2 "}"
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "public static void __%s__Push(%s value)" (upperFirst name) (upperFirst name)
+        write 2 "internal static void __%s__Push(%s value)" (upperFirst name) (upperFirst name)
         write 2 "{"
-        pushValue context writer 3 widthType "(int)value" NotApplicable
+        let pushContent =
+            sprintf "(%s)value" (typeToCsString context widthType)
+        pushValue context writer 3 widthType pushContent NotApplicable
         write 2 "}"
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "public static %s __%s__Pop()" (upperFirst name) (upperFirst name)
+        write 2 "internal static %s __%s__Pop()" (upperFirst name) (upperFirst name)
         write 2 "{"
-        popValue context writer 3 widthType (NewVariable "ret")
-        write 3 "return (%s)ret;" (upperFirst name)
+        popValue context writer 3 widthType (CastReturn (upperFirst name))
         write 2 "}"
     | OptionsDef namedFields ->
         // definition

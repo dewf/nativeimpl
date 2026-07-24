@@ -198,6 +198,7 @@ type PopValueContext =
     | ExistingVar of name: string
     | Return
     | SafeReturn
+    | CastReturn of targetType: string // string unlike the C++ version for now, because we don't have the NIType handy in many places
 
 let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
     let write = writer.Write
@@ -207,6 +208,7 @@ let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) 
         | ExistingVar name -> sprintf "%s =" name
         | Return -> "return"
         | SafeReturn -> "auto __ret ="
+        | CastReturn _ -> "auto __ret ="
     match type_ with
     | UnitType ->
         match popContext with
@@ -273,6 +275,8 @@ let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) 
     | SafeReturn ->
         write level "ni.clearServerSafetyArea();"
         write level "return __ret;"
+    | CastReturn targetType ->
+        write level "return cast(%s)__ret;" targetType
     | _ ->
         ()
 
@@ -552,15 +556,49 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "pragma(inline)"
         write 0 "package void __%s__push(%s value) {" (upperFirst name) (upperFirst name)
         let content =
-            sprintf "cast(%s) value" (typeToDlangString context widthType)
+            sprintf "cast(%s)value" (typeToDlangString context widthType)
         pushValue context writer 1 widthType content NotApplicable
         write 0 "}"
         // pop
         blank()
         write 0 "pragma(inline)"
         write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
-        popValue context writer 1 widthType (NewVariable "ret")
-        write 1 "return cast(%s) ret;" (upperFirst name)
+        popValue context writer 1 widthType (CastReturn (upperFirst name))
+        write 0 "}"
+
+    | NamedBitsDef info ->
+        let indexedGroups, widthType =
+            let resolver resolvedName =
+                resolvedNameToString context resolvedName TypeMode
+            namedBitsIndexer info context.ModuleContext resolver (upperFirst name)
+        let maybeExtendsComment =
+            match info.MaybeParent with
+            | Some parent ->
+                sprintf " // extends %s" (typeToDlangString context parent)
+            | None ->
+                ""
+        write 0 "enum %s {%s" (upperFirst name) maybeExtendsComment
+        for group, groupCommaStr in indexedGroups |> withTrailingCommas do
+            match group.MaybeTitle with
+            | Some title ->
+                // title = bits inheritance origin
+                write 1 "// %s" title
+            | None ->
+                ()
+            for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
+                write 1 "%s = 1 << %d%s" bitName index (if commaStr = "" then groupCommaStr else ",")
+        write 0 "}"
+        // push
+        blank()
+        write 0 "package void __%s__push(%s value) {" (upperFirst name) (upperFirst name)
+        let pushContent =
+            sprintf "cast(%s)value" (typeToDlangString context widthType)
+        pushValue context writer 1 widthType pushContent NotApplicable
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        popValue context writer 1 widthType (CastReturn (upperFirst name))
         write 0 "}"
 
     | OptionsDef namedFields ->

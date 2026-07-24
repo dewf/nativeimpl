@@ -173,7 +173,7 @@ type TypeContext =
     | Default
     | FunctionArguments
     | TypeParams
-    | BareType  // ie, no std::shared_ptr<> etc
+    | BareType  // ie, no std::shared_ptr<>, no Flags<T> etc
 let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) (outerType: NIType) =
     let rec recInner (innerContext: TypeContext) = function
         | UnitType -> "void"
@@ -251,7 +251,9 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                 | _ ->
                     name
             | NamedBitsType ->
-                sprintf "Flags<%s>" name
+                match innerContext with
+                | BareType -> name
+                | _ -> sprintf "Flags<%s>" name
             | _ ->
                 name
         | ArrayType niType ->
@@ -2131,7 +2133,13 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             let resolver resolvedName =
                 resolvedNameToString context resolvedName TypeMode
             namedBitsIndexer info context.ModuleContext resolver name
-        write 0 "enum class %s : %s {" (upperFirst name) (typeToCppString context Default widthType)
+        let maybeExtendsComment =
+            match info.MaybeParent with
+            | Some parent ->
+                sprintf " // extends %s" (typeToCppString context BareType parent)
+            | None ->
+                ""
+        write 0 "enum class %s : %s {%s" (upperFirst name) (typeToCppString context Default widthType) maybeExtendsComment
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
             match group.MaybeTitle with
             | Some title ->

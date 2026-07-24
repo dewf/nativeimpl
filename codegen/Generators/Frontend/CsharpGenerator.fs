@@ -1052,8 +1052,14 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             let resolver resolvedName =
                 resolvedNameToString context resolvedName TypeMode
             namedBitsIndexer info context.ModuleContext resolver (upperFirst name)
+        let maybeExtendsComment =
+            match info.MaybeParent with
+            | Some parent ->
+                sprintf " // extends %s" (typeToCsString context parent)
+            | None ->
+                ""
         write 2 "[Flags]"
-        write 2 "public enum %s" name
+        write 2 "public enum %s%s" name maybeExtendsComment
         write 2 "{"
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
             match group.MaybeTitle with

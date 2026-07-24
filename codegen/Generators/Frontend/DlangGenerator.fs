@@ -24,6 +24,14 @@ type DlangRenderContext = {
         let nextRenderContext =
             this.RenderContext.NavigateToSub name
         { this with RenderContext = nextRenderContext }
+    member this.InStaticContext =
+        this.RenderContext.GroupContext.KindPath
+        |> List.exists (function
+            | ModuleRoot -> false
+            | NamedGroup -> true
+            | OpaqueStatic -> true
+            | InterfaceStatic -> true
+            | StructStatic -> true)
 
 let resolvedNameToString (context: DlangRenderContext) (resolvedName: ResolvedName) (mode: ResolveNameStringMode) =
     let qualification =
@@ -383,9 +391,11 @@ let joinedTypes (context: DlangRenderContext) (typesList: NIType list) =
 let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
 
-    // TODO: need to handle context-specific prefix
-    // ie, 'static' on push/pop methods for user types, when in a static context
-    // (named group, opaque static, etc)
+    let staticPrefix =
+        if context.InStaticContext then
+            "static "
+        else
+            ""
 
     blank()
     match userType with
@@ -521,16 +531,53 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         // push =============
         blank()
         write 0 "pragma(inline)"
-        write 0 "package void __%s__push(%s thing) {" (upperFirst name) (upperFirst name)
+        write 0 "package %svoid __%s__push(%s thing) {" staticPrefix (upperFirst name) (upperFirst name)
         write 1 "ni.pushPtr(thing !is null ? thing.thisPtr : null);"
         write 0 "}"
 
         // pop ==============
         blank()
         write 0 "pragma(inline)"
-        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
         write 1 "auto ptr = ni.popPtr();"
         write 1 "return ptr !is null ? new %s(ptr) : null;" (upperFirst name)
+        write 0 "}"
+
+    | StructDef info ->
+        let renderContent (context: DlangRenderContext) =
+            for field in info.Fields do
+                write 1 "%s %s;" (typeToDlangString context field.Type_) (lowerFirst field.Name)
+            // default ctor
+            write 1 "this(%s) {" (fieldsJoined context info.Fields)
+            for field in info.Fields do
+                write 2 "this.%s = %s;" (lowerFirst field.Name) (lowerFirst field.Name)
+            write 1 "}"
+        // actual struct
+        write 0 "struct %s {" (upperFirst name)
+        match info.MaybeStaticDefs with
+        | Some _ ->
+            let nextContext =
+                context.NavigateToSub name
+            renderContent nextContext
+            write 1 "// static content ====="
+            renderGroupCommon nextContext (writer.WithExtraIndent 1)
+        | None ->
+            renderContent context
+        write 0 "}"
+        // push
+        blank()
+        write 0 "package %svoid __%s__push(ref %s value, bool isReturn) {" staticPrefix (upperFirst name) (upperFirst name)
+        for field in info.Fields |> List.rev do
+            let pushContent =
+                sprintf "value.%s" (lowerFirst field.Name)
+            pushValue context writer 1 field.Type_ pushContent (Indirect "isReturn")
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
+        for field in info.Fields do
+            popValue context writer 1 field.Type_ (NewVariable field.Name)
+        write 1 "return %s(%s);" (upperFirst name) (fieldNamesJoined info.Fields)
         write 0 "}"
 
     | EnumDef info ->
@@ -554,7 +601,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         // push
         blank()
         write 0 "pragma(inline)"
-        write 0 "package void __%s__push(%s value) {" (upperFirst name) (upperFirst name)
+        write 0 "package %svoid __%s__push(%s value) {" staticPrefix (upperFirst name) (upperFirst name)
         let content =
             sprintf "cast(%s)value" (typeToDlangString context widthType)
         pushValue context writer 1 widthType content NotApplicable
@@ -562,7 +609,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         // pop
         blank()
         write 0 "pragma(inline)"
-        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
         popValue context writer 1 widthType (CastReturn (upperFirst name))
         write 0 "}"
 
@@ -590,14 +637,14 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}"
         // push
         blank()
-        write 0 "package void __%s__push(%s value) {" (upperFirst name) (upperFirst name)
+        write 0 "package %svoid __%s__push(%s value) {" staticPrefix (upperFirst name) (upperFirst name)
         let pushContent =
             sprintf "cast(%s)value" (typeToDlangString context widthType)
         pushValue context writer 1 widthType pushContent NotApplicable
         write 0 "}"
         // pop
         blank()
-        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
         popValue context writer 1 widthType (CastReturn (upperFirst name))
         write 0 "}"
 
@@ -647,7 +694,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}"
         // push
         blank()
-        write 0 "package void __%s__push(ref %s value, bool isReturn) {" (upperFirst name) (upperFirst name)
+        write 0 "package %svoid __%s__push(ref %s value, bool isReturn) {" staticPrefix (upperFirst name) (upperFirst name)
         for field in namedFields |> List.rev do
             write 1 "%s out%s;" (typeToDlangString context field.Type_) (upperFirst field.Name)
             write 1 "if (value.has%s(out%s)) {" (upperFirst field.Name) (upperFirst field.Name)
@@ -657,7 +704,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}"
         // pop
         blank()
-        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
         write 1 "%s opts;" (upperFirst name)
         popValue context writer 1 usedFieldsType (ExistingVar "opts._usedFields")
         for field in namedFields do
@@ -707,7 +754,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}" // end struct definition
         // push
         blank()
-        write 0 "package void __%s__push(%s value, bool isReturn) {" (upperFirst name) (upperFirst name)
+        write 0 "package %svoid __%s__push(%s value, bool isReturn) {" staticPrefix (upperFirst name) (upperFirst name)
         write 1 "value.match!("
         for value, maybeComma in withTrailingCommas sumTypeValues do
             write 2 "(%s.%s actual) {" (upperFirst name) (upperFirst value.Name)
@@ -725,7 +772,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}" // end push
         // pop
         blank()
-        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
         write 1 "auto tag = cast(%s.Tag) ni.popInt32();" (upperFirst name)
         write 1 "switch (tag) {"
         for value in sumTypeValues do
@@ -781,12 +828,12 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}"
         // push
         blank()
-        write 0 "package void __%s__push(%s thing, bool isReturn) {" (upperFirst name) (upperFirst name)
+        write 0 "package %svoid __%s__push(%s thing, bool isReturn) {" staticPrefix (upperFirst name) (upperFirst name)
         write 1 "ni.pushInterface(thing, isReturn);"
         write 0 "}"
         // pop
         blank()
-        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
         write 1 "bool isClientId;"
         write 1 "auto id = ni.popInstance(&isClientId);"
         write 1 "if (id != 0) {"
@@ -875,7 +922,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "alias %s = %s delegate(%s);%s" name (typeToDlangString context info.Returns) (joinedArgs context info.Args) throwsList
         // push
         blank()
-        write 0 "package void __%s__push(%s func) {" name name
+        write 0 "package %svoid __%s__push(%s func) {" staticPrefix name name
         write 1 "void wrapper() {"
         for argName, argType in info.Args do
             popValue context writer 2 argType (NewVariable argName)
@@ -895,7 +942,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}"
         // pop
         blank()
-        write 0 "package %s __%s__pop() {" name name
+        write 0 "package %s%s __%s__pop() {" staticPrefix name name
         write 1 "auto f = ni.popServerFuncVal();"
         write 1 "%s wrapper(%s) {" (typeToDlangString context info.Returns) (joinedArgs context info.Args)
         for argName, argType in info.Args |> List.rev do

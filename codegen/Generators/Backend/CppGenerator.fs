@@ -1432,7 +1432,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             | ExceptionDef _ -> ExceptionType
             | InterfaceDef _ -> InterfaceType
             | DelegateDef _ -> DelegateType
-            | TypeDef _ -> TypedefType
+            | TypeAliasDef _ -> TypedefType
             | EnumDef _ -> EnumType
             | NamedBitsDef _ -> NamedBitsType
             | SumTypeDef _ -> SumType
@@ -1578,7 +1578,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         writeCpp 0 "}"
     | DelegateDef info ->
         renderWrapperDelegate context writerH writerCpp name info niType
-    | TypeDef niType ->
+    | TypeAliasDef niType ->
         // ghetto, but for now instead of flattening, just write an inline wrapper
         // header-only because inline!
         blankH()
@@ -2094,7 +2094,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                     |> String.concat ", "
                 sprintf " // throws %s" joined
         write 0 "typedef %s %s(%s);%s" (typeToCppString context Default info.Returns) name (joinedArgs context info.Args) maybeThrows
-    | TypeDef actual ->
+    | TypeAliasDef actual ->
         write 0 "typedef %s %s;" (typeToCppString context Default actual) name
     | EnumDef info ->
         let widthType, widthStr =

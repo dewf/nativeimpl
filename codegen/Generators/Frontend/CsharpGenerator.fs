@@ -77,7 +77,7 @@ let typeToCsString (context: CsRenderContext) (outerType: NIType) =
             | TypedefType ->
                 // no C# typedefs so we just render the type directly
                 match requiredSymbolLookup context.ModuleContext resolvedName with
-                | TypeDef actual ->
+                | TypeAliasDef actual ->
                     recInner actual
                 | _ ->
                     failwithf "typeToCsString: failed to find typedef definition"
@@ -1205,7 +1205,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 2 "{"
         write 3 "return %s.Pop();" (upperFirst name)
         write 2 "}"
-    | TypeDef niType ->
+    | TypeAliasDef niType ->
         // C# has no proper typedefs, so we just emit push/pop that pass through to the real thing
         // (at least it will make wrapper funcs a bit clearer)
         // PUSH

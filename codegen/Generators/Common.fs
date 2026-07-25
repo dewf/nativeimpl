@@ -182,7 +182,7 @@ let allGenericTypes (context: ModuleContext) =
                 | TypedefType ->
                     // array of typedefs of tuple need to be flattened, otherwise we won't have the necessary synthetic array types in our lookup tables
                     match requiredSymbolLookup context resolvedName with
-                    | TypeDef (TupleType _ as tt) ->
+                    | TypeAliasDef (TupleType _ as tt) ->
                         // need to also return the collapsed array type - the caller of arrayOrSetHandling will still have (ArrayType (TypeDef...))
                         (ArrayType tt) :: tupleHandling tt
                     | _ ->
@@ -293,7 +293,7 @@ let allGenericTypes (context: ModuleContext) =
                         |> List.map snd
                         |> List.collect typeAndSubTypes
                     retTypes @ throwTypes @ argTypes
-                | TypeDef actual ->
+                | TypeAliasDef actual ->
                     typeAndSubTypes actual
                 | EnumDef _ ->
                     []
@@ -398,7 +398,7 @@ let containsRefs (context: ModuleContext) (thing: NIType) =
             true
         | DelegateDef _ ->
             false
-        | TypeDef actual ->
+        | TypeAliasDef actual ->
             processType actual
         | EnumDef _ ->
             false
@@ -491,9 +491,9 @@ let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArra
         match resolvedType with
         | TypedefType ->
             match content with
-            | TypeDef (TupleType _ as tt) ->
+            | TypeAliasDef (TupleType _ as tt) ->
                 renderer.TypedefTuple tt
-            | TypeDef (Primitive prim) ->
+            | TypeAliasDef (Primitive prim) ->
                 renderer.TypedefPrim prim
             | _ ->
                 failwithf "array of typedef %A: TODO (basic array treatment)" resolvedName

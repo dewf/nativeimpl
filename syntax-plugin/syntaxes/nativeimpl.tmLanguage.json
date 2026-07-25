@@ -56,8 +56,8 @@
 		},
 		"userdefined": {
 			"patterns": [{
-				"name": "storage.type.class.natveimpl",
-				"match": "\\b(fwdopaque|opaque|struct|exception|interface|enum|flags|sumtype|options|delegate|typedef|namedbits)\\b"
+				"name": "storage.type.class.nativeimpl",
+				"match": "\\b(fwdopaque|opaque|struct|exception|interface|enum|flags|sumtype|options|delegate|alias|namedbits)\\b"
 			}]
 		}
 	},

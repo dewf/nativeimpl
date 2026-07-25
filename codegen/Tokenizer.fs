@@ -28,7 +28,7 @@ type Token =
     | OptionsToken
     | UnitToken
     | DelegateToken
-    | TypedefToken
+    | AliasToken
     | BufferToken
     | ThrowsToken
     | StaticToken
@@ -64,7 +64,7 @@ type Token =
     // etc:
     | NullToken
     | BoolValueToken of value: bool
-    
+
 type Location = {
     Line: int
     Column: int
@@ -103,7 +103,7 @@ let inline matchesAgainstInput (against: char[]) (input: char[]) =
 
 let (|Matches|_|) (against: char[]) (input: char[]) =
     matchesAgainstInput against input
-        
+
 let (|AnyOf|_|) (items: string list) (input: char[]) =
     items
     |> Seq.map (fun str -> str, str.ToCharArray())
@@ -111,7 +111,7 @@ let (|AnyOf|_|) (items: string list) (input: char[]) =
         matchesAgainstInput chars input
         |> Option.map (fun (len, etc) -> str, len, etc))
     |> Seq.tryHead
-        
+
 let (|WhileMatch|_|) (pred: char -> bool) (input: char[]) =
     let front, etc =
         charsWhile pred input
@@ -119,7 +119,7 @@ let (|WhileMatch|_|) (pred: char -> bool) (input: char[]) =
         Some (front, front.Length, etc)
     else
         None
-        
+
 let (|SingleChar|_|) (input: char[]) =
     if input.Length >= 1 then
         Some (input[0], Array.skip 1 input)
@@ -159,7 +159,7 @@ let unfoldComment (state: CommentState) =
             Some { state with Complete = true }
         | _ ->
             failwith "nextComment: shouldn't see this"
-        
+
 let (|Comment|_|) (loc: Location) (input: char[]) = // returns (+cols, +lines, etc)
     if input.Length >= 2 then
         let first, etc =
@@ -186,27 +186,27 @@ let (|Comment|_|) (loc: Location) (input: char[]) = // returns (+cols, +lines, e
             None
     else
         None
-        
+
 let isWhitespace = function
     | ' ' | '\t' -> true
     | _ -> false
-    
+
 let isAlphaNumeric ch =
     (ch >= 'a' && ch <= 'z') ||
     (ch >= 'A' && ch <= 'Z') ||
     (ch >= '0' && ch <= '9') ||
     ch = '_'
-    
+
 let allowedSymbols =
     ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "."; "->"; "@"; "|"; "&"; "~"; "^"; "-"; "+"]
-    
+
 let (|RegexMatch|_|) (pattern: string) (input: string) =
     let match_ = Regex(pattern).Match(input)
     if match_.Success then
         Some match_
     else
         None
-        
+
 let nextToken (loc: Location) (input: char[]) =
     match input with
     | Matches [|'\r'|] (_match, etc) ->
@@ -260,7 +260,7 @@ let nextToken (loc: Location) (input: char[]) =
             | "sumtype" -> SumTypeToken
             | "options" -> OptionsToken
             | "delegate" -> DelegateToken
-            | "typedef" -> TypedefToken
+            | "alias" -> AliasToken
             | "throws" -> ThrowsToken
             | "static" -> StaticToken
             | "extends" -> ExtendsToken
@@ -305,7 +305,7 @@ let nextToken (loc: Location) (input: char[]) =
         None, [||], loc
     | _ ->
         failwithf "unrecognized character '%s'... at location %s" (input[0].ToString()) (loc.ToString())
-        
+
 type TokenizerState = {
     Loc: Location
     Remaining: char[]

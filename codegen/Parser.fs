@@ -17,14 +17,14 @@ let widthToInt = function
     | Width16 -> 16
     | Width32 -> 32
     | Width64 -> 64
-    
+
 type NIPrimitive =
     | SizeT
     | Bool
     | Int of signed: bool * width: IntWidth
     | Float32 | Float64
     | StringType
-    
+
 type ModuleName =
     | ModuleName of string list     // x.y.whatever
 with
@@ -32,17 +32,17 @@ with
         match this with
         | ModuleName parts ->
             parts |> List.rev |> List.head
-    
+
 type SymbolName =
     | SymbolName of string list
-    
+
 type ResolvedName =
     | ThisModule of name: SymbolName
     | Imported of moduleName: ModuleName * name: SymbolName
-    
+
 type UnresolvedIdentifier =
     | UnresolvedIdentifier of string list   // could be relative, could be fully qualified, etc
-    
+
 type ResolvedType =
     | OpaqueType
     | FwdOpaqueType
@@ -55,7 +55,7 @@ type ResolvedType =
     | NamedBitsType
     | SumType
     | OptionsType // distinct from generic 'option' type ... probably should come up with a less confusing name
-    
+
 type TypeConstraint =
     | DefaultConstraint    // everything but exceptions allowed
     | OpaqueConstraint
@@ -63,7 +63,7 @@ type TypeConstraint =
     | ExceptionConstraint
     | NamedBitsConstraint
     | ConstConstraint      // currently: enum, flags
-    
+
 type NIType =
     | UnitType
     | Primitive of prim: NIPrimitive
@@ -197,21 +197,21 @@ let rec parseType (input: TokenAndLocation list) =
         failwithf "parseType called on an empty list!"
     | {Location = loc; Token = token} :: _ ->
         failwithf "parseType: unexpected token %A at %A" token loc
-        
+
 
 type Attribute =
     | NoDispose
     | WithFlags of typeName: string
     | ShadowsExisting                   // C# 'new', shadows existing method
-    
+
 let takeAttribute (pred: Attribute -> bool) (attrs: Attribute list) =
     attrs
     |> List.extractFirstMatching pred
-    
+
 type NamedConstValue =
     | ForeignName of container: NIType * name: string
     | LocalName of name: string
-    
+
 type TypedConstExpr =
     | NullValue
     | BoolValue of value: bool
@@ -220,7 +220,7 @@ type TypedConstExpr =
     | Unary of op: ConstUnaryOp * value: TypedConstExpr
     | Binary of op: ConstBinaryOp * left: TypedConstExpr * right: TypedConstExpr
     | Grouping of inner: TypedConstExpr
-    
+
 let untypedToTypedConstExpr (loc: Location) (input: UntypedConstExpr): TypedConstExpr =
     let rec inner (node: UntypedConstExpr) =
         match node with
@@ -250,7 +250,7 @@ let untypedToTypedConstExpr (loc: Location) (input: UntypedConstExpr): TypedCons
         | UntypedConstExpr.Grouping groupContent ->
             Grouping (inner groupContent)
     inner input
-    
+
 type NamedFunctionArg = {
     Name: string
     Type: NIType
@@ -271,7 +271,7 @@ type NamedFunction = {
             sprintf "%s_overload%d" this.Name value
         | None ->
             this.Name
-            
+
 type NamedField = {
     Name: string
     Type_: NIType
@@ -326,7 +326,7 @@ and UserType =
     | ExceptionDef of fields: NamedField list      // created as an args list, although they are accessible fields
     | InterfaceDef of info: InterfaceInfo
     | DelegateDef of info: DelegateInfo
-    | TypeDef of actual: NIType
+    | TypeAliasDef of actual: NIType
     | EnumDef of info: EnumInfo
     | NamedBitsDef of info: NamedBitsInfo
     | SumTypeDef of values: SumTypeValue list
@@ -336,14 +336,14 @@ and ModuleDefinition =
     | FunctionDef of NamedFunction
     | UserType of name: string * type_: UserType
     | Group of name: string * defs: ModuleDefinition list
-    
+
 type SymbolTableEntry =
     | Direct of thing: UserType
     | SubTable of table: SymbolTable
     | Hybrid of thing: UserType * table: SymbolTable
 and SymbolTable =
     Map<string, SymbolTableEntry>
-    
+
 type SymbolTableState =
     | Init
     | Bootstrap of table: SymbolTable  // 1st pass, will contain unresolved names
@@ -367,7 +367,7 @@ let applyOpaqueAttrs (attrs: Attribute list) (opaque: OpaqueInfo) =
         // no other opaque-related attrs yet
         | _ ->
             info )
-    
+
 
 let parseOneField (input: TokenAndLocation list) =
     if input.IsEmpty then
@@ -395,7 +395,7 @@ let parseFields (loc: Location) (input: TokenAndLocation list) =
     let items =
         List.unfold parseOneField content
     items, etc
-    
+
 let (|ConstExpr|_|) (loc: Location) (input: TokenAndLocation list) =
     // grab everything up to comma or end-of-input
     let pred token =
@@ -418,10 +418,10 @@ let parseArg (input: TokenAndLocation list) =
     else
         let type_, etc =
             parseType input
-            
+
         match etc with
         | Lookahead 1 ([Identifier name], loc, etc) ->
-            
+
             // does it have a default value?
             match etc with
             | Lookahead 1 ([EqualsToken], loc, etc) ->
@@ -441,20 +441,20 @@ let parseArg (input: TokenAndLocation list) =
                         failwithf "expected comma or end of arguments @ %A" loc
                 | _ ->
                     failwithf "expected constant expression while parsing function arg '%s' @ %A" name loc
-                    
+
             | Lookahead 1 ([Comma], _, etc) ->
                 Some ({ Name = name; Type = type_; DefaultValue = None }, etc)
-                
+
             | [] ->
                 // no further tokens, we're done
                 Some ({ Name = name; Type = type_; DefaultValue = None }, [])
-                
+
             | _ ->
                 failwithf "parsing function argument '%s' @ %A - identifier must be followed by either comma or = <constexpr>" name loc
-                
+
         // | [{ Location = _; Token = Identifier name }] -> // TODO: fix lookahead to use N as 'max', so it returns UP TO that many?
         //     Some ({ Name = name; Type = type_; DefaultValue = None }, [])
-            
+
         | _ ->
             // 'rewind' to first element of input, since we know it parsed a type successfully
             match input with
@@ -488,10 +488,10 @@ let parseNamedFunction (outer: TokenAndLocation list) =
                 match takeAttribute (function | ShadowsExisting -> true | _ -> false) activeAttributes with
                 | Some ShadowsExisting, _ -> true
                 | _ -> false
-                
+
             let returnType, etc =
                 parseType remaining
-                
+
             match etc with
             | Lookahead 2 ([Identifier funcName; LeftParen], loc, etc) ->
                 let args, etc =
@@ -575,7 +575,7 @@ let parseEnumValues (loc: Location) (input: TokenAndLocation list) =
     let values =
         List.unfold parseOneEnumValue content
     values, etc
-    
+
 let parseNamedBitsValues (loc: Location) (input: TokenAndLocation list) =
     let content, etc =
         contentUntilMatching loc LeftBrace input
@@ -612,14 +612,14 @@ let parseOneSumTypeValue (input: TokenAndLocation list) =
                 parseArgsList loc etc2
             | _ ->
                 [], etc
-                
+
         // 'args' is now a fancier record type (vs. the previous tuple), due to new default-value processing for named function params
         // but this isn't applicable to sumtypes, so downgrade it back to the tuple
         // in the future we probably need a separate 'parseArgList' that can work with sumtypes only
         let args2 =
             args
             |> List.map (fun arg -> (arg.Name, arg.Type))
-        
+
         // will there be more?
         match etc2 with
         | Lookahead 1 ([Comma], _, etc3) ->
@@ -641,11 +641,11 @@ let parseSumTypeValues (loc: Location) (input: TokenAndLocation list) =
     let values =
         List.unfold parseOneSumTypeValue content
     values, etc
-    
+
 type UnfoldElement<'a> =
     | Element of 'a
     | Terminator of remaining: TokenAndLocation list
-    
+
 let unfoldUntil (stopTokens: Token list) (generatorFunc: TokenAndLocation list -> ('a * TokenAndLocation list) option) (input: TokenAndLocation list) =
     let func2 (remaining: TokenAndLocation list) =
         match remaining with
@@ -672,7 +672,7 @@ let unfoldUntil (stopTokens: Token list) (generatorFunc: TokenAndLocation list -
         | Terminator etc -> etc
         | _ -> failwith "nope"
     elements, etc
-    
+
 type OverloadMapValue = {
     Count: int
     BannedArgs: Set<NIType list>
@@ -702,11 +702,11 @@ let overloadMapFunc (overloads: Map<string, OverloadMapValue>) (item: NamedFunct
             { Count = 1
               BannedArgs = Set.ofList [ argTypes ] }
         overloads.Add(key, value), item
-    
+
 let setOverloadIndices (nfList: NamedFunction list) =
     (Map.empty<string, OverloadMapValue>, nfList)
     ||> List.mapWithContext overloadMapFunc
-    
+
 let rec parseModuleDefs (input: TokenAndLocation list) =
     let rec parseNext (activeAttributes: Attribute list) (remaining: TokenAndLocation list) =
         match remaining with
@@ -793,13 +793,13 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         maybeDefs, afterStatic
                     | _ ->
                         None, contentBlock
-                        
+
                 // methods should always be present
                 let methods =
                     methodBlock
                     |> List.unfold parseNamedFunction
                     |> setOverloadIndices
-                    
+
                 let info =
                     { MaybeParent = maybeParent
                       Methods = methods
@@ -924,15 +924,15 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         |> List.map (fun arg -> (arg.Name, arg.Type))
                     UserType (nf.Name, DelegateDef { Args = tupledArgs; Returns = nf.Returns; Throws = nf.Throws })
                 ([result], etc2))
-        | Lookahead 1 ([TypedefToken], loc, etc) ->
+        | Lookahead 3 ([AliasToken; Identifier name; EqualsToken], loc, etc) ->
             let actual, etc2 =
                 parseType etc
             match etc2 with
-            | Lookahead 2 ([Identifier name; Semicolon], _, etc3) ->
-                ([UserType (name, TypeDef actual)], etc3)
+            | Lookahead 1 ([Semicolon], _, etc3) ->
+                ([UserType (name, TypeAliasDef actual)], etc3)
                 |> Some
             | _ ->
-                failwithf "expected typedef name at %s" (loc.ToString())
+                failwithf "expected ; at %s" (loc.ToString())
         | Lookahead 2 ([EnumToken | FlagsToken as which; Identifier name], loc, etc) ->
             let maybeWidthType, etc =
                 match etc with
@@ -1067,7 +1067,7 @@ let consumeImports (input: TokenAndLocation list) =
     let rev, etc =
         nextImport [] input
     List.rev rev, etc
-    
+
 let parseModuleToplevel (input: TokenAndLocation list) (outerName: ModuleName) (lastModified: DateTime) =
     match input with
     | Lookahead 1 ([ModuleToken], loc, etc) ->
@@ -1126,7 +1126,7 @@ let findSymbolHere (table: SymbolTable) (nameParts: string list) =
         | [] ->
             failwith "findHere::recFind - empty partsLeft, shouldn't happen"
     recFind table nameParts
-    
+
 let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: string list) =
     let table =
         match m.SymbolTable with
@@ -1175,7 +1175,7 @@ let findModuleSymbol (m: Module) (revNamespacePath: string list) (nameParts: str
     |> Option.map (fun (consumed, thing) ->
         // return name relative to module root
         consumed @ nameParts, thing)
-    
+
 type AmbiguityMemoKey = {
     ModuleName: ModuleName
     SymbolName: string list // SymbolName but we're already deconstructing it as a function parameter below
@@ -1365,7 +1365,7 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                 | StructDef _ -> StructType
                 | InterfaceDef _ -> InterfaceType
                 | DelegateDef _ -> DelegateType
-                | TypeDef _ -> TypedefType
+                | TypeAliasDef _ -> TypedefType
                 | EnumDef _ -> EnumType
                 | NamedBitsDef _ -> NamedBitsType
                 | SumTypeDef _ -> SumType
@@ -1427,7 +1427,7 @@ let resolveConstExprTypes (context: ModuleContext) (namespacePath: string list) 
             List.contains name (containedNamesLookup context resolvedName)
         | _ ->
             failwith "resolveConstExprTypes:typeContainsName: resolved names only!"
-            
+
     let resolvedTypeToString (resolvedType: NIType) =
         match resolvedType with
         | Resolved(resolvedName, ``type``) ->
@@ -1440,7 +1440,7 @@ let resolveConstExprTypes (context: ModuleContext) (namespacePath: string list) 
                 |> String.concat "."
         | _ ->
             failwith "ack"
-        
+
     let rec recInner (expr: TypedConstExpr) =
         match expr with
         | NullValue ->
@@ -1629,8 +1629,8 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                 let nextInfo =
                     { info with MaybeParent = nextMaybeParent; Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
                 OpaqueDef nextInfo
-            | TypeDef niType ->
-                TypeDef (resolveType context namespacePath niType)
+            | TypeAliasDef niType ->
+                TypeAliasDef (resolveType context namespacePath niType)
             | EnumDef info ->
                 let nextValues =
                     info.Values
@@ -1712,7 +1712,7 @@ let resolveUserTypes (loaded: Map<ModuleName, Module>) (module_: Module) =
     let nextUserTypes =
         getUserTypes nextDefs
     { nextModule with Defs = nextDefs; SymbolTable = Complete nextUserTypes }
-    
+
 let moduleNameToFilename (rootPath: string) (ModuleName nameParts) =
     let pathParts =
         String.Join("/", nameParts)

@@ -783,7 +783,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 1 "}" // end switch
         write 0 "}" // end pop
 
-    | TypeDef niType ->
+    | TypeAliasDef niType ->
         write 0 "alias %s = %s;" (upperFirst name) (typeToDlangString context niType)
         blank()
         write 0 "pragma(inline)"

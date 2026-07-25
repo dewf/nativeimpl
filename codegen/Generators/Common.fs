@@ -982,8 +982,10 @@ let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameR
         let width =
             if totalCount <= 31 then
                 Width32
-            else
+            elif totalCount <= 63 then
                 Width64
+            else
+                failwithf "namedBitsIndexer: named bits [%s] has %d items, but 63 is max" rootName totalCount
         Primitive(Int(true, width))
     indexedGroups, widthType
 

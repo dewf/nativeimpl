@@ -83,14 +83,6 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
                     sprintf "%s" (joinNameParts "." (context.LibraryPrefix @ parts))
                 | _ ->
                     failwith "typeToDlangString: failed to find fwdopaque definition"
-            | TypedefType ->
-                failwith "Dlang typeToDlangString : Resolved(...) : TypedefType - needs inspection"
-                // // no C# typedefs so we just render the type directly
-                // match requiredSymbolLookup context.ModuleContext resolvedName with
-                // | TypeDef actual ->
-                //     recInner actual
-                // | _ ->
-                //     failwithf "typeToDlangString: failed to find typedef definition"
             | _ ->
                 resolvedNameToString context resolvedName TypeMode
         | ArrayType elemType -> sprintf "%s[]" (recInner elemType)
@@ -790,6 +782,19 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 3 "assert(0);"
         write 1 "}" // end switch
         write 0 "}" // end pop
+
+    | TypeDef niType ->
+        write 0 "alias %s = %s;" (upperFirst name) (typeToDlangString context niType)
+        blank()
+        write 0 "pragma(inline)"
+        write 0 "package void __%s__push(%s value, bool isReturn) {" (upperFirst name) (upperFirst name)
+        pushValue context writer 1 niType "value" (Indirect "isReturn")
+        write 0 "}"
+        blank()
+        write 0 "pragma(inline)"
+        write 0 "package %s __%s__pop() {" (upperFirst name) (upperFirst name)
+        popValue context writer 1 niType Return
+        write 0 "}"
 
     | InterfaceDef info ->
         // raw interface itself

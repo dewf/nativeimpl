@@ -817,11 +817,12 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
 
         match info.MaybeStaticDefs with
         | Some _ ->
-            failwith "Dlang InterfaceDef rendering: static block not yet supported"
-            // let nextContext =
-            //     context.NavigateToSub(name)
-            // renderGroupCommon nextContext (writer.WithExtraIndent 1)
-            // renderMethods nextContext
+            let nextContext =
+                context.NavigateToSub(name)
+            renderMethods nextContext
+            blank()
+            write 0 "// static content =============="
+            renderGroupCommon nextContext (writer.WithExtraIndent 1)
         | None ->
             renderMethods context
         // end of raw interface

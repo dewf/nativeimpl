@@ -260,16 +260,58 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                     sprintf "const %s&" name
                 | _ ->
                     name
+            | TypedefType ->
+                match innerContext with
+                | FunctionArguments ->
+                    // use const reference for certain types in a function arguments context
+                    match requiredSymbolLookup context.ModuleContext resolvedName with
+                    | TypeAliasDef actual ->
+                        match actual with
+                        // | UnitType -> failwith "todo"
+                        // | Primitive prim -> failwith "todo"
+                        // | ArrayType elem -> failwith "todo"
+                        // | MapType(keyType, valueType) -> failwith "todo"
+                        | TupleType _ ->
+                            sprintf "const %s&" name
+                        // | SetType elem -> failwith "todo"
+                        // | BufferType elemType -> failwith "todo"
+                        // | OptionType elem -> failwith "todo"
+                        // | ResultType(success, error) -> failwith "todo"
+                        // | Unresolved(identifier, loc, mustBe) -> failwith "todo"
+                        // | Resolved(name, ``type``) -> failwith "todo"
+                        | _ ->
+                            name
+                    | _ ->
+                        failwithf "c++ defaultValueForType: Typedef lookup failed"
+                | _ ->
+                    // any other context:
+                    name
             | _ ->
                 name
         | ArrayType niType ->
+            let common =
+                sprintf "std::vector<%s>" (recInner TypeParams niType)
             match innerContext with
             | FunctionArguments ->
-                sprintf "const std::vector<%s>&" (recInner TypeParams niType)
+                sprintf "const %s&" common
             | _ ->
-                sprintf "std::vector<%s>" (recInner TypeParams niType)
-        | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>" (recInner TypeParams keyType) (recInner TypeParams valueType)
-        | TupleType tupleTypes -> sprintf "std::tuple<%s>" (tupleTypes |> List.map (recInner TypeParams) |> String.concat ",")
+                common
+        | MapType (keyType, valueType) ->
+            let common =
+                sprintf "std::map<%s,%s>" (recInner TypeParams keyType) (recInner TypeParams valueType)
+            match innerContext with
+            | FunctionArguments ->
+                sprintf "const %s&" common
+            | _ ->
+                common
+        | TupleType tupleTypes ->
+            let common =
+                sprintf "std::tuple<%s>" (tupleTypes |> List.map (recInner TypeParams) |> String.concat ",")
+            match innerContext with
+            | FunctionArguments ->
+                sprintf "const %s&" common
+            | _ ->
+                common
         | SetType niType -> sprintf "std::set<%s>" (recInner TypeParams niType)
         | OptionType elem ->
             match innerContext with
@@ -335,7 +377,7 @@ let transformLastNameSegment (name: string) (f: string -> string) =
     |> List.rev
     |> String.concat "::"
 
-let defaultValueForType (context: CppRenderContext) (outerType: NIType) =
+let rec defaultValueForType (context: CppRenderContext) (outerType: NIType) =
     let rec recInner = function
         | UnitType -> failwith "defaultValueForType called on UnitType"
         | Primitive prim ->
@@ -377,16 +419,23 @@ let defaultValueForType (context: CppRenderContext) (outerType: NIType) =
                         | _ -> failwith "defaultValueForType: nope"
                 | _ ->
                     failwithf "c++ defaultValueForType: EnumType lookup failed"
+            | TypedefType ->
+                match requiredSymbolLookup context.ModuleContext resolvedName with
+                | TypeAliasDef actual ->
+                    defaultValueForType context actual
+                | _ ->
+                    failwithf "c++ defaultValueForType: Typedef lookup failed"
             | _ ->
                 "(defaultValueForType: not yet supported)"
         | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString context TypeParams niType)
         | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToCppString context TypeParams keyType) (typeToCppString context TypeParams valueType)
         | TupleType tupleTypes ->
-            let typesJoined =
-                tupleTypes |> List.map (typeToCppString context TypeParams) |> String.concat ","
-            let defaultsJoined =
-                tupleTypes |> List.map recInner |> String.concat ", "
-            sprintf "std::tuple<%s>{ %s }" typesJoined defaultsJoined
+            // let typesJoined =
+            //     tupleTypes |> List.map (typeToCppString context TypeParams) |> String.concat ","
+            // let defaultsJoined =
+            //     tupleTypes |> List.map recInner |> String.concat ", "
+            // sprintf "std::tuple<%s>{ %s }" typesJoined defaultsJoined
+            "{}"
         | SetType niType -> sprintf "std::set<%s>()" (typeToCppString context TypeParams niType)
         | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>()" (typeToCppString context TypeParams elemType)
         | OptionType elem -> sprintf "std::optional<%s>()" (typeToCppString context TypeParams elem)

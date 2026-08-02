@@ -373,7 +373,57 @@ let pushValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int)
         write level "// pushValue %A not yet supported" type_
 
 // TODO: ArrayOrSetRenderer etc
-// TODO: renderGeneric
+
+let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: NIType) =
+    let write, blank = writer.Write, writer.Blank
+    //
+    blank()
+    match gType with
+    // | UnitType -> failwith "todo"
+    // | Primitive prim -> failwith "todo"
+    // | ArrayType elem -> failwith "todo"
+    | MapType (keyType, valueType) ->
+        // push
+        write 0 "private void __%s__push(%s map, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
+        pushValue context writer 1 (ArrayType valueType) "map.values" (Indirect "isReturn")
+        pushValue context writer 1 (ArrayType keyType) "map.keys" (Indirect "isReturn")
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "private %s __%s__pop() {" (typeToDlangString context gType) (typeToName context gType)
+        popValue context writer 1 (ArrayType keyType) (NewVariable "keys")
+        popValue context writer 1 (ArrayType valueType) (NewVariable "values")
+        write 1 "assert(keys.length == values.length, \"key/value array lengths don't match\");"
+        write 1 "%s result;" (typeToDlangString context gType)
+        write 1 "for (size_t i = 0; i < keys.length; i++) {"
+        write 2 "auto key = keys[i];"
+        write 2 "result[key] = values[i];"
+        write 1 "}"
+        write 1 "return result;"
+        write 0 "}"
+    | TupleType tupleTypes ->
+        // push
+        write 0 "private void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
+        for i, type_ in tupleTypes |> List.indexed |> List.rev do
+            pushValue context writer 1 type_ (sprintf "value[%d]" i) (Indirect "isReturn")
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "private %s __%s__pop() {" (typeToDlangString context gType) (typeToName context gType)
+        for i, type_ in tupleTypes |> List.indexed do
+            popValue context writer 1 type_ (NewVariable $"_%d{i}")
+        let varsJoined =
+            tupleTypes |> List.indexed |> List.map (fun (i, _) -> $"_%d{i}") |> String.concat ", "
+        write 1 "return tuple(%s);" varsJoined
+        write 0 "}"
+    // | SetType elem -> failwith "todo"
+    // | BufferType elemType -> failwith "todo"
+    // | OptionType elem -> failwith "todo"
+    // | ResultType(success, error) -> failwith "todo"
+    // | Unresolved(identifier, loc, mustBe) -> failwith "todo"
+    // | Resolved(name, ``type``) -> failwith "todo"
+    | _ ->
+        write 0 "// TODO: renderLibraryUserType: generic %s" (typeToDlangString context gType)
 
 let joinedTypes (context: DlangRenderContext) (typesList: NIType list) =
     typesList
@@ -1193,9 +1243,10 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "import std.sumtype;"
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
 
-    //
-    // TODO: render generics just once, at root level
-    //
+    // render all the generics at the root level only
+    for generic in allGenericTypes moduleContext do
+        renderGeneric renderContext writer generic
+
     // now with the common group stuff:
     renderGroupCommon renderContext writer
 

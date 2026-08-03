@@ -99,12 +99,12 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
             sprintf "Tuple!(%s)" joined
         | MapType (keyType, valueType) ->
             sprintf "%s[%s]" (recInner valueType) (recInner keyType)
-        // | OptionType elemType ->
-        //     sprintf "Maybe<%s>" (recInner elemType)
+        | OptionType elemType ->
+            sprintf "Nullable!%s" (recInner elemType)
         // | ResultType (succType, errType) ->
         //     sprintf "Result<%s,%s>" (recInner succType) (recInner errType)
         | x ->
-            sprintf "(typeToCsString: not yet supported: %A)" x
+            sprintf "(typeToDlangString: not yet supported: %A)" x
     // go
     recInner outerType
 
@@ -202,6 +202,7 @@ type PopValueContext =
     | Return
     | SafeReturn
     | CastReturn of targetType: string // string unlike the C++ version for now, because we don't have the NIType handy in many places
+    | WrapReturn of funcName: string
 
 let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
     let write = writer.Write
@@ -210,8 +211,7 @@ let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) 
         | NewVariable name -> sprintf "auto %s =" name
         | ExistingVar name -> sprintf "%s =" name
         | Return -> "return"
-        | SafeReturn -> "auto __ret ="
-        | CastReturn _ -> "auto __ret ="
+        | SafeReturn | CastReturn _ | WrapReturn _ -> "auto __ret ="
     match type_ with
     | UnitType ->
         match popContext with
@@ -280,6 +280,8 @@ let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) 
         write level "return __ret;"
     | CastReturn targetType ->
         write level "return cast(%s)__ret;" targetType
+    | WrapReturn funcName ->
+        write level "return %s(__ret);" funcName
     | _ ->
         ()
 
@@ -382,9 +384,8 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
     //
     blank()
     match gType with
-    // | UnitType -> failwith "todo"
-    // | Primitive prim -> failwith "todo"
     // | ArrayType elem -> failwith "todo"
+    // | SetType elem -> failwith "todo"
     | MapType (keyType, valueType) ->
         // push
         write 0 "private void __%s__push(%s map, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
@@ -419,7 +420,6 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
             tupleTypes |> List.indexed |> List.map (fun (i, _) -> $"_%d{i}") |> String.concat ", "
         write 1 "return tuple(%s);" varsJoined
         write 0 "}"
-    // | SetType elem -> failwith "todo"
     | BufferType elemType ->
         // push
         write 0 "private void __%s__push(%s buf, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
@@ -430,8 +430,28 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
         write 0 "private %s __%s__pop() {" (typeToDlangString context gType) (typeToName context gType)
         write 1 "return ni.popBuffer!%s();" (typeToDlangString context elemType)
         write 0 "}"
-    // | OptionType elem -> failwith "todo"
+    | OptionType elem ->
+        // push
+        write 0 "private void __%s__push(%s maybeValue, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
+        write 1 "if (!maybeValue.isNull) {"
+        pushValue context writer 2 elem "maybeValue.get" (Indirect "isReturn")
+        pushValue context writer 2 (Primitive Bool) "true" NotApplicable
+        write 1 "} else {"
+        pushValue context writer 2 (Primitive Bool) "false" NotApplicable
+        write 1 "}"
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "private %s __%s__pop() {" (typeToDlangString context gType) (typeToName context gType)
+        popValue context writer 1 (Primitive Bool) (NewVariable "hasValue")
+        write 1 "if (hasValue) {"
+        popValue context writer 2 elem (WrapReturn "nullable")
+        write 1 "} // else:"
+        write 1 "return %s();" (typeToDlangString context gType)
+        write 0 "}"
     // | ResultType(success, error) -> failwith "todo"
+    // | UnitType -> failwith "todo"
+    // | Primitive prim -> failwith "todo"
     // | Unresolved(identifier, loc, mustBe) -> failwith "todo"
     // | Resolved(name, ``type``) -> failwith "todo"
     | _ ->
@@ -1254,6 +1274,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "import std.typecons: Tuple, tuple;"
     write 0 "import std.sumtype;"
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
+    write 0 "import std.typecons: Nullable, nullable;"
 
     // render all the generics at the root level only
     for generic in allGenericTypes moduleContext do

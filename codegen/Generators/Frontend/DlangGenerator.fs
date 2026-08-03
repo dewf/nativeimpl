@@ -201,89 +201,92 @@ type PopValueContext =
     | ExistingVar of name: string
     | Return
     | SafeReturn
-    | CastReturn of targetType: string // string unlike the C++ version for now, because we don't have the NIType handy in many places
-    | WrapReturn of funcName: string
+    | WrapAndReturn of wrapFunc: (string -> string) // apply some text transformation to the raw pop content before returning
 
 let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (popContext: PopValueContext) =
     let write = writer.Write
-    let contextPrefix =
-        match popContext with
-        | NewVariable name -> sprintf "auto %s =" name
-        | ExistingVar name -> sprintf "%s =" name
-        | Return -> "return"
-        | SafeReturn | CastReturn _ | WrapReturn _ -> "auto __ret ="
-    match type_ with
-    | UnitType ->
-        match popContext with
-        | Return -> () // nothing'
-        | _ -> failwith "tried to pop a Unit value in a non-Return context, why?"
-    | Primitive prim ->
-        match prim with
-        | SizeT -> write level "%s ni.popSizeT();" contextPrefix
-        | Bool -> write level "%s ni.popBool();" contextPrefix
-        | Int(signed, width) ->
-            write level "%s ni.pop%sInt%d();" contextPrefix (if signed then "" else "U") (widthToInt width)
-        | Float32 -> write level "%s ni.popFloat();" contextPrefix
-        | Float64 -> write level "%s ni.popDouble();" contextPrefix
-        | StringType -> write level "%s ni.popString();" contextPrefix
-    | Resolved (resolvedName, resolvedType) ->
-        let name =
-            match resolvedType with
-            | FwdOpaqueType ->
-                // special treatment for these:
-                match requiredSymbolLookup context.ModuleContext resolvedName with
-                | FwdOpaqueDef parts ->
-                    sprintf "%s" (joinNameParts "." (context.LibraryPrefix @ parts))
-                | _ ->
-                    failwithf "Dlang popValue: FwdOpaque trouble, should never happen"
-            | _ ->
-                // all other types:
-                resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // annoying way of preserving the necessary prefix to the type, while injecting a `__` just before the name (eg. module.prefix.NamedGroup.__Type)
-        write level "%s %s__pop();" contextPrefix name
-    | ArrayType niType ->
-        match niType with
+    let raw =
+        match type_ with
+        | UnitType ->
+            match popContext with
+            | Return -> ""
+            | _ -> failwith "tried to pop a Unit value in a non-Return context, why?"
         | Primitive prim ->
             match prim with
-            | Bool -> write level "%s ni.popBoolArray();" contextPrefix
+            | SizeT -> "ni.popSizeT()"
+            | Bool -> "ni.popBool()"
             | Int(signed, width) ->
-                write level "%s ni.pop%sInt%dArray();" contextPrefix (if signed then "" else "U") (widthToInt width)
-            | Float32 -> write level "%s ni.popFloatArray();" contextPrefix
-            | Float64 -> write level "%s ni.popDoubleArray();" contextPrefix
-            | StringType -> write level "%s ni.popStringArray();" contextPrefix
-            | _ -> write level "// popValue not yet supported: array of prim %A" prim
-        | Resolved _ ->
-            write level "%s __%s__pop();" contextPrefix (typeToName context (ArrayType niType))
-        | ArrayType _ -> write level "%s __%s__pop();" contextPrefix (typeToName context type_) // sigh, normalize all these already - doing it so many different ways...
-        | SetType _ -> write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-        | MapType _ -> write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-        | TupleType _ -> write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-        | OptionType _ -> write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-        | ResultType _ -> write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-        | _ -> write level "// popValue not yet supported: array of %A" niType
-    | MapType _ ->
-        write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-    | TupleType _ ->
-        write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-    | SetType _ ->
-        write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-    | OptionType _ ->
-        write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-    | ResultType _ ->
-        write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-    | BufferType _ ->
-        write level "%s __%s__pop();" contextPrefix (typeToName context type_)
-    | _ ->
-        write level "// popValue %A not yet supported" type_
+                sprintf "ni.pop%sInt%d()" (if signed then "" else "U") (widthToInt width)
+            | Float32 -> "ni.popFloat()"
+            | Float64 -> "ni.popDouble()"
+            | StringType -> "ni.popString()"
+        | Resolved (resolvedName, resolvedType) ->
+            let name =
+                match resolvedType with
+                | FwdOpaqueType ->
+                    // special treatment for these:
+                    match requiredSymbolLookup context.ModuleContext resolvedName with
+                    | FwdOpaqueDef parts ->
+                        sprintf "%s" (joinNameParts "." (context.LibraryPrefix @ parts))
+                    | _ ->
+                        failwithf "Dlang popValue: FwdOpaque trouble, should never happen"
+                | _ ->
+                    // all other types:
+                    resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // annoying way of preserving the necessary prefix to the type, while injecting a `__` just before the name (eg. module.prefix.NamedGroup.__Type)
+            sprintf "%s__pop()" name
+        | ArrayType niType ->
+            match niType with
+            | Primitive prim ->
+                match prim with
+                | Bool -> "ni.popBoolArray()"
+                | Int(signed, width) ->
+                    sprintf "ni.pop%sInt%dArray()" (if signed then "" else "U") (widthToInt width)
+                | Float32 -> "ni.popFloatArray()"
+                | Float64 -> "ni.popDoubleArray()"
+                | StringType -> "ni.popStringArray()"
+                | _ -> sprintf "/* popValue not yet supported: array of prim %A */" prim
+            | Resolved _ ->
+                sprintf "__%s__pop()" (typeToName context (ArrayType niType))
+            | ArrayType _ -> sprintf "__%s__pop()" (typeToName context type_) // sigh, normalize all these already - doing it so many different ways...
+            | SetType _ -> sprintf "__%s__pop()" (typeToName context type_)
+            | MapType _ -> sprintf "__%s__pop()" (typeToName context type_)
+            | TupleType _ -> sprintf "__%s__pop()" (typeToName context type_)
+            | OptionType _ -> sprintf "__%s__pop()" (typeToName context type_)
+            | ResultType _ -> sprintf "__%s__pop()" (typeToName context type_)
+            | _ -> sprintf "/* popValue not yet supported: array of %A */" niType
+        | MapType _ ->
+            sprintf "__%s__pop()" (typeToName context type_)
+        | TupleType _ ->
+            sprintf "__%s__pop()" (typeToName context type_)
+        | SetType _ ->
+            sprintf "__%s__pop()" (typeToName context type_)
+        | OptionType _ ->
+            sprintf "__%s__pop()" (typeToName context type_)
+        | ResultType _ ->
+            sprintf "__%s__pop()" (typeToName context type_)
+        | BufferType _ ->
+            sprintf "__%s__pop()" (typeToName context type_)
+        | _ ->
+            sprintf "/* popValue %A not yet supported */" type_
     match popContext with
+    | NewVariable name ->
+        write level "auto %s = %s;" name raw
+    | ExistingVar name ->
+        write level "%s = %s;" name raw
+    | Return ->
+        match type_, popContext with
+        | UnitType, Return ->
+            // special case, don't write anything
+            ()
+        | _ ->
+            write level "return %s;" raw
     | SafeReturn ->
+        write level "auto __ret = %s;" raw
         write level "ni.clearServerSafetyArea();"
         write level "return __ret;"
-    | CastReturn targetType ->
-        write level "return cast(%s)__ret;" targetType
-    | WrapReturn funcName ->
-        write level "return %s(__ret);" funcName
-    | _ ->
-        ()
+    | WrapAndReturn wrapFunc ->
+        let wrapped = wrapFunc(raw)
+        write level "return %s;" wrapped
 
 type PushIsReturn =
     | Direct of value: bool
@@ -445,7 +448,7 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
         write 0 "private %s __%s__pop() {" (typeToDlangString context gType) (typeToName context gType)
         popValue context writer 1 (Primitive Bool) (NewVariable "hasValue")
         write 1 "if (hasValue) {"
-        popValue context writer 2 elem (WrapReturn "nullable")
+        popValue context writer 2 elem (WrapAndReturn (sprintf "nullable(%s)"))
         write 1 "} // else:"
         write 1 "return %s();" (typeToDlangString context gType)
         write 0 "}"
@@ -677,14 +680,16 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "pragma(inline)"
         write 0 "package %svoid __%s__push(%s value) {" staticPrefix (upperFirst name) (upperFirst name)
         let content =
-            sprintf "cast(%s)value" (typeToDlangString context widthType)
+            sprintf "cast(%s) value" (typeToDlangString context widthType)
         pushValue context writer 1 widthType content NotApplicable
         write 0 "}"
         // pop
         blank()
         write 0 "pragma(inline)"
         write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
-        popValue context writer 1 widthType (CastReturn (upperFirst name))
+        let wrapFunc raw =
+            sprintf "cast(%s) %s" (upperFirst name) raw
+        popValue context writer 1 widthType (WrapAndReturn wrapFunc)
         write 0 "}"
 
     | NamedBitsDef info ->
@@ -713,13 +718,15 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         blank()
         write 0 "package %svoid __%s__push(%s value) {" staticPrefix (upperFirst name) (upperFirst name)
         let pushContent =
-            sprintf "cast(%s)value" (typeToDlangString context widthType)
+            sprintf "cast(%s) value" (typeToDlangString context widthType)
         pushValue context writer 1 widthType pushContent NotApplicable
         write 0 "}"
         // pop
         blank()
         write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
-        popValue context writer 1 widthType (CastReturn (upperFirst name))
+        let wrapFunc raw =
+            sprintf "cast(%s) %s" (upperFirst name) raw
+        popValue context writer 1 widthType (WrapAndReturn wrapFunc)
         write 0 "}"
 
     | OptionsDef namedFields ->

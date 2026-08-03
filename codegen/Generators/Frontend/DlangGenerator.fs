@@ -85,9 +85,12 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
                     failwith "typeToDlangString: failed to find fwdopaque definition"
             | _ ->
                 resolvedNameToString context resolvedName TypeMode
-        | ArrayType elemType -> sprintf "%s[]" (recInner elemType)
-        // | SetType elemType -> sprintf "HashSet<%s>" (recInner elemType)
-        // | BufferType elemType -> sprintf "INativeBuffer<%s>" (recInner elemType)
+        | ArrayType elemType ->
+            sprintf "%s[]" (recInner elemType)
+        | SetType elemType ->
+            sprintf "Set!%s" (recInner elemType)
+        | BufferType elemType ->
+            sprintf "ni.INativeBuffer!%s" (recInner elemType)
         | TupleType tupleTypes ->
             let joined =
                 tupleTypes
@@ -417,7 +420,16 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
         write 1 "return tuple(%s);" varsJoined
         write 0 "}"
     // | SetType elem -> failwith "todo"
-    // | BufferType elemType -> failwith "todo"
+    | BufferType elemType ->
+        // push
+        write 0 "private void __%s__push(%s buf, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
+        write 1 "ni.pushBuffer(buf, isReturn);"
+        write 0 "}"
+        // pop
+        blank()
+        write 0 "private %s __%s__pop() {" (typeToDlangString context gType) (typeToName context gType)
+        write 1 "return ni.popBuffer!%s();" (typeToDlangString context elemType)
+        write 0 "}"
     // | OptionType elem -> failwith "todo"
     // | ResultType(success, error) -> failwith "todo"
     // | Unresolved(identifier, loc, mustBe) -> failwith "todo"

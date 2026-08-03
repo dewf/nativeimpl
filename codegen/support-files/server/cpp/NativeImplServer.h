@@ -129,7 +129,7 @@ private:
 	size_t totalSize;
 protected:
 	void nativePush() override {
-		ni_BufferDescriptor desc;
+		ni_BufferDescriptor desc {};
 		desc.start = block;
 		desc.elementSize = elementSize;
 		desc.totalCount = totalCount;
@@ -141,32 +141,43 @@ protected:
 		block = nullptr;
 	}
 public:
-	explicit ServerBuffer(std::vector<int> dims)
-		: ServerResource("buffer")
+	ServerBuffer(const size_t length) : ServerResource("buffer")
 	{
 		elementSize = sizeof(T);
-		totalCount = 1;
-		for (auto i = dims.begin(); i != dims.end(); i++) {
-			totalCount *= *i;
-		}
+		totalCount = length;
 		totalSize = totalCount * elementSize;
 		block = malloc(totalSize);
 	}
-	ServerBuffer(void *data, size_t count)
+	ServerBuffer(const size_t length1, const size_t length2) : ServerResource("buffer")
+	{
+		elementSize = sizeof(T);
+		totalCount = length1 * length2;
+		totalSize = totalCount * elementSize;
+		block = malloc(totalSize);
+	}
+	ServerBuffer(const size_t length1, const size_t length2, const size_t length3) : ServerResource("buffer")
+	{
+		elementSize = sizeof(T);
+		totalCount = length1 * length2 * length3;
+		totalSize = totalCount * elementSize;
+		block = malloc(totalSize);
+	}
+	ServerBuffer(T *data, size_t count)
 		: ServerResource("buffer")
 	{
 		elementSize = sizeof(T);
 		totalCount = count;
 		totalSize = count * elementSize;
-		block = malloc(totalSize);
+		// block = malloc(totalSize); // wtf?
+		block = data;
 	}
 	T* getSpan(size_t* length) override {
 		if (length != nullptr) {
 			*length = totalCount;
 		}
-		return (T*)block;
+		return static_cast<T*>(block);
 	}
-	static std::shared_ptr<ServerBuffer<T>> getByID(int id) {
+	static std::shared_ptr<ServerBuffer> getByID(int id) {
 		auto res = ServerResource::getResourceById(id);
 		return std::dynamic_pointer_cast<ServerBuffer<T>>(res);
 	}

@@ -319,7 +319,12 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                 sprintf "const std::optional<%s>&" (recInner TypeParams elem)
             | _ ->
                 sprintf "std::optional<%s>" (recInner TypeParams elem)
-        | ResultType (succ, err) -> sprintf "result::Result<%s, %s>" (recInner TypeParams succ) (recInner TypeParams err)
+        | ResultType (succ, err) ->
+            match innerContext with
+            | FunctionArguments ->
+                sprintf "const std::expected<%s, %s>&" (recInner TypeParams succ) (recInner TypeParams err)
+            | _ ->
+                sprintf "std::expected<%s, %s>" (recInner TypeParams succ) (recInner TypeParams err)
         | BufferType elemType ->
             match innerContext with
             | FunctionArguments -> sprintf "const std::shared_ptr<NativeBuffer<%s>>&" (recInner TypeParams elemType)
@@ -439,7 +444,7 @@ let rec defaultValueForType (context: CppRenderContext) (outerType: NIType) =
         | SetType niType -> sprintf "std::set<%s>()" (typeToCppString context TypeParams niType)
         | BufferType elemType -> sprintf "std::shared_ptr<NativeBuffer<%s>>()" (typeToCppString context TypeParams elemType)
         | OptionType elem -> sprintf "std::optional<%s>()" (typeToCppString context TypeParams elem)
-        | ResultType (succ, _) -> sprintf "result::Ok(%s)" (recInner succ)
+        | ResultType (succ, _) -> sprintf "%s" (recInner succ)
         | _ ->
             "(defaultValueForType: not yet supported)"
     recInner outerType
@@ -1169,12 +1174,12 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 1 "%s successValuesArray;" (typeToCppString context Default (ArrayType succType))
             write 1 "%s errorValuesArray;" (typeToCppString context Default (ArrayType errType))
             write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
-            write 2 "if (i->is_ok()) {"
-            write 3 "successValuesArray.push_back(i->unwrap());"
+            write 2 "if (i->has_value()) {"
+            write 3 "successValuesArray.push_back(*i);"
             write 3 "isSuccessArray.push_back(true);"
             write 2 "}"
             write 2 "else {"
-            write 3 "errorValuesArray.push_back(i->unwrap_err());"
+            write 3 "errorValuesArray.push_back(i->error());"
             write 3 "isSuccessArray.push_back(false);"
             write 2 "}"
             write 1 "}"
@@ -1194,10 +1199,10 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 1 "auto errPtr = errorValuesArray.data();"
             write 1 "for (auto i = isSuccessArray.begin(); i != isSuccessArray.end(); i++) {"
             write 2 "if (*i) {"
-            write 3 "ret.push_back(result::Ok(*succPtr++));"
+            write 3 "ret.push_back(*succPtr++);"
             write 2 "}"
             write 2 "else {"
-            write 3 "ret.push_back(result::Err(*errPtr++));"
+            write 3 "ret.push_back(std::unexpected(*errPtr++));"
             write 2 "}"
             write 1 "}"
             write 1 "return ret;"
@@ -1413,12 +1418,12 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         blankCpp()
         writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
         writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
-        writeCpp 1 "if (value.is_ok()) {"
-        pushValue context writerCpp 2 succType "value.unwrap()" (Indirect "isReturn")
+        writeCpp 1 "if (value.has_value()) {"
+        pushValue context writerCpp 2 succType "*value" (Indirect "isReturn")
         pushValue context writerCpp 2 (Primitive Bool) "true" NotApplicable
         writeCpp 1 "}"
         writeCpp 1 "else {"
-        pushValue context writerCpp 2 errType "value.unwrap_err()" (Indirect "isReturn")
+        pushValue context writerCpp 2 errType "value.error()" (Indirect "isReturn")
         pushValue context writerCpp 2 (Primitive Bool) "false" NotApplicable
         writeCpp 1 "}"
         writeCpp 0 "}"
@@ -1429,10 +1434,10 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         popValue context writerCpp 1 (Primitive Bool) (Variable "isSuccess")
         writeCpp 1 "if (isSuccess) {"
         popValue context writerCpp 2 succType (Variable "successValue")
-        writeCpp 2 "return result::Ok(successValue);"
+        writeCpp 2 "return successValue;"
         writeCpp 1 "}"
         popValue context writerCpp 1 errType (Variable "errValue")
-        writeCpp 1 "return result::Err(errValue);"
+        writeCpp 1 "return std::unexpected(errValue);"
         writeCpp 0 "}"
     | OptionType elem ->
         // PUSH =====
@@ -1631,11 +1636,11 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         // ghetto, but for now instead of flattening, just write an inline wrapper
         // header-only because inline!
         blankH()
-        writeH 0 "inline %s %s__pop() {" (typeToCppString context Default niType) name
+        writeH 0 "inline %s %s__pop() {" name name // (typeToCppString context Default niType) name
         popValue context writerH 1 niType Return
         writeH 0 "}"
         blankH()
-        writeH 0 "inline void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
+        writeH 0 "inline void %s__push(%s value, bool isReturn) {" name name // name (typeToCppString context FunctionArguments niType)
         pushValue context writerH 1 niType "value" (Indirect "isReturn")
         writeH 0 "}"
     | EnumDef info ->
@@ -2349,7 +2354,7 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
     write 0 "#include <tuple>"
     write 0 "#include <set>"
     write 0 "#include <optional>"
-    write 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "result"]))
+    write 0 "#include <expected>"
     write 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "flags"]))
     write 0 "using namespace flags;"
 
@@ -2674,7 +2679,7 @@ let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: O
     write 0 "cmake_minimum_required(VERSION 4.2)"
     write 0 "project(%sImpl)" outParams.LibraryName
     blank()
-    write 0 "set(CMAKE_CXX_STANDARD 20)"
+    write 0 "set(CMAKE_CXX_STANDARD 23)"
     blank()
     write 0 "add_library(%sImpl STATIC)" outParams.LibraryName
     blank()

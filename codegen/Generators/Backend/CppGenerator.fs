@@ -1633,16 +1633,24 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
     | DelegateDef info ->
         renderWrapperDelegate context writerH writerCpp name info niType
     | TypeAliasDef niType ->
-        // ghetto, but for now instead of flattening, just write an inline wrapper
-        // header-only because inline!
+        // sadly it turns out we cannot inline these in the wrapper header file, which seemed the obvious thing to do
+        // because we encountered a case where a typedef wrapped a generic, but generic push/pop functions only get rendered to the wrapper .cpp
+        // and typedefs DO need to be pushed/popped by name from other modules, and we can't just flatten them because if they map to a generic, the push/pop for that only exists in the module containing the typdef->generic
+        // long story short, this needs to be a normal, real function present in both the header and cpp. ah well!
+        // push
         blankH()
-        writeH 0 "inline %s %s__pop() {" name name // (typeToCppString context Default niType) name
-        popValue context writerH 1 niType Return
-        writeH 0 "}"
+        blankCpp()
+        writeH 0 "void %s__push(%s value, bool isReturn);" name name // name (typeToCppString context FunctionArguments niType)
+        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name // name (typeToCppString context FunctionArguments niType)
+        pushValue context writerCpp 1 niType "value" (Indirect "isReturn")
+        writeCpp 0 "}"
+        // pop
         blankH()
-        writeH 0 "inline void %s__push(%s value, bool isReturn) {" name name // name (typeToCppString context FunctionArguments niType)
-        pushValue context writerH 1 niType "value" (Indirect "isReturn")
-        writeH 0 "}"
+        blankCpp()
+        writeH 0 "%s %s__pop();" name name
+        writeCpp 0 "%s %s__pop() {" name name // (typeToCppString context Default niType) name
+        popValue context writerCpp 1 niType Return
+        writeCpp 0 "}"
     | EnumDef info ->
         let widthType =
             match info.MaybeWidth with

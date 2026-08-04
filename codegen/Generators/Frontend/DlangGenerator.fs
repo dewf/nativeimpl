@@ -101,8 +101,8 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
             sprintf "%s[%s]" (recInner valueType) (recInner keyType)
         | OptionType elemType ->
             sprintf "Nullable!%s" (recInner elemType)
-        // | ResultType (succType, errType) ->
-        //     sprintf "Result<%s,%s>" (recInner succType) (recInner errType)
+        | ResultType (succType, errType) ->
+            sprintf "ni.Result!(%s, %s)" (recInner succType) (recInner errType)
         | x ->
             sprintf "(typeToDlangString: not yet supported: %A)" x
     // go
@@ -452,7 +452,28 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
         write 1 "} // else:"
         write 1 "return %s();" (typeToDlangString context gType)
         write 0 "}"
-    // | ResultType(success, error) -> failwith "todo"
+    | ResultType (successType, errorType) ->
+        // push
+        write 0 "private void __%s__push(%s result, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
+        write 1 "if (result.isSuccess) {"
+        pushValue context writer 2 successType "result.value" (Indirect "isReturn")
+        pushValue context writer 2 (Primitive Bool) "true" NotApplicable
+        write 1 "} else {"
+        pushValue context writer 2 errorType "result.error" (Indirect "isReturn")
+        pushValue context writer 2 (Primitive Bool) "false" NotApplicable
+        write 1 "}"
+        write 0 "}"
+        // pop
+        blank()
+        let wrapFunc okErr raw =
+            sprintf "%s.%s(%s)" (typeToDlangString context gType) okErr raw
+        write 0 "private %s __%s__pop() {" (typeToDlangString context gType) (typeToName context gType)
+        popValue context writer 1 (Primitive Bool) (NewVariable "success")
+        write 1 "if (success) {"
+        popValue context writer 2 successType (WrapAndReturn (wrapFunc "ok"))
+        write 1 "} // else:"
+        popValue context writer 1 errorType (WrapAndReturn (wrapFunc "err"))
+        write 0 "}"
     // | UnitType -> failwith "todo"
     // | Primitive prim -> failwith "todo"
     // | Unresolved(identifier, loc, mustBe) -> failwith "todo"

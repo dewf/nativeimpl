@@ -108,13 +108,6 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
     // go
     recInner outerType
 
-let rec newDlangArray (context: DlangRenderContext) (ofType: NIType) (countVar: string) =
-    match ofType with
-    | ArrayType niType ->
-        sprintf "%s[]" (newDlangArray context niType countVar)
-    | _ ->
-        sprintf "new %s[%s]" (typeToDlangString context ofType) countVar
-
 let typeToName (context: DlangRenderContext) (outerType: NIType) =
     let rec recInner (inGeneric: bool) = function
         | UnitType -> failwith "typeToName: 'unit' type as name?"
@@ -360,7 +353,10 @@ let pushValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int)
     | SetType niType ->
         match niType with
         | Primitive _ ->
-            write level "__%s__push(%s);" (typeToName context type_) content
+            // the 'isReturn' is silly but necessary since all our push wrappers have it
+            // we will have to improve the generation at some point to not generate unnecessary/spurious
+            // 'isReturn' parameters on types that don't contain reftypes
+            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
         | Resolved(_, resolvedType) ->
             match resolvedType with
             | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
@@ -380,15 +376,100 @@ let pushValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int)
     | _ ->
         write level "// pushValue %A not yet supported" type_
 
-// TODO: ArrayOrSetRenderer etc
+type ArrayOrSetMode =
+    | ArrayMode
+    | SetMode
+type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
+    let write, blank = writer.Write, writer.Blank
+    let renderDefault () =
+        // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
+        match mode with
+        | ArrayMode ->
+            // push
+            write 0 "private void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+            write 1 "import std.range: retro;"
+            write 1 "foreach (value; retro(values)) {"
+            pushValue context writer 2 elemType "value" (Indirect "isReturn")
+            write 1 "}"
+            pushValue context writer 1 (Primitive SizeT) "values.length" NotApplicable
+            write 0 "}"
+            // pop
+            blank()
+            write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+            popValue context writer 1 (Primitive SizeT) (NewVariable "count")
+            write 1 "auto ret = new %s[count];" (typeToDlangString context elemType)
+            write 1 "for (auto i = 0; i < count; i++) {"
+            popValue context writer 2 elemType (ExistingVar "ret[i]")
+            write 1 "}"
+            write 1 "return ret;"
+            write 0 "}"
+        | SetMode ->
+            write 0 "// renderDefault() SetMode for %s not yet implemented" (typeToDlangString context outerType)
+    interface IArrayLikeRenderer with
+        member this.TypedefTuple (tt: NIType) =
+            failwith "ArrayOrSetRenderer: TypedefTuple not yet implemented"
+        member this.TypedefPrim (prim: NIPrimitive) =
+            failwith "ArrayOrSetRenderer: TypedefPrim not yet implemented"
+        member this.EnumType (name: ResolvedName) =
+            failwith "ArrayOrSetRenderer: EnumType not yet imnplemented"
+        member this.StructType (structName: ResolvedName) (namedFields: NamedField list) =
+            failwith "ArrayOrSetRenderer: StructType not yet implemented"
+        member this.TupleType (tupleTypes: NIType list) =
+            failwith "ArrayOrSetRenderer: TupleType not yet implemented"
+        member this.ArrayType () =
+            renderDefault()
+        member this.MapType () =
+            renderDefault()
+        member this.DelegateType () =
+            renderDefault()
+        member this.SetType () =
+            renderDefault()
+        member this.OptionType elemType =
+            failwith "ArrayOrSetRenderer: OptionType not yet implemented"
+        member this.ResultType succType errType =
+            failwith "ArrayOrSetRenderer: ResultType not yet implemented"
+        member this.SumType () =
+            renderDefault()
+        member this.Primitive (prim: NIPrimitive) =
+            assert (Primitive prim = elemType) // uhhh seems a bit redundant ...
+            match mode with
+            | ArrayMode ->
+                // built-in array type - nothing to actually render, (should be) handled by NI stack primitives
+                ()
+            | SetMode ->
+                // push
+                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                pushValue context writer 1 (ArrayType elemType) "items.array()" NotApplicable
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                let wrapFunc raw =
+                    sprintf "%s(%s)" (typeToDlangString context outerType) raw
+                popValue context writer 1 (ArrayType elemType) (WrapAndReturn wrapFunc)
+                write 0 "}"
+        member this.Options () =
+            renderDefault()
+        member this.Opaque () =
+            failwith "ArrayOrSetRenderer: Opaque not yet implemented"
+        member this.Other (t: NIType) =
+            let modeStr =
+                if mode = ArrayMode then "array" else "set"
+            write 2 "// TODO: ArrayOrSetRenderer .Other for %s of %s" modeStr (typeToDlangString context outerType)
 
 let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: NIType) =
     let write, blank = writer.Write, writer.Blank
     //
     blank()
     match gType with
-    // | ArrayType elem -> failwith "todo"
-    // | SetType elem -> failwith "todo"
+    | ArrayType elemType ->
+        let renderer =
+            ArrayOrSetRenderer(context, writer, gType, elemType, ArrayMode)
+        renderArrayLike context.ModuleContext elemType renderer
+    | SetType elemType ->
+        let renderer =
+            ArrayOrSetRenderer(context, writer, gType, elemType, SetMode)
+        renderArrayLike context.ModuleContext elemType renderer
     | MapType (keyType, valueType) ->
         // push
         write 0 "private void __%s__push(%s map, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
@@ -474,10 +555,6 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
         write 1 "} // else:"
         popValue context writer 1 errorType (WrapAndReturn (wrapFunc "err"))
         write 0 "}"
-    // | UnitType -> failwith "todo"
-    // | Primitive prim -> failwith "todo"
-    // | Unresolved(identifier, loc, mustBe) -> failwith "todo"
-    // | Resolved(name, ``type``) -> failwith "todo"
     | _ ->
         write 0 "// TODO: renderLibraryUserType: generic %s" (typeToDlangString context gType)
 
@@ -1303,6 +1380,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "import std.sumtype;"
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
     write 0 "import std.typecons: Nullable, nullable;"
+    write 0 "import %s.support.simpleset;" (lower libraryName)
 
     // render all the generics at the root level only
     for generic in allGenericTypes moduleContext do

@@ -479,7 +479,13 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 3 "return intValues.Select(i => (%s)i).ToHashSet();" (typeToCsString context elemType)
             write 2 "}"
         member this.StructType (structName: ResolvedName) (namedFields: NamedField list) =
-            if mode = ArrayMode then
+            let fieldValuesJoined =
+                namedFields
+                |> List.indexed
+                |> List.map (fun (i, _) -> sprintf "f%dValues[i]" i)
+                |> String.concat ", "
+            match mode with
+            | ArrayMode ->
                 // push
                 write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
                 write 2 "{"
@@ -502,17 +508,43 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 for i, field in namedFields |> List.indexed do
                     popValue context writer 3 (ArrayType field.Type_) (NewVariable (sprintf "f%dValues" i))
                 write 3 "var count = f0Values.Length;"
-                write 3 "var ret = new %s[count];" (typeToCsString context elemType)
+                write 3 "var ret = %s;" (newCsArray context elemType "count")
                 write 3 "for (var i = 0; i < count; i++)"
                 write 3 "{"
-                let fieldValuesJoined =
-                    namedFields |> List.indexed |> List.map (fun (i, _) -> sprintf "f%dValues[i]" i) |> String.concat ", "
                 write 4 "ret[i] = new %s(%s);" (typeToCsString context elemType) fieldValuesJoined
                 write 3 "}"
                 write 3 "return ret;"
                 write 2 "}"
-            else
-                failwith "ArrayOrSetRenderer StructType - 'set' mode not yet implemented"
+            | SetMode ->
+                // push
+                write 2 "internal static void __%s__Push(%s set, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "{"
+                write 3 "var count = set.Count;"
+                for i, field in namedFields |> List.indexed do
+                    write 3 "var f%dValues = %s;" i (newCsArray context field.Type_ "count")
+                write 3 "foreach (var (i, item) in set.Index())"
+                write 3 "{"
+                for i, field in namedFields |> List.indexed do
+                    write 4 "f%dValues[i] = item.%s;" i (upperFirst field.Name)
+                write 3 "}"
+                // push in reverse
+                for i, field in namedFields |> List.indexed |> List.rev do
+                    pushValue context writer 3 (ArrayType field.Type_) (sprintf "f%dValues" i) (Indirect "isReturn")
+                write 2 "}"
+                // pop
+                blank()
+                write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+                write 2 "{"
+                for i, field in namedFields |> List.indexed do
+                    popValue context writer 3 (ArrayType field.Type_) (NewVariable (sprintf "f%dValues" i))
+                write 3 "var count = f0Values.Length;"
+                write 3 "var ret = new %s();" (typeToCsString context outerType)
+                write 3 "for (var i = 0; i < count; i++)"
+                write 3 "{"
+                write 4 "ret.Add(new %s(%s));" (typeToCsString context elemType) fieldValuesJoined
+                write 3 "}"
+                write 3 "return ret;"
+                write 2 "}"
         member this.TupleType (tupleTypes: NIType list) =
             if mode = ArrayMode then
                 // PUSH ====================

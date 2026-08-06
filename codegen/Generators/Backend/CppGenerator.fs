@@ -971,11 +971,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "inline %s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
             popValue context writer 1 (ArrayType (Primitive prim)) Return
             write 0 "}"
-        member this.EnumType (name: ResolvedName) =
-            let info =
-                match requiredSymbolLookup context.ModuleContext name with
-                | EnumDef info -> info
-                | _ -> failwith "C++ ArrayOrSetRenderer: failed to look up enum definition"
+        member this.EnumType (info: EnumInfo) =
             let widthType =
                 widthTypeForEnum context.ModuleContext info
             if info.FlagsMode then
@@ -991,8 +987,8 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 // PUSH ================
                 write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
                 write 1 "std::vector<%s> intValues;" (typeToCppString context TypeParams widthType)
-                write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
-                write 2 "intValues.push_back((%s)*i);" (typeToCppString context Default widthType)
+                write 1 "for (auto i : values) {"
+                write 2 "intValues.push_back(static_cast<%s>(i));" (typeToCppString context Default widthType)
                 write 1 "}"
                 pushValue context writer 1 (ArrayType widthType) "intValues" (Indirect "isReturn")
                 write 0 "}"
@@ -1001,14 +997,12 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
                 popValue context writer 1 (ArrayType widthType) (Variable "intValues")
                 write 1 "%s __ret;" (typeToCppString context Default outerType)
-                write 1 "for (auto i = intValues.begin(); i != intValues.end(); i++) {"
-                let enumTypeStr =
-                    resolvedNameToString context name TypeMode
+                write 1 "for (auto i : intValues) {"
                 match outerType with
                 | ArrayType _ ->
-                    write 2 "__ret.push_back((%s)*i);" enumTypeStr
+                    write 2 "__ret.push_back(static_cast<%s>(i));" (typeToCppString context TypeParams elemType)
                 | SetType _ ->
-                    write 2 "__ret.insert((%s)*i);" enumTypeStr
+                    write 2 "__ret.insert(static_cast<%s>(i));" (typeToCppString context TypeParams elemType)
                 | _ ->
                     failwith "!!!"
                 write 1 "}"

@@ -459,13 +459,9 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 2 "}"
             else
                 failwith "ArrayOrSetRenderer: TypedefPrim (set mode) not yet implemented"
-        member this.EnumType (name: ResolvedName) =
+        member this.EnumType (info: EnumInfo) =
             let widthType =
-                match requiredSymbolLookup context.ModuleContext name with
-                | EnumDef info ->
-                    widthTypeForEnum context.ModuleContext info
-                | _ ->
-                    failwith "C# ArrayRenderer this.EnumType passed non-enum type name"
+                widthTypeForEnum context.ModuleContext info
             // push
             write 2 "internal static void __%s__Push(%s items)" (typeToName context outerType) (typeToCsString context outerType)
             write 2 "{"

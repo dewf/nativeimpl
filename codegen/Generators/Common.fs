@@ -468,7 +468,7 @@ let symbolToRenderableKey (SymbolName nameParts) (currentNamespace: string list)
 type IArrayLikeRenderer =
     abstract TypedefTuple: NIType -> unit
     abstract TypedefPrim: NIPrimitive -> unit
-    abstract EnumType: name: ResolvedName -> unit
+    abstract EnumType: info: EnumInfo -> unit
     abstract StructType: name: ResolvedName -> NamedField list -> unit
     abstract TupleType: NIType list -> unit
     abstract ArrayType: unit -> unit
@@ -485,7 +485,7 @@ type IArrayLikeRenderer =
 
 let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArrayLikeRenderer) =
     match elemType with
-    | Resolved(resolvedName, resolvedType) ->
+    | Resolved (resolvedName, resolvedType) ->
         let content =
             requiredSymbolLookup context resolvedName
         match resolvedType with
@@ -498,7 +498,11 @@ let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArra
             | _ ->
                 failwithf "array of typedef %A: TODO (basic array treatment)" resolvedName
         | EnumType ->
-            renderer.EnumType resolvedName
+            match content with
+            | EnumDef info ->
+                renderer.EnumType info
+            | _ ->
+                failwithf "renderArrayLike: failed to look up enum info (should be impossible)"
         | StructType ->
             // fetch the fields so we can make a struct-of-arrays
             match content with

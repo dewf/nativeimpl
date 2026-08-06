@@ -410,11 +410,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
             failwith "ArrayOrSetRenderer: TypedefTuple not yet implemented"
         member this.TypedefPrim (prim: NIPrimitive) =
             failwith "ArrayOrSetRenderer: TypedefPrim not yet implemented"
-        member this.EnumType (name: ResolvedName) =
-            let info =
-                match requiredSymbolLookup context.ModuleContext name with
-                | EnumDef info -> info
-                | _ -> failwithf "IArrayLikeRenderer.EnumType: given name of non-enum thing"
+        member this.EnumType (info: EnumInfo) =
             let widthType =
                 widthTypeForEnum context.ModuleContext info
             match mode with

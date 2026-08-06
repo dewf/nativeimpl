@@ -449,6 +449,11 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 1 "return %s(enumRange);" (typeToDlangString context outerType)
                 write 0 "}"
         member this.StructType (structName: ResolvedName) (namedFields: NamedField list) =
+            let fieldValuesJoined =
+                namedFields
+                |> List.indexed
+                |> List.map (fun (i, _) -> sprintf "f%dvalues[i]" i)
+                |> String.concat ", "
             match mode with
             | ArrayMode ->
                 // push
@@ -472,17 +477,36 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 1 "auto count = f0values.length;"
                 write 1 "auto ret = new %s[count];" (typeToDlangString context elemType)
                 write 1 "for (auto i = 0; i < count; i++) {"
-                let fieldValuesJoined =
-                    namedFields
-                    |> List.indexed
-                    |> List.map (fun (i, _) -> sprintf "f%dvalues[i]" i)
-                    |> String.concat ", "
                 write 2 "ret[i] = %s(%s);" (typeToDlangString context elemType) fieldValuesJoined
                 write 1 "}"
                 write 1 "return ret;"
                 write 0 "}"
             | SetMode ->
-                failwith "dlang ArrayOrSetRenderer.StructType - 'set' mode not yet implemented"
+                // push
+                write 0 "private void __%s__push(%s set, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "auto values = set.array();"
+                write 1 "auto count = values.length;"
+                for i, field in namedFields |> List.indexed do
+                    write 1 "auto f%dvalues = new %s[count];" i (typeToDlangString context field.Type_)
+                write 1 "for (auto i = 0; i < count; i++) {"
+                for i, field in namedFields |> List.indexed do
+                    write 2 "f%dvalues[i] = values[i].%s;" i (lowerFirst field.Name)
+                write 1 "}"
+                // push in reverse order
+                for i, field in namedFields |> List.indexed |> List.rev do
+                    pushValue context writer 1 (ArrayType field.Type_) (sprintf "f%dvalues" i) (Indirect "isReturn")
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                write 1 "import std.range : iota;"
+                write 1 "import std.algorithm : map;"
+                for i, field in namedFields |> List.indexed do
+                    popValue context writer 1 (ArrayType field.Type_) (NewVariable (sprintf "f%dvalues" i))
+                write 1 "auto count = f0values.length;"
+                write 1 "auto r = iota(count).map!(i => %s(%s));" (typeToDlangString context elemType) fieldValuesJoined
+                write 1 "return %s(r);" (typeToDlangString context outerType)
+                write 0 "}"
         member this.TupleType (tupleTypes: NIType list) =
             write 0 "// IArrayLikeRenderer: TupleType %s" (typeToDlangString context outerType)
         member this.ArrayType () =

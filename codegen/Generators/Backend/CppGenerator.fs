@@ -2048,6 +2048,8 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             renderFields nextContext
         | None ->
             renderFields context
+        // default comparison handling (for sets etc):
+        write 1 "auto operator<=>(const %s&) const = default;" name
         write 0 "};" // end struct
     | OptionsDef namedFields ->
         renderHeaderOptionsType context writer name namedFields

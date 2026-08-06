@@ -175,6 +175,12 @@ type TypeContext =
     | TypeParams
     | BareType  // ie, no std::shared_ptr<>, no Flags<T> etc
 let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) (outerType: NIType) =
+    let constWhenFuncArg (innerContext: TypeContext) (common: string) =
+        match innerContext with
+        | FunctionArguments ->
+            sprintf "const %s&" common
+        | _ ->
+            common
     let rec recInner (innerContext: TypeContext) = function
         | UnitType -> "void"
         | Primitive prim ->
@@ -194,11 +200,7 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
             | Float32 -> "float"
             | Float64 -> "double"
             | StringType ->
-                match innerContext with
-                | FunctionArguments ->
-                    "const std::string&"
-                | _ ->
-                    "std::string"
+                constWhenFuncArg innerContext "std::string"
         | Resolved (resolvedName, resolvedType) ->
             let name =
                 resolvedNameToString context resolvedName TypeMode
@@ -226,11 +228,8 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                 | _ ->
                     sprintf "std::shared_ptr<%s>" name
             | DelegateType ->
-                match innerContext with
-                | FunctionArguments ->
-                    sprintf "const std::function<%s>&" name
-                | _ ->
-                    sprintf "std::function<%s>" name
+                sprintf "std::function<%s>" name
+                |> constWhenFuncArg innerContext
             | EnumType ->
                 let definition =
                     requiredSymbolLookup context.ModuleContext resolvedName
@@ -239,27 +238,16 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                     name
                 | _ -> failwith "typeToCppString - problem fetching enum definition"
             | SumType ->
-                match innerContext with
-                | FunctionArguments ->
-                    sprintf "const std::shared_ptr<%s::Base>&" name
-                | _ ->
-                    sprintf "std::shared_ptr<%s::Base>" name
+                sprintf "std::shared_ptr<%s::Base>" name
+                |> constWhenFuncArg innerContext
             | OptionsType ->
-                match innerContext with
-                | FunctionArguments ->
-                    sprintf "const %s&" name
-                | _ ->
-                    name
+                constWhenFuncArg innerContext name
             | NamedBitsType ->
                 match innerContext with
                 | BareType -> name
                 | _ -> sprintf "Flags<%s>" name
             | StructType ->
-                match innerContext with
-                | FunctionArguments ->
-                    sprintf "const %s&" name
-                | _ ->
-                    name
+                constWhenFuncArg innerContext name
             | TypedefType ->
                 match innerContext with
                 | FunctionArguments ->
@@ -289,46 +277,26 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
             | _ ->
                 name
         | ArrayType niType ->
-            let common =
-                sprintf "std::vector<%s>" (recInner TypeParams niType)
-            match innerContext with
-            | FunctionArguments ->
-                sprintf "const %s&" common
-            | _ ->
-                common
+            sprintf "std::vector<%s>" (recInner TypeParams niType)
+            |> constWhenFuncArg innerContext
         | MapType (keyType, valueType) ->
-            let common =
-                sprintf "std::map<%s,%s>" (recInner TypeParams keyType) (recInner TypeParams valueType)
-            match innerContext with
-            | FunctionArguments ->
-                sprintf "const %s&" common
-            | _ ->
-                common
+            sprintf "std::map<%s,%s>" (recInner TypeParams keyType) (recInner TypeParams valueType)
+            |> constWhenFuncArg innerContext
         | TupleType tupleTypes ->
-            let common =
-                sprintf "std::tuple<%s>" (tupleTypes |> List.map (recInner TypeParams) |> String.concat ",")
-            match innerContext with
-            | FunctionArguments ->
-                sprintf "const %s&" common
-            | _ ->
-                common
-        | SetType niType -> sprintf "std::set<%s>" (recInner TypeParams niType)
+            sprintf "std::tuple<%s>" (tupleTypes |> List.map (recInner TypeParams) |> String.concat ",")
+            |> constWhenFuncArg innerContext
+        | SetType niType ->
+            sprintf "std::set<%s>" (recInner TypeParams niType)
+            |> constWhenFuncArg innerContext
         | OptionType elem ->
-            match innerContext with
-            | FunctionArguments ->
-                sprintf "const std::optional<%s>&" (recInner TypeParams elem)
-            | _ ->
-                sprintf "std::optional<%s>" (recInner TypeParams elem)
+            sprintf "std::optional<%s>" (recInner TypeParams elem)
+            |> constWhenFuncArg innerContext
         | ResultType (succ, err) ->
-            match innerContext with
-            | FunctionArguments ->
-                sprintf "const std::expected<%s, %s>&" (recInner TypeParams succ) (recInner TypeParams err)
-            | _ ->
-                sprintf "std::expected<%s, %s>" (recInner TypeParams succ) (recInner TypeParams err)
+            sprintf "std::expected<%s, %s>" (recInner TypeParams succ) (recInner TypeParams err)
+            |> constWhenFuncArg innerContext
         | BufferType elemType ->
-            match innerContext with
-            | FunctionArguments -> sprintf "const std::shared_ptr<NativeBuffer<%s>>&" (recInner TypeParams elemType)
-            | _ -> sprintf "std::shared_ptr<NativeBuffer<%s>>" (recInner TypeParams elemType)
+            sprintf "std::shared_ptr<NativeBuffer<%s>>" (recInner TypeParams elemType)
+            |> constWhenFuncArg innerContext
         | x -> sprintf "(typeToCppString: not done yet [%A])" x
     recInner outerTypeContext outerType
 
@@ -1008,31 +976,18 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 match requiredSymbolLookup context.ModuleContext name with
                 | EnumDef info -> info
                 | _ -> failwith "C++ ArrayOrSetRenderer: failed to look up enum definition"
+            let widthType =
+                widthTypeForEnum context.ModuleContext info
             if info.FlagsMode then
-                // TODO: figure out the right width type to use - for now just relying on int32_t (used to use uint32_t, but Qt's stuff uses int, and thinking about it, we should default to signed for languages like Java)
                 // PUSH ===================================
                 write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
-                pushValue context writer 1 (ArrayType (Primitive(Int(true,Width32)))) "values" NotApplicable
+                pushValue context writer 1 (ArrayType widthType) "values" NotApplicable
                 write 0 "}"
                 // POP =====================================
                 write 0 "inline %s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
-                popValue context writer 1  (ArrayType (Primitive(Int(true,Width32)))) PopValueContext.Return
+                popValue context writer 1  (ArrayType widthType) PopValueContext.Return
                 write 0 "}"
             else
-                let widthType =
-                    // what int size will we use to encode these?
-                    match info.MaybeWidth with
-                    | Some provided ->
-                        // use what the user asked for (currently no checking to verify it's big enough)
-                        provided
-                    | None ->
-                        // what's the smallest width that will accommodate the enum size?
-                        let iWidth =
-                            match info.Values.Length with
-                            | x when x < 128 -> Width8
-                            | x when x < 32768 -> Width16
-                            | _ -> Width32
-                        Primitive(Int(true, iWidth))
                 // PUSH ================
                 write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
                 write 1 "std::vector<%s> intValues;" (typeToCppString context TypeParams widthType)
@@ -1653,9 +1608,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         writeCpp 0 "}"
     | EnumDef info ->
         let widthType =
-            match info.MaybeWidth with
-            | Some widthType -> widthType
-            | None -> Primitive(Int(true,Width32))
+            widthTypeForEnum context.ModuleContext info
         if info.FlagsMode then
             blankH()
             writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
@@ -2159,17 +2112,14 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
     | TypeAliasDef actual ->
         write 0 "typedef %s %s;" (typeToCppString context Default actual) name
     | EnumDef info ->
-        let widthType, widthStr =
-            match info.MaybeWidth with
-            | Some widthType ->
-                widthType, sprintf " : %s" (typeToCppString context Default widthType)
-            | None ->
-                let widthType =
-                    Primitive(Int(true, Width32))
-                if info.FlagsMode then
-                    widthType, " : int32_t"
-                else
-                    widthType, ""
+        let widthType, widthSuffix =
+            let type_ =
+                widthTypeForEnum context.ModuleContext info
+            let str =
+                match type_ with
+                | Primitive(Int(true, Width32)) -> ""
+                | _ -> sprintf " : %s" (typeToCppString context Default type_)
+            type_, str
         let emitValues indent =
             for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
                 match maybeSpecifiedValue with
@@ -2193,7 +2143,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             write 1 "operator %s() const { return value; }" widthTypeString
             write 0 "};"
         else
-            write 0 "enum class %s%s {" name widthStr
+            write 0 "enum class %s%s {" name widthSuffix
             emitValues 1
             write 0 "};"
     | NamedBitsDef info ->

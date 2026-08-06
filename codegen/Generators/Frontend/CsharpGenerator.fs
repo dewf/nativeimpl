@@ -463,24 +463,9 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             let widthType =
                 match requiredSymbolLookup context.ModuleContext name with
                 | EnumDef info ->
-                    let signed =
-                        not info.FlagsMode
-                    // what int size will we use to encode these?
-                    match info.MaybeWidth with
-                    | Some provided ->
-                        // use what the user asked for (currently no checking to verify it's big enough)
-                        provided
-                    | None ->
-                        // what's the smallest width that will accommodate the enum size?
-                        // TODO: this really need to occur in common code somewhere, so that both sides are guaranteed to be using the same types,
-                        // otherwise we're going to get some very annoying-to-debug crashes
-                        let iWidth =
-                            match info.Values.Length with
-                            | x when x < 128 -> Width8
-                            | x when x < 32768 -> Width16
-                            | _ -> Width32
-                        Primitive(Int(signed, iWidth))
-                | _ -> failwith "C# ArrayRenderer this.EnumType passed non-enum type name"
+                    widthTypeForEnum context.ModuleContext info
+                | _ ->
+                    failwith "C# ArrayRenderer this.EnumType passed non-enum type name"
             // push
             write 2 "internal static void __%s__Push(%s items)" (typeToName context outerType) (typeToCsString context outerType)
             write 2 "{"
@@ -1017,15 +1002,17 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             renderContent context
         write 2 "}"
     | EnumDef info ->
-        let widthType, widthStr =
-            match info.MaybeWidth with
-            | Some widthType ->
-                widthType, sprintf " : %s" (typeToCsString context widthType)
-            | None ->
-                Primitive(Int(true,Width32)), ""
+        let widthType, widthSuffix =
+            let type_ =
+                widthTypeForEnum context.ModuleContext info
+            let str =
+                match type_ with
+                | Primitive(Int(true, Width32)) -> ""
+                | _ -> sprintf " : %s" (typeToCsString context type_)
+            type_, str
         if info.FlagsMode then
             write 2 "[Flags]"
-        write 2 "public enum %s%s" name widthStr
+        write 2 "public enum %s%s" name widthSuffix
         write 2 "{"
         for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
             match maybeSpecifiedValue with

@@ -64,8 +64,8 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
             | Bool -> "bool"
             | Int(signed, intWidth) ->
                 match signed, intWidth with
-                | true, Width8 -> "sbyte"
-                | false, Width8 -> "byte"
+                | true, Width8 -> "byte"
+                | false, Width8 -> "ubyte"
                 | true, Width16 -> "short"
                 | false, Width16 -> "ushort"
                 | true, Width32 -> "int"
@@ -411,9 +411,54 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
         member this.TypedefPrim (prim: NIPrimitive) =
             failwith "ArrayOrSetRenderer: TypedefPrim not yet implemented"
         member this.EnumType (name: ResolvedName) =
-            failwith "ArrayOrSetRenderer: EnumType not yet imnplemented"
+            let info =
+                match requiredSymbolLookup context.ModuleContext name with
+                | EnumDef info -> info
+                | _ -> failwithf "IArrayLikeRenderer.EnumType: given name of non-enum thing"
+            let widthType =
+                widthTypeForEnum context.ModuleContext info
+            match mode with
+            | ArrayMode ->
+                // push
+                write 0 "private void __%s__push(%s items) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "import std.algorithm.iteration: map;"
+                write 1 "import std.range: array;"
+                write 1 "auto intValues = items.map!(i => cast(%s) i).array();" (typeToDlangString context widthType)
+                pushValue context writer 1 (ArrayType widthType) "intValues" NotApplicable
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "%s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                write 1 "import std.algorithm.iteration: map;"
+                write 1 "import std.range: array;"
+                popValue context writer 1 (ArrayType widthType) (NewVariable "intValues")
+                write 1 "auto enumRange = intValues.map!(i => cast(%s) i).array();" (typeToDlangString context elemType)
+                write 1 "return enumRange.array();"
+                write 0 "}"
+            | SetMode ->
+                // push
+                write 0 "private void __%s__push(%s set) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "import std.algorithm.iteration: map;"
+                write 1 "import std.range: array;"
+                write 1 "auto intValues = set.array().map!(i => cast(%s) i).array();" (typeToDlangString context widthType)
+                pushValue context writer 1 (ArrayType widthType) "intValues" NotApplicable
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                write 1 "import std.algorithm.iteration: map;"
+                write 1 "import std.range: array;"
+                popValue context writer 1 (ArrayType widthType) (NewVariable "intValues")
+                write 1 "auto enumRange = intValues.map!(i => cast(%s) i);" (typeToDlangString context elemType)
+                write 1 "return %s(enumRange);" (typeToDlangString context outerType)
+                write 0 "}"
         member this.StructType (structName: ResolvedName) (namedFields: NamedField list) =
-            failwith "ArrayOrSetRenderer: StructType not yet implemented"
+            match mode with
+            | ArrayMode ->
+                // array of struct -> struct of arrays
+                write 0 "// IArrayLikeRenderer: StructType/ArrayMode: %s" (typeToDlangString context outerType)
+            | SetMode ->
+                failwith "dlang ArrayOrSetRenderer.StructType - 'set' mode not yet implemented"
         member this.TupleType (tupleTypes: NIType list) =
             failwith "ArrayOrSetRenderer: TupleType not yet implemented"
         member this.ArrayType () =
@@ -756,14 +801,16 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}"
 
     | EnumDef info ->
-        let widthType, widthStr =
-            match info.MaybeWidth with
-            | Some widthType ->
-                widthType, sprintf " : %s" (typeToDlangString context widthType)
-            | None ->
-                Primitive(Int(true,Width32)), ""
+        let widthType, widthSuffix =
+            let type_ =
+                widthTypeForEnum context.ModuleContext info
+            let str =
+                match type_ with
+                | Primitive(Int(true, Width32)) -> ""
+                | _ -> sprintf " : %s" (typeToDlangString context type_)
+            type_, str
         // flags mode handling?
-        write 0 "enum %s%s {" name widthStr
+        write 0 "enum %s%s {" name widthSuffix
         for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
             match maybeSpecifiedValue with
             | Some specValue ->

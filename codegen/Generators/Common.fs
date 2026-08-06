@@ -1105,3 +1105,15 @@ let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: 
             sprintf "(%s)" (recInner groupContent)
     recInner root
 
+let widthTypeForEnum (context: ModuleContext) (info: EnumInfo) =
+    // so this is horribly bad/broken, because we can't be arsed right now to write a full constant
+    //   expression evaluator (which will require symbol lookups and evaluation across modules, not to mention
+    //   matching the behavior of C/C++ in terms of raw computation)
+    // instead we'll just default to 32-bit unless the developer overrides with something else
+    match info.MaybeWidth with
+    | Some provided ->
+        provided
+    | None ->
+        let signed =
+            not info.FlagsMode
+        Primitive(Int(signed,Width32))

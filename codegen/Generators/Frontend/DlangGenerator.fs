@@ -451,12 +451,40 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
         member this.StructType (structName: ResolvedName) (namedFields: NamedField list) =
             match mode with
             | ArrayMode ->
-                // array of struct -> struct of arrays
-                write 0 "// IArrayLikeRenderer: StructType/ArrayMode: %s" (typeToDlangString context outerType)
+                // push
+                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "auto count = items.length;"
+                for i, field in namedFields |> List.indexed do
+                    write 1 "auto f%dvalues = new %s[count];" i (typeToDlangString context field.Type_)
+                write 1 "for (auto i = 0; i < count; i++) {"
+                for i, field in namedFields |> List.indexed do
+                    write 2 "f%dvalues[i] = items[i].%s;" i (lowerFirst field.Name)
+                write 1 "}"
+                // push arrays in reverse order
+                for i, field in namedFields |> List.indexed |> List.rev do
+                    pushValue context writer 1 (ArrayType field.Type_) (sprintf "f%dvalues" i) (Indirect "isReturn")
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                for i, field in namedFields |> List.indexed do
+                    popValue context writer 1 (ArrayType field.Type_) (NewVariable (sprintf "f%dvalues" i))
+                write 1 "auto count = f0values.length;"
+                write 1 "auto ret = new %s[count];" (typeToDlangString context elemType)
+                write 1 "for (auto i = 0; i < count; i++) {"
+                let fieldValuesJoined =
+                    namedFields
+                    |> List.indexed
+                    |> List.map (fun (i, _) -> sprintf "f%dvalues[i]" i)
+                    |> String.concat ", "
+                write 2 "ret[i] = %s(%s);" (typeToDlangString context elemType) fieldValuesJoined
+                write 1 "}"
+                write 1 "return ret;"
+                write 0 "}"
             | SetMode ->
                 failwith "dlang ArrayOrSetRenderer.StructType - 'set' mode not yet implemented"
         member this.TupleType (tupleTypes: NIType list) =
-            failwith "ArrayOrSetRenderer: TupleType not yet implemented"
+            write 0 "// IArrayLikeRenderer: TupleType %s" (typeToDlangString context outerType)
         member this.ArrayType () =
             renderDefault()
         member this.MapType () =
@@ -475,8 +503,9 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
             assert (Primitive prim = elemType) // uhhh seems a bit redundant ...
             match mode with
             | ArrayMode ->
-                // built-in array type - nothing to actually render, (should be) handled by NI stack primitives
-                ()
+                // should be handled by built-in stack primitives
+                // we're only printing something because otherwise a bunch of weird newlines at the top of the file :(
+                write 0 "// built-in array type: %s" (typeToDlangString context outerType)
             | SetMode ->
                 // push
                 write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)

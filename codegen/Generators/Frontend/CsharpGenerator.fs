@@ -505,11 +505,9 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 3 "var ret = new %s[count];" (typeToCsString context elemType)
                 write 3 "for (var i = 0; i < count; i++)"
                 write 3 "{"
-                for i, _ in namedFields |> List.indexed do
-                    write 4 "var f%d = f%dValues[i];" i i
-                let fieldVarsJoined =
-                    namedFields |> List.indexed |> List.map (fun (i, _) -> sprintf "f%d" i) |> String.concat ", "
-                write 4 "ret[i] = new %s(%s);" (typeToCsString context elemType) fieldVarsJoined
+                let fieldValuesJoined =
+                    namedFields |> List.indexed |> List.map (fun (i, _) -> sprintf "f%dValues[i]" i) |> String.concat ", "
+                write 4 "ret[i] = new %s(%s);" (typeToCsString context elemType) fieldValuesJoined
                 write 3 "}"
                 write 3 "return ret;"
                 write 2 "}"

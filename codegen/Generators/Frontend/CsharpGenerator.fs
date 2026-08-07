@@ -546,7 +546,8 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 3 "return ret;"
                 write 2 "}"
         member this.TupleType (tupleTypes: NIType list) =
-            if mode = ArrayMode then
+            match mode with
+            | ArrayMode ->
                 // PUSH ====================
                 write 2 "internal static void __%s__Push(%s things, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
                 write 2 "{"
@@ -579,7 +580,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 3 "}"
                 write 3 "return ret;"
                 write 2 "}"
-            else
+            | SetMode ->
                 failwith "ArrayOrSetRenderer .TupleType - set mode not yet implemented"
         member this.ArrayType () =
             renderDefault()

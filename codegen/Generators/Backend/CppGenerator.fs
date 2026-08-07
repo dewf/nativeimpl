@@ -573,11 +573,11 @@ let pushValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (
         | ArrayType _ ->
             write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
         | MapType (keyType, valueType) ->
-            write level "__%s%sMapArray__push(%s, %s);" (typeToName context keyType) (typeToName context valueType) content (isReturnString())
+            write level "__%s_%s_Map_Array__push(%s, %s);" (typeToName context keyType) (typeToName context valueType) content (isReturnString())
         | TupleType _ ->
-            write level "__%sArray__push(%s, %s);" (typeToName context niType) content (isReturnString())
+            write level "__%s_Array__push(%s, %s);" (typeToName context niType) content (isReturnString())
         | SetType _ ->
-            write level "__%sArray__push(%s, %s);" (typeToName context niType) content (isReturnString())
+            write level "__%s_Array__push(%s, %s);" (typeToName context niType) content (isReturnString())
         | OptionType _ ->
             write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
         | ResultType _ ->

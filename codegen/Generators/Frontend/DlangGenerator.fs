@@ -407,7 +407,21 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
             write 0 "// renderDefault() SetMode for %s not yet implemented" (typeToDlangString context outerType)
     interface IArrayLikeRenderer with
         member this.TypedefTuple (tt: NIType) =
-            failwith "ArrayOrSetRenderer: TypedefTuple not yet implemented"
+            match mode with
+            | ArrayMode ->
+                // push
+                write 0 "pragma(inline)"
+                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                pushValue context writer 1 (ArrayType tt) "items" (Indirect "isReturn")
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "pragma(inline)"
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                popValue context writer 1 (ArrayType tt) Return
+                write 0 "}"
+            | SetMode ->
+                write 0 "// IArrayLikeRenderer .TypedefTuple (set mode)"
         member this.TypedefPrim (prim: NIPrimitive) =
             failwith "ArrayOrSetRenderer: TypedefPrim not yet implemented"
         member this.EnumType (info: EnumInfo) =
@@ -508,7 +522,40 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 1 "return %s(r);" (typeToDlangString context outerType)
                 write 0 "}"
         member this.TupleType (tupleTypes: NIType list) =
-            write 0 "// IArrayLikeRenderer: TupleType %s" (typeToDlangString context outerType)
+            let fieldValuesJoined =
+                tupleTypes
+                |> List.indexed
+                |> List.map (fun (i, _) -> sprintf "f%dvalues[i]" i)
+                |> String.concat ", "
+            match mode with
+            | ArrayMode ->
+                // push
+                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "auto count = items.length;"
+                for i, fieldType in tupleTypes |> List.indexed do
+                    write 1 "auto f%dvalues = new %s[count];" i (typeToDlangString context fieldType)
+                write 1 "for (auto i = 0; i < count; i++) {"
+                for i, _ in tupleTypes |> List.indexed do
+                    write 2 "f%dvalues[i] = items[i][%d];" i i
+                write 1 "}"
+                // push in reverse
+                for i, fieldType in tupleTypes |> List.indexed |> List.rev do
+                    pushValue context writer 1 (ArrayType fieldType) (sprintf "f%dvalues" i) (Indirect "isReturn")
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                for i, fieldType in tupleTypes |> List.indexed do
+                    popValue context writer 1 (ArrayType fieldType) (NewVariable (sprintf "f%dvalues" i))
+                write 1 "auto count = f0values.length;"
+                write 1 "auto ret = new %s[count];" (typeToDlangString context elemType)
+                write 1 "for (auto i = 0; i < count; i++) {"
+                write 2 "ret[i] = tuple(%s);" fieldValuesJoined
+                write 1 "}" // end for
+                write 1 "return ret;"
+                write 0 "}"
+            | SetMode ->
+                write 0 "// IArrayLikeRenderer: TupleType %s (set mode)" (typeToDlangString context outerType)
         member this.ArrayType () =
             renderDefault()
         member this.MapType () =

@@ -1547,7 +1547,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 0 "import std.sumtype;"
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
     write 0 "import std.typecons: Nullable, nullable;"
-    write 0 "import %s.support.simpleset;" (lower libraryName)
+    write 0 "import simpleset: Set;"
 
     // render all the generics at the root level only
     for generic in allGenericTypes moduleContext do

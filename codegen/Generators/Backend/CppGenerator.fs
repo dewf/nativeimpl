@@ -922,7 +922,6 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
 type ArrayOrSetMode =
     | ArrayMode
     | SetMode
-
 type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
     // TODO! this doesn't yet support .H file writing
     // but then do we ever really need that? aren't all generics contained within the wrapper .cpp file?

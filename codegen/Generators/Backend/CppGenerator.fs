@@ -919,7 +919,11 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
     writeCpp 1 "return std::shared_ptr<%s::Base>(__ret);" qualifiedName
     writeCpp 0 "}"
 
-type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType) =
+type ArrayOrSetMode =
+    | ArrayMode
+    | SetMode
+
+type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
     // TODO! this doesn't yet support .H file writing
     // but then do we ever really need that? aren't all generics contained within the wrapper .cpp file?
     // and rendered in strict dependency order? would the .H be required to avoid some kind of circularity?
@@ -940,27 +944,37 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
         write 1 "auto count = ni_popSizeT();"
         write 1 "for (auto i = 0; i < count; i++) {"
         popValue context writer 2 elemType (Variable "value")
-        match outerType with
-        | ArrayType _ ->
+        match mode with
+        | ArrayMode ->
             write 2 "__ret.push_back(value);"
-        | SetType _ ->
+        | SetMode ->
             write 2 "__ret.insert(value);"
-        | _ ->
-            failwith "!!!"
         write 1 "}"
         write 1 "return __ret;"
         write 0 "}"
     interface IArrayLikeRenderer with
         member this.TypedefTuple (tt: NIType) =
-            // push
-            write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
-            pushValue context writer 1 (ArrayType tt) "values" (Indirect "isReturn")
-            write 0 "}"
-            // pop
-            blank()
-            write 0 "inline %s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
-            popValue context writer 1 (ArrayType tt) Return
-            write 0 "}"
+            match mode with
+            | ArrayMode ->
+                // push
+                write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                pushValue context writer 1 (ArrayType tt) "values" (Indirect "isReturn")
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "inline %s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
+                popValue context writer 1 (ArrayType tt) Return
+                write 0 "}"
+            | SetMode ->
+                // push
+                write 0 "inline void __%s__push(%s set, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                pushValue context writer 1 (SetType tt) "set" (Indirect "isReturn")
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "inline %s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
+                popValue context writer 1 (SetType tt) Return
+                write 0 "}"
         member this.TypedefPrim (prim: NIPrimitive) =
             // push
             write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
@@ -998,13 +1012,11 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 popValue context writer 1 (ArrayType widthType) (Variable "intValues")
                 write 1 "%s __ret;" (typeToCppString context Default outerType)
                 write 1 "for (auto i : intValues) {"
-                match outerType with
-                | ArrayType _ ->
+                match mode with
+                | ArrayMode ->
                     write 2 "__ret.push_back(static_cast<%s>(i));" (typeToCppString context TypeParams elemType)
-                | SetType _ ->
+                | SetMode ->
                     write 2 "__ret.insert(static_cast<%s>(i));" (typeToCppString context TypeParams elemType)
-                | _ ->
-                    failwith "!!!"
                 write 1 "}"
                 write 1 "return __ret;"
                 write 0 "}"
@@ -1033,13 +1045,11 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 2 "%s __value;" typeStr
             for field in namedFields do
                 write 2 "__value.%s = %s_values[i];" field.Name field.Name
-            match outerType with
-            | ArrayType _ ->
+            match mode with
+            | ArrayMode ->
                 write 2 "__ret.push_back(__value);"
-            | SetType _ ->
+            | SetMode ->
                 write 2 "__ret.insert(__value);"
-            | _ ->
-                failwith "!!!"
             write 1 "}"
             write 1 "return __ret;"
             write 0 "}"
@@ -1048,9 +1058,9 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
             for i, type_ in tupleTypes |> List.indexed do
                 write 1 "std::vector<%s> _%dvalues;" (typeToCppString context TypeParams type_) i
-            write 1 "for (auto i = values.begin(); i != values.end(); i++) {"
+            write 1 "for (auto tv : values) {"
             for i, _ in tupleTypes |> List.indexed do
-                write 2 "_%dvalues.push_back(std::get<%d>(*i));" i i
+                write 2 "_%dvalues.push_back(std::get<%d>(tv));" i i
             write 1 "}"
             // push in reverse field order
             for i, type_ in tupleTypes |> List.indexed |> List.rev do
@@ -1065,13 +1075,11 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 1 "for (auto i = 0; i < _0values.size(); i++) {"
             let joined =
                 tupleTypes |> List.indexed |> List.map fst |> List.map (sprintf "_%dvalues[i]") |> String.concat ", "
-            match outerType with
-            | ArrayType _ ->
+            match mode with
+            | ArrayMode ->
                 write 2 "__ret.push_back({ %s });" joined
-            | SetType _ ->
+            | SetMode ->
                 write 2 "__ret.insert({ %s });" joined
-            | _ ->
-                failwith "!!!"
             write 1 "}"
             write 1 "return __ret;"
             write 0 "}"
@@ -1160,22 +1168,21 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             arrayDefault()
         member this.Primitive (_: NIPrimitive) =
             // primitve arrays are built in, but not sets!
-            match outerType with
-            | ArrayType _ ->
+            match mode with
+            | ArrayMode ->
                 write 0 "// built-in array type: %s" (typeToCppString context Default outerType)
-            | SetType niType ->
+            | SetMode ->
                 // push ==============
                 write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
-                write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString context Default (ArrayType niType))
-                pushValue context writer 1 (ArrayType niType) "itemsArr" (Indirect "isReturn")
+                write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString context Default (ArrayType elemType))
+                pushValue context writer 1 (ArrayType elemType) "itemsArr" (Indirect "isReturn")
                 write 0 "}"
                 // pop ===============
                 blank()
                 write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
-                popValue context writer 1 (ArrayType niType) (Variable "itemsArr")
+                popValue context writer 1 (ArrayType elemType) (Variable "itemsArr")
                 write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString context Default outerType)
                 write 0 "}"
-            | _ -> failwith "!!!"
         member this.Opaque () =
             // push
             write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
@@ -1355,11 +1362,11 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         writeCpp 0 "}"
     | ArrayType niType ->
         let renderer =
-            ArrayOrSetRenderer(context, writerCpp, gType, niType)
+            ArrayOrSetRenderer(context, writerCpp, gType, niType, ArrayMode)
         renderArrayLike context.ModuleContext niType renderer
     | SetType niType ->
         let renderer =
-            ArrayOrSetRenderer(context, writerCpp, gType, niType)
+            ArrayOrSetRenderer(context, writerCpp, gType, niType, SetMode)
         renderArrayLike context.ModuleContext niType renderer
     | ResultType (succType, errType) ->
         // PUSH =====

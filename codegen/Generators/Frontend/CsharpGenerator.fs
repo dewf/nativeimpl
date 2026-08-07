@@ -424,24 +424,23 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             write 2 "}"
     interface IArrayLikeRenderer with
         member this.TypedefTuple (tt: NIType) =
-            if mode = ArrayMode then
-                // new, flattened outer (minus the typedef middleman)
-                // then the thin (inlined) wrappers around it
-                // push ==================
-                write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-                write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
-                write 2 "{"
-                pushValue context writer 3 (ArrayType tt) "values" (Indirect "isReturn")
-                write 2 "}"
-                // pop ===================
-                blank()
-                write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-                write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
-                write 2 "{"
-                popValue context writer 3 (ArrayType tt) Return
-                write 2 "}"
-            else
-                failwith "ArrayOrSetRenderer: TypedefTuple (set mode) not yet implemented"
+            let seqType, paramName =
+                match mode with
+                | ArrayMode -> ArrayType tt, "values"
+                | SetMode -> SetType tt, "set"
+            // push ==================
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+            write 2 "internal static void __%s__Push(%s %s, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType) paramName
+            write 2 "{"
+            pushValue context writer 3 seqType paramName (Indirect "isReturn")
+            write 2 "}"
+            // pop ===================
+            blank()
+            write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
+            write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+            write 2 "{"
+            popValue context writer 3 seqType Return
+            write 2 "}"
         member this.TypedefPrim (prim: NIPrimitive) =
             if mode = ArrayMode then
                 // push ==================
@@ -581,7 +580,39 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 3 "return ret;"
                 write 2 "}"
             | SetMode ->
-                failwith "ArrayOrSetRenderer .TupleType - set mode not yet implemented"
+                // push
+                write 2 "internal static void __%s__Push(%s set, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "{"
+                write 3 "var count = set.Count;"
+                for i, type_ in tupleTypes |> List.indexed do
+                    write 3 "var _%dvalues = %s;" i (newCsArray context type_ "count")
+                write 3 "foreach (var (i, item) in set.Index())"
+                write 3 "{"
+                for i, _ in tupleTypes |> List.indexed do
+                    write 4 "_%dvalues[i] = item.Item%d;" i (i + 1)
+                write 3 "}"
+                for i, type_ in tupleTypes |> List.indexed |> List.rev do
+                    pushValue context writer 3 (ArrayType type_) (sprintf "_%dvalues" i) (Indirect "isReturn")
+                write 2 "}"
+                // pop
+                let fieldValuesJoined =
+                    tupleTypes
+                    |> List.indexed
+                    |> List.map (fun (i, _) -> sprintf "_%dvalues[i]" i)
+                    |> String.concat ", "
+                blank()
+                write 2 "internal static %s __%s__Pop()" (typeToCsString context outerType) (typeToName context outerType)
+                write 2 "{"
+                for i, type_ in tupleTypes |> List.indexed do
+                    popValue context writer 3 (ArrayType type_) (NewVariable (sprintf "_%dvalues" i))
+                write 3 "var count = _0values.Length;"
+                write 3 "var ret = new %s();" (typeToCsString context outerType)
+                write 3 "for (var i = 0; i < count; i++)"
+                write 3 "{"
+                write 4 "ret.Add((%s));" fieldValuesJoined
+                write 3 "}"
+                write 3 "return ret;"
+                write 2 "}"
         member this.ArrayType () =
             renderDefault()
         member this.MapType () =

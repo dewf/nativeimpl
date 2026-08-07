@@ -88,7 +88,7 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
         | ArrayType elemType ->
             sprintf "%s[]" (recInner elemType)
         | SetType elemType ->
-            sprintf "Set!%s" (recInner elemType)
+            sprintf "Set!(%s)" (recInner elemType)
         | BufferType elemType ->
             sprintf "ni.INativeBuffer!%s" (recInner elemType)
         | TupleType tupleTypes ->
@@ -100,7 +100,7 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
         | MapType (keyType, valueType) ->
             sprintf "%s[%s]" (recInner valueType) (recInner keyType)
         | OptionType elemType ->
-            sprintf "Nullable!%s" (recInner elemType)
+            sprintf "Nullable!(%s)" (recInner elemType)
         | ResultType (succType, errType) ->
             sprintf "ni.Result!(%s, %s)" (recInner succType) (recInner errType)
         | x ->
@@ -407,21 +407,21 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
             write 0 "// renderDefault() SetMode for %s not yet implemented" (typeToDlangString context outerType)
     interface IArrayLikeRenderer with
         member this.TypedefTuple (tt: NIType) =
-            match mode with
-            | ArrayMode ->
-                // push
-                write 0 "pragma(inline)"
-                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
-                pushValue context writer 1 (ArrayType tt) "items" (Indirect "isReturn")
-                write 0 "}"
-                // pop
-                blank()
-                write 0 "pragma(inline)"
-                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
-                popValue context writer 1 (ArrayType tt) Return
-                write 0 "}"
-            | SetMode ->
-                write 0 "// IArrayLikeRenderer .TypedefTuple (set mode)"
+            let seqType, paramName =
+                match mode with
+                | ArrayMode -> ArrayType tt, "items"
+                | SetMode -> SetType tt, "set"
+            // push
+            write 0 "pragma(inline)"
+            write 0 "private void __%s__push(%s %s, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType) paramName
+            pushValue context writer 1 seqType paramName (Indirect "isReturn")
+            write 0 "}"
+            // pop
+            blank()
+            write 0 "pragma(inline)"
+            write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+            popValue context writer 1 seqType Return
+            write 0 "}"
         member this.TypedefPrim (prim: NIPrimitive) =
             failwith "ArrayOrSetRenderer: TypedefPrim not yet implemented"
         member this.EnumType (info: EnumInfo) =
@@ -555,7 +555,31 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 1 "return ret;"
                 write 0 "}"
             | SetMode ->
-                write 0 "// IArrayLikeRenderer: TupleType %s (set mode)" (typeToDlangString context outerType)
+                // push
+                write 0 "private void __%s__push(%s set, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "auto items = set.array();"
+                write 1 "auto count = items.length;"
+                for i, fieldType in tupleTypes |> List.indexed do
+                    write 1 "auto f%dvalues = new %s[count];" i (typeToDlangString context fieldType)
+                write 1 "for (auto i = 0; i < count; i++) {"
+                for i, _ in tupleTypes |> List.indexed do
+                    write 2 "f%dvalues[i] = items[i][%d];" i i
+                write 1 "}"
+                // push in reverse:
+                for i, fieldType in tupleTypes |> List.indexed |> List.rev do
+                    pushValue context writer 1 (ArrayType fieldType) (sprintf "f%dvalues" i) (Indirect "isReturn")
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                write 1 "import std.range : iota;"
+                write 1 "import std.algorithm : map;"
+                for i, fieldType in tupleTypes |> List.indexed do
+                    popValue context writer 1 (ArrayType fieldType) (NewVariable (sprintf "f%dvalues" i))
+                write 1 "auto count = f0values.length;"
+                write 1 "auto r = iota(count).map!(i => tuple(%s));" fieldValuesJoined
+                write 1 "return %s(r);" (typeToDlangString context outerType)
+                write 0 "}"
         member this.ArrayType () =
             renderDefault()
         member this.MapType () =

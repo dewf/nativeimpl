@@ -155,6 +155,9 @@ let requiredSymbolLookup (context: ModuleContext) (name: ResolvedName) =
                 failwith "requiredSymbolLookup: findSymbolHere failed (for imported symbol)"
         | None -> failwith "todo"
 
+type GenericArrayOrSetMode =
+    | GenericArrayMode
+    | GenericSetMode
 let allGenericTypes (context: ModuleContext) =
     let rec typeAndSubTypes (t: NIType) =
         let tupleHandling (tupleOuter: NIType) =
@@ -167,7 +170,7 @@ let allGenericTypes (context: ModuleContext) =
                 tupleOuter :: sub
             | _ ->
                 failwith "!!!"
-        let arrayOrSetHandling (niType: NIType) =
+        let arrayOrSetHandling (mode: GenericArrayOrSetMode) (niType: NIType) =
             // special handling for array/set of struct/tuple (anything with fields): we render arrays of each field/subtype
             match niType with
             | Resolved (resolvedName, resolvedType) ->
@@ -184,7 +187,9 @@ let allGenericTypes (context: ModuleContext) =
                     match requiredSymbolLookup context resolvedName with
                     | TypeAliasDef (TupleType _ as tt) ->
                         // need to also return the collapsed array type - the caller of arrayOrSetHandling will still have (ArrayType (TypeDef...))
-                        (ArrayType tt) :: tupleHandling tt
+                        match mode with
+                        | GenericArrayMode -> (ArrayType tt) :: tupleHandling tt
+                        | GenericSetMode -> (SetType tt) :: tupleHandling tt
                     | _ ->
                         // any other typedef type, ignore (currently)
                         []
@@ -208,13 +213,13 @@ let allGenericTypes (context: ModuleContext) =
             let vs = typeAndSubTypes (ArrayType valueType)
             t :: (k @ v @ ks @ vs)
         | ArrayType niType ->
-            t :: arrayOrSetHandling niType
+            t :: arrayOrSetHandling GenericArrayMode niType
         | BufferType _ ->
             [t] // buffers only support primitive elements, no subresults
         | TupleType niTypes ->
             t :: (niTypes |> List.collect typeAndSubTypes)
         | SetType niType ->
-            t :: arrayOrSetHandling niType
+            t :: arrayOrSetHandling GenericSetMode niType
         | OptionType elem ->
             t :: typeAndSubTypes elem
         | ResultType (succ, err) ->

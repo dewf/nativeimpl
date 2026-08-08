@@ -15,7 +15,14 @@ let copySupportFiles (outParams: OutParams) =
     // for windows:
     SupportCopier.copyFiles "core/platforms" destRoot true ["dllmain.cpp"] false None
     // for .NET, or any other platform that uses a raw DLL (vs. Python/Java/etc which require custom C++ code)
-    SupportCopier.copyFiles "core/languages" destRoot true ["DirectExport.*"] false None
+    let copyFunc =
+        let replaceMap =
+            let prefix =
+                sprintf "%s_ni_" (Util.lower outParams.LibraryName)
+            [ "%%DLL_EXPORT_PREFIX%%", prefix ]
+            |> Map.ofList
+        SupportCopier.replaceCopyFunc replaceMap
+    SupportCopier.copyFiles "core/languages" destRoot true ["DirectExport.*"] false (Some copyFunc)
 
 let private writeProject (writer: IFormatWriter) (outParams: OutParams) =
     let write, blank = writer.Write, writer.Blank

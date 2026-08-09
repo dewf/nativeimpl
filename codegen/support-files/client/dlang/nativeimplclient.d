@@ -11,7 +11,6 @@ import std.stdio;
 import std.string : toStringz, format;
 import std.algorithm: map;
 import std.range: array;
-import std.sumtype;
 
 // PRIVATE ====================================================================================================
 private:

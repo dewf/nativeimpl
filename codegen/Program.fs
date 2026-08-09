@@ -176,6 +176,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
             printfn "rendering Dlang library files"
             DlangGenerator.generateLibraryFile depsOrder outParams
             DlangGenerator.generateProject outParams
+            DlangGenerator.copySupportFiles outParams
         | _ ->
             failwithf "unsupported frontend language: %A" frontLang
 

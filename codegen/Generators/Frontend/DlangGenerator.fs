@@ -1707,3 +1707,18 @@ let generateProject (outParams: OutParams) =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
     writeProject output outParams
+
+let copySupportFiles (outParams: OutParams) =
+    let libraryName =
+        lower outParams.LibraryName
+    let destRoot =
+        sprintf "%s/source/%s/support" (projectDir outParams) libraryName
+    let copyFunc =
+        let replaceMap =
+            let importPrefix =
+                sprintf "%s_ni_" libraryName
+            [ ("%%LIBRARY_PREFIX%%", libraryName)
+              ("%%DLL_IMPORT_PREFIX%%", importPrefix) ]
+            |> Map.ofList
+        SupportCopier.replaceCopyFunc replaceMap
+    SupportCopier.copyFiles "client/dlang" destRoot true ["*.d"] true (Some copyFunc)

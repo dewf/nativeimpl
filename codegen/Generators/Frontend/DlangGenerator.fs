@@ -1514,7 +1514,7 @@ let assignModuleHandles (context: DlangRenderContext) (writer: IFormatWriter) =
 
     assignGroup context.GroupContext
 
-let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseNamespace: string) (libraryName: string) (maybeModulePrefix: string option) (simpleName: string) =
+let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (libraryName: string) (maybeModulePrefix: string option) (simpleName: string) =
     let write, blank = writer.Write, writer.Blank
     let m =
         moduleContext.Module
@@ -1632,4 +1632,54 @@ let generateModule (context: ModuleContext) (outParams: OutParams) =
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
-    writeModule context output baseNamespace outParams.LibraryName maybeModulePrefix simpleName
+    writeModule context output outParams.LibraryName maybeModulePrefix simpleName
+
+let writeLibrary (allModules: Module list) (writer: IFormatWriter) (libraryName: string) =
+    let write, blank = writer.Write, writer.Blank
+
+    write 0 "module %s.library;" libraryName
+    blank()
+    write 0 "import ni = %s.support.nativeimplclient;" libraryName
+    for m in allModules do
+        let simple =
+            joinModuleName CamelCase m.Name
+        write 0 "import %s = %s.%s;" simple libraryName simple
+    blank()
+    write 0 "void libraryinit() {"
+    write 1 "ni.init();"
+    blank()
+    // register modules in dependency order (`allModules` is provided that way already)
+    for m in allModules do
+        write 1 "%s.__init();" (joinModuleName CamelCase m.Name)
+    write 0 "}"
+    blank()
+    write 0 "void libraryshutdown() {"
+    // shutdown in reverse order
+    for m in allModules |> List.rev do
+        write 1 "%s.__shutdown();" (joinModuleName CamelCase m.Name)
+    blank()
+    // NI shutdown
+    write 1 "ni.shutdown();"
+    write 0 "}"
+
+let generateLibraryFile (allModules: Module list) (outParams: OutParams) =
+    let baseNamespace, maybeModulePrefix, simpleName =
+        namespaceParts outParams (ModuleName ["Library"])
+    let moduleDir =
+        let subPath =
+            maybeModulePrefix
+            |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
+            |> Option.defaultValue ""
+        sprintf "%s/source/%s%s" (projectDir outParams) (lower outParams.LibraryName) subPath
+    Directory.CreateDirectory(moduleDir) |> ignore
+    let filename =
+        sprintf "%s/%s.d" moduleDir (simpleName.ToLower())
+    let modulePrefixString =
+        maybeModulePrefix
+        |> Option.map (fun mp -> $"{mp}.")
+        |> Option.defaultValue ""
+    printfn "Dlang writing (%s.%s%s) [%s]" baseNamespace modulePrefixString simpleName filename
+    use output =
+        let writer = new StreamWriter(filename)
+        new SimpleFormatWriter(writer, 0)
+    writeLibrary allModules output (lower outParams.LibraryName)

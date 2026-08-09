@@ -1683,3 +1683,27 @@ let generateLibraryFile (allModules: Module list) (outParams: OutParams) =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
     writeLibrary allModules output (lower outParams.LibraryName)
+
+let writeProject (writer: IFormatWriter) (outParams: OutParams) =
+    let write, blank = writer.Write, writer.Blank
+    write 0 "name \"%s\"" (lower outParams.LibraryName)
+    write 0 "description \"(description will go here)\""
+    write 0 "authors \"nobody\""
+    write 0 "copyright \"Copyright ©2026, Nobody\""
+    write 0 "license \"TODO\""
+    blank()
+    write 0 "targetType \"library\""
+    blank()
+    // hardcoded for now
+    write 0 "// hardcoded for the moment, need to locate the server .lib file in an intelligent way"
+    write 0 "libs \"$PACKAGE_DIR/../../../server/cpp/_dllproject/cmake-build-debug/KitchenSinkServer\""
+    blank()
+    write 0 "dependency \"simpleset\" path=\"R:/projects/dlang/simpleset\""
+
+let generateProject (outParams: OutParams) =
+    let filename =
+        sprintf "%s/dub.sdl" (projectDir outParams)
+    use output =
+        let writer = new StreamWriter(filename)
+        new SimpleFormatWriter(writer, 0)
+    writeProject output outParams

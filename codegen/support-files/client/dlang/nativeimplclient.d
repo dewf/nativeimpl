@@ -682,25 +682,85 @@ double[] popDoubleArray() {
     return values[0..count].dup();
 }
 
-// void pushUInt8(ubyte x);
-// ubyte popUInt8();
-// void pushUInt8Array(ubyte* values, size_t count);
-// void popUInt8Array(ubyte** values, size_t* count);
+// ===== unsigned, not sure if we'll keep these since not all languages support them =========
 
-// void pushUInt16(ushort x);
-// ushort popUInt16();
-// void pushUInt16Array(ushort* values, size_t count);
-// void popUInt16Array(ushort** values, size_t* count);
+void pushUInt8(ubyte x) {
+    nativemethods.pushUInt8(x);
+}
 
-// void pushUInt32(uint x);
-// uint popUInt32();
-// void pushUInt32Array(uint* values, size_t count);
-// void popUInt32Array(uint** values, size_t* count);
+ubyte popUInt8() {
+    return nativemethods.popUInt8();
+}
 
-// void pushUInt64(ulong x);
-// ulong popUInt64();
-// void pushUInt64Array(ulong* values, size_t count);
-// void popUInt64Array(ulong** values, size_t* count);
+void pushUInt8Array(ubyte[] values) {
+    nativemethods.pushUInt8Array(values.ptr, values.length);
+}
+
+ubyte[] popUInt8Array() {
+    ubyte* values;
+    size_t count;
+    nativemethods.popUInt8Array(&values, &count);
+    return values[0..count].dup();
+}
+
+void pushUInt16(ushort x) {
+    nativemethods.pushUInt16(x);
+}
+
+ushort popUInt16() {
+    return nativemethods.popUInt16();
+}
+
+void pushUInt16Array(ushort[] values) {
+    nativemethods.pushUInt16Array(values.ptr, values.length);
+}
+
+ushort[] popUInt16Array() {
+    ushort* values;
+    size_t count;
+    nativemethods.popUInt16Array(&values, &count);
+    return values[0..count].dup();
+}
+
+void pushUInt32(uint x) {
+    nativemethods.pushUInt32(x);
+}
+
+uint popUInt32() {
+    return nativemethods.popUInt32();
+}
+
+void pushUInt32Array(uint[] values) {
+    nativemethods.pushUInt32Array(values.ptr, values.length);
+}
+
+uint[] popUInt32Array() {
+    uint* values;
+    size_t count;
+    nativemethods.popUInt32Array(&values, &count);
+    return values[0..count].dup();
+}
+
+void pushUInt64(ulong x) {
+    nativemethods.pushUInt64(x);
+}
+
+ulong popUInt64() {
+    return nativemethods.popUInt64();
+}
+
+void pushUInt64Array(ulong[] values) {
+    nativemethods.pushUInt64Array(values.ptr, values.length);
+}
+
+ulong[] popUInt64Array() {
+    ulong* values;
+    size_t count;
+    nativemethods.popUInt64Array(&values, &count);
+    return values[0..count].dup();
+}
+
+// end unsigned ==================================================
 
 void pushString(string s) {
     nativemethods.pushString(s.toStringz, s.length);

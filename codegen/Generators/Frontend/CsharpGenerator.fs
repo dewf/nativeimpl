@@ -1101,6 +1101,10 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             let resolver resolvedName =
                 resolvedNameToString context resolvedName TypeMode
             namedBitsIndexer info context.ModuleContext resolver (upperFirst name)
+        let widthSuffix =
+            match widthType with
+            | Primitive(Int(true, Width32)) -> ""
+            | _ -> sprintf " : %s" (typeToCsString context widthType)
         let maybeExtendsComment =
             match info.MaybeParent with
             | Some parent ->
@@ -1108,7 +1112,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             | None ->
                 ""
         write 2 "[Flags]"
-        write 2 "public enum %s%s" name maybeExtendsComment
+        write 2 "public enum %s%s%s" name widthSuffix maybeExtendsComment
         write 2 "{"
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
             match group.MaybeTitle with
@@ -1118,7 +1122,9 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             | None ->
                 ()
             for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
-                write 3 "%s = 1 << %d%s" bitName index (if commaStr = "" then groupCommaStr else ",")
+                let oneSuffix =
+                    if index > 31 then "L" else ""
+                write 3 "%s = 1%s << %d%s" bitName oneSuffix index (if commaStr = "" then groupCommaStr else ",")
         write 2 "}"
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
@@ -1860,8 +1866,13 @@ let copySupportFiles (outParams: OutParams) =
                 match outParams.MaybeNamespace with
                 | Some ns -> sprintf "%s.%s" ns outParams.LibraryName
                 | None -> outParams.LibraryName
+            let serverDllName =
+                outParams.LibraryName + "Server"
+            let dllExportPrefix =
+                sprintf "%s_ni_" (lower outParams.LibraryName)
             [ ("%%TARGET_NAMESPACE%%", targetNamespace)
-              ("%%SERVER_DLL_NAME%%", outParams.LibraryName + "Server") ]
+              ("%%SERVER_DLL_NAME%%", serverDllName)
+              ("%%DLL_EXPORT_PREFIX%%", dllExportPrefix) ]
             |> Map.ofList
         SupportCopier.replaceCopyFunc replaceMap
     SupportCopier.copyFiles "client/csharp" destRoot true ["*.cs"] true (Some copyFunc)

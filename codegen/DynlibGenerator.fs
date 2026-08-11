@@ -29,7 +29,7 @@ let private writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "cmake_minimum_required(VERSION 4.2)"
     write 0 "project(%sServer)" outParams.LibraryName
     blank()
-    write 0 "set(CMAKE_CXX_STANDARD 20)"
+    write 0 "set(CMAKE_CXX_STANDARD 23)"
     blank()
     write 0 "set(CMAKE_POSITION_INDEPENDENT_CODE ON)"
     write 0 "set(CMAKE_CXX_VISIBILITY_PRESET hidden)"

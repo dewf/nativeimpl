@@ -1124,5 +1124,6 @@ let widthTypeForEnum (context: ModuleContext) (info: EnumInfo) =
         provided
     | None ->
         let signed =
-            not info.FlagsMode
+            // not info.FlagsMode
+            true
         Primitive(Int(signed,Width32))

@@ -29,6 +29,12 @@ type ProjectInfo = {
     Inputs: string list
 }
 
+let tomlTryGet (table: TomlTable) key =
+    if table.ContainsKey key then
+        Some table[key]
+    else
+        None
+
 let parseProjectInfo (tomlPath: string) =
     let content = File.ReadAllText(tomlPath)
     let root = TomlSerializer.Deserialize<TomlTable>(content)
@@ -44,17 +50,18 @@ let parseProjectInfo (tomlPath: string) =
         | _ -> failwith "Expected [project] section in TOML file"
 
     let frontLangs =
-        match projectTable["front_langs"] with
-        | :? TomlArray as items ->
+        match tomlTryGet projectTable "front_langs" with
+        | Some (:? TomlArray as items) ->
             items.Cast<string>()
             |> Seq.map Language.FromString
             |> Seq.toList
-        | x ->
-            printfn "type of argument: [%A]" (x.GetType())
-            // fallback to single front_lang
-            match projectTable["front_lang"] with
-            | :? string as s -> [ Language.FromString s ]
-            | _ -> failwith "TOML project missing 'front_lang' value [allowed values: \"csharp\"]"
+        // | Some x ->
+        //     x.GetType()
+        //     |> failwithf "TOML project file: `front_langs` was wrong type (needs to be array of strings, was: %A)"
+        | _ ->
+            match tomlTryGet projectTable "front_lang" with
+            | Some (:? string as s) -> [ Language.FromString s ]
+            | _ -> failwith "TOML project missing valid 'front_lang' or 'front_langs' value [available languages: \"csharp\", \"dlang\"]"
 
     let backLang =
         match projectTable["back_lang"] with

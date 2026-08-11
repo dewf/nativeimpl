@@ -234,8 +234,17 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                 let definition =
                     requiredSymbolLookup context.ModuleContext resolvedName
                 match definition with
-                | EnumDef _ ->
-                    name
+                | EnumDef info ->
+                    if info.FlagsMode then
+                        let common =
+                            sprintf "Flags<%s>" name
+                        match innerContext with
+                        | FunctionArguments ->
+                            sprintf "const %s&" common
+                        | _ ->
+                            common
+                    else
+                        name
                 | _ -> failwith "typeToCppString - problem fetching enum definition"
             | SumType ->
                 sprintf "std::shared_ptr<%s::Base>" name
@@ -243,9 +252,13 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
             | OptionsType ->
                 constWhenFuncArg innerContext name
             | NamedBitsType ->
+                let common =
+                    sprintf "Flags<%s>" name
                 match innerContext with
-                | BareType -> name
-                | _ -> sprintf "Flags<%s>" name
+                | FunctionArguments ->
+                    sprintf "const %s&" common
+                | _ ->
+                    common
             | StructType ->
                 constWhenFuncArg innerContext name
             | TypedefType ->
@@ -1613,12 +1626,12 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             blankH()
             writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
             writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
-            pushValue context writerCpp 1 widthType "value" NotApplicable
+            pushValue context writerCpp 1 widthType "value.bits()" NotApplicable
             writeCpp 0 "}"
             writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
             blankCpp()
             writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
-            popValue context writerCpp 1 widthType Return
+            popValue context writerCpp 1 widthType (CastReturn niType)
             writeCpp 0 "}"
         else
             blankH()
@@ -2131,23 +2144,28 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                     write indent "%s = %s%s" value enumValueStr maybeComma
                 | None ->
                     write indent "%s%s" value maybeComma
-        if info.FlagsMode then
-            let widthTypeString = (typeToCppString context Default widthType)
-            write 0 "struct %s {" name
-            write 1 "%s value = 0;" widthTypeString
-            write 1 "enum Flags : %s {" widthTypeString
-            emitValues 2
-            write 1 "};"
-            write 1 "%s() = default;" name
-            write 1 "%s(const %s initialValue) : value(initialValue) {}" name widthTypeString
-            write 1 "%s &operator=(const %s newval) { value = newval; return *this; }" name widthTypeString
-            write 1 "%s &operator|=(const Flags other) { value |= other; return *this; }" name
-            write 1 "operator %s() const { return value; }" widthTypeString
-            write 0 "};"
-        else
-            write 0 "enum class %s%s {" name widthSuffix
-            emitValues 1
-            write 0 "};"
+        // if info.FlagsMode then
+        //     write 0 "// values for Flags<%s>" name
+        write 0 "enum class %s%s {" name widthSuffix
+        emitValues 1
+        write 0 "};"
+        // if info.FlagsMode then
+        //     let widthTypeString = (typeToCppString context Default widthType)
+        //     write 0 "struct %s {" name
+        //     write 1 "%s value = 0;" widthTypeString
+        //     write 1 "enum Flags : %s {" widthTypeString
+        //     emitValues 2
+        //     write 1 "};"
+        //     write 1 "%s() = default;" name
+        //     write 1 "%s(const %s initialValue) : value(initialValue) {}" name widthTypeString
+        //     write 1 "%s &operator=(const %s newval) { value = newval; return *this; }" name widthTypeString
+        //     write 1 "%s &operator|=(const Flags other) { value |= other; return *this; }" name
+        //     write 1 "operator %s() const { return value; }" widthTypeString
+        //     write 0 "};"
+        // else
+        //     write 0 "enum class %s%s {" name widthSuffix
+        //     emitValues 1
+        //     write 0 "};"
     | NamedBitsDef info ->
         let indexedGroups, widthType =
             let resolver resolvedName =
@@ -2159,7 +2177,11 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                 sprintf " // extends %s" (typeToCppString context BareType parent)
             | None ->
                 ""
-        write 0 "enum class %s : %s {%s" (upperFirst name) (typeToCppString context Default widthType) maybeExtendsComment
+        let widthSuffix =
+            match widthType with
+            | Primitive (Int(true,Width32)) -> ""
+            | _ -> sprintf " : %s" (typeToCppString context Default widthType)
+        write 0 "enum class %s%s {%s" (upperFirst name) widthSuffix maybeExtendsComment
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
             match group.MaybeTitle with
             | Some title ->
@@ -2170,7 +2192,9 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
                 let maybeComma =
                     if commaStr = "" then groupCommaStr else ","
-                write 1 "%s = 1 << %d%s" bitName index maybeComma
+                let oneSuffix =
+                    if index > 31 then "LL" else ""
+                write 1 "%s = 1%s << %d%s" bitName oneSuffix index maybeComma
         write 0 "};"
     | SumTypeDef enumValues ->
         renderHeaderSumType context writer name enumValues

@@ -962,13 +962,17 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             let resolver resolvedName =
                 resolvedNameToString context resolvedName TypeMode
             namedBitsIndexer info context.ModuleContext resolver (upperFirst name)
+        let widthSuffix =
+            match widthType with
+            | Primitive(Int(true, Width32)) -> ""
+            | _ -> sprintf " : %s" (typeToDlangString context widthType)
         let maybeExtendsComment =
             match info.MaybeParent with
             | Some parent ->
                 sprintf " // extends %s" (typeToDlangString context parent)
             | None ->
                 ""
-        write 0 "enum %s {%s" (upperFirst name) maybeExtendsComment
+        write 0 "enum %s%s {%s" (upperFirst name) widthSuffix maybeExtendsComment
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
             match group.MaybeTitle with
             | Some title ->
@@ -977,7 +981,9 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             | None ->
                 ()
             for (index, bitName), commaStr in group.IndexedNames |> withTrailingCommas do
-                write 1 "%s = 1 << %d%s" bitName index (if commaStr = "" then groupCommaStr else ",")
+                let oneSuffix =
+                    if index > 31 then "L" else ""
+                write 1 "%s = 1%s << %d%s" bitName oneSuffix index (if commaStr = "" then groupCommaStr else ",")
         write 0 "}"
         // push
         blank()

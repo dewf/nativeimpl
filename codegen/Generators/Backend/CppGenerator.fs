@@ -236,13 +236,7 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                 match definition with
                 | EnumDef info ->
                     if info.FlagsMode then
-                        let common =
-                            sprintf "Flags<%s>" name
-                        match innerContext with
-                        | FunctionArguments ->
-                            sprintf "const %s&" common
-                        | _ ->
-                            common
+                        sprintf "Flags<%s>" name
                     else
                         name
                 | _ -> failwith "typeToCppString - problem fetching enum definition"
@@ -252,13 +246,7 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
             | OptionsType ->
                 constWhenFuncArg innerContext name
             | NamedBitsType ->
-                let common =
-                    sprintf "Flags<%s>" name
-                match innerContext with
-                | FunctionArguments ->
-                    sprintf "const %s&" common
-                | _ ->
-                    common
+                sprintf "Flags<%s>" name
             | StructType ->
                 constWhenFuncArg innerContext name
             | TypedefType ->
@@ -1626,7 +1614,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             blankH()
             writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
             writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
-            pushValue context writerCpp 1 widthType "value.bits()" NotApplicable
+            pushValue context writerCpp 1 widthType "value.value()" NotApplicable
             writeCpp 0 "}"
             writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
             blankCpp()
@@ -1644,8 +1632,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
             blankCpp()
             writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
-            popValue context writerCpp 1 widthType (Variable "tag")
-            writeCpp 1 "return static_cast<%s>(tag);" (typeToCppString context Default niType)
+            popValue context writerCpp 1 widthType (CastReturn niType)
             writeCpp 0 "}"
     | NamedBitsDef info ->
         let _, widthType =
@@ -1655,7 +1642,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         blankH()
         writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
         writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
-        pushValue context writerCpp 1 widthType "value.bits()" NotApplicable
+        pushValue context writerCpp 1 widthType "value.value()" NotApplicable
         writeCpp 0 "}"
         writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
         blankCpp()
@@ -2127,15 +2114,15 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
     | TypeAliasDef actual ->
         write 0 "typedef %s %s;" (typeToCppString context Default actual) name
     | EnumDef info ->
-        let widthType, widthSuffix =
-            let type_ =
-                widthTypeForEnum context.ModuleContext info
-            let str =
-                match type_ with
-                | Primitive(Int(true, Width32)) -> ""
-                | _ -> sprintf " : %s" (typeToCppString context Default type_)
-            type_, str
+        let widthType =
+            widthTypeForEnum context.ModuleContext info
+        let widthSuffix =
+            match widthType with
+            | Primitive(Int(true, Width32)) -> ""
+            | _ -> sprintf " : %s" (typeToCppString context Default widthType)
         let emitValues indent =
+            // this function originally existed because we used it in multiple places,
+            // but we can probably inline it in the future
             for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
                 match maybeSpecifiedValue with
                 | Some specValue ->
@@ -2144,28 +2131,11 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                     write indent "%s = %s%s" value enumValueStr maybeComma
                 | None ->
                     write indent "%s%s" value maybeComma
-        // if info.FlagsMode then
-        //     write 0 "// values for Flags<%s>" name
         write 0 "enum class %s%s {" name widthSuffix
         emitValues 1
         write 0 "};"
-        // if info.FlagsMode then
-        //     let widthTypeString = (typeToCppString context Default widthType)
-        //     write 0 "struct %s {" name
-        //     write 1 "%s value = 0;" widthTypeString
-        //     write 1 "enum Flags : %s {" widthTypeString
-        //     emitValues 2
-        //     write 1 "};"
-        //     write 1 "%s() = default;" name
-        //     write 1 "%s(const %s initialValue) : value(initialValue) {}" name widthTypeString
-        //     write 1 "%s &operator=(const %s newval) { value = newval; return *this; }" name widthTypeString
-        //     write 1 "%s &operator|=(const Flags other) { value |= other; return *this; }" name
-        //     write 1 "operator %s() const { return value; }" widthTypeString
-        //     write 0 "};"
-        // else
-        //     write 0 "enum class %s%s {" name widthSuffix
-        //     emitValues 1
-        //     write 0 "};"
+        if info.FlagsMode then
+            write 0 "DECLARE_FLAGS(%s)" name
     | NamedBitsDef info ->
         let indexedGroups, widthType =
             let resolver resolvedName =
@@ -2196,6 +2166,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                     if index > 31 then "LL" else ""
                 write 1 "%s = 1%s << %d%s" bitName oneSuffix index maybeComma
         write 0 "};"
+        write 0 "DECLARE_FLAGS(%s)" name
     | SumTypeDef enumValues ->
         renderHeaderSumType context writer name enumValues
 
@@ -2339,8 +2310,7 @@ let generateImplementationH (context: CppRenderContext) (writer: IFormatWriter) 
     write 0 "#include <set>"
     write 0 "#include <optional>"
     write 0 "#include <expected>"
-    write 0 "#include \"%s.h\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "flags"]))
-    write 0 "using namespace flags;"
+    write 0 "#include \"%s.hpp\"" (moduleNameToPathNoExt (Some m.Name) (ModuleName ["support"; "flags"]))
 
     // imports
     if not m.Imports.IsEmpty then
@@ -2700,4 +2670,4 @@ let generateProject (allModules: Module list) (outParams: OutParams) =
 let copySupportFiles (outParams: OutParams) =
     let destRoot =
         sprintf "%s/support" (projectDir outParams)
-    SupportCopier.copyFiles "server/cpp" destRoot true ["*.h"; "*.cpp"] true None
+    SupportCopier.copyFiles "server/cpp" destRoot true ["*.h"; "*.cpp"; "*.hpp"] true None

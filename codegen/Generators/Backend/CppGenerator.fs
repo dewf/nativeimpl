@@ -571,6 +571,12 @@ let pushValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (
             | Float32 -> write level "pushFloatArrayInternal(%s);" content
             | Float64 -> write level "pushDoubleArrayInternal(%s);" content
             | StringType -> write level "pushStringArrayInternal(%s);" content
+        | Resolved (_, resolvedType) ->
+            match resolvedType with
+            | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
+                write level "__%s__push(%s, %s);" (typeToName context (ArrayType niType)) content (isReturnString())
+            | _ ->
+                write level "__%s__push(%s);" (typeToName context (ArrayType niType)) content
         | ArrayType _ ->
             write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
         | MapType (keyType, valueType) ->
@@ -583,8 +589,6 @@ let pushValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (
             write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
         | ResultType _ ->
             write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | Resolved _ ->
-            write level "__%s__push(%s, %s);" (typeToName context (ArrayType niType)) content (isReturnString())
         | _ ->
             write level "// (push not yet supported: ArrayType %A)" niType
     | MapType (keyType, valueType) ->
@@ -1175,7 +1179,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 // push ==============
                 write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
                 write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString context Default (ArrayType elemType))
-                pushValue context writer 1 (ArrayType elemType) "itemsArr" (Indirect "isReturn")
+                pushValue context writer 1 (ArrayType elemType) "itemsArr" NotApplicable
                 write 0 "}"
                 // pop ===============
                 blank()
@@ -1184,18 +1188,34 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString context Default outerType)
                 write 0 "}"
         member this.Opaque () =
-            // push
-            write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
-            write 1 "ni_pushPtrArray((void**)items.data(), items.size());"
-            write 0 "}"
-            // pop
-            blank()
-            write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
-            write 1 "%s *values;" (typeToCppString context Default elemType)
-            write 1 "size_t count;"
-            write 1 "ni_popPtrArray((void***)&values, &count);"
-            write 1 "return %s(values, values + count);" (typeToCppString context Default outerType)
-            write 0 "}"
+            match mode with
+            | ArrayMode ->
+                // push
+                write 0 "void __%s__push(%s items) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                write 1 "auto data = const_cast<%s*>(items.data());" (typeToCppString context Default elemType)
+                write 1 "ni_pushPtrArray(reinterpret_cast<void**>(data), items.size());"
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
+                write 1 "%s *values;" (typeToCppString context Default elemType)
+                write 1 "size_t count;"
+                write 1 "ni_popPtrArray(reinterpret_cast<void***>(&values), &count);"
+                write 1 "return { values, values + count };"
+                write 0 "}"
+            | SetMode ->
+                write 0 "void __%s__push(%s items) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                write 1 "std::vector vec(items.begin(), items.end());"
+                write 1 "ni_pushPtrArray(reinterpret_cast<void**>(vec.data()), vec.size());"
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
+                write 1 "%s *values;" (typeToCppString context Default elemType)
+                write 1 "size_t count;"
+                write 1 "ni_popPtrArray(reinterpret_cast<void***>(&values), &count);"
+                write 1 "return { values, values + count };"
+                write 0 "}"
         member this.Options () =
             arrayDefault()
         member this.Other (_: NIType) =

@@ -227,7 +227,13 @@ let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (ty
                 // special treatment for these:
                 match requiredSymbolLookup context.ModuleContext resolvedName with
                 | FwdOpaqueDef parts ->
-                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts))
+                    // kludge: prefix last part with __, otherwise it won't match the push/pop definitions
+                    let parts' =
+                        match parts |> List.rev with
+                        | h :: etc -> $"__{h}" :: etc
+                        | [] -> []
+                        |> List.rev
+                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts'))
                 | _ ->
                     failwithf "C# popValue: FwdOpaque trouble, should never happen"
             | _ ->
@@ -308,7 +314,13 @@ let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (t
                 // special treatment for fwd opaques:
                 match requiredSymbolLookup context.ModuleContext resolvedName with
                 | FwdOpaqueDef parts ->
-                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts))
+                    // kludge: prefix last part with __, otherwise it won't match the push/pop definitions
+                    let parts' =
+                        match parts |> List.rev with
+                        | h :: etc -> $"__{h}" :: etc
+                        | [] -> []
+                        |> List.rev
+                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts'))
                 | _ ->
                     failwithf "C# pushValue: FwdOpaqueType trouble, shouldn't happen"
             | _ ->

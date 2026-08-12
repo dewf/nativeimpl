@@ -423,7 +423,21 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
             popValue context writer 1 seqType Return
             write 0 "}"
         member this.TypedefPrim (prim: NIPrimitive) =
-            failwith "ArrayOrSetRenderer: TypedefPrim not yet implemented"
+            match mode with
+            | ArrayMode ->
+                // push
+                write 0 "pragma(inline)"
+                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                pushValue context writer 1 (ArrayType (Primitive prim)) "items" NotApplicable
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "pragma(inline)"
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                popValue context writer 1 (ArrayType (Primitive prim)) Return
+                write 0 "}"
+            | SetMode ->
+                failwith "ArrayOrSetRenderer: TypedefPrim (set mode) not yet implemented"
         member this.EnumType (info: EnumInfo) =
             let widthType =
                 widthTypeForEnum context.ModuleContext info
@@ -616,7 +630,40 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
         member this.Options () =
             renderDefault()
         member this.Opaque () =
-            failwith "ArrayOrSetRenderer: Opaque not yet implemented"
+            match mode with
+            | ArrayMode ->
+                // push
+                write 0 "private void __%s__push(%s items) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "import std.algorithm: map;"
+                write 1 "import std.range: array;"
+                write 1 "auto ptrs = items.map!(i => i.thisPtr).array();"
+                write 1 "ni.pushPtrArray(ptrs);"
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                write 1 "import std.algorithm: map;"
+                write 1 "import std.range: array;"
+                write 1 "auto ptrs = ni.popPtrArray();"
+                write 1 "return ptrs.map!(p => new %s(p)).array();" (typeToDlangString context elemType)
+                write 0 "}"
+            | SetMode ->
+                // push
+                write 0 "private void __%s__push(%s set) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "import std.algorithm: map;"
+                write 1 "import std.range: array;"
+                write 1 "auto ptrs = set.array().map!(i => i.thisPtr).array();"
+                write 1 "ni.pushPtrArray(ptrs);"
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                write 1 "import std.algorithm: map;"
+                write 1 "import std.range: array;"
+                write 1 "auto ptrs = ni.popPtrArray();"
+                write 1 "auto r = ptrs.map!(p => new %s(p));" (typeToDlangString context elemType)
+                write 1 "return %s(r);" (typeToDlangString context outerType)
+                write 0 "}"
         member this.Other (t: NIType) =
             let modeStr =
                 if mode = ArrayMode then "array" else "set"

@@ -141,7 +141,7 @@ protected:
 		block = nullptr;
 	}
 public:
-	ServerBuffer(const size_t length) : ServerResource("buffer")
+	explicit ServerBuffer(const size_t length) : ServerResource("buffer")
 	{
 		elementSize = sizeof(T);
 		totalCount = length;

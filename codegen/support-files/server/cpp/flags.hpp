@@ -1,5 +1,6 @@
+// Claude slop
+//
 // flags.hpp — minimal, opt-in bitmask wrapper for `enum class` types.
-// generated with Claude Sonnet 5 2026/08/11
 //
 // Usage:
 //
@@ -38,7 +39,16 @@ public:
     using enum_type       = Enum;
     using underlying_type = std::underlying_type_t<Enum>;
 
-    constexpr Flags() noexcept : m_value(0) {}
+    // Accepts ONLY the literal 0 (it's a null-pointer-constant, so it converts
+    // to this private pointer-to-member type). This is what lets you write
+    // `Flags<E> f = 0;` or default a parameter with `Flags<E> f = 0` while
+    // still rejecting `Flags<E> f = 5;` at compile time — 5 isn't a null-
+    // pointer-constant, so no conversion exists. Also serves as the default
+    // constructor (Zero defaults to nullptr).
+    struct ZeroTag;
+    using Zero = int ZeroTag::*;
+    constexpr Flags(Zero = nullptr) noexcept : m_value(0) {}
+
     constexpr Flags(Enum e) noexcept : m_value(static_cast<underlying_type>(e)) {}
     constexpr explicit Flags(underlying_type v) noexcept : m_value(v) {}
 

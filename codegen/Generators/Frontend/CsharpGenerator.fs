@@ -290,11 +290,16 @@ type PushIsReturn =
 
 let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
     let write = writer.Write
+
     let isReturnString() =
         match isReturn with
         | Direct value -> if value then "true" else "false"
         | Indirect name -> name
         | NotApplicable -> failwith "pushValue: 'NotApplicable' isReturn was consumed"
+
+    let containsRefs =
+        typeContainsRefs context.ModuleContext (NITypeRoot type_)
+
     match type_ with
     | UnitType ->
         write level "%s;" content // content directly (method invocation etc)
@@ -326,71 +331,43 @@ let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (t
             | _ ->
                 // all other types:
                 resolvedNameToString context resolvedName (WrapperMethodMode "__%s")
-        match resolvedType with
-        | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-            // types that potentially contain refs, need to honor isReturn
+        if containsRefs then
             write level "%s__Push(%s, %s);" name content (isReturnString())
-        | _ ->
+        else
             write level "%s__Push(%s);" name content
-    | ArrayType niType ->
-        match niType with
-        | Primitive prim ->
-            match prim with
-            | Bool -> write level "NativeImplClient.PushBoolArray(%s);" content
-            | Int(signed, width) ->
-                write level "NativeImplClient.Push%sInt%dArray(%s);" (if signed then "" else "U") (widthToInt width) content
-            | Float32 -> write level "NativeImplClient.PushFloatArray(%s);" content
-            | Float64 -> write level "NativeImplClient.PushDoubleArray(%s);" content
-            | StringType -> write level "NativeImplClient.PushStringArray(%s);" content
-            | _ -> write level "// pushValue not yet supported: Array of prim %A" prim
-        | Resolved (_, resolvedType) ->
-            match resolvedType with
-            | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-                write level "__%s__Push(%s, %s);" (typeToName context (ArrayType niType)) content (isReturnString())
-            | _ ->
-                write level "__%s__Push(%s);" (typeToName context (ArrayType niType)) content
-        | ArrayType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | SetType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | MapType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | TupleType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | OptionType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | ResultType _ -> write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | _ -> write level "// pushValue not yet supported: Array of %A" niType
-    | TupleType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | SetType niType ->
-        match niType with
-        | Primitive _ ->
-            write level "__%s__Push(%s);" (typeToName context type_) content
-        | Resolved(_, resolvedType) ->
-            match resolvedType with
-            | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-                write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-            | _ ->
-                write level "__%s__Push(%s);" (typeToName context type_) content
-        | _ ->
-            write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | BufferType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | MapType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | OptionType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | ResultType _ ->
-        write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+    | ArrayType (Primitive prim) ->
+        match prim with
+        | SizeT -> write level "NativeImplClient.PushSizeTArray(%s);" content
+        | Bool -> write level "NativeImplClient.PushBoolArray(%s);" content
+        | Int(signed, width) ->
+            write level "NativeImplClient.Push%sInt%dArray(%s);" (if signed then "" else "U") (widthToInt width) content
+        | Float32 -> write level "NativeImplClient.PushFloatArray(%s);" content
+        | Float64 -> write level "NativeImplClient.PushDoubleArray(%s);" content
+        | StringType -> write level "NativeImplClient.PushStringArray(%s);" content
     | _ ->
-        write level "// pushValue %A not yet supported" type_
+        if containsRefs then
+            write level "__%s__Push(%s, %s);" (typeToName context type_) content (isReturnString())
+        else
+            write level "__%s__Push(%s);" (typeToName context type_) content
 
 type ArrayOrSetMode =
     | ArrayMode
     | SetMode
+
 type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
     let write, blank = writer.Write, writer.Blank
+
+    let pushSuffix =
+        if typeContainsRefs context.ModuleContext (NITypeRoot outerType) then
+            ", bool isReturn"
+        else
+            ""
+
     let renderDefault () =
         if mode = ArrayMode then
             // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
             // PUSH ========
-            write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+            write 2 "internal static void __%s__Push(%s values%s)" (typeToName context outerType) (typeToCsString context outerType) pushSuffix
             write 2 "{"
             write 3 "foreach (var value in values.Reverse())"
             write 3 "{"
@@ -413,7 +390,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
         else
             // use this for any element types with no particular specializations (typedefs, delegates, arrays -- everything but structs and tuples, basically)
             // PUSH ========
-            write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+            write 2 "internal static void __%s__Push(%s values%s)" (typeToName context outerType) (typeToCsString context outerType) pushSuffix
             write 2 "{"
             write 3 "foreach (var value in values)"
             write 3 "{"
@@ -442,7 +419,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 | SetMode -> SetType tt, "set"
             // push ==================
             write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-            write 2 "internal static void __%s__Push(%s %s, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType) paramName
+            write 2 "internal static void __%s__Push(%s %s%s)" (typeToName context outerType) (typeToCsString context outerType) paramName pushSuffix
             write 2 "{"
             pushValue context writer 3 seqType paramName (Indirect "isReturn")
             write 2 "}"
@@ -457,9 +434,9 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             if mode = ArrayMode then
                 // push ==================
                 write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-                write 2 "internal static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "internal static void __%s__Push(%s values)" (typeToName context outerType) (typeToCsString context outerType)
                 write 2 "{"
-                pushValue context writer 3 (ArrayType (Primitive prim)) "values" (Indirect "isReturn")
+                pushValue context writer 3 (ArrayType (Primitive prim)) "values" NotApplicable
                 write 2 "}"
                 // pop ===================
                 blank()
@@ -498,7 +475,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             match mode with
             | ArrayMode ->
                 // push
-                write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "internal static void __%s__Push(%s items%s)" (typeToName context outerType) (typeToCsString context outerType) pushSuffix
                 write 2 "{"
                 write 3 "var count = items.Length;"
                 for i, field in namedFields |> List.indexed do
@@ -528,7 +505,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 2 "}"
             | SetMode ->
                 // push
-                write 2 "internal static void __%s__Push(%s set, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "internal static void __%s__Push(%s set%s)" (typeToName context outerType) (typeToCsString context outerType) pushSuffix
                 write 2 "{"
                 write 3 "var count = set.Count;"
                 for i, field in namedFields |> List.indexed do
@@ -560,7 +537,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             match mode with
             | ArrayMode ->
                 // PUSH ====================
-                write 2 "internal static void __%s__Push(%s things, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "internal static void __%s__Push(%s things%s)" (typeToName context outerType) (typeToCsString context outerType) pushSuffix
                 write 2 "{"
                 write 3 "var count = things.Length;"
                 for i, type_ in tupleTypes |> List.indexed do
@@ -593,7 +570,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 2 "}"
             | SetMode ->
                 // push
-                write 2 "internal static void __%s__Push(%s set, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "internal static void __%s__Push(%s set%s)" (typeToName context outerType) (typeToCsString context outerType) pushSuffix
                 write 2 "{"
                 write 3 "var count = set.Count;"
                 for i, type_ in tupleTypes |> List.indexed do
@@ -635,7 +612,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             renderDefault()
         member this.OptionType elemType =
             // push ====
-            write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+            write 2 "private static void __%s__Push(%s values%s)" (typeToName context outerType) (typeToCsString context outerType) pushSuffix
             write 2 "{"
             write 3 "var valueArray = values.Where(v => v.HasValue).Select(v => v.Value).ToArray();"
             write 3 "var hasValueArray = values.Select(v => v.HasValue).ToArray();"
@@ -651,19 +628,10 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             write 3 "var valuePtr = 0;"
             // concise version, but haven't done any testing for what kind of code the C# compiler generates:
             write 3 "return hasValueArray.Select(hasValue => hasValue ? valueArray[valuePtr++] : %s.None).ToArray();" (typeToCsString context (OptionType elemType))
-            // write 3 "var retArray = new %s[hasValueArray.Length];" (typeToCsString context (OptionType elemType))
-            // write 3 "for (var i = 0; i < hasValueArray.Length; i++)"
-            // write 3 "{"
-            // write 4 "if (hasValueArray[i])"
-            // write 4 "{"
-            // write 5"retArray[i] = valueArray[valuePtr++];"
-            // write 4 "}"
-            // write 3 "}"
-            // write 3 "return retArray;"
             write 2 "}"
         member this.ResultType succType errType =
             // push
-            write 2 "private static void __%s__Push(%s values, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+            write 2 "private static void __%s__Push(%s values%s)" (typeToName context outerType) (typeToCsString context outerType) pushSuffix
             write 2 "{"
             write 3 "var isSuccessArray = values.Select(v => v.IsSuccess).ToArray();"
             write 3 "var successValues = values.Where(v => v.IsSuccess).Select(v => v.Value).ToArray();"
@@ -699,7 +667,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
                 write 2 "// built-in array type: %s" (typeToCsString context outerType)
             else
                 // PUSH ==================
-                write 2 "internal static void __%s__Push(%s items, bool isReturn)" (typeToName context outerType) (typeToCsString context outerType)
+                write 2 "internal static void __%s__Push(%s items)" (typeToName context outerType) (typeToCsString context outerType)
                 write 2 "{"
                 pushValue context writer 3 (ArrayType elemType) "items.ToArray()" (Indirect "isReturn")
                 write 2 "}"
@@ -736,7 +704,13 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
 
 let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIType) =
     let write, blank = writer.Write, writer.Blank
-    //
+
+    let pushSuffix =
+        if typeContainsRefs context.ModuleContext (NITypeRoot gType) then
+            ", bool isReturn"
+        else
+            ""
+
     blank()
     match gType with
     | BufferType elemType ->
@@ -776,7 +750,7 @@ let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIT
         let typesJoined =
             tupleTypes |> List.map (typeToCsString context) |> String.concat ", "
         // PUSH =============
-        write 2 "internal static void __%s__Push((%s) value, bool isReturn)" (typeToName context gType) typesJoined
+        write 2 "internal static void __%s__Push((%s) value%s)" (typeToName context gType) typesJoined pushSuffix
         write 2 "{"
         for i, type_ in tupleTypes |> List.indexed |> List.rev do
             pushValue context writer 3 type_ (sprintf "value.Item%d" (i+1)) (Indirect "isReturn")
@@ -801,7 +775,7 @@ let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIT
         renderArrayLike context.ModuleContext elemType renderer
     | MapType (keyType, valueType) ->
         // push
-        write 2 "internal static void __%s__Push(IDictionary<%s, %s> map, bool isReturn)" (typeToName context gType) (typeToCsString context keyType) (typeToCsString context valueType)
+        write 2 "internal static void __%s__Push(IDictionary<%s, %s> map%s)" (typeToName context gType) (typeToCsString context keyType) (typeToCsString context valueType) pushSuffix
         write 2 "{"
         pushValue context writer 3 (ArrayType valueType) "map.Values.ToArray()" (Indirect "isReturn")
         pushValue context writer 3 (ArrayType keyType) "map.Keys.ToArray()" (Indirect "isReturn")
@@ -821,7 +795,7 @@ let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIT
         write 2 "}"
     | OptionType elemType ->
         // push
-        write 2 "private static void __%s__Push(%s maybeValue, bool isReturn)" (typeToName context gType) (typeToCsString context gType)
+        write 2 "private static void __%s__Push(%s maybeValue%s)" (typeToName context gType) (typeToCsString context gType) pushSuffix
         write 2 "{"
         write 3 "if (maybeValue.TryGetValue(out var value))"
         write 3 "{"
@@ -846,7 +820,7 @@ let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIT
         write 2 "}"
     | ResultType (succType, errType) ->
         // push
-        write 2 "private static void __%s__Push(%s result, bool isReturn)" (typeToName context gType) (typeToCsString context gType)
+        write 2 "private static void __%s__Push(%s result%s)" (typeToName context gType) (typeToCsString context gType) pushSuffix
         write 2 "{"
         write 3 "if (result.IsSuccess)"
         write 3 "{"
@@ -874,6 +848,14 @@ let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIT
 
 let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
+
+    let containsRefs =
+        typeContainsRefs context.ModuleContext (UserTypeRoot userType)
+    let pushSuffix =
+        if containsRefs then
+            ", bool isReturn"
+        else
+            ""
 
     match userType with
     | FwdOpaqueDef _ ->
@@ -1004,7 +986,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
                     else
                         write 4 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
                     // return pop
-                    popValue context writer 4 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+                    popValue context writer 4 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
                 // go
                 renderMethodInvocation {context with OpaqueMethodContext = Some info }
                 write 3 "}"
@@ -1048,7 +1030,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             write 2 "}"
             // push
             blank()
-            write 2 "internal static void __%s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
+            write 2 "internal static void __%s__Push(%s value%s)" (upperFirst name) (upperFirst name) pushSuffix
             write 2 "{"
             for field in info.Fields |> List.rev do
                 pushValue context writer 3 field.Type_ (sprintf "value.%s" (upperFirst field.Name)) (Indirect "isReturn")
@@ -1188,7 +1170,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             write 3 "}"
         write 2 "}"
         // push
-        write 2 "internal static void __%s__Push(%s value, bool isReturn)" (upperFirst name) (upperFirst name)
+        write 2 "internal static void __%s__Push(%s value%s)" (upperFirst name) (upperFirst name) pushSuffix
         write 2 "{"
         for field in namedFields |> List.rev do
             write 3 "if (value.Has%s(out var %s))" (upperFirst field.Name) field.Name
@@ -1215,7 +1197,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         // definition
         write 2 "public abstract record %s" (upperFirst name)
         write 2 "{"
-        write 3 "internal abstract void Push(bool isReturn);"
+        write 3 "internal abstract void Push(%s);" pushSuffix
         write 3 "internal static %s Pop()" (upperFirst name)
         write 3 "{"
         write 4 "return NativeImplClient.PopInt32() switch"
@@ -1238,7 +1220,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
                 for argName, argType in upperFirstArgs do
                     write 4 "public %s %s { get; } = %s;" (typeToCsString context argType) argName argName
             // push
-            write 4 "internal override void Push(bool isReturn)"
+            write 4 "internal override void Push(%s)" pushSuffix
             write 4 "{"
             for argName, argType in value.Args |> List.rev do
                 pushValue context writer 5 argType (upperFirst argName) (Indirect "isReturn")
@@ -1257,9 +1239,12 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         // PUSH
         blank()
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static void __%s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
+        write 2 "internal static void __%s__Push(%s thing%s)" (upperFirst name) (upperFirst name) pushSuffix
         write 2 "{"
-        write 3 "thing.Push(isReturn);"
+        if containsRefs then
+            write 3 "thing.Push(isReturn);"
+        else
+            write 3 "thing.Push();"
         write 2 "}"
         // POP
         blank()
@@ -1273,7 +1258,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         // (at least it will make wrapper funcs a bit clearer)
         // PUSH
         write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
-        write 2 "internal static void __%s__Push(%s value, bool isReturn)" name (typeToCsString context niType)
+        write 2 "internal static void __%s__Push(%s value%s)" name (typeToCsString context niType) pushSuffix
         write 2 "{"
         pushValue context writer 3 niType "value" (Indirect "isReturn")
         write 2 "}"
@@ -1385,7 +1370,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             else
                 write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.WrapperName
             // return (mindful of safety area nonsense)
-            if containsRefs context.ModuleContext method.Returns then
+            if typeContainsRefs context.ModuleContext (NITypeRoot method.Returns) then
                 popValue context writer 4 method.Returns SafeReturn
             else
                 popValue context writer 4 method.Returns Return
@@ -1510,7 +1495,7 @@ and renderGroupCommon (context: CsRenderContext) (writer: IFormatWriter) =
         else
             write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
         // return pop
-        popValue context writer 3 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+        popValue context writer 3 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
         write 2 "}"
 
     // render user types + nested groups in order of declaration

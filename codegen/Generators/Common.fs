@@ -359,7 +359,10 @@ let userTypesAndGenerics (context: ModuleContext) =
             (typeToInternalKey type_)
         newMap.Add(name, RenderableDirect (UserOrGeneric.Generic type_)))
 
-let containsRefs (context: ModuleContext) (thing: NIType) =
+type ContainsRefsRoot =
+    | NITypeRoot of niType: NIType
+    | UserTypeRoot of userType: UserType
+let typeContainsRefs (context: ModuleContext) (root: ContainsRefsRoot) =
     // does pushing this type push any ref types in the process?
     let rec processType (t: NIType) =
         match t with
@@ -374,8 +377,8 @@ let containsRefs (context: ModuleContext) (thing: NIType) =
         | SetType elem ->
             processType elem
         | BufferType _ ->
-            // elemType can only be primitive
-            false
+            // buffers themselves are refcounted, so yes!
+            true
         | OptionType elem ->
             processType elem
         | ResultType (succ, err) ->
@@ -397,11 +400,15 @@ let containsRefs (context: ModuleContext) (thing: NIType) =
             |> List.exists (fun nf -> processType nf.Type_)
         | ExceptionDef fields ->
             // hard to imagine this carrying an interface, but I guess we haven't forbidden it?
+            // also, there was a note in the C++ module saying that exceptions must always be pushed safely?
+            // well if that's the case then we should just always return true ...
             fields
             |> List.exists (fun f -> processType f.Type_)
         | InterfaceDef _ ->
             true
         | DelegateDef _ ->
+            // does this need to be true? might help if I could remember shit about safety area stuff
+            // but `pushServerFuncVal` doesn't have an `isReturn` parameter, so ...
             false
         | TypeAliasDef actual ->
             processType actual
@@ -417,7 +424,9 @@ let containsRefs (context: ModuleContext) (thing: NIType) =
         | OptionsDef fields ->
             fields
             |> List.exists (fun f -> processType f.Type_)
-    processType thing
+    match root with
+    | NITypeRoot niType -> processType niType
+    | UserTypeRoot userType -> processUserType userType
 
 type NamespaceRelation =
     | NSEqual

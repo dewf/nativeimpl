@@ -6,6 +6,19 @@ open Generators.Common
 open Parser
 open Util
 
+let isReservedWord =
+    let reservedWords =
+        [ "align"
+          "version" ]
+        |> Set.ofList
+    reservedWords.Contains
+
+let safeIdentifier (raw: string) =
+    if isReservedWord raw then
+        raw + "_"
+    else
+        raw
+
 type DlangRenderContext = {
     LibraryName: string
     RenderContext: RenderContext
@@ -161,32 +174,32 @@ let typeWithPrefix (context: DlangRenderContext) (outerType: NIType) (prefix: st
     String.concat "." parts
 
 let joinedArgs (context: DlangRenderContext) (args: (string * NIType) list) =
-    [for name, type_ in args -> sprintf "%s %s" (typeToDlangString context type_) name]
+    [for name, type_ in args -> sprintf "%s %s" (typeToDlangString context type_) (safeIdentifier name)]
     |> String.concat ", "
 
 let joinedNameFuncArgs (context: DlangRenderContext) (args: NamedFunctionArg list) =
     [for arg in args ->
         match arg.DefaultValue with
         | Some value ->
-            sprintf "%s %s = %s" (typeToDlangString context arg.Type) arg.Name (constExprToString context value)
+            sprintf "%s %s = %s" (typeToDlangString context arg.Type) (safeIdentifier arg.Name) (constExprToString context value)
         | None ->
-            sprintf "%s %s" (typeToDlangString context arg.Type) arg.Name ]
+            sprintf "%s %s" (typeToDlangString context arg.Type) (safeIdentifier arg.Name) ]
     |> String.concat ", "
 
 let joinedArgNames (args: (string * NIType) list) =
-    [for name, _ in args -> name]
+    [for name, _ in args -> (safeIdentifier name)]
     |> String.concat ", "
 
 let joinedNamedFuncArgNames (args: NamedFunctionArg list) =
-    [for arg in args -> arg.Name]
+    [for arg in args -> (safeIdentifier arg.Name)]
     |> String.concat ", "
 
 let fieldsJoined (context: DlangRenderContext) (fields: NamedField list) =
-    [for f in fields -> sprintf "%s %s" (typeToDlangString context f.Type_) f.Name]
+    [for f in fields -> sprintf "%s %s" (typeToDlangString context f.Type_) (safeIdentifier f.Name)]
     |> String.concat ", "
 
 let fieldNamesJoined (fields: NamedField list) =
-    [for f in fields -> f.Name]
+    [for f in fields -> (safeIdentifier f.Name)]
     |> String.concat ", "
 
 type PopValueContext =
@@ -293,6 +306,8 @@ let pushValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int)
         | Direct value -> if value then "true" else "false"
         | Indirect name -> name
         | NotApplicable -> failwith "pushValue: 'NotApplicable' isReturn was consumed"
+    let containsRefs =
+        typeContainsRefs context.ModuleContext (NITypeRoot type_)
     match type_ with
     | UnitType ->
         write level "%s;" content // content directly (method invocation etc)
@@ -318,75 +333,41 @@ let pushValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int)
             | _ ->
                 // all other types:
                 resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // see note above in this same branch of popValue
-        match resolvedType with
-        | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-            // types that potentially contain refs, need to honor isReturn
+        if containsRefs then
             write level "%s__push(%s, %s);" name content (isReturnString())
-        | _ ->
+        else
             write level "%s__push(%s);" name content
-    | ArrayType niType ->
-        match niType with
-        | Primitive prim ->
-            match prim with
-            | Bool -> write level "ni.pushBoolArray(%s);" content
-            | Int(signed, width) ->
-                write level "ni.push%sInt%dArray(%s);" (if signed then "" else "U") (widthToInt width) content
-            | Float32 -> write level "ni.pushFloatArray(%s);" content
-            | Float64 -> write level "ni.pushDoubleArray(%s);" content
-            | StringType -> write level "ni.pushStringArray(%s);" content
-            | _ -> write level "// pushValue not yet supported: Array of prim %A" prim
-        | Resolved (_, resolvedType) ->
-            match resolvedType with
-            | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-                write level "__%s__push(%s, %s);" (typeToName context (ArrayType niType)) content (isReturnString())
-            | _ ->
-                write level "__%s__push(%s);" (typeToName context (ArrayType niType)) content
-        | ArrayType _ -> write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | SetType _ -> write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | MapType _ -> write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | TupleType _ -> write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | OptionType _ -> write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | ResultType _ -> write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | _ -> write level "// pushValue not yet supported: Array of %A" niType
-    | TupleType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | SetType niType ->
-        match niType with
-        | Primitive _ ->
-            // the 'isReturn' is silly but necessary since all our push wrappers have it
-            // we will have to improve the generation at some point to not generate unnecessary/spurious
-            // 'isReturn' parameters on types that don't contain reftypes
-            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | Resolved(_, resolvedType) ->
-            match resolvedType with
-            | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-                write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-            | _ ->
-                write level "__%s__push(%s);" (typeToName context type_) content
-        | _ ->
-            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | BufferType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | MapType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | OptionType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | ResultType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
+    | ArrayType (Primitive prim) ->
+        match prim with
+        | SizeT -> write level "ni.pushSizeTArray(%s);" content
+        | Bool -> write level "ni.pushBoolArray(%s);" content
+        | Int(signed, width) ->
+            write level "ni.push%sInt%dArray(%s);" (if signed then "" else "U") (widthToInt width) content
+        | Float32 -> write level "ni.pushFloatArray(%s);" content
+        | Float64 -> write level "ni.pushDoubleArray(%s);" content
+        | StringType -> write level "ni.pushStringArray(%s);" content
     | _ ->
-        write level "// pushValue %A not yet supported" type_
+        if containsRefs then
+            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
+        else
+            write level "__%s__push(%s);" (typeToName context type_) content
 
 type ArrayOrSetMode =
     | ArrayMode
     | SetMode
 type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, outerType: NIType, elemType: NIType, mode: ArrayOrSetMode) =
     let write, blank = writer.Write, writer.Blank
+    let pushSuffix =
+        if typeContainsRefs context.ModuleContext (NITypeRoot outerType) then
+            ", bool isReturn"
+        else
+            ""
     let renderDefault () =
         // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
         match mode with
         | ArrayMode ->
             // push
-            write 0 "private void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+            write 0 "private void __%s__push(%s values%s) {" (typeToName context outerType) (typeToDlangString context outerType) pushSuffix
             write 1 "import std.range: retro;"
             write 1 "foreach (value; retro(values)) {"
             pushValue context writer 2 elemType "value" (Indirect "isReturn")
@@ -413,7 +394,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 | SetMode -> SetType tt, "set"
             // push
             write 0 "pragma(inline)"
-            write 0 "private void __%s__push(%s %s, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType) paramName
+            write 0 "private void __%s__push(%s %s%s) {" (typeToName context outerType) (typeToDlangString context outerType) paramName pushSuffix
             pushValue context writer 1 seqType paramName (Indirect "isReturn")
             write 0 "}"
             // pop
@@ -427,7 +408,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
             | ArrayMode ->
                 // push
                 write 0 "pragma(inline)"
-                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 0 "private void __%s__push(%s items) {" (typeToName context outerType) (typeToDlangString context outerType)
                 pushValue context writer 1 (ArrayType (Primitive prim)) "items" NotApplicable
                 write 0 "}"
                 // pop
@@ -485,7 +466,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
             match mode with
             | ArrayMode ->
                 // push
-                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 0 "private void __%s__push(%s items%s) {" (typeToName context outerType) (typeToDlangString context outerType) pushSuffix
                 write 1 "auto count = items.length;"
                 for i, field in namedFields |> List.indexed do
                     write 1 "auto f%dvalues = new %s[count];" i (typeToDlangString context field.Type_)
@@ -511,7 +492,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 0 "}"
             | SetMode ->
                 // push
-                write 0 "private void __%s__push(%s set, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 0 "private void __%s__push(%s set%s) {" (typeToName context outerType) (typeToDlangString context outerType) pushSuffix
                 write 1 "auto values = set.array();"
                 write 1 "auto count = values.length;"
                 for i, field in namedFields |> List.indexed do
@@ -544,7 +525,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
             match mode with
             | ArrayMode ->
                 // push
-                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 0 "private void __%s__push(%s items%s) {" (typeToName context outerType) (typeToDlangString context outerType) pushSuffix
                 write 1 "auto count = items.length;"
                 for i, fieldType in tupleTypes |> List.indexed do
                     write 1 "auto f%dvalues = new %s[count];" i (typeToDlangString context fieldType)
@@ -570,7 +551,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 0 "}"
             | SetMode ->
                 // push
-                write 0 "private void __%s__push(%s set, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 0 "private void __%s__push(%s set%s) {" (typeToName context outerType) (typeToDlangString context outerType) pushSuffix
                 write 1 "auto items = set.array();"
                 write 1 "auto count = items.length;"
                 for i, fieldType in tupleTypes |> List.indexed do
@@ -617,7 +598,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 0 "// built-in array type: %s" (typeToDlangString context outerType)
             | SetMode ->
                 // push
-                write 0 "private void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 0 "private void __%s__push(%s items) {" (typeToName context outerType) (typeToDlangString context outerType)
                 pushValue context writer 1 (ArrayType elemType) "items.array()" NotApplicable
                 write 0 "}"
                 // pop
@@ -672,6 +653,11 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
 let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: NIType) =
     let write, blank = writer.Write, writer.Blank
     //
+    let pushSuffix =
+        if typeContainsRefs context.ModuleContext (NITypeRoot gType) then
+            ", bool isReturn"
+        else
+            ""
     blank()
     match gType with
     | ArrayType elemType ->
@@ -684,7 +670,7 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
         renderArrayLike context.ModuleContext elemType renderer
     | MapType (keyType, valueType) ->
         // push
-        write 0 "private void __%s__push(%s map, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
+        write 0 "private void __%s__push(%s map%s) {" (typeToName context gType) (typeToDlangString context gType) pushSuffix
         pushValue context writer 1 (ArrayType valueType) "map.values" (Indirect "isReturn")
         pushValue context writer 1 (ArrayType keyType) "map.keys" (Indirect "isReturn")
         write 0 "}"
@@ -703,7 +689,7 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
         write 0 "}"
     | TupleType tupleTypes ->
         // push
-        write 0 "private void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
+        write 0 "private void __%s__push(%s value%s) {" (typeToName context gType) (typeToDlangString context gType) pushSuffix
         for i, type_ in tupleTypes |> List.indexed |> List.rev do
             pushValue context writer 1 type_ (sprintf "value[%d]" i) (Indirect "isReturn")
         write 0 "}"
@@ -728,7 +714,7 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
         write 0 "}"
     | OptionType elem ->
         // push
-        write 0 "private void __%s__push(%s maybeValue, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
+        write 0 "private void __%s__push(%s maybeValue%s) {" (typeToName context gType) (typeToDlangString context gType) pushSuffix
         write 1 "if (!maybeValue.isNull) {"
         pushValue context writer 2 elem "maybeValue.get" (Indirect "isReturn")
         pushValue context writer 2 (Primitive Bool) "true" NotApplicable
@@ -747,7 +733,7 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
         write 0 "}"
     | ResultType (successType, errorType) ->
         // push
-        write 0 "private void __%s__push(%s result, bool isReturn) {" (typeToName context gType) (typeToDlangString context gType)
+        write 0 "private void __%s__push(%s result%s) {" (typeToName context gType) (typeToDlangString context gType) pushSuffix
         write 1 "if (result.isSuccess) {"
         pushValue context writer 2 successType "result.value" (Indirect "isReturn")
         pushValue context writer 2 (Primitive Bool) "true" NotApplicable
@@ -781,6 +767,12 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
     let staticPrefix =
         if context.InStaticContext then
             "static "
+        else
+            ""
+
+    let pushSuffix =
+        if typeContainsRefs context.ModuleContext (UserTypeRoot userType) then
+            ", bool isReturn"
         else
             ""
 
@@ -878,8 +870,9 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                             |> String.concat ", "
                         sprintf " // throws %s" joined
                 let shadowsStr =
+                    // hmmm
                     if namedFunc.ShadowsExisting then
-                        "new "
+                        "/* shadows */ " // new
                     else
                         ""
                 write 1 "%s%s %s(%s)%s" shadowsStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
@@ -888,7 +881,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                 let renderMethodInvocation (context: DlangRenderContext) =
                     // push args in reverse
                     for arg in namedFunc.Args |> List.rev do
-                        pushValue context writer 2 arg.Type arg.Name (Direct false)
+                        pushValue context writer 2 arg.Type (safeIdentifier arg.Name) (Direct false)
                     // push self argument
                     pushValue context writer 2 fakeThis "this" (Direct false)
                     // invoke remote
@@ -897,7 +890,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                     else
                         write 2 "ni.invokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
                     // return pop
-                    popValue context writer 2 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+                    popValue context writer 2 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
                 // go
                 renderMethodInvocation {context with OpaqueMethodContext = Some info }
                 write 1 "}"
@@ -953,7 +946,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}"
         // push
         blank()
-        write 0 "package %svoid __%s__push(ref %s value, bool isReturn) {" staticPrefix (upperFirst name) (upperFirst name)
+        write 0 "package %svoid __%s__push(ref %s value%s) {" staticPrefix (upperFirst name) (upperFirst name) pushSuffix
         for field in info.Fields |> List.rev do
             let pushContent =
                 sprintf "value.%s" (lowerFirst field.Name)
@@ -1093,7 +1086,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}"
         // push
         blank()
-        write 0 "package %svoid __%s__push(ref %s value, bool isReturn) {" staticPrefix (upperFirst name) (upperFirst name)
+        write 0 "package %svoid __%s__push(ref %s value%s) {" staticPrefix (upperFirst name) (upperFirst name) pushSuffix
         for field in namedFields |> List.rev do
             write 1 "%s out%s;" (typeToDlangString context field.Type_) (upperFirst field.Name)
             write 1 "if (value.has%s(out%s)) {" (upperFirst field.Name) (upperFirst field.Name)
@@ -1153,7 +1146,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}" // end struct definition
         // push
         blank()
-        write 0 "package %svoid __%s__push(%s value, bool isReturn) {" staticPrefix (upperFirst name) (upperFirst name)
+        write 0 "package %svoid __%s__push(%s value%s) {" staticPrefix (upperFirst name) (upperFirst name) pushSuffix
         write 1 "value.match!("
         for value, maybeComma in withTrailingCommas sumTypeValues do
             write 2 "(%s.%s actual) {" (upperFirst name) (upperFirst value.Name)
@@ -1194,7 +1187,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "alias %s = %s;" (upperFirst name) (typeToDlangString context niType)
         blank()
         write 0 "pragma(inline)"
-        write 0 "package void __%s__push(%s value, bool isReturn) {" (upperFirst name) (upperFirst name)
+        write 0 "package void __%s__push(%s value%s) {" (upperFirst name) (upperFirst name) pushSuffix
         pushValue context writer 1 niType "value" (Indirect "isReturn")
         write 0 "}"
         blank()
@@ -1282,7 +1275,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             else
                 write 2 "ni.invokeInterfaceMethodWithExceptions(_%s_%s, id);" (lowerFirst name) method.WrapperName
             // return (mindful of safety area nonsense)
-            if containsRefs context.ModuleContext method.Returns then
+            if typeContainsRefs context.ModuleContext (NITypeRoot method.Returns) then
                 popValue context writer 2 method.Returns SafeReturn
             else
                 popValue context writer 2 method.Returns Return
@@ -1446,14 +1439,14 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
             write 0 "%s%s %s(%s) {" contentPrefix (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
             // push args in reverse
             for arg in namedFunc.Args |> List.rev do
-                pushValue context writer 1 arg.Type arg.Name (Direct false)
+                pushValue context writer 1 arg.Type (safeIdentifier arg.Name) (Direct false)
             // invoke remote
             if namedFunc.Throws.IsEmpty then
                 write 1 "ni.invokeModuleMethod(_%s);" namedFunc.WrapperName
             else
                 write 1 "ni.invokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
             // return pop
-            popValue context writer 1 namedFunc.Returns (if containsRefs context.ModuleContext namedFunc.Returns then SafeReturn else Return)
+            popValue context writer 1 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
             write 0 "}"
 
     // render user types + nested groups in order of declaration
@@ -1695,21 +1688,21 @@ let writeLibrary (allModules: Module list) (writer: IFormatWriter) (libraryName:
     write 0 "import ni = %s.support.nativeimplclient;" libraryName
     for m in allModules do
         let simple =
-            joinModuleName CamelCase m.Name
-        write 0 "import %s = %s.%s;" simple libraryName simple
+            joinModuleName LowerOnly m.Name
+        write 0 "import %s.%s;" libraryName simple
     blank()
     write 0 "void libraryinit() {"
     write 1 "ni.init();"
     blank()
     // register modules in dependency order (`allModules` is provided that way already)
     for m in allModules do
-        write 1 "%s.__init();" (joinModuleName CamelCase m.Name)
+        write 1 "%s.%s.__init();" libraryName (joinModuleName LowerOnly m.Name)
     write 0 "}"
     blank()
     write 0 "void libraryshutdown() {"
     // shutdown in reverse order
     for m in allModules |> List.rev do
-        write 1 "%s.__shutdown();" (joinModuleName CamelCase m.Name)
+        write 1 "%s.%s.__shutdown();" libraryName (joinModuleName LowerOnly m.Name)
     blank()
     // NI shutdown
     write 1 "ni.shutdown();"

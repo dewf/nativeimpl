@@ -520,6 +520,8 @@ type PushIsReturn =
     | NotApplicable
 
 let pushValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (type_: NIType) (content: string) (isReturn: PushIsReturn) =
+    let write = writer.Write
+
     let context =
         // enable "wrappers push/pop" mode if necessary
         // for rewriting path prefixes as usual :(((
@@ -530,12 +532,16 @@ let pushValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (
             | _ ->
                 context.NameMode
         { context with NameMode = nextNameMode }
-    let write = writer.Write
+
     let isReturnString() =
         match isReturn with
         | Direct value -> if value then "true" else "false"
         | Indirect name -> name
         | NotApplicable -> failwith "pushValue: 'NotApplicable' isReturn was consumed"
+
+    let containsRefs =
+        typeContainsRefs context.ModuleContext (NITypeRoot type_)
+
     match type_ with
     | UnitType ->
         write level "%s;" content // no push!
@@ -556,56 +562,25 @@ let pushValue (context: CppRenderContext) (writer: IFormatWriter) (level: int) (
         | ExceptionType ->
             assert (isReturn = Direct true)          // maybe needs a separate value for exceptions?
             write level "%s__push(%s);" name content // isreturn irrelevant, exceptions must push everything safely because they are basically returns
-        | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-            write level "%s__push(%s, %s);" name content (isReturnString())
         | _ ->
-            write level "%s__push(%s);" name content
-    | ArrayType niType ->
-        match niType with
-        | Primitive prim ->
-            match prim with
-            | SizeT -> write level "pushSizeTArrayInternal(%s);" content
-            | Bool -> write level "pushBoolArrayInternal(%s);" content
-            | Int(signed, intWidth) ->
-                write level "push%sInt%dArrayInternal(%s);" (if signed then "" else "U") (widthToInt intWidth) content
-            | Float32 -> write level "pushFloatArrayInternal(%s);" content
-            | Float64 -> write level "pushDoubleArrayInternal(%s);" content
-            | StringType -> write level "pushStringArrayInternal(%s);" content
-        | Resolved (_, resolvedType) ->
-            match resolvedType with
-            | StructType | InterfaceType | TypedefType | SumType | OptionsType ->
-                write level "__%s__push(%s, %s);" (typeToName context (ArrayType niType)) content (isReturnString())
-            | _ ->
-                write level "__%s__push(%s);" (typeToName context (ArrayType niType)) content
-        | ArrayType _ ->
-            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | MapType (keyType, valueType) ->
-            write level "__%s_%s_Map_Array__push(%s, %s);" (typeToName context keyType) (typeToName context valueType) content (isReturnString())
-        | TupleType _ ->
-            write level "__%s_Array__push(%s, %s);" (typeToName context niType) content (isReturnString())
-        | SetType _ ->
-            write level "__%s_Array__push(%s, %s);" (typeToName context niType) content (isReturnString())
-        | OptionType _ ->
-            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | ResultType _ ->
-            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-        | _ ->
-            write level "// (push not yet supported: ArrayType %A)" niType
-    | MapType (keyType, valueType) ->
-        write level "__%s_%s_Map__push(%s, %s);" (typeToName context keyType) (typeToName context valueType) content (isReturnString())
-    | TupleType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | SetType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | OptionType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | ResultType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
-    | BufferType _ ->
-        write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
+            if containsRefs then
+                write level "%s__push(%s, %s);" name content (isReturnString())
+            else
+                write level "%s__push(%s);" name content
+    | ArrayType (Primitive prim) ->
+        match prim with
+        | SizeT -> write level "pushSizeTArrayInternal(%s);" content
+        | Bool -> write level "pushBoolArrayInternal(%s);" content
+        | Int(signed, intWidth) ->
+            write level "push%sInt%dArrayInternal(%s);" (if signed then "" else "U") (widthToInt intWidth) content
+        | Float32 -> write level "pushFloatArrayInternal(%s);" content
+        | Float64 -> write level "pushDoubleArrayInternal(%s);" content
+        | StringType -> write level "pushStringArrayInternal(%s);" content
     | _ ->
-        write level "// (pushValue not supported yet: %A)" type_
-
+        if containsRefs then
+            write level "__%s__push(%s, %s);" (typeToName context type_) content (isReturnString())
+        else
+            write level "__%s__push(%s);" (typeToName context type_) content
 
 let exceptionTypeAndVariableName (context: CppRenderContext) (resolvedName: ResolvedName) =
     let typeName =
@@ -655,9 +630,9 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
     writeCpp 0 "void %s__push(%s f) {" name (typeToCppString context FunctionArguments niType)
     writeCpp 1 "size_t uniqueKey = 0;"
     writeCpp 1 "if (f) {"
-    writeCpp 2 "%s* ptr_fun = f.target<%s>();" rawDelegateType rawDelegateType
+    writeCpp 2 "auto ptr_fun = f.target<%s>();" rawDelegateType
     writeCpp 2 "if (ptr_fun != nullptr) {"
-    writeCpp 3 "uniqueKey = (size_t)ptr_fun;"
+    writeCpp 3 "uniqueKey = reinterpret_cast<size_t>(ptr_fun);"
     writeCpp 2 "}"
     writeCpp 1 "}"
     writeCpp 1 "auto wrapper = [f]() {"
@@ -690,7 +665,7 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
     blankCpp()
     writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
     writeCpp 1 "auto id = ni_popClientFunc();"
-    writeCpp 1 "auto cf = std::shared_ptr<ClientFuncVal>(new ClientFuncVal(id));"
+    writeCpp 1 "auto cf = std::make_shared<ClientFuncVal>(id);"
     writeCpp 1 "auto wrapper = [cf](%s) {" (joinedArgs context info.Args)
     for argName, argType in info.Args |> List.rev do
         pushValue context writerCpp 2 argType argName (Direct false)
@@ -698,7 +673,7 @@ let rec renderWrapperDelegate (context: CppRenderContext) (writerH: IFormatWrite
         writeCpp 2 "cf->remoteExec();"
     else
         writeCpp 2 "cf->remoteExecWithExceptions();"
-    if containsRefs context.ModuleContext info.Returns then
+    if typeContainsRefs context.ModuleContext (NITypeRoot info.Returns) then
         popValue context writerCpp 2 info.Returns SafeReturn
     else
         popValue context writerCpp 2 info.Returns Return
@@ -779,7 +754,7 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
         else
             writeCpp 1 "clientObject->invokeMethodWithExceptions(%s_%s);" (lowerFirst name) namedFunc.Name
         // pop result
-        if containsRefs context.ModuleContext namedFunc.Returns then
+        if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then
             // any sort of reference that might get freed if it was only a return value from the other side (potentially stored nowhere else, so protected by the safety area)
             // this is to prevent premature deref which could free the instance before we've gotten ahold of it
             popValue context writerCpp 1 namedFunc.Returns SafeReturn
@@ -878,15 +853,29 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
             clampedNsPrefix context
         nsPrefix + name
 
+    let containsRefs =
+        typeContainsRefs context.ModuleContext (NITypeRoot niType)
+    let pushSuffix =
+        if containsRefs then
+            ", bool isReturn"
+        else
+            ""
+
     // push ========
-    writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
+    writeH 0 "void %s__push(%s value%s);" name (typeToCppString context FunctionArguments niType) pushSuffix
     // pushmatcher
     blankCpp()
     writeCpp 0 "class %s_PushMatcher : public %s::Matcher {" name qualifiedName
     writeCpp 0 "private:"
-    writeCpp 1 "bool isReturn;"
-    writeCpp 0 "public:"
-    writeCpp 1 "explicit %s_PushMatcher(bool isReturn) : isReturn(isReturn) {}" name
+
+    if containsRefs then
+        writeCpp 1 "bool isReturn;"
+        writeCpp 0 "public:"
+        writeCpp 1 "explicit %s_PushMatcher(bool isReturn) : isReturn(isReturn) {}" name
+    else
+        writeCpp 0 "public:"
+        writeCpp 1 "%s_PushMatcher() = default;" name
+
     for i, value in values |> List.indexed do
         writeCpp 1 "void on%s(const %s::%s* %sValue) override {" value.Name qualifiedName value.Name (lowerFirst value.Name)
         for argName, argType in value.Args |> List.rev do
@@ -899,10 +888,13 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
     writeCpp 0 "};" // end pushmatcher
     // actual push
     blankCpp()
-    writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
-    writeCpp 1 "%s_PushMatcher v(isReturn);" name
+    writeCpp 0 "void %s__push(%s value%s) {" name (typeToCppString context FunctionArguments niType) pushSuffix
+    if containsRefs then
+        writeCpp 1 "%s_PushMatcher visitor(isReturn);" name
+    else
+        writeCpp 1 "%s_PushMatcher visitor;" name
     // writeCpp 1 "value->match((%s::Matcher*)&v);" qualifiedName // why this one with the casting?
-    writeCpp 1 "value->match(&v);"
+    writeCpp 1 "value->match(&visitor);"
     writeCpp 0 "}"
 
     // pop =======
@@ -932,10 +924,17 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
     // but then do we ever really need that? aren't all generics contained within the wrapper .cpp file?
     // and rendered in strict dependency order? would the .H be required to avoid some kind of circularity?
     let write, blank = writer.Write, writer.Blank
+
+    let pushSuffix =
+        if typeContainsRefs context.ModuleContext (NITypeRoot outerType) then
+            ", bool isReturn"
+        else
+            ""
+
     // use this for any types with no particular specializations (typedefs, delegates, arrays of arrays -- everything but structs and tuples, basically)
     let arrayDefault () =
         // PUSH ========
-        write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+        write 0 "void __%s__push(%s values%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
         write 1 "for (auto v = values.rbegin(); v != values.rend(); v++) {" // in reverse (for arrays - for sets, order doesn't matter)
         pushValue context writer 2 elemType "*v" (Indirect "isReturn")
         write 1 "}"
@@ -961,7 +960,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             match mode with
             | ArrayMode ->
                 // push
-                write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                write 0 "inline void __%s__push(%s values%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
                 pushValue context writer 1 (ArrayType tt) "values" (Indirect "isReturn")
                 write 0 "}"
                 // pop
@@ -971,7 +970,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 write 0 "}"
             | SetMode ->
                 // push
-                write 0 "inline void __%s__push(%s set, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                write 0 "inline void __%s__push(%s set%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
                 pushValue context writer 1 (SetType tt) "set" (Indirect "isReturn")
                 write 0 "}"
                 // pop
@@ -981,7 +980,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 write 0 "}"
         member this.TypedefPrim (prim: NIPrimitive) =
             // push
-            write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+            write 0 "inline void __%s__push(%s values%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
             pushValue context writer 1 (ArrayType (Primitive prim)) "values" (Indirect "isReturn")
             write 0 "}"
             // pop
@@ -994,7 +993,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 widthTypeForEnum context.ModuleContext info
             if info.FlagsMode then
                 // PUSH ===================================
-                write 0 "inline void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                write 0 "inline void __%s__push(%s values%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
                 pushValue context writer 1 (ArrayType widthType) "values" NotApplicable
                 write 0 "}"
                 // POP =====================================
@@ -1003,7 +1002,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 write 0 "}"
             else
                 // PUSH ================
-                write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                write 0 "void __%s__push(%s values%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
                 write 1 "std::vector<%s> intValues;" (typeToCppString context TypeParams widthType)
                 write 1 "for (auto i : values) {"
                 write 2 "intValues.push_back(static_cast<%s>(i));" (typeToCppString context Default widthType)
@@ -1028,7 +1027,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             let typeStr =
                 resolvedNameToString context structName TypeMode
             // PUSH ===========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+            write 0 "void __%s__push(%s values%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
             for field in namedFields |> List.rev do
                 write 1 "std::vector<%s> %s_values;" (typeToCppString context TypeParams field.Type_) field.Name
             write 1 "for (auto v = values.begin(); v != values.end(); v++) {"
@@ -1059,7 +1058,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "}"
         member this.TupleType (tupleTypes: NIType list) =
             // PUSH ========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+            write 0 "void __%s__push(%s values%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
             for i, type_ in tupleTypes |> List.indexed do
                 write 1 "std::vector<%s> _%dvalues;" (typeToCppString context TypeParams type_) i
             write 1 "for (auto tv : values) {"
@@ -1097,7 +1096,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             arrayDefault()
         member this.OptionType elemType =
             // push ==========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+            write 0 "void __%s__push(%s values%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
             write 1 "%s hasValueArray;" (typeToCppString context Default (ArrayType (Primitive Bool)))
             write 1 "hasValueArray.reserve(values.size());"
             write 1 "%s valueArray;" (typeToCppString context Default (ArrayType elemType))
@@ -1129,7 +1128,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
             write 0 "}"
         member this.ResultType succType errType =
             // push =========
-            write 0 "void __%s__push(%s values, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+            write 0 "void __%s__push(%s values%s) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType) pushSuffix
             write 1 "%s isSuccessArray;" (typeToCppString context Default (ArrayType (Primitive Bool)))
             write 1 "isSuccessArray.reserve(values.size());"
             write 1 "%s successValuesArray;" (typeToCppString context Default (ArrayType succType))
@@ -1177,7 +1176,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 write 0 "// built-in array type: %s" (typeToCppString context Default outerType)
             | SetMode ->
                 // push ==============
-                write 0 "void __%s__push(%s items, bool isReturn) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
+                write 0 "void __%s__push(%s items) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
                 write 1 "auto itemsArr = %s(items.begin(), items.end());" (typeToCppString context Default (ArrayType elemType))
                 pushValue context writer 1 (ArrayType elemType) "itemsArr" NotApplicable
                 write 0 "}"
@@ -1298,6 +1297,13 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
 let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (gType: NIType) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
+
+    let pushSuffix =
+        if typeContainsRefs context.ModuleContext (NITypeRoot gType) then
+            ", bool isReturn"
+        else
+            ""
+
     match gType with
     | BufferType elemType ->
         // PUSH =====
@@ -1336,8 +1342,8 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
     | TupleType tupleTypes ->
         // PUSH =====
         blankH()
-        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
-        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeH 0 "void __%s__push(%s value%s);" (typeToName context gType) (typeToCppString context FunctionArguments gType) pushSuffix
+        writeCpp 0 "void __%s__push(%s value%s) {" (typeToName context gType) (typeToCppString context FunctionArguments gType) pushSuffix
         for i, type_ in tupleTypes |> List.indexed |> List.rev do
             pushValue context writerCpp 1 type_ (sprintf "std::get<%d>(value)" i) (Indirect "isReturn")
         writeCpp 0 "}"
@@ -1357,8 +1363,8 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
     | MapType (keyType, valueType) ->
         // PUSH =====
         blankH()
-        writeH 0 "void __%s__push(%s _map, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
-        writeCpp 0 "void __%s__push(%s _map, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeH 0 "void __%s__push(%s _map%s);" (typeToName context gType) (typeToCppString context FunctionArguments gType) pushSuffix
+        writeCpp 0 "void __%s__push(%s _map%s) {" (typeToName context gType) (typeToCppString context FunctionArguments gType) pushSuffix
         writeCpp 1 "std::vector<%s> keys;" (typeToCppString context TypeParams keyType)
         writeCpp 1 "std::vector<%s> values;" (typeToCppString context TypeParams valueType)
         writeCpp 1 "for (auto i = _map.begin(); i != _map.end(); i++) {"
@@ -1392,8 +1398,8 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         // PUSH =====
         blankH()
         blankCpp()
-        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
-        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeH 0 "void __%s__push(%s value%s);" (typeToName context gType) (typeToCppString context FunctionArguments gType) pushSuffix
+        writeCpp 0 "void __%s__push(%s value%s) {" (typeToName context gType) (typeToCppString context FunctionArguments gType) pushSuffix
         writeCpp 1 "if (value.has_value()) {"
         pushValue context writerCpp 2 succType "*value" (Indirect "isReturn")
         pushValue context writerCpp 2 (Primitive Bool) "true" NotApplicable
@@ -1419,8 +1425,8 @@ let renderWrapperGeneric (context: CppRenderContext) (writerH: IFormatWriter) (w
         // PUSH =====
         blankH()
         blankCpp()
-        writeH 0 "void __%s__push(%s value, bool isReturn);" (typeToName context gType) (typeToCppString context FunctionArguments gType)
-        writeCpp 0 "void __%s__push(%s value, bool isReturn) {" (typeToName context gType) (typeToCppString context FunctionArguments gType)
+        writeH 0 "void __%s__push(%s value%s);" (typeToName context gType) (typeToCppString context FunctionArguments gType) pushSuffix
+        writeCpp 0 "void __%s__push(%s value%s) {" (typeToName context gType) (typeToCppString context FunctionArguments gType) pushSuffix
         writeCpp 1 "if (value.has_value()) {"
         pushValue context writerCpp 2 elem "value.value()" (Indirect "isReturn")
         pushValue context writerCpp 2 (Primitive Bool) "true" NotApplicable
@@ -1468,6 +1474,12 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             | SumTypeDef _ -> SumType
             | OptionsDef _ -> OptionsType
         Resolved (ThisModule symbolName, resolvedType)
+
+    let pushSuffix =
+        if typeContainsRefs context.ModuleContext (UserTypeRoot userType) then
+            ", bool isReturn"
+        else
+            ""
 
     match userType with
     | FwdOpaqueDef _ ->
@@ -1517,8 +1529,8 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             renderWrapperNamedFunc context writerH writerCpp nf
     | StructDef info ->
         blankH()
-        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
-        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
+        writeH 0 "void %s__push(%s value%s);" name (typeToCppString context FunctionArguments niType) pushSuffix
+        writeCpp 0 "void %s__push(%s value%s) {" name (typeToCppString context FunctionArguments niType) pushSuffix
         for field in info.Fields |> List.rev do
             pushValue context writerCpp 1 field.Type_ (sprintf "value.%s" field.Name) (Indirect "isReturn")
         writeCpp 0 "}"
@@ -1564,8 +1576,8 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             Primitive(Int(true,Width32))
         // push
         blankH()
-        writeH 0 "void %s__push(%s value, bool isReturn);" name (typeToCppString context FunctionArguments niType)
-        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name (typeToCppString context FunctionArguments niType)
+        writeH 0 "void %s__push(%s value%s);" name (typeToCppString context FunctionArguments niType) pushSuffix
+        writeCpp 0 "void %s__push(%s value%s) {" name (typeToCppString context FunctionArguments niType) pushSuffix
         for field in namedFields |> List.rev do
             writeCpp 1 "%s %s;" (typeToCppString context Default field.Type_) field.Name
             writeCpp 1 "if (value.has%s(&%s)) {" (upperFirst field.Name) field.Name
@@ -1616,8 +1628,8 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         // push
         blankH()
         blankCpp()
-        writeH 0 "void %s__push(%s value, bool isReturn);" name name // name (typeToCppString context FunctionArguments niType)
-        writeCpp 0 "void %s__push(%s value, bool isReturn) {" name name // name (typeToCppString context FunctionArguments niType)
+        writeH 0 "void %s__push(%s value%s);" name name pushSuffix
+        writeCpp 0 "void %s__push(%s value%s) {" name name pushSuffix
         pushValue context writerCpp 1 niType "value" (Indirect "isReturn")
         writeCpp 0 "}"
         // pop
@@ -1973,9 +1985,15 @@ let renderHeaderSumType (context: CppRenderContext) (writer: IFormatWriter) (sum
     else
         write 0 "}"  // end namespace
 
-let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) (optionsTypeName: string) (namedFields: NamedField list) =
+let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) (userType: UserType) (optionsTypeName: string) (namedFields: NamedField list) =
     let write, _ = writer.Write, writer.Blank
-    //
+
+    let pushSuffix =
+        if typeContainsRefs context.ModuleContext (UserTypeRoot userType) then
+            ", bool isReturn"
+        else
+            ""
+
     write 0 "struct %s {" optionsTypeName
     write 0 "private:"
     write 1 "enum Fields {"
@@ -1991,7 +2009,7 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
     write 1 "[[nodiscard]] %s getUsedFields() const {" (typeToCppString context Default usedFieldsType)
     write 2 "return _usedFields;"
     write 1 "}"
-    write 1 "friend void %s__push(const %s& value, bool isReturn);" (upperFirst optionsTypeName) (upperFirst optionsTypeName)
+    write 1 "friend void %s__push(const %s& value%s);" (upperFirst optionsTypeName) (upperFirst optionsTypeName) pushSuffix
     write 1 "friend %s %s__pop();" (upperFirst optionsTypeName) (upperFirst optionsTypeName)
     write 0 "public:"
     // accessor methods
@@ -2024,8 +2042,9 @@ let renderHeaderOptionsType (context: CppRenderContext) (writer: IFormatWriter) 
 
 let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
-    //
+
     blank()
+
     match userType with
     | FwdOpaqueDef _ ->
         // nothing to emit here, we do it alongside normal fwd opaque declarations at the top of the group
@@ -2078,7 +2097,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
         write 1 "auto operator<=>(const %s&) const = default;" name
         write 0 "};" // end struct
     | OptionsDef namedFields ->
-        renderHeaderOptionsType context writer name namedFields
+        renderHeaderOptionsType context writer userType name namedFields
     | ExceptionDef namedFields ->
         renderHeaderException context writer name namedFields
     | InterfaceDef info ->

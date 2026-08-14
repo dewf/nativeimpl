@@ -313,7 +313,9 @@ let allGenericTypes (context: ModuleContext) =
             | Global (_, niType) ->
                 typeAndSubTypes niType
             | FunctionDef nf ->
-                namedFuncHandler nf )
+                namedFuncHandler nf
+            | ExtMethodsBlock info ->
+                 namedFuncsHandler info.Methods )
     // go
     processDefs context.Module.Defs
     // is this sufficient/correct for dependency order? (we want smaller primitives to be rendered before the composites they comprise)
@@ -616,6 +618,7 @@ type GroupContext = {
     Defs: ModuleDefinition list
     // broken down for easy use:
     ModuleMethods: NamedFunction list
+    ExtMethodBlocks: ExtMethodsInfo list
     Opaques: (string * OpaqueInfo) list
     FwdOpaques: (string * string list) list
     SumTypes: (string * SumTypeValue list) list
@@ -647,6 +650,13 @@ let createGroups (rootDefs: ModuleDefinition list) =
             |> List.choose (function
                 | UserType (name, OpaqueDef info) ->
                     Some (name, info)
+                | _ ->
+                    None)
+        let extMethodBlocks =
+            groupDefs
+            |> List.choose (function
+                | ExtMethodsBlock info ->
+                    Some info
                 | _ ->
                     None)
         let fwdOpaques =
@@ -727,6 +737,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
           KindPath = kindPath
           Defs = groupDefs
           ModuleMethods = moduleMethods
+          ExtMethodBlocks = extMethodBlocks
           Opaques = opaques
           FwdOpaques = fwdOpaques
           SumTypes = sumTypes
@@ -792,7 +803,7 @@ let renameGroupPath (renameFunc: string -> GroupKind list -> string) (joinedPath
             namePath |> List.last
         renameFunc name kindPath)
 
-type ResolveNameStringMode =
+type ResolvedNameStringMode =
     | TypeMode
     | IdentifierMode
     | GenericIdentifierMode
@@ -809,7 +820,7 @@ let resolvedNameToStringAbstract
             (importQualification: FullQualification)
             (capsPolicy: CapsPolicy)
             // non-curried params:
-            (context: RenderContext) (name: ResolvedName) (mode: ResolveNameStringMode) =
+            (context: RenderContext) (name: ResolvedName) (mode: ResolvedNameStringMode) =
 
     let separator, partRenameFunc = // rebind partRenameFunc
         match mode with
@@ -1136,3 +1147,15 @@ let widthTypeForEnum (context: ModuleContext) (info: EnumInfo) =
             // not info.FlagsMode
             true
         Primitive(Int(signed,Width32))
+
+let extMethodSignature (target: NIType) (method: NamedFunction) =
+    match target with
+    | Resolved (Imported(moduleName, SymbolName parts), OpaqueType) ->
+        let modulePrefix =
+            joinModuleName PascalCase moduleName
+        let symbolPrefix =
+            joinNameParts "_" parts
+        // C++ rendering style is standard:
+        sprintf "ext__%s_%s_%s" modulePrefix symbolPrefix method.WrapperName
+    | _ ->
+        failwithf "extMethodSignature: 'target' must be imported opaque type"

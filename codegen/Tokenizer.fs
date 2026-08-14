@@ -34,6 +34,7 @@ type Token =
     | StaticToken
     | ExtendsToken
     | NamedBitsToken
+    | ExtMethodsToken
     // generics/collections:
     | ArrayToken
     | MapToken
@@ -265,6 +266,7 @@ let nextToken (loc: Location) (input: char[]) =
             | "static" -> StaticToken
             | "extends" -> ExtendsToken
             | "namedbits" -> NamedBitsToken
+            | "extmethods" -> ExtMethodsToken
             // etc
             | "null" -> NullToken
             | "true" -> BoolValueToken true

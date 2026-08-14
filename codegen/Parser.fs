@@ -299,6 +299,11 @@ type NamedBitsInfo = {
     BitNames: string list
 }
 
+type ExtMethodsInfo = {
+    Target: NIType
+    Methods: NamedFunction list
+}
+
 let isValidEnumWidth (t: NIType) =
     match t with
     | Primitive (Int _) -> true
@@ -336,6 +341,8 @@ and ModuleDefinition =
     | FunctionDef of NamedFunction
     | UserType of name: string * type_: UserType
     | Group of name: string * defs: ModuleDefinition list
+    // not sure if this is where it'll ultimately live, but:
+    | ExtMethodsBlock of info: ExtMethodsInfo
 
 type SymbolTableEntry =
     | Direct of thing: UserType
@@ -681,7 +688,8 @@ let overloadMapFunc (overloads: Map<string, OverloadMapValue>) (item: NamedFunct
     let key =
         item.Name.ToLower()
     let argTypes =
-        item.Args |> List.map (_.Type)
+        item.Args
+        |> List.map _.Type
     if overloads.ContainsKey key then
         let value = overloads[key]
         if not (value.BannedArgs.Contains argTypes) then
@@ -810,6 +818,35 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 |> Some
             | _ ->
                 failwithf "error parsing opaque token at %s" (loc.ToString())
+
+        | Lookahead 1 ([ ExtMethodsToken ], loc, etc) ->
+            let target, loc, etc =
+                match etc with
+                | NameStuff.NameParts (parts, loc, etc) ->
+                    let type_ =
+                        Unresolved (UnresolvedIdentifier parts, loc, OpaqueConstraint)
+                    type_, loc, etc
+                | _ ->
+                    failwithf "expected opaque identifier @ %A" loc
+
+            // must have method content
+            match etc with
+            | Lookahead 1 ([LeftBrace], loc, etc) ->
+                let methodBlock, afterBlock =
+                    contentUntilMatching loc LeftBrace etc
+
+                let methods =
+                    methodBlock
+                    |> List.unfold parseNamedFunction
+                    |> setOverloadIndices
+
+                let info =
+                    { Target = target; Methods = methods }
+                ([ExtMethodsBlock info], afterBlock)
+                |> Some
+            | _ ->
+                failwithf "expected method block @ %A" loc
+
         | Lookahead 3 ([StructToken; Identifier name; LeftBrace], loc, etc) ->
             // optional static block
             let maybeStaticDefs, etc =
@@ -1656,6 +1693,15 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
         Global (name, resolveType context namespacePath niType)
     | FunctionDef namedFunction ->
         FunctionDef (resolveFunctionTypes context namespacePath namedFunction)
+    | ExtMethodsBlock info ->
+        let nextTarget =
+            resolveType context namespacePath info.Target
+        let nextMethods =
+            info.Methods
+            |> List.map (resolveFunctionTypes context namespacePath)
+        let nextInfo =
+            { Target = nextTarget; Methods = nextMethods }
+        ExtMethodsBlock nextInfo
 
 let rec getUserTypes (defs: ModuleDefinition list) =
     defs

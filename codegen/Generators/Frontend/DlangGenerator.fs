@@ -46,14 +46,17 @@ type DlangRenderContext = {
             | InterfaceStatic -> true
             | StructStatic -> true)
 
-let resolvedNameToString (context: DlangRenderContext) (resolvedName: ResolvedName) (mode: ResolveNameStringMode) =
+let resolvedNameToString (context: DlangRenderContext) (resolvedName: ResolvedName) (mode: ResolvedNameStringMode) =
     let qualification =
         let prefix =
-            if mode = GenericIdentifierMode then
+            match mode with
+            | IdentifierMode ->
+                [""]
+            | TypeMode | WrapperMethodMode _ ->
+                context.LibraryPrefix
+            | GenericIdentifierMode ->
                 // colliding with local symbols not a concern in this context, so we can use any (or probably even no) prefix
                 ["G"]
-            else
-                context.LibraryPrefix
         Forced prefix
     let capsPolicy = {
         ModulePolicy = LowerOnly
@@ -761,6 +764,35 @@ let joinedTypes (context: DlangRenderContext) (typesList: NIType list) =
     |> List.map (typeToDlangString context)
     |> String.concat ", "
 
+
+type ExtMethodStringMode =
+    | MethodSignature
+    | MethodHandle
+    | ActualMethod
+
+let extMethodToString (context: DlangRenderContext) (target: NIType) (method: NamedFunction) (mode: ExtMethodStringMode) =
+    match mode with
+    | MethodSignature ->
+        // common func, match C++ signature:
+        extMethodSignature target method
+    | MethodHandle ->
+        sprintf "_ext%s_%s" (typeToName context target) method.WrapperName
+    | ActualMethod ->
+        method.Name
+
+let synthesizeExtensionMethods (context: DlangRenderContext) (info: ExtMethodsInfo) =
+    info.Methods
+    |> List.map (fun nf ->
+        // // name prefix
+        // let nextName =
+        //     sprintf "ext_%s_%s" (typeToName context info.Target) nf.Name
+        // inject 'this' arg
+        let nextArgs =
+            let firstArg =
+                { Name = "_this"; Type = info.Target; DefaultValue = None }
+            firstArg :: nf.Args
+        { nf with Args = nextArgs })
+
 let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
 
@@ -1401,6 +1433,13 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         else
             write 0 "%sni.ModuleMethodHandle _%s_dispose;" contentPrefix (lowerFirst name)
 
+    // extension method handles
+    for info in groupContext.ExtMethodBlocks do
+        for method in info.Methods do
+            let varName =
+                extMethodToString context info.Target method MethodHandle
+            write 0 "%sni.ModuleMethodHandle %s;" contentPrefix varName
+
     // interfaces
     for name, info in groupContext.Interfaces do
         write 0 "%sni.InterfaceHandle _%s;" contentPrefix (lowerFirst name)
@@ -1429,25 +1468,39 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         blank()
         write 0 "%s%s %s() => %s;" contentPrefix (typeToDlangString context type_) (lowerFirst name) (lowerFirstWithUnderscore name)
 
+    let renderNamedFunc (namedFunc: NamedFunction) (methodHandle: string) =
+        blank()
+        write 0 "%s%s %s(%s) {" contentPrefix (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
+        // push args in reverse
+        for arg in namedFunc.Args |> List.rev do
+            pushValue context writer 1 arg.Type (safeIdentifier arg.Name) (Direct false)
+        // invoke remote
+        if namedFunc.Throws.IsEmpty then
+            write 1 "ni.invokeModuleMethod(%s);" methodHandle
+        else
+            write 1 "ni.invokeModuleMethodWithExceptions(%s);" methodHandle
+        // return pop
+        popValue context writer 1 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
+        write 0 "}"
+
     // top-level functions ===========
     for namedFunc in groupContext.ModuleMethods do
         if namedFunc.Name = "moduleInit" || namedFunc.Name = "moduleShutdown" then
             // ignore, we invoke it manually in the __init/__shutdown functions - no public wrapper wanted
             ()
         else
-            blank()
-            write 0 "%s%s %s(%s) {" contentPrefix (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args)
-            // push args in reverse
-            for arg in namedFunc.Args |> List.rev do
-                pushValue context writer 1 arg.Type (safeIdentifier arg.Name) (Direct false)
-            // invoke remote
-            if namedFunc.Throws.IsEmpty then
-                write 1 "ni.invokeModuleMethod(_%s);" namedFunc.WrapperName
-            else
-                write 1 "ni.invokeModuleMethodWithExceptions(_%s);" namedFunc.WrapperName
-            // return pop
-            popValue context writer 1 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
-            write 0 "}"
+            renderNamedFunc namedFunc (sprintf "_%s" namedFunc.WrapperName)
+
+    // extension method blocks =============
+    for info in groupContext.ExtMethodBlocks do
+        blank()
+        write 0 "// extension methods for [%s] =============" (typeToDlangString context info.Target)
+        writer.EatBlank()
+        for method in synthesizeExtensionMethods context info do
+            let handle =
+                extMethodToString context info.Target method MethodHandle
+            renderNamedFunc method handle
+        write 0 "// ========================================"
 
     // render user types + nested groups in order of declaration
     for def in groupContext.Defs do
@@ -1500,6 +1553,16 @@ let assignModuleHandles (context: DlangRenderContext) (writer: IFormatWriter) =
                     ()
                 else
                     write 1 "%s_dispose = ni.getModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
+
+        // extension method handles
+        if not group.ExtMethodBlocks.IsEmpty then
+            for info in group.ExtMethodBlocks do
+                for method in info.Methods do
+                    let target =
+                        extMethodToString context info.Target method MethodHandle
+                    let signature =
+                        extMethodToString context info.Target method MethodSignature
+                    write 1 "%s = ni.getModuleMethod(_module, \"%s\");" target signature
 
         // exceptions
         if not group.Exceptions.IsEmpty then

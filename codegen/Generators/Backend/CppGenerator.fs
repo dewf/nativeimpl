@@ -10,9 +10,10 @@ open Extensions
 
 type ResolvedNameMode =
     | Normal
-    | ImplementationHeader // always use fully qualified imports, to prevent conflicts in places like Library.cpp
+    | ImplementationHeader  // always use fully qualified imports, to prevent conflicts in places like Library.cpp
     | Wrappers
     | WrappersPushPop
+    | ExtensionMethodsBlock // always use fully qualified, so the typeToName rendering matches everywhere
 
 type CppRenderContext = {
     RenderContext: RenderContext
@@ -65,7 +66,7 @@ let wrappersGroupSegmentRenameFunc (name: string) (prefix: GroupKind list) =
 let resolvedNameToString (context: CppRenderContext) =
     let pathClamp =
         match context.NameMode with
-        | Normal | ImplementationHeader ->
+        | Normal | ImplementationHeader | ExtensionMethodsBlock ->
             None
         | Wrappers | WrappersPushPop ->
             // only in these modes do we pass it through
@@ -332,7 +333,7 @@ let joinedArgNames (args: (string * NIType) list) =
 
 let joinedNamedFuncArgNames (args: NamedFunctionArg list) =
     args
-    |> List.map (_.Name)
+    |> List.map _.Name
     |> String.concat ", "
 
 
@@ -403,7 +404,7 @@ let rec defaultValueForType (context: CppRenderContext) (outerType: NIType) =
                 "(defaultValueForType: not yet supported)"
         | ArrayType niType -> sprintf "std::vector<%s>()" (typeToCppString context TypeParams niType)
         | MapType (keyType, valueType) -> sprintf "std::map<%s,%s>()" (typeToCppString context TypeParams keyType) (typeToCppString context TypeParams valueType)
-        | TupleType tupleTypes ->
+        | TupleType _ ->
             // let typesJoined =
             //     tupleTypes |> List.map (typeToCppString context TypeParams) |> String.concat ","
             // let defaultsJoined =
@@ -1220,7 +1221,7 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
         member this.Other (_: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context Default outerType)
 
-let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (info: OpaqueInfo) =
+let synthesizeOpaqueMethods (context: CppRenderContext) (opaqueName: string) (info: OpaqueInfo) =
     let fakeThis =
         let symbolName =
             SymbolName (context.GroupContext.Path @ [ opaqueName ])
@@ -1245,6 +1246,23 @@ let synthesizeOpaqueMethods2 (context: CppRenderContext) (opaqueName: string) (i
         let nextName =
             sprintf "%s_%s" opaqueName nf.Name
         { nf with Name = nextName })
+
+let synthesizeExtensionMethods (context: CppRenderContext) (info: ExtMethodsInfo) =
+    let context =
+        // force name rendering to be absolute!
+        // otherwise it's inconsistent between implementation .cpp and other places :(
+        { context with NameMode = ExtensionMethodsBlock }
+    info.Methods
+    |> List.map (fun nf ->
+        // name prefix
+        let nextName =
+            sprintf "ext_%s_%s" (typeToName context info.Target) nf.Name
+        // inject 'this' arg
+        let nextArgs =
+            let firstArg =
+                { Name = "_this"; Type = info.Target; DefaultValue = None }
+            firstArg :: nf.Args
+        { nf with Name = nextName; Args = nextArgs })
 
 let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (namedFunction: NamedFunction) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
@@ -1504,7 +1522,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         blankCpp()
         writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
         writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
-        writeCpp 1 "return (%s)ni_popPtr();" (typeToCppString context Default niType)
+        writeCpp 1 "return static_cast<%s>(ni_popPtr());" (typeToCppString context Default niType)
         writeCpp 0 "}"
         // nested static block
         match info.MaybeStaticDefs with
@@ -1525,7 +1543,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         | None ->
             ()
         // methods
-        for nf in synthesizeOpaqueMethods2 context name info do
+        for nf in synthesizeOpaqueMethods context name info do
             renderWrapperNamedFunc context writerH writerCpp nf
     | StructDef info ->
         blankH()
@@ -1705,6 +1723,13 @@ and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (wr
             ()
         | FunctionDef namedFunction ->
             renderWrapperNamedFunc context writerH writerCpp namedFunction
+        | ExtMethodsBlock info ->
+            let targetTypeStr =
+                typeToCppString context Default info.Target
+            writeH 0 "// ext methods block for: %s" targetTypeStr
+            writeCpp 0 "// ext methods block for: %s" targetTypeStr
+            for func in synthesizeExtensionMethods context info do
+                renderWrapperNamedFunc context writerH writerCpp func
         | UserType(name, userType) ->
             renderWrapperUserType context writerH writerCpp name userType
         | Group(groupName, _) ->
@@ -1729,9 +1754,9 @@ let computeInheritedInterfaceModules (module_: Module) =
             match info.MaybeParent with
             | Some (Resolved (resolvedName, _)) ->
                 match resolvedName with
-                | Imported(moduleName, name) ->
+                | Imported (moduleName, _) ->
                     [ moduleName ]
-                | ThisModule name ->
+                | ThisModule _ ->
                     []
             | _ ->
                 // something other than a resolved parent
@@ -1742,7 +1767,7 @@ let computeInheritedInterfaceModules (module_: Module) =
     let rec recInner (table: SymbolTable) =
         table
         |> Map.toList
-        |> List.collect (fun (key, entry) ->
+        |> List.collect (fun (_, entry) ->
             match entry with
             | SymbolTableEntry.Direct thing ->
                 userTypeItems thing
@@ -1861,12 +1886,15 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
             |> renameGroupPath wrappersGroupSegmentRenameFunc
             // ||> List.map2 groupSegmentRenameFuncWrappersFunc
 
-        // module methods (+ synthesized opaque)
+        // module methods (+ synthesized opaque methods, + extension methods)
         let opaqueMethods =
             group.Opaques
-            |> List.collect (fun (name, info) -> synthesizeOpaqueMethods2 context name info)
+            |> List.collect (fun (name, info) -> synthesizeOpaqueMethods context name info)
+        let extMethods =
+            group.ExtMethodBlocks
+            |> List.collect (synthesizeExtensionMethods context)
         let allMethods =
-            group.ModuleMethods @ opaqueMethods
+            group.ModuleMethods @ opaqueMethods @ extMethods
         for namedFunction in allMethods do
             let parts =
                 group.Path @ [ namedFunction.WrapperName ]
@@ -2066,7 +2094,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             else
                 ""
         let synthesized =
-            synthesizeOpaqueMethods2 context name info
+            synthesizeOpaqueMethods context name info
         for namedFunc in synthesized do
             let throwsComment =
                 if namedFunc.Throws.IsEmpty then
@@ -2227,20 +2255,37 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                     sprintf " // extends %s" (typeToCppString context Default parentType)
                 | None ->
                     ""
-            write 0 "struct __%s; typedef struct __%s* %sRef;%s" name name name extendsComment
+            write 0 "struct __%s; typedef __%s* %sRef;%s" name name name extendsComment
 
     if not group.FwdOpaques.IsEmpty then
         blank()
         for name, parts in group.FwdOpaques do
-            write 0 "struct __%s; typedef struct __%s* %sRef; // non-circular alias for [%s]" name name name (joinNameParts "::" parts)
+            write 0 "struct __%s; typedef __%s* %sRef; // non-circular alias for [%s]" name name name (joinNameParts "::" parts)
 
     // emit sumtype fwd decls, so they can be mutually dependent
     if not group.SumTypes.IsEmpty then
         blank()
-        for name, values in group.SumTypes do
+        for name, _ in group.SumTypes do
             write 0 "namespace %s {" name
             write 1 "class Base;"
             write 0 "}"
+
+    let renderNamedFunc (namedFunc: NamedFunction) =
+        let throwsComment =
+            if namedFunc.Throws.IsEmpty then
+                ""
+            else
+                let joined =
+                    namedFunc.Throws
+                    |> List.map (typeToCppString context Default)
+                    |> String.concat ", "
+                sprintf " // throws %s" joined
+        let maybeStaticPrefix =
+            if context.InsideInterfaceOrStructStatic then
+                "static "
+            else
+                ""
+        write 0 "%s%s %s(%s);%s" maybeStaticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedNamedFuncArgs context true namedFunc.Args) throwsComment
 
     for def in context.GroupContext.Defs do
         match def with
@@ -2252,21 +2297,11 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                     "extern"
             write 0 "%s const %s %s;" storage (typeToCppString context Default globalType) globalName
         | FunctionDef namedFunc ->
-            let throwsComment =
-                if namedFunc.Throws.IsEmpty then
-                    ""
-                else
-                    let joined =
-                        namedFunc.Throws
-                        |> List.map (typeToCppString context Default)
-                        |> String.concat ", "
-                    sprintf " // throws %s" joined
-            let maybeStaticPrefix =
-                if context.InsideInterfaceOrStructStatic then
-                    "static "
-                else
-                    ""
-            write 0 "%s%s %s(%s);%s" maybeStaticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedNamedFuncArgs context true namedFunc.Args) throwsComment
+            renderNamedFunc namedFunc
+        | ExtMethodsBlock info ->
+            write 0 "// extension methods for: %s" (typeToCppString context Default info.Target)
+            for method in synthesizeExtensionMethods context info do
+                renderNamedFunc method
         | UserType(name, userType) ->
             renderHeaderUserType context writer name userType
         | Group(groupName, _) ->
@@ -2433,6 +2468,10 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
             write 0 "const %s %s%s = %s;" (typeToCppString context Default globalType) nsPrefix globalName (defaultValueForType context globalType)
         | FunctionDef namedFunc ->
             renderFunc namedFunc
+        | ExtMethodsBlock info ->
+            write 0 "// ext methods block for: %s ====" (typeToCppString context Default info.Target)
+            for method in synthesizeExtensionMethods context info do
+                renderFunc method
         | UserType(name, userType) ->
             match userType with
             | OpaqueDef info ->
@@ -2452,7 +2491,7 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
                         renderImplementationCppGroup nextContext writer
                 | None ->
                     ()
-                for namedFunc in synthesizeOpaqueMethods2 context name info do
+                for namedFunc in synthesizeOpaqueMethods context name info do
                     renderFunc namedFunc
                     blank()
                 blank()

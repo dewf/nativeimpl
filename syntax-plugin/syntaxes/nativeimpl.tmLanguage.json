@@ -61,7 +61,7 @@
 			"patterns": [
 				{
 					"name": "storage.type.class.nativeimpl",
-					"match": "\\b(fwdopaque|opaque|struct|exception|interface|enum|flags|sumtype|options|delegate|alias|namedbits)\\b"
+					"match": "\\b(fwdopaque|opaque|struct|exception|interface|enum|flags|sumtype|options|delegate|alias|namedbits|extmethods)\\b"
 				}
 			]
 		},

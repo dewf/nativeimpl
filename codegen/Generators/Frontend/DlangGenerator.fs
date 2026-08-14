@@ -1516,7 +1516,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
                 { context with RenderContext = nextSubRenderContext } // why doesn't nested update work for us??
             blank()
             write 0 "// named group: %s" group.Name
-            write 0 "static class %s {" group.Name
+            write 0 "struct %s {" group.Name
             renderGroupCommon nextContext (writer.WithExtraIndent 1)
             write 0 "}"
         | _ ->

@@ -8,10 +8,17 @@ open Generators.Common
 
 open AppCommon
 
+type CsSubContext =
+    | SCNormal
+    // rendering an opaque method (pop/invocation/push) at the current group/path, prone to extra collisions on the push/pop statements:
+    | SCOpaqueMethods of info: OpaqueInfo
+    // needs to prefix/qualify even the current module, because it's rendering in the no-man's land outside the static class:
+    | SCExtensionMethods
+
 type CsRenderContext = {
     BaseNamespace: string list
     RenderContext: RenderContext
-    OpaqueMethodContext: OpaqueInfo option         // rendering an opaque method (pop/invocation/push) at the current group/path, prone to extra collisions on the push/pop statements
+    SubContext: CsSubContext
 } with
     member this.BaseNamespaceJoined =
         joinNameParts "." this.BaseNamespace
@@ -24,14 +31,29 @@ type CsRenderContext = {
             this.RenderContext.NavigateToSub name
         { this with RenderContext = nextRenderContext }
 
-let resolvedNameToString context resolvedName mode =
+let resolvedNameToString (context: CsRenderContext) (resolvedName: ResolvedName) (mode: ResolvedNameStringMode) =
+    let resolvedName =
+        if context.SubContext = SCExtensionMethods then
+            // pretend all the symbols from this module are actually imports ... because they kind of are, in this context!
+            match resolvedName with
+            | ThisModule name ->
+                let thisModuleName =
+                    context.ModuleContext.Module.Name
+                Imported (thisModuleName, name)
+            | Imported _ ->
+                resolvedName
+        else
+            resolvedName
     let qualification =
         let prefix =
-            if mode = GenericIdentifierMode then
+            match mode with
+            | IdentifierMode ->
+                [""]
+            | TypeMode | WrapperMethodMode _ ->
+                context.BaseNamespace
+            | GenericIdentifierMode ->
                 // colliding with local symbols not a concern in this context, so we can use any (or probably even no) prefix
                 ["G"]
-            else
-                context.BaseNamespace
         Forced prefix
     let capsPolicy = {
         ModulePolicy = PascalCase
@@ -130,7 +152,7 @@ let typeToName (context: CsRenderContext) (outerType: NIType) =
             | Float32 -> "Float"
             | Float64 -> "Double"
             | StringType -> "String"
-        | Resolved (resolvedName, resolvedType) ->
+        | Resolved (resolvedName, _) ->
             resolvedNameToString context resolvedName (if inGeneric then GenericIdentifierMode else IdentifierMode)
         | TupleType tupleTypes ->
             let joined =
@@ -173,6 +195,23 @@ let joinedNameFuncArgs (context: CsRenderContext) (args: NamedFunctionArg list) 
         | None ->
             sprintf "%s %s" (typeToCsString context arg.Type) arg.Name ]
     |> String.concat ", "
+
+let joinedExtMethodArgs (context: CsRenderContext) (args: NamedFunctionArg list) =
+    let argToString isThis arg =
+        if isThis then
+            sprintf "this %s %s" (typeToCsString context arg.Type) arg.Name
+        else
+            match arg.DefaultValue with
+            | Some value ->
+                sprintf "%s %s = %s" (typeToCsString context arg.Type) arg.Name (constExprToString context value)
+            | None ->
+                sprintf "%s %s" (typeToCsString context arg.Type) arg.Name
+    match args with
+    | first :: etc ->
+        argToString true first :: (etc |> List.map (argToString false))
+        |> String.concat ", "
+    | [] ->
+        ""
 
 let joinedArgNames (args: (string * NIType) list) =
     [for name, _ in args -> name]
@@ -846,6 +885,38 @@ let renderGeneric (context: CsRenderContext) (writer: IFormatWriter) (gType: NIT
     | _ ->
         write 2 "// TODO: renderLibraryUserType: generic %s" (typeToCsString context gType)
 
+type ExtMethodStringMode =
+    | MethodSignature
+    | MethodHandle
+    | ActualMethod
+
+let extMethodToString (context: CsRenderContext) (target: NIType) (method: NamedFunction) (mode: ExtMethodStringMode) =
+    match mode with
+    | MethodSignature ->
+        // common func, match C++ signature:
+        extMethodSignature target method
+    | MethodHandle ->
+        if context.SubContext = SCExtensionMethods then
+            sprintf "%s.%s._ext%s_%s"
+                context.BaseNamespaceJoined
+                (joinModuleName PascalCase context.ModuleContext.Module.Name)
+                (typeToName context target)
+                method.WrapperName
+        else
+            sprintf "_ext%s_%s" (typeToName context target) method.WrapperName
+    | ActualMethod ->
+        method.Name
+
+let synthesizeExtensionMethods (context: CsRenderContext) (info: ExtMethodsInfo) =
+    info.Methods
+    |> List.map (fun nf ->
+        // inject 'this' arg
+        let nextArgs =
+            let firstArg =
+                { Name = "_this"; Type = info.Target; DefaultValue = None }
+            firstArg :: nf.Args
+        { nf with Args = nextArgs })
+
 let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name: string) (userType: UserType) =
     let write, blank = writer.Write, writer.Blank
 
@@ -988,7 +1059,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
                     // return pop
                     popValue context writer 4 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
                 // go
-                renderMethodInvocation {context with OpaqueMethodContext = Some info }
+                renderMethodInvocation { context with SubContext = SCOpaqueMethods info }
                 write 3 "}"
         // static content
         match info.MaybeStaticDefs with
@@ -1457,6 +1528,7 @@ and renderGroupCommon (context: CsRenderContext) (writer: IFormatWriter) =
     for namedFunc in groupContext.ModuleMethods do
         write 2 "internal static ModuleMethodHandle _%s;" namedFunc.WrapperName
 
+    // opaques
     for name, info in groupContext.Opaques do
         // instance methods
         for method in info.Methods do
@@ -1466,6 +1538,13 @@ and renderGroupCommon (context: CsRenderContext) (writer: IFormatWriter) =
             ()
         else
             write 2 "internal static ModuleMethodHandle _%s_dispose;" (lowerFirst name)
+
+    // opaque extension methods
+    for info in groupContext.ExtMethodBlocks do
+        for method in info.Methods do
+            let varName =
+                extMethodToString context info.Target method MethodHandle
+            write 2 "internal static ModuleMethodHandle %s;" varName
 
     // interfaces
     for name, info in groupContext.Interfaces do
@@ -1550,6 +1629,16 @@ let assignModuleHandles (context: CsRenderContext) (writer: IFormatWriter) =
                 else
                     write 3 "%s_dispose = NativeImplClient.GetModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
 
+        // extension method handles
+        if not group.ExtMethodBlocks.IsEmpty then
+            for info in group.ExtMethodBlocks do
+                for method in info.Methods do
+                    let target =
+                        extMethodToString context info.Target method MethodHandle
+                    let signature =
+                        extMethodToString context info.Target method MethodSignature
+                    write 3 "%s = NativeImplClient.GetModuleMethod(_module, \"%s\");" target signature
+
         // exceptions
         if not group.Exceptions.IsEmpty then
             for name, _ in group.Exceptions do
@@ -1625,7 +1714,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     let renderContext =
         { BaseNamespace = (baseNamespace.Split "." |> Array.toList)
           RenderContext = createRenderContext moduleContext
-          OpaqueMethodContext = None }
+          SubContext = SCNormal }
     let root =
         renderContext.GroupContext
 
@@ -1729,6 +1818,35 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (baseName
     write 2 "}"
     write 1 "}" // end of static class <module name>
     //
+
+    // extension method blocks, have to be outside of the module class :(
+    // but it's not a huge deal, because they need to be at the root level, anyway!
+    let context =
+        { renderContext with SubContext = SCExtensionMethods }
+    for info in root.ExtMethodBlocks do
+        blank()
+        write 1 "public static class ExtMethods%s" (typeToName context info.Target)
+        write 1 "{"
+        writer.EatBlank()
+        for method in synthesizeExtensionMethods context info do
+            let handle =
+                extMethodToString context info.Target method MethodHandle
+            blank()
+            write 2 "public static %s %s(%s)" (typeToCsString context method.Returns) (upperFirst method.Name) (joinedExtMethodArgs context method.Args)
+            write 2 "{"
+            // push args in reverse
+            for arg in method.Args |> List.rev do
+                pushValue context writer 3 arg.Type arg.Name (Direct false)
+            // invoke remote
+            if method.Throws.IsEmpty then
+                write 3 "NativeImplClient.InvokeModuleMethod(%s);" handle
+            else
+                write 3 "NativeImplClient.InvokeModuleMethodWithExceptions(%s);" handle
+            // return pop
+            popValue context writer 3 method.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot method.Returns) then SafeReturn else Return)
+            write 2 "}"
+        write 1 "}"
+
     write 0 "}" // end of namespace
 
 let projectDir (outParams: OutParams) =

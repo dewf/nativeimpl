@@ -57,12 +57,13 @@ type ResolvedType =
     | OptionsType // distinct from generic 'option' type ... probably should come up with a less confusing name
 
 type TypeConstraint =
-    | DefaultConstraint    // everything but exceptions allowed
+    | DefaultConstraint       // everything but exceptions allowed
     | OpaqueConstraint
+    | ForeignOpaqueConstraint // Opaque in another module (for extension methods)
     | InterfaceConstraint
     | ExceptionConstraint
     | NamedBitsConstraint
-    | ConstConstraint      // currently: enum, flags
+    | ConstConstraint         // currently: enum, flags
 
 type NIType =
     | UnitType
@@ -824,7 +825,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 match etc with
                 | NameStuff.NameParts (parts, loc, etc) ->
                     let type_ =
-                        Unresolved (UnresolvedIdentifier parts, loc, OpaqueConstraint)
+                        Unresolved (UnresolvedIdentifier parts, loc, ForeignOpaqueConstraint)
                     type_, loc, etc
                 | _ ->
                     failwithf "expected opaque identifier @ %A" loc
@@ -1371,6 +1372,12 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
                     () // OK
                 | _ ->
                     failwithf "type constraint failed @ %A - must be 'opaque' type" loc
+            | ForeignOpaqueConstraint ->
+                match resolvedName, resolvedDef with
+                | Imported _, OpaqueDef _ ->
+                    () // OK
+                | _ ->
+                    failwithf "type constraint failed @ %A - must be foreign (imported) 'opaque' type" loc
             | InterfaceConstraint ->
                 match resolvedDef with
                 | InterfaceDef _ ->

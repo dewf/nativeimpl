@@ -783,9 +783,6 @@ let extMethodToString (context: DlangRenderContext) (target: NIType) (method: Na
 let synthesizeExtensionMethods (context: DlangRenderContext) (info: ExtMethodsInfo) =
     info.Methods
     |> List.map (fun nf ->
-        // // name prefix
-        // let nextName =
-        //     sprintf "ext_%s_%s" (typeToName context info.Target) nf.Name
         // inject 'this' arg
         let nextArgs =
             let firstArg =
@@ -1423,6 +1420,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     for namedFunc in groupContext.ModuleMethods do
         write 0 "%sni.ModuleMethodHandle _%s;" contentPrefix namedFunc.WrapperName
 
+    // opaques
     for name, info in groupContext.Opaques do
         // instance methods
         for method in info.Methods do
@@ -1433,7 +1431,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         else
             write 0 "%sni.ModuleMethodHandle _%s_dispose;" contentPrefix (lowerFirst name)
 
-    // extension method handles
+    // opaque extension methods
     for info in groupContext.ExtMethodBlocks do
         for method in info.Methods do
             let varName =
@@ -1485,10 +1483,11 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
 
     // top-level functions ===========
     for namedFunc in groupContext.ModuleMethods do
-        if namedFunc.Name = "moduleInit" || namedFunc.Name = "moduleShutdown" then
+        match isRootGroup, namedFunc.Name with
+        | true, ("moduleInit" | "moduleShutdown") ->
             // ignore, we invoke it manually in the __init/__shutdown functions - no public wrapper wanted
             ()
-        else
+        | _ ->
             renderNamedFunc namedFunc (sprintf "_%s" namedFunc.WrapperName)
 
     // extension method blocks =============

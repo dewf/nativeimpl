@@ -1490,16 +1490,17 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         | _ ->
             renderNamedFunc namedFunc (sprintf "_%s" namedFunc.WrapperName)
 
-    // extension method blocks =============
-    for info in groupContext.ExtMethodBlocks do
-        blank()
-        write 0 "// extension methods for [%s] =============" (typeToDlangString context info.Target)
-        writer.EatBlank()
-        for method in synthesizeExtensionMethods context info do
-            let handle =
-                extMethodToString context info.Target method MethodHandle
-            renderNamedFunc method handle
-        write 0 "// ========================================"
+    // extension method blocks (root level only) =============
+    if isRootGroup then
+        for info in groupContext.ExtMethodBlocks do
+            blank()
+            write 0 "// extension methods for [%s] =============" (typeToDlangString context info.Target)
+            writer.EatBlank()
+            for method in synthesizeExtensionMethods context info do
+                let handle =
+                    extMethodToString context info.Target method MethodHandle
+                renderNamedFunc method handle
+            write 0 "// ========================================"
 
     // render user types + nested groups in order of declaration
     for def in groupContext.Defs do

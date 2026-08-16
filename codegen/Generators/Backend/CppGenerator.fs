@@ -2469,9 +2469,11 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
         | FunctionDef namedFunc ->
             renderFunc namedFunc
         | ExtMethodsBlock info ->
+            blank()
             write 0 "// ext methods block for: %s ====" (typeToCppString context Default info.Target)
             for method in synthesizeExtensionMethods context info do
                 renderFunc method
+            write 0 "// =============================="
         | UserType(name, userType) ->
             match userType with
             | OpaqueDef info ->

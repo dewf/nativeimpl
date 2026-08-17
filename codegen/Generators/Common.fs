@@ -1018,25 +1018,6 @@ let namedBitsIndexer (info: NamedBitsInfo) (moduleContext: ModuleContext) (nameR
         Primitive(Int(true, width))
     indexedGroups, widthType
 
-// let rec ensureAllNoDispose (context: ModuleContext) (name: ResolvedName) =
-//     // since we don't have a proper validation step after parsing, we'll unfortunately do this here, when rendering
-//     match requiredSymbolLookup context name with
-//     | OpaqueDef info ->
-//         if info.NoDispose then
-//             // good, proceed up the chain
-//             match info.MaybeParent with
-//             | Some (Resolved(resolvedName, OpaqueType)) ->
-//                 ensureAllNoDispose context resolvedName
-//             | None ->
-//                 // reached top, all good
-//                 ()
-//             | _ ->
-//                 failwith "ensureAllNodispose: parent was non-opaque type"
-//         else
-//             failwithf "ensureAllNoDispose: opaque [%A] required to be @nodispose" name
-//     | _ ->
-//         failwithf "ensureAllNoDispose: symbol [%A] not opaque to begin with" name
-
 let rec ensureAllNoDispose (context: ModuleContext) (name: ResolvedName) =
     // since we don't have a proper validation step after parsing, we'll unfortunately do this here, when rendering
     match requiredSymbolLookup context name with
@@ -1044,8 +1025,18 @@ let rec ensureAllNoDispose (context: ModuleContext) (name: ResolvedName) =
         if info.NoDispose then
             // good, proceed up the chain
             match info.MaybeParent with
-            | Some (Resolved(resolvedName, OpaqueType)) ->
-                ensureAllNoDispose context resolvedName
+            | Some (Resolved(parentName, OpaqueType)) ->
+                let context' =
+                    // update context based on CURRENT name, before recursing
+                    // (not the parent name we just found)
+                    match name with
+                    | ThisModule _ ->
+                        context
+                    | Imported (moduleName, _) ->
+                        let nextModule =
+                            context.Loaded[moduleName]
+                        { context with Module = nextModule }
+                ensureAllNoDispose context' parentName
             | None ->
                 // reached top, all good
                 true
@@ -1067,22 +1058,6 @@ let isFirstDisposableOpaque (context: ModuleContext) (info: OpaqueInfo) =
         | Some (Resolved(parentName, OpaqueType)) ->
             // verify all parents in the inheritance chain are @nodispose
             ensureAllNoDispose context parentName
-            // // get the info for parent
-            // match requiredSymbolLookup context parentName with
-            // | OpaqueDef parentInfo ->
-            //     if parentInfo.NoDispose then
-            //         // kludgy: while we're at it, verify all classes above this one are @nodispose
-            //         ensureAllNoDispose context parentName
-            //
-            //         // our parent was @nodispose, but we are not
-            //         // therefore we're the first and will need to implement IDisposable (or whatever)
-            //         true
-            //     else
-            //         // parent was also/already disposable
-            //         // so we don't need to implement anything
-            //         false
-            // | _ ->
-            //     failwith "isFirstDisposableOpaque: parent was not an opaque type??"
         | None ->
             // no parent, so root, so yes we're the first
             true

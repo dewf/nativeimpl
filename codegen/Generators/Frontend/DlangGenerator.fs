@@ -184,7 +184,13 @@ let joinedNameFuncArgs (context: DlangRenderContext) (args: NamedFunctionArg lis
     [for arg in args ->
         match arg.DefaultValue with
         | Some value ->
-            sprintf "%s %s = %s" (typeToDlangString context arg.Type) (safeIdentifier arg.Name) (constExprToString context value)
+            let typeStr =
+                typeToDlangString context arg.Type
+            match arg.Type with
+            | Primitive _ ->
+                sprintf "%s %s = %s" typeStr (safeIdentifier arg.Name) (constExprToString context value)
+            | _ ->
+                sprintf "%s %s = cast(%s) %s" typeStr (safeIdentifier arg.Name) typeStr (constExprToString context value)
         | None ->
             sprintf "%s %s" (typeToDlangString context arg.Type) (safeIdentifier arg.Name) ]
     |> String.concat ", "
@@ -841,7 +847,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                 sprintf " : %s" (String.concat ", " finalList)
 
         write 0 "class %s%s {" (upperFirst name) inheritsOrImplementsSuffix
-        write 0 "protected:"
+        write 0 "package:"
         if isRoot then
             write 1 "void *thisPtr;"
         if firstDisposable then
@@ -898,13 +904,13 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                             |> List.map (typeToDlangString context)
                             |> String.concat ", "
                         sprintf " // throws %s" joined
-                let shadowsStr =
+                let shadowsOverrideStr =
                     // hmmm
                     if namedFunc.ShadowsExisting then
-                        "/* shadows */ " // new
+                        "/* shadows */ override "
                     else
                         ""
-                write 1 "%s%s %s(%s)%s" shadowsStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
+                write 1 "%s%s %s(%s)%s" shadowsOverrideStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
                 write 1 "{"
                 // another nested function here, because we're modifying the render context a bit
                 let renderMethodInvocation (context: DlangRenderContext) =
@@ -1287,7 +1293,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             match info.MaybeParent with
             | Some parent -> typeWithPrefix context parent "Server"
             | None -> "ni.ServerObject"
-        write 0 "private class Server%s : %s, %s {" (upperFirst name) parentClass (upperFirst name)
+        write 0 "package class Server%s : %s, %s {" (upperFirst name) parentClass (upperFirst name)
         write 0 "public:"
         write 1 "this(int id) {"
         write 2 "super(id);"

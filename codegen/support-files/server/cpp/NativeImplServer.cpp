@@ -5,7 +5,7 @@
 #include <vector>
 #include <cassert>
 
-static int nextServerObjId = 1;
+static int nextServerResourceId = 1;
 static std::map<int, std::shared_ptr<ServerResource>> serverResources;
 static std::map<size_t, int> reverseServerFuncVals; // to attempt to de-duplicate identical std::functions
 
@@ -309,7 +309,7 @@ void ServerResource::release()
 void ServerResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	// isReturn not used for server stuff, that's just to help out with the safe area / protecting client objects
 	if (id == -1) { // unset as of yet
-		id = nextServerObjId++;
+		id = nextServerResourceId++;
 		refCount = 1;
 		serverResources[id] = std::dynamic_pointer_cast<ServerResource>(outer);
 		//ni_clientLogger(LogLevel_Trance, "ServerObject::soPush()ed into serverObjects[%d]", id);
@@ -320,17 +320,6 @@ void ServerResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 		ni_clientLogger(LogLevel_Trace, "bumped server ID %d refcount to %d", id, refCount);
 	}
 	nativePush();
-}
-
-std::shared_ptr<ServerObject> ServerObject::getByID(int id)
-{
-	auto res = ServerResource::getResourceById(id);
-	return std::dynamic_pointer_cast<ServerObject>(res);
-}
-
-void ServerObject::nativePush()
-{
-	ni_pushInstance(id, false);
 }
 
 void ni_releaseServerResource(int id)
@@ -371,7 +360,7 @@ ClientResource::~ClientResource() {
 
 void ClientObject::nativePush()
 {
-	ni_pushInstance(id, true);
+	ni_pushClientInterface(id);
 }
 
 void ClientObject::invokeMethod(ni_InterfaceMethodRef method) {
@@ -398,7 +387,7 @@ void ClientFuncVal::nativePush()
 {
 	// currently this should never be called, only server func values can be pushed from server
 	// (a client function returned would be wrapped as a server func)
-	throw "ClientFuncVal::nativePush - oops";
+	throw std::exception("ClientFuncVal::nativePush - oops");
 }
 
 void ServerFuncVal::nativePush()

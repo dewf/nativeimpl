@@ -1,10 +1,10 @@
-﻿namespace %%TARGET_NAMESPACE%%.Support;
+namespace %%TARGET_NAMESPACE%%.Support;
 
 internal abstract class ClientObject : ClientResource
 {
     protected override void NativePush()
     {
-        NativeMethods.pushInstance(Id, true);
+        NativeMethods.pushClientInterface(Id);
     }
     public static ClientObject GetById(int id)
     {
@@ -12,27 +12,26 @@ internal abstract class ClientObject : ClientResource
     }
 }
 
+// marker interface, all interfaces must inherit from it
+public interface IClientInterface;
+
 internal static class ClientObjectHelpers
 {
-    private static readonly Dictionary<IDisposable, ClientInterfaceWrapper> ClientInterfaceWrapperMap = new();
-    internal class ClientInterfaceWrapper(IDisposable thing) : ClientObject
+    private static readonly Dictionary<IClientInterface, ClientInterfaceWrapper> ClientInterfaceWrapperMap = new();
+    internal class ClientInterfaceWrapper(IClientInterface thing) : ClientObject
     {
-        public IDisposable RawInterface { get; } = thing;
+        public IClientInterface RawInterface { get; } = thing;
         protected override void ReleaseExtra()
         {
             ClientInterfaceWrapperMap.Remove(RawInterface);
         }
     }
-    internal static void PushInterface(IDisposable thing, bool isReturn)
+    internal static void PushInterface(IClientInterface thing, bool isReturn)
     {
         switch (thing)
         {
             case null:
-                NativeImplClient.PushNull();
-                break;
-            case ServerObject:
-                // server stuff can go right over
-                ((IPushable)thing).Push(isReturn);
+                NativeMethods.pushNull();
                 break;
             default:
             {
@@ -52,5 +51,16 @@ internal static class ClientObjectHelpers
             }
         }
     }
-    // Pop is unfortunately more complex, and C# generic stuff makes it difficult, so we rely on the codegen for it
+    internal static T PopInterface<T>() where T : IClientInterface
+    {
+        var id = NativeMethods.popClientInterface();
+        if (id != 0)
+        {
+            // if we're popping it, we must have pushed it in the past sometime
+            var wrapper = (ClientInterfaceWrapper)ClientObject.GetById(id);
+            // we don't know exactly what it is, only that it implements T
+            return (T)wrapper.RawInterface;
+        }
+        return default;
+    }
 }

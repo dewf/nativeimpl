@@ -370,24 +370,14 @@ ni_ExceptionRef %%DLL_EXPORT_PREFIX%%execServerFuncWithExceptions(int id)
     return ni_execServerFuncWithExceptions(id);
 }
 
-void %%DLL_EXPORT_PREFIX%%invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID)
+void %%DLL_EXPORT_PREFIX%%pushClientInterface(int id)
 {
-    ni_invokeInterfaceMethod(method, serverID);
+    ni_pushClientInterface(id);
 }
 
-ni_ExceptionRef %%DLL_EXPORT_PREFIX%%invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID)
+int %%DLL_EXPORT_PREFIX%%popClientInterface()
 {
-    return ni_invokeInterfaceMethodWithExceptions(method, serverID);
-}
-
-void %%DLL_EXPORT_PREFIX%%pushInstance(int id, bool isClientId)
-{
-    ni_pushInstance(id, isClientId);
-}
-
-int %%DLL_EXPORT_PREFIX%%popInstance(bool* isClientID)
-{
-    return ni_popInstance(isClientID);
+    return ni_popClientInterface();
 }
 
 void %%DLL_EXPORT_PREFIX%%pushNull()

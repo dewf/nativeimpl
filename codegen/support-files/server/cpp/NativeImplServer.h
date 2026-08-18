@@ -56,14 +56,6 @@ public:
 	virtual ~ClientResource();
 };
 
-class ServerObject : public ServerResource {
-public:
-	ServerObject() : ServerResource("object") {}
-	static std::shared_ptr<ServerObject> getByID(int id);
-protected:
-	void nativePush() override;
-};
-
 class ClientObject : public ClientResource {
 public:
 	ClientObject(int id) : ClientResource(id) {}

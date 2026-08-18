@@ -113,11 +113,8 @@ extern "C" {
 	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%execServerFunc(int id);
 	DLLPROJECT_API ni_ExceptionRef %%DLL_EXPORT_PREFIX%%execServerFuncWithExceptions(int id);
 
-	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID);
-	DLLPROJECT_API ni_ExceptionRef %%DLL_EXPORT_PREFIX%%invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID);
-
-	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%pushInstance(int id, bool isClientId);
-	DLLPROJECT_API int %%DLL_EXPORT_PREFIX%%popInstance(bool* isClientId);
+	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%pushClientInterface(int id);
+	DLLPROJECT_API int %%DLL_EXPORT_PREFIX%%popClientInterface();
 
 	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%pushNull();
 

@@ -37,7 +37,6 @@ extern "C" {
 	void ni_clientLogger(ni_ClientLogLevel level, const char* fmt, ...);
 
 	typedef void (*ModuleFunc)();
-	typedef void (*InterfaceFunc)(int serverID);
 	typedef void (*ConstantsFunc)();
 	typedef void (*ExceptionBuilder)(); // more of a 'pop and throw' than building, per se
 
@@ -45,7 +44,7 @@ extern "C" {
 	extern ni_ModuleMethodRef ni_registerModuleMethod(ni_ModuleRef m, const char* name, ModuleFunc func);
 	extern void ni_registerModuleConstants(ni_ModuleRef m, ConstantsFunc func);
 	extern ni_InterfaceRef ni_registerInterface(ni_ModuleRef m, const char* name);
-	extern ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const char* name, InterfaceFunc ifunc);
+	extern ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const char* name);
 	extern ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char* name, ExceptionBuilder builder);
 
 	extern void ni_pushPtr(void* value);
@@ -131,8 +130,8 @@ extern "C" {
 	extern int ni_popClientFunc();
 	extern void ni_pushServerFunc(int id);
 
-	extern void ni_pushInstance(int id, bool isClientId);
-	extern int ni_popInstance(bool* isClientId);
+	extern void ni_pushClientInterface(int id);
+	extern int ni_popClientInterface();
 
 	extern void ni_pushNull();
 

@@ -180,7 +180,7 @@ class ClientFuncVal : ClientResource {
 abstract class ClientObject : ClientResource {
 protected:
     override void nativePush() {
-        nativemethods.pushInstance(id, true);
+        nativemethods.pushClientInterface(id);
     }
 public:
     static ClientObject getById(int id) {
@@ -188,30 +188,25 @@ public:
     }
 }
 
-ClientInterfaceWrapper[IDisposable] clientInterfaceWrapperMap;
+// marker interface for client interfaces
+public interface IClientInterface {}
+// map so we can use bare interfaces in the client code (no special inheritance, other than marker interface)
+ClientInterfaceWrapper[IClientInterface] clientInterfaceWrapperMap;
 
 // needs to be public, because it's used directly in module definitions
 class ClientInterfaceWrapper : ClientObject {
 private:
-    IDisposable _rawInterface;
+    IClientInterface _rawInterface;
 protected:
     override void releaseExtra() {
         clientInterfaceWrapperMap.remove(_rawInterface);
         super.releaseExtra();
     }
 public:
-    this(IDisposable raw) {
+    this(IClientInterface raw) {
         _rawInterface = raw;
     }
-    IDisposable rawInterface() => _rawInterface;
-}
-
-// utility lookup function for use in the generated modules:
-public T getClientInterfaceAs(T : IDisposable)(int id) {
-    // if we're popping it, we must have pushed it in the past sometime
-    auto wrapper = cast(ClientInterfaceWrapper) ClientObject.getById(id);
-    // we don't know exactly what it is, only that it implements CoolThing
-    return cast(T) wrapper.rawInterface;
+    IClientInterface rawInterface() => _rawInterface;
 }
 
 // place to stash server objects until the other side has finished popping them from stack
@@ -321,17 +316,6 @@ public:
         if (eh != null) {
             exceptionBuilders[eh]();
         }
-    }
-}
-
-public class ServerObject : ServerResource {
-protected:
-    override void nativePush() {
-        nativemethods.pushInstance(id, false);
-    }
-public:
-    this(int id) {
-        super(id);
     }
 }
 
@@ -832,18 +816,7 @@ ServerFuncVal popServerFuncVal() {
 // void execServerFunc(int id);
 // ni_ExceptionRef execServerFuncWithExceptions(int id);
 
-void invokeInterfaceMethod(InterfaceMethodHandle method, int serverId) {
-    nativemethods.invokeInterfaceMethod(method.handle, serverId);
-}
-
-void invokeInterfaceMethodWithExceptions(InterfaceMethodHandle method, int serverId) {
-    auto eh = nativemethods.invokeInterfaceMethodWithExceptions(method.handle, serverId);
-    if (eh != null) {
-        exceptionBuilders[eh]();
-    }
-}
-
-void setClientMethodWrapper(T : IDisposable)(InterfaceMethodHandle method, void function(T inst) wrapperFunc) {
+void setClientMethodWrapper(T : IClientInterface)(InterfaceMethodHandle method, void function(T inst) wrapperFunc) {
     void inner(ClientObject obj) {
         auto interfaceWrapper = cast(ClientInterfaceWrapper) obj;
         auto inst = cast(T) interfaceWrapper.rawInterface;
@@ -854,18 +827,10 @@ void setClientMethodWrapper(T : IDisposable)(InterfaceMethodHandle method, void 
 
 // void pushInstance(int id, bool isClientId);
 // int popInstance(bool* isClientId);
-int popInstance(bool *isClientId) {
-    return nativemethods.popInstance(isClientId);
-}
-
-void pushInterface(IDisposable thing, bool isReturn) {
+void pushClientInterface(IClientInterface thing, bool isReturn) {
     if (thing is null) {
         nativemethods.pushNull();
-    } else if (auto serverObject = cast(ServerObject) thing) {
-        // server stuff can go right over
-        serverObject.push(isReturn);
     } else {
-        // if it's ours (client side), have we seen it before? has it already been pushed to the other side?
         if (auto existing = thing in clientInterfaceWrapperMap) {
             existing.push(isReturn);
         } else {
@@ -875,6 +840,17 @@ void pushInterface(IDisposable thing, bool isReturn) {
             wrapper.push(isReturn);
         }
     }
+}
+
+T popClientInterface(T : IClientInterface)() {
+    auto id = nativemethods.popClientInterface();
+    if (id != 0) {
+        // if we're popping it, we must have pushed it in the past sometime
+        auto wrapper = cast(ClientInterfaceWrapper) ClientObject.getById(id);
+        // we don't know exactly what it is, only that it implements T
+        return cast(T) wrapper.rawInterface;
+    }
+    return null;
 }
 
 void pushNull() {
@@ -899,7 +875,7 @@ void setException(ExceptionHandle eh) {
     nativemethods.setException(eh.handle);
 }
 
-// lifetime management stuff =========================
+// lifetime management stuff (for opaques) =========================
 
 interface IDisposable {
     void dispose();

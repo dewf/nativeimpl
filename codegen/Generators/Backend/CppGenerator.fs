@@ -781,7 +781,7 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     writeCpp 2 "if (const auto pushable = std::dynamic_pointer_cast<Pushable>(inst); pushable != nullptr) {"
     writeCpp 3 "pushable->push(pushable, isReturn);"
     writeCpp 2 "} else {"
-    writeCpp 3 "ni_clientLogger(LogLevel_Critical, \"%s__push(): could not cast to 'Pushable' - server-side interface implementations must inherit from ServerObject!\");" name
+    writeCpp 3 "ni_clientLogger(LogLevel_Critical, \"%s__push(): could not cast to 'Pushable'\");" name
     writeCpp 3 "exit(-100);"
     writeCpp 2 "}"
     writeCpp 1 "} else {"
@@ -793,45 +793,11 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     writeH 0 "%s %s__pop();" (typeToCppString context Default outerType) (typeToName context outerType)
     blankCpp()
     writeCpp 0 "%s %s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
-    writeCpp 1 "bool isClientID;"
-    writeCpp 1 "if (auto id = ni_popInstance(&isClientID); id != 0) {"
-    writeCpp 2 "if (isClientID) {"
-    writeCpp 3 "return std::make_shared<Client%sWrapper>(id);" name
-    writeCpp 2 "}"
-    writeCpp 2 "return std::dynamic_pointer_cast<%s>(ServerObject::getByID(id));" name
+    writeCpp 1 "if (auto id = ni_popClientInterface(); id != 0) {"
+    writeCpp 2 "return std::make_shared<Client%sWrapper>(id);" name
     writeCpp 1 "}"
     writeCpp 1 "return {};"
     writeCpp 0 "}"
-
-    // SERVER STUFF ============================
-    for nf in info.Methods do
-        blankH()
-        writeH 0 "void %s_%s__wrapper(int serverID);" name nf.WrapperName
-        blankCpp()
-        writeCpp 0 "void %s_%s__wrapper(int serverID) {" name nf.WrapperName
-        writeCpp 1 "const auto inst = std::dynamic_pointer_cast<%s>(ServerObject::getByID(serverID));" name
-        for arg in nf.Args do
-            popValue context writerCpp 1 arg.Type (Variable arg.Name)
-        let invocation =
-            sprintf "inst->%s(%s)" nf.Name (joinedNamedFuncArgNames nf.Args)
-        if nf.Throws.IsEmpty then
-            pushValue context writerCpp 1 nf.Returns invocation (Direct true)
-        else
-            writeCpp 1 "try {"
-            pushValue context writerCpp 2 nf.Returns invocation (Direct true)
-            writeCpp 1 "}"
-            for exc in nf.Throws do
-                match exc with
-                | Resolved (resolvedName, ExceptionType) ->
-                    let typeName, variableName =
-                        exceptionTypeAndVariableName context resolvedName
-                    writeCpp 1 "catch (const %s& e) {" typeName
-                    writeCpp 2 "ni_setException(%s);" variableName
-                    pushValue context writerCpp 2 exc "e" (Direct true) // writeCpp 2 "%s__push(e);" typeName
-                    writeCpp 1 "}"
-                | _ ->
-                    failwithf "C++ interface wrappers: 'throws' contained non-exception type %A" exc
-        writeCpp 0 "}"
 
 let clampedNsPrefix (context: CppRenderContext) =
     match context.MaybePathClamp with
@@ -1476,22 +1442,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
     // especially since we can't actually dive into namespaces for interface/struct statics,
     // and have to rely on typeToCppString to emit path prefixes
     let niType =
-        let symbolName =
-            SymbolName (context.GroupContext.Path @ [ name ])
-        let resolvedType =
-            match userType with
-            | FwdOpaqueDef _ -> FwdOpaqueType
-            | OpaqueDef _ -> OpaqueType
-            | StructDef _ -> StructType
-            | ExceptionDef _ -> ExceptionType
-            | InterfaceDef _ -> InterfaceType
-            | DelegateDef _ -> DelegateType
-            | TypeAliasDef _ -> TypedefType
-            | EnumDef _ -> EnumType
-            | NamedBitsDef _ -> NamedBitsType
-            | SumTypeDef _ -> SumType
-            | OptionsDef _ -> OptionsType
-        Resolved (ThisModule symbolName, resolvedType)
+        userTypeToNIType context.RenderContext name userType
 
     let pushSuffix =
         if typeContainsRefs context.ModuleContext (UserTypeRoot userType) then
@@ -1907,17 +1858,13 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
                 lowerFirst name
             let parts =
                 group.Path @ [ name ]
-            let renamedParts =
-                groupPathRenamed @ [ name ]
             let lowerParts =
                 groupPathRenamed @ [ lowerIfaceName ]
             writeCpp 2 "auto %s = ni_registerInterface(m, \"%s\");" lowerIfaceName (joinNameParts "." parts)
             for method in info.Methods do
                 let targetVarName =
                     sprintf "%s_%s" (joinNameParts "::" lowerParts) method.WrapperName
-                let wrapperName =
-                    sprintf "%s_%s__wrapper" (joinNameParts "::" renamedParts) method.WrapperName
-                writeCpp 2 "%s = ni_registerInterfaceMethod(%s, \"%s\", &%s);" targetVarName lowerIfaceName method.WrapperName wrapperName
+                writeCpp 2 "%s = ni_registerInterfaceMethod(%s, \"%s\");" targetVarName lowerIfaceName method.WrapperName
         // exceptions
         for name, _ in group.Exceptions do
             let parts =

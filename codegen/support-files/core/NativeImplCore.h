@@ -31,7 +31,6 @@ typedef void (*niClientClearSafetyArea)();
 // server registration methods (server-facing only, not visible through DLL)
 extern "C" {
 	typedef void (*ModuleFunc)();
-	typedef void (*InterfaceFunc)(int serverID);
 	typedef void (*ConstantsFunc)();
 	typedef void (*ExceptionBuilder)(); // more of a 'pop and throw' than building, per se
 
@@ -39,7 +38,7 @@ extern "C" {
 	ni_ModuleMethodRef ni_registerModuleMethod(ni_ModuleRef m, const char *name, ModuleFunc func);
 	void ni_registerModuleConstants(ni_ModuleRef m, ConstantsFunc func);
 	ni_InterfaceRef ni_registerInterface(ni_ModuleRef m, const char *name);
-	ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const char *name, InterfaceFunc ifunc);
+	ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const char *name);
 	ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char *name, ExceptionBuilder builder);
 }
 
@@ -177,14 +176,8 @@ extern "C" {
 	int ni_popClientFunc();
 	int ni_popServerFunc();
 
-	void ni_invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID);
-	ni_ExceptionRef ni_invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID);
-
-	// TODO: get rid of the safety area flag, it was there so we could only conditionally clear the safety area,
-	// but I think all the ifs and checking (conditional setting of 'remotesafetyareadirty' or whatever) will end up
-	// being equivalent to simply clearing the remote safety area unconditionally at the end of every invocation returning (something containing) an interface reference
-	void ni_pushInstance(int id, bool isClientId);
-	int ni_popInstance(bool* isClientID);
+	void ni_pushClientInterface(int id);
+	int ni_popClientInterface();
 
 	// should work for all reference types: object instances, opaque handles, buffers, etc
 	void ni_pushNull();

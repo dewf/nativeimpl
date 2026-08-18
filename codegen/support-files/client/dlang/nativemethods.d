@@ -30,14 +30,6 @@ alias niClientMethodExec = extern (C) void function(ni_InterfaceMethodRef method
 alias niClientResourceRelease = extern (C) void function(int id);
 alias niClientClearSafetyArea = extern (C) void function();
 
-// void loadMethods(string libraryname) {
-//     import core.sys.windows.windows;
-//     auto dll = LoadLibraryA((libraryname ~ ".dll").ptr);
-//     assert(dll);
-//     nativeImplInit = cast(fNativeImplInit) GetProcAddress(dll, "nativeImplInit".ptr);
-//     nativeImplShutdown = cast(fNativeImplShutdown) GetProcAddress(dll, "nativeImplShutdown".ptr);
-// }
-
 extern(C)
 {
     pragma(mangle, "%%DLL_IMPORT_PREFIX%%nativeImplInit")
@@ -222,19 +214,11 @@ extern(C)
     pragma(mangle, "%%DLL_IMPORT_PREFIX%%execServerFuncWithExceptions")
     ni_ExceptionRef execServerFuncWithExceptions(int id);
 
-    pragma(mangle, "%%DLL_IMPORT_PREFIX%%invokeInterfaceMethod")
-    void invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID);
-    pragma(mangle, "%%DLL_IMPORT_PREFIX%%invokeInterfaceMethodWithExceptions")
-    ni_ExceptionRef invokeInterfaceMethodWithExceptions(
-        ni_InterfaceMethodRef method,
-        int serverID
-    );
+    pragma(mangle, "%%DLL_IMPORT_PREFIX%%pushClientInterface")
+    void pushClientInterface(int id);
 
-    pragma(mangle, "%%DLL_IMPORT_PREFIX%%pushInstance")
-    void pushInstance(int id, bool isClientId);
-
-    pragma(mangle, "%%DLL_IMPORT_PREFIX%%popInstance")
-    int popInstance(bool* isClientId);
+    pragma(mangle, "%%DLL_IMPORT_PREFIX%%popClientInterface")
+    int popClientInterface();
 
     pragma(mangle, "%%DLL_IMPORT_PREFIX%%pushNull")
     void pushNull();

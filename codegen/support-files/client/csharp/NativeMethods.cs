@@ -318,21 +318,13 @@ namespace %%TARGET_NAMESPACE%%.Support
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
         internal static partial IntPtr execServerFuncWithExceptions(int id);
 
-        [LibraryImport("%%SERVER_DLL_NAME%%", EntryPoint = "%%DLL_EXPORT_PREFIX%%invokeInterfaceMethod")]
+        [LibraryImport("%%SERVER_DLL_NAME%%", EntryPoint = "%%DLL_EXPORT_PREFIX%%pushClientInterface")]
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-        internal static partial void invokeInterfaceMethod(IntPtr method, int serverId);
+        internal static partial void pushClientInterface(int id);
 
-        [LibraryImport("%%SERVER_DLL_NAME%%", EntryPoint = "%%DLL_EXPORT_PREFIX%%invokeInterfaceMethodWithExceptions")]
+        [LibraryImport("%%SERVER_DLL_NAME%%", EntryPoint = "%%DLL_EXPORT_PREFIX%%popClientInterface")]
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-        internal static partial IntPtr invokeInterfaceMethodWithExceptions(IntPtr method, int serverId);
-
-        [LibraryImport("%%SERVER_DLL_NAME%%", EntryPoint = "%%DLL_EXPORT_PREFIX%%pushInstance")]
-        [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-        internal static partial void pushInstance(int id, [MarshalAs(UnmanagedType.U1)] bool isClientId);
-
-        [LibraryImport("%%SERVER_DLL_NAME%%", EntryPoint = "%%DLL_EXPORT_PREFIX%%popInstance")]
-        [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-        internal static partial int popInstance([MarshalAs(UnmanagedType.U1)] out bool isClientId);
+        internal static partial int popClientInterface();
 
         [LibraryImport("%%SERVER_DLL_NAME%%", EntryPoint = "%%DLL_EXPORT_PREFIX%%pushNull")]
         [UnmanagedCallConv(CallConvs = new [] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]

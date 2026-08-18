@@ -5,11 +5,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace %%TARGET_NAMESPACE%%.Support
 {
-    internal delegate void MethodWrapper(ClientObject obj);
+    internal delegate void MethodWrapper<in T>(T inst) where T : IClientInterface;
     internal delegate void ExceptionBuildAndThrowDelegate();
-    
+
     internal static class NativeImplClient
     {
+        private delegate void InternalMethodWrapper(ClientObject obj);
+
         // these MUST be saved, else GC will take the delegates out from under us. ohnononono!
         private static NativeMethods.ClientLogFuncDelegate _savedClientLogFuncDelegate;
         private static NativeMethods.ExecFunctionDelegate _savedExecFunctionDelegate;
@@ -18,7 +20,7 @@ namespace %%TARGET_NAMESPACE%%.Support
         private static NativeMethods.ClientClearSafetyAreaDelegate _savedClientClearSafetyAreaDelegate;
 
         public static bool RemoteIsShutdown;
-        private static readonly Dictionary<IntPtr, MethodWrapper> MethodWrappers = new();
+        private static readonly Dictionary<IntPtr, InternalMethodWrapper> MethodWrappers = new();
         public static readonly Dictionary<IntPtr, ExceptionBuildAndThrowDelegate> ExceptionBuildAndThrowDelegates = new();
 
         public static void PushClientFuncVal(FuncValWrapper wrapper, IntPtr uniqueKey)
@@ -38,24 +40,24 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             #endif
         }
-        
+
         private static void FuncValExecutor(int id)
         {
             ((ClientFuncVal)ClientResource.GetResourceById(id)).Wrapper();
         }
-        
+
         private static void ReleaseFuncVal(int id)
         {
             ClientResource.GetResourceById(id).Release();
         }
-        
+
         public static int Init(ILogger logger)
         {
             // used as the C++ support logger callback (see above):
             _cppSupportLogger = logger;
             // used as our C# support code logger:
             SupportLogger.SetLogger(logger);
-            
+
             // delegates must be saved from GC until the end of the program, kthx
             _savedClientLogFuncDelegate = ClientLogger;
             _savedExecFunctionDelegate = FuncValExecutor;
@@ -128,17 +130,17 @@ namespace %%TARGET_NAMESPACE%%.Support
         {
             NativeMethods.pushPtr(value);
         }
-        
+
         public static IntPtr PopPtr()
         {
             return NativeMethods.popPtr();
         }
-        
+
         public static void PushPtrArray(IntPtr[] values)
         {
             NativeMethods.pushPtrArray(values, (IntPtr)values.Length);
         }
-        
+
         public static IntPtr[] PopPtrArray()
         {
             NativeMethods.popPtrArray(out var valuesPtr, out var count);
@@ -149,7 +151,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         public static void PushSizeT(IntPtr value)
         {
             NativeMethods.pushSizeT(value);
@@ -202,7 +204,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret.Select(v => v != 0).ToArray();
         }
-        
+
         // INT8 =========================================
         public static void PushInt8(sbyte x)
         {
@@ -231,7 +233,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         public static void PushUInt8(byte x)
         {
             NativeMethods.pushUInt8(x);
@@ -257,7 +259,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         // INT16 =========================================
         public static void PushInt16(short x)
         {
@@ -284,7 +286,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         public static void PushUInt16(ushort x)
         {
             NativeMethods.pushUInt16(x);
@@ -312,7 +314,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         // INT32 =========================================
         public static void PushInt32(int x)
         {
@@ -339,7 +341,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         public static void PushUInt32(uint x)
         {
             NativeMethods.pushUInt32(x);
@@ -367,7 +369,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         // INT64 =========================================
         public static void PushInt64(long x)
         {
@@ -394,7 +396,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         public static void PushUInt64(ulong x)
         {
             NativeMethods.pushUInt64(x);
@@ -422,9 +424,9 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         // ===========================
-        
+
         public static void PushFloat(float x)
         {
             NativeMethods.pushFloat(x);
@@ -450,22 +452,22 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return ret;
         }
-        
+
         public static void PushDouble(double x)
         {
             NativeMethods.pushDouble(x);
         }
-        
+
         public static double PopDouble()
         {
             return NativeMethods.popDouble();
         }
-        
+
         public static void PushDoubleArray(double[] values)
         {
             NativeMethods.pushDoubleArray(values, (IntPtr)values.Length);
         }
-        
+
         public static double[] PopDoubleArray()
         {
             NativeMethods.popDoubleArray(out var valuesPtr, out var count);
@@ -551,7 +553,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             }
             return result;
         }
-        
+
         public static int PopServerFuncValId()
         {
             return NativeMethods.popServerFunc();
@@ -562,28 +564,17 @@ namespace %%TARGET_NAMESPACE%%.Support
             NativeMethods.pushNull();
         }
 
-        public static void PopInstanceId(out int id, out bool isClientId)
+        public static void SetClientMethodWrapper<T>(InterfaceMethodHandle method, MethodWrapper<T> methodWrapper) where T : IClientInterface
         {
-            id = NativeMethods.popInstance(out isClientId);
-        }
+            MethodWrappers[method.Handle] = Inner;
+            return;
 
-        public static void InvokeInterfaceMethod(InterfaceMethodHandle method, int serverId)
-        {
-            NativeMethods.invokeInterfaceMethod(method.Handle, serverId);
-        }
-
-        public static void InvokeInterfaceMethodWithExceptions(InterfaceMethodHandle method, int serverId)
-        {
-            var exceptionHandle = NativeMethods.invokeInterfaceMethodWithExceptions(method.Handle, serverId);
-            if (exceptionHandle != IntPtr.Zero)
+            void Inner(ClientObject clientObj)
             {
-                ExceptionBuildAndThrowDelegates[exceptionHandle]();
+                var niWrapper = (ClientObjectHelpers.ClientInterfaceWrapper)clientObj;
+                var inst = (T)niWrapper.RawInterface;
+                methodWrapper(inst);
             }
-        }
-
-        public static void SetClientMethodWrapper(InterfaceMethodHandle method, MethodWrapper wrapper)
-        {
-            MethodWrappers[method.Handle] = wrapper;
         }
 
         // these two need to be passed to remote
@@ -592,7 +583,7 @@ namespace %%TARGET_NAMESPACE%%.Support
             // should we check for _remoteIsShutdown here?
             ClientResource.GetResourceById(id).Release();
         }
-        
+
         private static void InvokeClientMethod(IntPtr methodHandle, int clientId)
         {
             var obj = ClientObject.GetById(clientId);
@@ -614,26 +605,26 @@ namespace %%TARGET_NAMESPACE%%.Support
             ServerResource.ClearSafeArea();
             SupportLogger.Trace("C#: after ClientClearSafetyArea");
         }
-        
+
         public static void DumpTables()
         {
             SupportLogger.Info("============Dump Tables==================");
             SupportLogger.Info("Native tables----------------------------");
             NativeMethods.dumpTables();
-            
+
             SupportLogger.Info("Local tables-----------------------------");
-            
+
             SupportLogger.Info("== C# client resources:");
             ClientResource.DumpTables();
-            
+
             SupportLogger.Info("=========================================");
         }
-        
+
         public static void SetExceptionBuilder(ExceptionHandle eh, ExceptionBuildAndThrowDelegate builder)
         {
             ExceptionBuildAndThrowDelegates[eh.Handle] = builder;
         }
-        
+
         public static void SetException(ExceptionHandle eh)
         {
             NativeMethods.setException(eh.Handle);

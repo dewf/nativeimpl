@@ -893,7 +893,18 @@ let resolvedNameToStringAbstract
                         let moduleNameParts' =
                             moduleNameParts
                             |> applyCapsPolicy capsPolicy.ModulePolicy
-                        moduleNameParts' @ parts
+
+                        // TODO: SKETCHY!!
+                        // I think this is a misuse of importQualification ...
+                        // but we do need a way, when disambiguiating shallower-symbols used in nested groups/statics/etc,
+                        // to prefix with something provided by the language (eg the library name, in D)
+                        let absPrefix =
+                            match mode, importQualification with
+                            | TypeMode, Forced prefix -> prefix
+                            | _ -> []
+                        // END SKETCHY
+
+                        absPrefix @ moduleNameParts' @ parts
                 else
                     match mode with
                     | GenericIdentifierMode -> parts
@@ -1134,3 +1145,21 @@ let extMethodSignature (target: NIType) (method: NamedFunction) =
         sprintf "ext__%s_%s_%s" modulePrefix symbolPrefix method.WrapperName
     | _ ->
         failwithf "extMethodSignature: 'target' must be imported opaque type"
+
+let userTypeToNIType (context: RenderContext) (name: string) (userType: UserType) =
+    let symbolName =
+        SymbolName (context.GroupContext.Path @ [ name ])
+    let resolvedType =
+        match userType with
+        | FwdOpaqueDef _ -> FwdOpaqueType
+        | OpaqueDef _ -> OpaqueType
+        | StructDef _ -> StructType
+        | ExceptionDef _ -> ExceptionType
+        | InterfaceDef _ -> InterfaceType
+        | DelegateDef _ -> DelegateType
+        | TypeAliasDef _ -> TypedefType
+        | EnumDef _ -> EnumType
+        | NamedBitsDef _ -> NamedBitsType
+        | SumTypeDef _ -> SumType
+        | OptionsDef _ -> OptionsType
+    Resolved (ThisModule symbolName, resolvedType)

@@ -37,7 +37,7 @@ struct ni_Interface {
 struct ni_InterfaceMethod {
 	ni_InterfaceRef _iface = nullptr;
 	std::string name;
-	InterfaceFunc ifunc;
+	// InterfaceFunc ifunc;
 };
 
 struct ni_Exception {
@@ -46,12 +46,17 @@ struct ni_Exception {
 	ExceptionBuilder buildAndThrow;
 };
 
-// exceptions
-class WrongTypeException : public std::exception {
-	virtual const char* what() const throw() {
-		return "Wrong Stack Item Type";
-	}
-};
+namespace
+{
+	// exceptions
+	class WrongTypeException : public std::exception {
+	public:
+		[[nodiscard]] const char* what() const override
+		{
+			return "Wrong stack item type";
+		}
+	};
+}
 
 // stack types =======================
 class StackItem {
@@ -100,20 +105,19 @@ public:
 
 	virtual int clientFuncId() { throw WrongTypeException(); }
 	virtual int serverFuncId() { throw WrongTypeException(); }
-	virtual int instanceId(bool* isClientId) { throw WrongTypeException(); }
+	virtual int clientInterfaceId() { throw WrongTypeException(); }
 
 	virtual void buffer(int *id, bool* isClientId, ni_BufferDescriptor* descriptor) { throw WrongTypeException(); }
 };
 
 class NullItem : public StackItem {
 public:
-	NullItem() {}
+	NullItem() = default;
 	// should work for any reference type:
 	void* ptrValue() override {
 		return nullptr;
 	}
-	int instanceId(bool* isClientId) override {
-		*isClientId = false;
+	int clientInterfaceId() override {
 		return 0;
 	}
 	void buffer(int* id, bool* isClientId, ni_BufferDescriptor* descriptor) override {
@@ -460,15 +464,12 @@ public:
 };
 
 // client inst ID
-class InstanceItem : public StackItem {
+class ClientInterfaceItem : public StackItem {
 public:
 	int id;
-	bool isClientId;
-	InstanceItem(int id, bool isClientId) :
-		id(id),
-		isClientId(isClientId) {}
-	int instanceId(bool* isClientId) override {
-		*isClientId = this->isClientId;
+	ClientInterfaceItem(int id) :
+		id(id) {}
+	int clientInterfaceId() override {
 		return id;
 	}
 };
@@ -609,14 +610,14 @@ ni_InterfaceRef ni_registerInterface(ni_ModuleRef m, const char *name)
 	return iface;
 }
 
-ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const char *name, InterfaceFunc ifunc)
+ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const char *name)
 {
 	auto found = iface->methods.find(name);
 	if (found != iface->methods.end()) {
 		ni_clientLogger(LogLevel_Error, "registerInterfaceMethod: iface method name [%s] already exists!", name);
 		return nullptr;
 	}
-	auto method = new ni_InterfaceMethod{ iface, name, ifunc };
+	auto method = new ni_InterfaceMethod { iface, name };
 	iface->methods[name] = method;
 	return method;
 }
@@ -1077,27 +1078,13 @@ int ni_popServerFunc() {
 	return thlocal.pop()->serverFuncId();
 }
 
-void ni_invokeInterfaceMethod(ni_InterfaceMethodRef method, int serverID)
+void ni_pushClientInterface(int id)
 {
-	method->ifunc(serverID);
-	assert(thlocal.currentException == nullptr); // use below when exceptions are involved
+	thlocal.push(new ClientInterfaceItem(id));
 }
 
-ni_ExceptionRef ni_invokeInterfaceMethodWithExceptions(ni_InterfaceMethodRef method, int serverID) {
-	assert(thlocal.currentException == nullptr);
-	method->ifunc(serverID);
-	auto ret = thlocal.currentException;
-	thlocal.currentException = nullptr;
-	return ret;
-}
-
-void ni_pushInstance(int id, bool isClientId)
-{
-	thlocal.push(new InstanceItem(id, isClientId));
-}
-
-int ni_popInstance(bool* isClientID) {
-	return thlocal.pop()->instanceId(isClientID);
+int ni_popClientInterface() {
+	return thlocal.pop()->clientInterfaceId();
 }
 
 void ni_pushNull()

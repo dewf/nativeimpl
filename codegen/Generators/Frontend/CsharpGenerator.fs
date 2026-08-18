@@ -1348,12 +1348,8 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             write 2 "public interface %s : %s" (upperFirst name) (typeToCsString context parent)
             write 2 "{"
         | None ->
-            write 2 "public interface %s : IDisposable" (upperFirst name)
+            write 2 "public interface %s : IClientInterface" (upperFirst name)
             write 2 "{"
-            write 3 "void IDisposable.Dispose()"
-            write 3 "{"
-            write 4 "// nothing by default"
-            write 3 "}"
         let renderMethods (context: CsRenderContext) =
             for method in info.Methods do
                 let throwsComment =
@@ -1378,74 +1374,17 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         // end of raw interface
         // push
         blank()
+        write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
         write 2 "internal static void __%s__Push(%s thing, bool isReturn)" (upperFirst name) (upperFirst name)
         write 2 "{"
         write 3 "PushInterface(thing, isReturn);"
         write 2 "}"
         // pop
         blank()
+        write 2 "[MethodImpl(MethodImplOptions.AggressiveInlining)]"
         write 2 "internal static %s __%s__Pop()" (upperFirst name) (upperFirst name)
         write 2 "{"
-        write 3 "NativeImplClient.PopInstanceId(out var id, out var isClientId);"
-        write 3 "if (id != 0)"
-        write 3 "{"
-        write 4 "if (isClientId)"
-        write 4 "{"
-        write 5 "// if we're popping it, we must have pushed it in the past sometime"
-        write 5 "var wrapper = (ClientInterfaceWrapper)ClientObject.GetById(id);"
-        write 5 "// we don't know exactly what it is, only that it implements %s" name
-        write 5 "return (%s)wrapper.RawInterface;" name
-        write 4 "}"
-        write 4 "// always wrap server stuff in a fresh wrapper (no tables involved)"
-        write 4 "return new Server%s(id);" name
-        write 3 "}"
-        write 3 "return null;"
-        write 2 "}"
-        // server wrapper
-        blank()
-        match info.MaybeParent with
-        | Some parent ->
-            write 2 "internal class Server%s(int id) : %s(id), %s" (upperFirst name) (typeWithPrefix context parent "Server") (upperFirst name)
-            write 2 "{"
-            write 3 "// Dispose() already implemented at hierarchy root"
-        | None ->
-            write 2 "internal class Server%s(int id) : ServerObject(id), %s" (upperFirst name) (upperFirst name)
-            write 2 "{"
-            write 3 "public void Dispose()"
-            write 3 "{"
-            write 4 "// will invoke ReleaseExtra() for us"
-            write 4 "ServerDispose();"
-            write 3 "}"
-        write 3 "public override bool Equals(object obj)"
-        write 3 "{"
-        write 4 "if (obj is Server%s other)" name
-        write 4 "{"
-        write 5 "return Id == other.Id;"
-        write 4 "}"
-        write 4 "return false;"
-        write 3 "}"
-        write 3 "public override int GetHashCode()"
-        write 3 "{"
-        write 4 "return HashCode.Combine(\"Server%s\", Id);" name
-        write 3 "}"
-        // server wrapper methods
-        for method in info.Methods do
-            write 3 "public %s %s(%s)" (typeToCsString context method.Returns) (upperFirst method.Name) (joinedNameFuncArgs context method.Args)
-            write 3 "{"
-            // push args (in reverse!!)
-            for arg in method.Args |> List.rev do
-                pushValue context writer 4 arg.Type arg.Name (Direct false)
-            // invoke remote
-            if method.Throws.IsEmpty then
-                write 4 "NativeImplClient.InvokeInterfaceMethod(_%s_%s, Id);" (lowerFirst name) method.WrapperName
-            else
-                write 4 "NativeImplClient.InvokeInterfaceMethodWithExceptions(_%s_%s, Id);" (lowerFirst name) method.WrapperName
-            // return (mindful of safety area nonsense)
-            if typeContainsRefs context.ModuleContext (NITypeRoot method.Returns) then
-                popValue context writer 4 method.Returns SafeReturn
-            else
-                popValue context writer 4 method.Returns Return
-            write 3 "}"
+        write 3 "return PopInterface<%s>();" (upperFirst name)
         write 2 "}"
     | ExceptionDef fields ->
         write 2 "public class %s : Exception" name
@@ -1667,14 +1606,10 @@ let assignModuleHandles (context: CsRenderContext) (writer: IFormatWriter) =
                         write 3 "%s = NativeImplClient.GetInterfaceMethod(%s, \"%s\");" targetMethodHandle targetIface method.WrapperName
                 // method wrappers
                 for method in info.Methods do
-                    write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(ClientObject __obj)" targetIface method.WrapperName
-                    write 3 "{"
-                    // let clientWrapperClass =
-                    //     joinNameParts "." (group.Path @ [ $"__{upperFirst ifaceName}Wrapper" ])
                     let fullyQualifiedInterface =
                         joinNameParts "." (group.Path @ [ ifaceName ])
-                    write 4 "var wrapper = (ClientInterfaceWrapper)__obj;"
-                    write 4 "var inst = (%s)wrapper.RawInterface;" fullyQualifiedInterface
+                    write 3 "NativeImplClient.SetClientMethodWrapper(%s_%s, delegate(%s inst)" targetIface method.WrapperName fullyQualifiedInterface
+                    write 3 "{"
                     // pop args
                     for arg in method.Args do
                         popValue context writer 4 arg.Type (NewVariable arg.Name)

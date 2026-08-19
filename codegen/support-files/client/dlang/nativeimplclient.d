@@ -440,12 +440,14 @@ class ExceptionHandle : WrappedHandle!ni_ExceptionRef {
 }
 
 void init() {
-    assert(nativeImplInit(
+    auto result =
+        nativeImplInit(
             &clientLogFunc,
             &clientFuncExec,
             &clientMethodExec,
             &clientResourceRelease,
-            &clientClearSafetyArea) == 0, "D side: nativeImplInit() failed");
+            &clientClearSafetyArea);
+    assert(result == 0, "D side: nativeImplInit failed!");
 }
 
 void shutdown() {

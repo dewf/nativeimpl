@@ -821,6 +821,9 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                 sprintf " : %s" (String.concat ", " finalList)
 
         write 0 "class %s%s {" (upperFirst name) inheritsOrImplementsSuffix
+        // overload set stuff, sigh
+        for overloadSet in info.MergeOverloadSets do
+            write 1 "alias %s = %s.%s;" overloadSet.MethodName (typeToDlangString context overloadSet.Source) overloadSet.MethodName
         write 0 "package:"
         if isRoot then
             write 1 "void *thisPtr;"
@@ -1141,7 +1144,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                 write 2 "private this() {}"
             else
                 for argName, argType in value.Args do
-                    write 2 "const %s %s;" (typeToDlangString context argType) argName
+                    write 2 "%s %s;" (typeToDlangString context argType) argName
                 write 2 "private this(%s) {" joinedParams
                 for argName, _ in value.Args do
                     let lower = lowerFirst argName
@@ -1744,7 +1747,7 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     blank()
     // hardcoded for now
     write 0 "// hardcoded for the moment, need to locate the server .lib file in an intelligent way"
-    write 0 "libs \"$PACKAGE_DIR/../../../server/cpp/_dllproject/cmake-build-debug/KitchenSinkServer\""
+    write 0 "libs \"$PACKAGE_DIR/../../../server/cpp/_dllproject/cmake-build-debug/%sServer\"" outParams.LibraryName
     blank()
     write 0 "dependency \"simpleset\" path=\"R:/projects/dlang/simpleset\""
 

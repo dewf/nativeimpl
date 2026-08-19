@@ -202,9 +202,10 @@ let rec parseType (input: TokenAndLocation list) =
 type Attribute =
     | NoDispose
     | WithFlags of typeName: string
-    | ShadowsExisting                   // C# 'new', shadows existing method
+    | ShadowsExisting               // C# 'new', shadows existing method
+    | WithOverloads of source: string list * methodName: string * loc: Location
 
-let takeAttribute (pred: Attribute -> bool) (attrs: Attribute list) =
+let takeSingleAttribute (pred: Attribute -> bool) (attrs: Attribute list) =
     attrs
     |> List.extractFirstMatching pred
 
@@ -309,11 +310,17 @@ let isValidEnumWidth (t: NIType) =
     | Primitive (Int _) -> true
     | _ -> false
 
+type OpaqueOverloadSet = {
+    Source: NIType
+    MethodName: string
+}
 type OpaqueInfo = {
     MaybeParent: NIType option          // opaque constraint
     Methods: NamedFunction list
     MaybeStaticDefs: ModuleDefinition list option
     NoDispose: bool
+    // a D-specific thing, unfortunately :(
+    MergeOverloadSets: OpaqueOverloadSet list
 }
 and InterfaceInfo = {
     MaybeParent: NIType option          // interface constraint
@@ -370,7 +377,17 @@ let applyOpaqueAttrs (attrs: Attribute list) (opaque: OpaqueInfo) =
         match attr with
         | NoDispose ->
             { info with NoDispose = true }
-        // no other opaque-related attrs yet
+        | WithOverloads (source, methodName, loc) ->
+            let newSet =
+                match opaque.MaybeParent with
+                | Some parent ->
+                    // TODO: this should actually be an OpaqueAncestorConstraint (or whatever), but creating such a thing looks to be pretty annoying
+                    // (like, we'll need 'requiredSymbolLookup' or something like it in Parser.fs, whereas right now it's in Common)
+                    { Source = Unresolved (UnresolvedIdentifier source, loc, OpaqueConstraint)
+                      MethodName = methodName }
+                | None ->
+                    failwithf "applyOpaqueAttrs: can't use @dlang_withoverloads on an opaque with no parent (nonsensical)"
+            { info with MergeOverloadSets = newSet :: info.MergeOverloadSets }
         | _ ->
             info )
 
@@ -491,7 +508,7 @@ let parseNamedFunction (outer: TokenAndLocation list) =
         | _ ->
             // continue as normal, all attributes consumed ...
             let shadowsExisting =
-                match takeAttribute (function | ShadowsExisting -> true | _ -> false) activeAttributes with
+                match takeSingleAttribute (function | ShadowsExisting -> true | _ -> false) activeAttributes with
                 | Some ShadowsExisting, _ -> true
                 | _ -> false
 
@@ -727,6 +744,20 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         WithFlags targetName, etc
                     | _ ->
                         failwithf "parsing 'withflags' attribute @ %A - expected companion type name (eg: @withflags(MyThingFlags))" loc
+                | "dlang_withoverloads" ->
+                    match etc with
+                    | Lookahead 1 ([ LeftParen ], _, etc) ->
+                        match etc with
+                        | NameStuff.NameParts (parts, loc, etc) ->
+                            match etc with
+                            | Lookahead 3 ([Comma; Identifier methodName; RightParen], loc, etc) ->
+                                WithOverloads (parts, methodName, loc), etc
+                            | _ ->
+                                failwithf "@dlang.withoverloads attribute: missing method identifier [format: @dlang.withoverloads(<ancestor>,<methodname>)] @ %A" loc
+                        | _ ->
+                            failwithf "@dlang.withoverloads attribute: missing ancestor opaque [format: @dlang.withoverloads(<ancestor>,<methodname>)] @ %A" loc
+                    | _ ->
+                        failwithf "@dlang.withoverloads attribute: missing arguments [format: @dlang.withoverloads(<ancestor>,<methodname>)] @ %A" loc
                 | _ ->
                     failwithf "unrecognized attribute type '%s' @ %A" attrName loc
             parseNext (attr :: activeAttributes) etc
@@ -751,15 +782,17 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         failwithf "expected parent opaque name @ %A" loc
                 | _ ->
                     None, loc, etc
+
             // continue as normal
             match etc with
             // empty opaque
             | Lookahead 1 ([Semicolon], _, etc) ->
                 let info =
-                    { MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None; NoDispose = false }
+                    { MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None; NoDispose = false; MergeOverloadSets = [] }
                     |> applyOpaqueAttrs activeAttributes
                 ([UserType (opaqueName, OpaqueDef info)], etc)
                 |> Some
+
             // opaque with content (methods + optional static {} block)
             | Lookahead 1 ([LeftBrace], loc, etc) ->
                 // first, figure out the limits of the opaque content block as a whole
@@ -793,7 +826,8 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     { MaybeParent = maybeParent
                       Methods = methods
                       MaybeStaticDefs = maybeStaticDefs
-                      NoDispose = false }
+                      NoDispose = false
+                      MergeOverloadSets = [] }
                     |> applyOpaqueAttrs activeAttributes
                 ([UserType (opaqueName, OpaqueDef info)], afterOpaqueBlock)
                 |> Some
@@ -976,7 +1010,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         // enum type:
                         UserType (name, EnumDef { Values = values; MaybeWidth = maybeWidthType; FlagsMode = false })
                         // maybe flags type:
-                        match activeAttributes |> takeAttribute (function | WithFlags _ -> true | _ -> false) with
+                        match activeAttributes |> takeSingleAttribute (function | WithFlags _ -> true | _ -> false) with
                         | Some (WithFlags targetName), _ ->
                             UserType (targetName, EnumDef { Values = values; MaybeWidth = maybeWidthType; FlagsMode = true })
                         | _ ->
@@ -1646,8 +1680,18 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                             info.Methods
                             |> List.map (resolveFunctionTypes context namespacePath)
                         nextMethods, None
+                let nextMergeOverloadSets =
+                    info.MergeOverloadSets
+                    |> List.map (fun overloadSet ->
+                        let nextSource =
+                            resolveType context namespacePath overloadSet.Source
+                        { overloadSet with Source = nextSource })
                 let nextInfo =
-                    { info with MaybeParent = nextMaybeParent; Methods = nextMethods; MaybeStaticDefs = nextStaticDefs }
+                    { info with
+                        MaybeParent = nextMaybeParent
+                        Methods = nextMethods
+                        MaybeStaticDefs = nextStaticDefs
+                        MergeOverloadSets = nextMergeOverloadSets }
                 OpaqueDef nextInfo
             | TypeAliasDef niType ->
                 TypeAliasDef (resolveType context namespacePath niType)

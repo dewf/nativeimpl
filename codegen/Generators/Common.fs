@@ -247,9 +247,6 @@ let allGenericTypes (context: ModuleContext) =
                 processDefs groupDefs
             | UserType(_, userType) ->
                 match userType with
-                | FwdOpaqueDef _ ->
-                    // no nested types
-                    []
                 | OpaqueDef info ->
                     let nestedTypes =
                         match info.MaybeStaticDefs with
@@ -393,8 +390,6 @@ let typeContainsRefs (context: ModuleContext) (root: ContainsRefsRoot) =
             processUserType userType
     and processUserType (userType: UserType) =
         match userType with
-        | FwdOpaqueDef _ ->
-            false
         | OpaqueDef _ ->
             false
         | StructDef info ->
@@ -620,7 +615,6 @@ type GroupContext = {
     ModuleMethods: NamedFunction list
     ExtMethodBlocks: ExtMethodsInfo list
     Opaques: (string * OpaqueInfo) list
-    FwdOpaques: (string * string list) list
     SumTypes: (string * SumTypeValue list) list
     Interfaces: (string * InterfaceInfo) list
     Exceptions: (string * NamedField list) list
@@ -657,13 +651,6 @@ let createGroups (rootDefs: ModuleDefinition list) =
             |> List.choose (function
                 | ExtMethodsBlock info ->
                     Some info
-                | _ ->
-                    None)
-        let fwdOpaques =
-            groupDefs
-            |> List.choose (function
-                | UserType (name, FwdOpaqueDef parts) ->
-                    Some (name, parts)
                 | _ ->
                     None)
         let sumTypes =
@@ -739,7 +726,6 @@ let createGroups (rootDefs: ModuleDefinition list) =
           ModuleMethods = moduleMethods
           ExtMethodBlocks = extMethodBlocks
           Opaques = opaques
-          FwdOpaques = fwdOpaques
           SumTypes = sumTypes
           Interfaces = interfaces
           Exceptions = exceptions
@@ -1151,7 +1137,6 @@ let userTypeToNIType (context: RenderContext) (name: string) (userType: UserType
         SymbolName (context.GroupContext.Path @ [ name ])
     let resolvedType =
         match userType with
-        | FwdOpaqueDef _ -> FwdOpaqueType
         | OpaqueDef _ -> OpaqueType
         | StructDef _ -> StructType
         | ExceptionDef _ -> ExceptionType

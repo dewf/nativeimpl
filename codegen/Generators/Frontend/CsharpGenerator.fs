@@ -90,12 +90,6 @@ let typeToCsString (context: CsRenderContext) (outerType: NIType) =
             | StringType -> "string"
         | Resolved (resolvedName, resolvedType) ->
             match resolvedType with
-            | FwdOpaqueType ->
-                match requiredSymbolLookup context.ModuleContext resolvedName with
-                | FwdOpaqueDef parts ->
-                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts))
-                | _ ->
-                    failwith "typeToCsString: failed to find fwdopaque definition"
             | TypedefType ->
                 // no C# typedefs so we just render the type directly
                 match requiredSymbolLookup context.ModuleContext resolvedName with
@@ -261,23 +255,8 @@ let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (ty
         | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
     | Resolved (resolvedName, resolvedType) ->
         let name =
-            match resolvedType with
-            | FwdOpaqueType ->
-                // special treatment for these:
-                match requiredSymbolLookup context.ModuleContext resolvedName with
-                | FwdOpaqueDef parts ->
-                    // kludge: prefix last part with __, otherwise it won't match the push/pop definitions
-                    let parts' =
-                        match parts |> List.rev with
-                        | h :: etc -> $"__{h}" :: etc
-                        | [] -> []
-                        |> List.rev
-                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts'))
-                | _ ->
-                    failwithf "C# popValue: FwdOpaque trouble, should never happen"
-            | _ ->
-                // all other types:
-                resolvedNameToString context resolvedName (WrapperMethodMode "__%s")
+            // all other types:
+            resolvedNameToString context resolvedName (WrapperMethodMode "__%s")
         write level "%s %s__Pop();" contextPrefix name
     | ArrayType niType ->
         match niType with
@@ -351,25 +330,10 @@ let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (t
         | Float32 -> write level "NativeImplClient.PushFloat(%s);" content
         | Float64 -> write level "NativeImplClient.PushDouble(%s);" content
         | StringType -> write level "NativeImplClient.PushString(%s);" content
-    | Resolved(resolvedName, resolvedType) ->
+    | Resolved (resolvedName, resolvedType) ->
         let name =
-            match resolvedType with
-            | FwdOpaqueType ->
-                // special treatment for fwd opaques:
-                match requiredSymbolLookup context.ModuleContext resolvedName with
-                | FwdOpaqueDef parts ->
-                    // kludge: prefix last part with __, otherwise it won't match the push/pop definitions
-                    let parts' =
-                        match parts |> List.rev with
-                        | h :: etc -> $"__{h}" :: etc
-                        | [] -> []
-                        |> List.rev
-                    sprintf "%s" (joinNameParts "." (context.BaseNamespace @ parts'))
-                | _ ->
-                    failwithf "C# pushValue: FwdOpaqueType trouble, shouldn't happen"
-            | _ ->
-                // all other types:
-                resolvedNameToString context resolvedName (WrapperMethodMode "__%s")
+            // all other types:
+            resolvedNameToString context resolvedName (WrapperMethodMode "__%s")
         if containsRefs then
             write level "%s__Push(%s, %s);" name content (isReturnString())
         else
@@ -929,9 +893,6 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
             ""
 
     match userType with
-    | FwdOpaqueDef _ ->
-        // nothing to render in this context, only typeToString will actually render it
-        ()
     | OpaqueDef info ->
         let fakeThis =
             let namePath =

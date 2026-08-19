@@ -17,7 +17,6 @@ type Token =
     // keywords, user types
     | ModuleToken
     | ImportToken
-    | FwdOpaqueToken
     | GroupToken
     | OpaqueToken
     | StructToken
@@ -250,7 +249,6 @@ let nextToken (loc: Location) (input: char[]) =
             match String(_match) with
             | "module" -> ModuleToken
             | "import" -> ImportToken
-            | "fwdopaque" -> FwdOpaqueToken
             | "group" -> GroupToken
             | "opaque" -> OpaqueToken
             | "struct" -> StructToken

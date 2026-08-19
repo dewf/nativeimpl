@@ -92,15 +92,7 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
             | Float64 -> "double"
             | StringType -> "string"
         | Resolved (resolvedName, resolvedType) ->
-            match resolvedType with
-            | FwdOpaqueType ->
-                match requiredSymbolLookup context.ModuleContext resolvedName with
-                | FwdOpaqueDef parts ->
-                    sprintf "%s" (joinNameParts "." (context.LibraryPrefix @ parts))
-                | _ ->
-                    failwith "typeToDlangString: failed to find fwdopaque definition"
-            | _ ->
-                resolvedNameToString context resolvedName TypeMode
+            resolvedNameToString context resolvedName TypeMode
         | ArrayType elemType ->
             sprintf "%s[]" (recInner elemType)
         | SetType elemType ->
@@ -237,17 +229,8 @@ let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) 
             | StringType -> "ni.popString()"
         | Resolved (resolvedName, resolvedType) ->
             let name =
-                match resolvedType with
-                | FwdOpaqueType ->
-                    // special treatment for these:
-                    match requiredSymbolLookup context.ModuleContext resolvedName with
-                    | FwdOpaqueDef parts ->
-                        sprintf "%s" (joinNameParts "." (context.LibraryPrefix @ parts))
-                    | _ ->
-                        failwithf "Dlang popValue: FwdOpaque trouble, should never happen"
-                | _ ->
-                    // all other types:
-                    resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // annoying way of preserving the necessary prefix to the type, while injecting a `__` just before the name (eg. module.prefix.NamedGroup.__Type)
+                // all other types:
+                resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // annoying way of preserving the necessary prefix to the type, while injecting a `__` just before the name (eg. module.prefix.NamedGroup.__Type)
             sprintf "%s__pop()" name
         | ArrayType niType ->
             match niType with
@@ -329,19 +312,10 @@ let pushValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int)
         | Float32 -> write level "ni.pushFloat(%s);" content
         | Float64 -> write level "ni.pushDouble(%s);" content
         | StringType -> write level "ni.pushString(%s);" content
-    | Resolved(resolvedName, resolvedType) ->
+    | Resolved (resolvedName, resolvedType) ->
         let name =
-            match resolvedType with
-            | FwdOpaqueType ->
-                // special treatment for fwd opaques:
-                match requiredSymbolLookup context.ModuleContext resolvedName with
-                | FwdOpaqueDef parts ->
-                    sprintf "%s" (joinNameParts "." (context.LibraryPrefix @ parts))
-                | _ ->
-                    failwithf "Dlang pushValue: FwdOpaqueType trouble, shouldn't happen"
-            | _ ->
-                // all other types:
-                resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // see note above in this same branch of popValue
+            // all other types:
+            resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // see note above in this same branch of popValue
         if containsRefs then
             write level "%s__push(%s, %s);" name content (isReturnString())
         else
@@ -1357,8 +1331,6 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 1 "}"
         write 1 "return &wrapper;"
         write 0 "}"
-    | _ ->
-        write 0 "// unhandled user type %s" name
 
 and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     let write, blank = writer.Write, writer.Blank

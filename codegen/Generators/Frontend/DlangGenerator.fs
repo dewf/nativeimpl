@@ -1745,7 +1745,8 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     blank()
     write 0 "targetType \"library\""
     blank()
-    // hardcoded for now
+    // we're going to have to query the backend generator somehow to ask it where things are (the .DLL and .LIB specifically)
+    // on that note, we also need to fold DynlibGenerator.fs into CppGenerator, since those are no longer separate things
     write 0 "// hardcoded for the moment, need to locate the server .lib file in an intelligent way"
     write 0 "libs \"$PACKAGE_DIR/../../../server/cpp/_dllproject/cmake-build-debug/%sServer\"" outParams.LibraryName
     blank()

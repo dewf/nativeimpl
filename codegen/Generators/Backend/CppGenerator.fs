@@ -2499,7 +2499,7 @@ let generateModule (moduleContext: ModuleContext) (outParams: OutParams) =
             maybeModulePrefix
             |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
             |> Option.defaultValue ""
-        sprintf "%s%s" (projectDir outParams) subPath
+        sprintf "%s/source/%s" (projectDir outParams) subPath
     Directory.CreateDirectory(moduleDir) |> ignore
 
     let generatedDir =
@@ -2595,7 +2595,7 @@ let generateLibrary (allModules: Module list) (outParams: OutParams) =
             maybeModulePrefix
             |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
             |> Option.defaultValue ""
-        sprintf "%s%s" (projectDir outParams) subPath
+        sprintf "%s/source/%s" (projectDir outParams) subPath
     Directory.CreateDirectory(moduleDir) |> ignore
 
     let generatedDir =
@@ -2631,10 +2631,10 @@ let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: O
     write 0 "target_sources(%sImpl" outParams.LibraryName
     write 2 "PRIVATE"
     write 2 "# support"
-    write 2 "support/CoreStuff.h"
-    write 2 "support/NativeImplServer.h"
-    write 2 "support/NativeImplServer.cpp"
-    write 2 "support/result.h"
+    write 2 "source/support/CoreStuff.h"
+    write 2 "source/support/NativeImplServer.h"
+    write 2 "source/support/NativeImplServer.cpp"
+    write 2 "source/support/result.h"
     blank()
     for m in allModules do
         let paths =
@@ -2646,7 +2646,7 @@ let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: O
         write 2 "%s" paths.ModuleCpp
     blank()
     write 2 "# library implementation"
-    write 2 "generated/Library.cpp"
+    write 2 "source/generated/Library.cpp"
     write 0 ")"
 
 let generateProject (allModules: Module list) (outParams: OutParams) =
@@ -2660,5 +2660,5 @@ let generateProject (allModules: Module list) (outParams: OutParams) =
 
 let copySupportFiles (outParams: OutParams) =
     let destRoot =
-        sprintf "%s/support" (projectDir outParams)
+        sprintf "%s/source/support" (projectDir outParams)
     SupportCopier.copyFiles "server/cpp" destRoot true ["*.h"; "*.cpp"; "*.hpp"] true None

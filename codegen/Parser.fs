@@ -204,6 +204,7 @@ type Attribute =
     | WithFlags of typeName: string
     | ShadowsExisting               // C# 'new', shadows existing method
     | WithOverloads of source: string list * methodName: string * loc: Location
+    | MethodPrefix of prefix: string
 
 let takeSingleAttribute (pred: Attribute -> bool) (attrs: Attribute list) =
     attrs
@@ -391,6 +392,17 @@ let applyOpaqueAttrs (attrs: Attribute list) (opaque: OpaqueInfo) =
         | _ ->
             info )
 
+let applyInterfaceAttrs (attrs: Attribute list) (iface: InterfaceInfo) =
+    (iface, attrs)
+    ||> List.fold (fun info attr ->
+        match attr with
+        | MethodPrefix prefix ->
+            let nextMethods =
+                info.Methods
+                |> List.map (fun nf -> { nf with Name = prefix + nf.Name })
+            { info with Methods = nextMethods }
+        | _ ->
+            info)
 
 let parseOneField (input: TokenAndLocation list) =
     if input.IsEmpty then
@@ -563,7 +575,7 @@ let parseOneEnumValue (input: TokenAndLocation list) =
                 let pred token =
                     // not sure why we can't define this inline with the pattern match below, won't parse??
                     token <> Comma
-                // !!!! parse const expr
+                // parse const expr
                 match etc with
                 | TakeWhile pred (exprTokens, loc, etc) when not exprTokens.IsEmpty ->
                     try
@@ -744,6 +756,12 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         WithFlags targetName, etc
                     | _ ->
                         failwithf "parsing 'withflags' attribute @ %A - expected companion type name (eg: @withflags(MyThingFlags))" loc
+                | "methodprefix" ->
+                    match etc with
+                    | Lookahead 5 ([ LeftParen; StringQuote; Identifier prefix; StringQuote; RightParen ], _, etc) ->
+                        MethodPrefix prefix, etc
+                    | _ ->
+                        failwithf "parsing 'methodprefix attribute @ %A - expected quoted string prefix (eg: @methodprefix(\"whatever_\"))" loc
                 | "dlang_withoverloads" ->
                     match etc with
                     | Lookahead 1 ([ LeftParen ], _, etc) ->
@@ -961,6 +979,8 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         { MaybeParent = maybeParent
                           Methods = methods
                           MaybeStaticDefs = maybeStaticDefs }
+                        // apply relevant attrs (eg 'methodprefix')
+                        |> applyInterfaceAttrs activeAttributes
                     ([UserType (name, InterfaceDef info)], etc)
                     |> Some
                 else

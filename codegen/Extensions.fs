@@ -1,5 +1,7 @@
 module Extensions
 
+open System.Text.RegularExpressions
+
 module String =
     let tryRemovePrefix (prefix: string) (str: string) =
         if str.StartsWith(prefix) then
@@ -7,7 +9,31 @@ module String =
             |> Some
         else
             None
-            
+
+    // split a string on regex-defined delimiters,
+    // applying a transform function to the non-delimiter segments,
+    // and reassemble it!
+    let splitMap (regex: Regex) (mapFunc: string -> string) (input: string) =
+        let foldResult =
+            ({| LastPos = 0; Result = "" |}, regex.Matches(input))
+            ||> Seq.fold (fun acc delim ->
+                let nextSegments =
+                    if delim.Index - acc.LastPos > 0 then
+                        let before =
+                            mapFunc input[acc.LastPos .. delim.Index - 1]
+                        acc.Result + before + delim.Value
+                    else
+                        acc.Result + delim.Value
+                {| LastPos = delim.Index + delim.Length; Result = nextSegments |})
+        // add final non-delimiter segment if it exists ...
+        if input.Length > foldResult.LastPos then
+            let final =
+                input[foldResult.LastPos .. input.Length - 1]
+                |> mapFunc
+            foldResult.Result + final
+        else
+            foldResult.Result
+
 module List =
     let extractFirstMatching (pred: 'a -> bool) (xs: 'a list) =
         let rec recInner (revSkipped: 'a list) (etc: 'a list) =
@@ -20,7 +46,7 @@ module List =
                 else
                     recInner (h :: revSkipped) etc
         recInner [] xs
-        
+
     let zipWithIndex (xs: 'a list) =
         xs |> List.mapi (fun i x -> (i, x))
 //    let safeTake (n: int) (xs: 'a list) =
@@ -53,7 +79,7 @@ module List =
         let etc =
             xs |> List.skip front.Length
         front, etc
-    
+
     let skipWhile2 (pred: 'a -> 'b -> bool) (xa: 'a list) (xb: 'b list) =
         let rec inner (arem: 'a list) (brem: 'b list) =
             match arem, brem with
@@ -65,14 +91,14 @@ module List =
             | _ ->
                 arem, brem
         inner xa xb
-        
+
     let splitAtLast (xs: 'a list) =
         match List.rev xs with
         | h :: etc ->
             List.rev etc, h
         | [] ->
             failwith "List.splitAtLast - list was empty"
-            
+
     let removePrefix (prefix: 'a list) (xs: 'a list) =
         let rec removeWhileEqual (pRemain: 'a list) (xRemain: 'a list) =
             match pRemain, xRemain with
@@ -95,7 +121,7 @@ module List =
         |> List.partition fst
         |> (fun (left, right) ->
             left |> List.map snd, right |> List.map snd)
-    
+
     let startsWith (prefix: 'a list) (xs: 'a list) =
         let rec recInner (pRemain: 'a list) (xRemain: 'a list) =
             match pRemain, xRemain with
@@ -121,7 +147,7 @@ module List =
         |> List.map List.rev
         |> List.tail
         |> List.map f
-        
+
     let allButLast (xs: 'a list) =
         xs
         |> List.rev
@@ -141,4 +167,3 @@ module List =
                 { Context = nextContext; RevResult = value :: acc.RevResult })
         result.RevResult
         |> List.rev
-        

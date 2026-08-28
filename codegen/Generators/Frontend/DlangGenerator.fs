@@ -63,6 +63,9 @@ let resolvedNameToString (context: DlangRenderContext) (resolvedName: ResolvedNa
     }
     resolvedNameToStringAbstract "." (fun name _ -> name) None qualification capsPolicy context.RenderContext resolvedName mode
 
+let upperFirst =
+    upperFirst Ignore
+
 let constExprToString (context: DlangRenderContext) =
     let config =
         { NullStr = "null"

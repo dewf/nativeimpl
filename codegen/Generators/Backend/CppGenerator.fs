@@ -87,6 +87,9 @@ let resolvedNameToString (context: CppRenderContext) =
     }
     resolvedNameToStringAbstract "::" renameFunc pathClamp forceFullyQualified capsPolicy context.RenderContext
 
+let upperFirst =
+    upperFirst Ignore
+
 let constExprToString (context: CppRenderContext) =
     let config =
         { NullStr = "nullptr"
@@ -1867,12 +1870,12 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
 let renderHeaderException (context: CppRenderContext) (writer: IFormatWriter) (exName: string) (exFields: NamedField list) =
     let write, _ = writer.Write, writer.Blank
     //
-    write 0 "class %s {" exName
+    write 0 "class %s : public std::exception {" exName
     write 0 "public:"
     for namedField in exFields do
         write 1 "%s %s;" (typeToCppString context Default namedField.Type_) namedField.Name
     if exFields.IsEmpty then
-        write 1 "%s() {}" exName
+        write 1 "%s() = default;" exName
     else
         let joinedInitializers =
             [for nf in exFields -> sprintf "%s(%s)" nf.Name nf.Name]

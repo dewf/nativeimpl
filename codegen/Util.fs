@@ -1,6 +1,8 @@
 ﻿module Util
 
 open System
+open System.Text.RegularExpressions
+open Extensions
 
 let lower (text: string) =
     text.ToLower()
@@ -14,8 +16,21 @@ let lowerFirstWithUnderscore (text: string) =
 let lowerFirstLetter (text: string) =
     Char.ToLower(text[0]).ToString()
 
-let upperFirst (text: string) =
-    Char.ToUpper(text[0]).ToString() + text.Substring(1)
+let underscoresRegex =
+    Regex(@"_+")
+
+type UnderscoreSegmentPolicy =
+    | Ignore
+    | ProcessIndividually
+
+let upperFirst (policy: UnderscoreSegmentPolicy) (text: string) =
+    let upperFunc (x: string) =
+        Char.ToUpper(x[0]).ToString() + x.Substring(1)
+    match policy with
+    | Ignore ->
+         upperFunc text
+    | ProcessIndividually ->
+        String.splitMap underscoresRegex upperFunc text
 
 let upperOnly (text: string) =
     let upper =

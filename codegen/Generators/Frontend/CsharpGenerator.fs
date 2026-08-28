@@ -60,6 +60,11 @@ let resolvedNameToString (context: CsRenderContext) (resolvedName: ResolvedName)
     }
     resolvedNameToStringAbstract "." (fun name _ -> name) None qualification capsPolicy context.RenderContext resolvedName mode
 
+let upperFirst =
+    // consider underscores when uppercasing
+    // eg "__this__thing__" becomes "__This__Thing__"
+    upperFirst ProcessIndividually
+
 let constExprToString (context: CsRenderContext) =
     let config =
         { NullStr = "null"

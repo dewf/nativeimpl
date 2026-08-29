@@ -1395,7 +1395,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
 
     // globals declaration
     for name, type_ in groupContext.Globals do
-        write 0 "%s%s %s;" contentPrefix (typeToDlangString context type_) (lowerFirstWithUnderscore name)
+        write 0 "%s%s _const_%s;" contentPrefix (typeToDlangString context type_) name
 
     blank()
     if isRootGroup then
@@ -1409,7 +1409,7 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     // public getters for globals ===========
     for name, type_ in groupContext.Globals do
         blank()
-        write 0 "%s%s %s() => %s;" contentPrefix (typeToDlangString context type_) (lowerFirst name) (lowerFirstWithUnderscore name)
+        write 0 "%s%s %s() => _const_%s;" contentPrefix (typeToDlangString context type_) name name
 
     let renderNamedFunc (namedFunc: NamedFunction) (methodHandle: string) =
         blank()
@@ -1624,7 +1624,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (libraryN
         let rec popConstants (group: GroupContext) =
             for name, type_ in group.Globals do
                 let target =
-                    joinNameParts "." (group.Path @ [ lowerFirstWithUnderscore name ])
+                    joinNameParts "." (group.Path @ [ "_const_" + name ])
                 popValue renderContext writer 1 type_ (ExistingVar target)
             for subName in group.SubOrder do
                 let sub = group.SubGroups[subName]

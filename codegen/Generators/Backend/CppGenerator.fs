@@ -2643,10 +2643,10 @@ let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: O
         let paths =
             getModulePaths [] m.Name
         write 2 "# module %s" (joinModuleName PascalCase m.Name)
-        write 2 "%s" paths.ModuleHeader
-        write 2 "%s" paths.ModuleWrappersHeader
-        write 2 "%s" paths.ModuleWrappersCpp
-        write 2 "%s" paths.ModuleCpp
+        write 2 "source/%s" paths.ModuleHeader
+        write 2 "source/%s" paths.ModuleWrappersHeader
+        write 2 "source/%s" paths.ModuleWrappersCpp
+        write 2 "source/%s" paths.ModuleCpp
     blank()
     write 2 "# library implementation"
     write 2 "source/generated/Library.cpp"

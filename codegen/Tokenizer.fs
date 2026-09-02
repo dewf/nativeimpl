@@ -266,7 +266,9 @@ let nextToken (loc: Location) (input: char[]) =
             | "static" -> StaticToken
             | "extends" -> ExtendsToken
             | "namedbits" -> NamedBitsToken
-            | "extmethods" -> ExtMethodsToken
+            | "extmethods" ->
+                failwith "extension ('extmethods') are disabled, pending removal"
+                //ExtMethodsToken
             // etc
             | "null" -> NullToken
             | "true" -> BoolValueToken true

@@ -34,6 +34,7 @@ type Token =
     | ExtendsToken
     | NamedBitsToken
     | ExtMethodsToken
+    | CastToken
     // generics/collections:
     | ArrayToken
     | MapToken
@@ -285,9 +286,8 @@ let nextToken (loc: Location) (input: char[]) =
             | "static" -> StaticToken
             | "extends" -> ExtendsToken
             | "namedbits" -> NamedBitsToken
-            | "extmethods" ->
-                failwith "extension ('extmethods') are disabled, pending removal"
-                //ExtMethodsToken
+            | "extmethods" -> failwith "extension ('extmethods') are disabled, pending removal"
+            | "cast" -> CastToken
             // etc
             | "null" -> NullToken
             | "true" -> BoolValueToken true

@@ -6,7 +6,7 @@ open ParseCommon
 type ConstLiteral =
     | HexNumber of digits: string
     | DecNumber of digits: string
-    | StringLit of str: string
+    | StringLiteral of str: string
 and ConstUnaryOp =
     | BitwiseNot
     | Negation
@@ -24,6 +24,9 @@ and UntypedConstExpr =
     | Unary of op: ConstUnaryOp * value: UntypedConstExpr
     | Binary of op: ConstBinaryOp * left: UntypedConstExpr * right: UntypedConstExpr
     | Grouping of groupContent: UntypedConstExpr
+    // ugly because we can't currently parse NITypes yet
+    // in the future I guess we'll have to move that before/above this code
+    | Cast of targetType: TokenAndLocation list * castContent: UntypedConstExpr
 
 let private (|MatchName|_|) (input: TokenAndLocation list) =
     match input with
@@ -39,7 +42,7 @@ let private (|MatchLiteral|_|) (input: TokenAndLocation list) =
         // | Identifier text -> Some (EnumIdentifier text, etc)
         | Digits digits -> Some (DecNumber digits, etc)
         | HexDigits digits -> Some (HexNumber digits, etc)
-        | StringLiteralToken str -> Some (StringLit str, etc)
+        | StringLiteralToken str -> Some (StringLiteral str, etc)
         | _ -> None
     | _ ->
         None
@@ -93,6 +96,21 @@ let private (|MatchGrouping|_|) (input: TokenAndLocation list) =
         let _, etc =
             List.splitAt (innerTokens.Length + 1) etc // +1 to account for right paren
         Some (innerTokens, etc)
+    | _ ->
+        None
+
+let private (|MatchCast|_|) (input: TokenAndLocation list) =
+    match input with
+    | Lookahead 2 ([ CastToken; LeftAngleBracket ], loc, etc) ->
+        let typeTokens, etc =
+            contentUntilMatching loc LeftAngleBracket etc
+        match etc with
+        | Lookahead 1 ([ LeftParen ], loc, etc) ->
+            let contentTokens, etc =
+                contentUntilMatching loc LeftParen etc
+            Some (typeTokens, contentTokens, etc)
+        | _ ->
+            failwithf "parsing cast @ %A: expected parens with content [eg: cast<int>(...)] " loc
     | _ ->
         None
 
@@ -162,6 +180,12 @@ let rec private parseConstValue (operands: UntypedConstExpr list) (opStack: Stac
     | { Token = BoolValueToken value } :: _ ->
         // bool can't (currently) be part of any expression, stands alone
         BoolValue value
+    | MatchCast (targetTypeTokens, contents, etc) ->
+        let nextOperands =
+            let expr =
+                parseConstValue [] [] contents
+            (Cast (targetTypeTokens, expr)) :: operands
+        parseConstValue nextOperands opStack etc
     | MatchName (parts, etc) ->
         let nextOperands =
             Name parts :: operands

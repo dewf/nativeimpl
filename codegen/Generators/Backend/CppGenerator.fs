@@ -90,14 +90,6 @@ let resolvedNameToString (context: CppRenderContext) =
 let upperFirst =
     upperFirst Ignore
 
-let constExprToString (context: CppRenderContext) =
-    let config =
-        { NullStr = "nullptr"
-          ScopeResStr = "::" }
-    let stringFunc resolvedName =
-        resolvedNameToString context resolvedName TypeMode
-    typedConstExprString config stringFunc
-
 let getRelativePath (currentPath: string list) (targetPath: string list) =
     // remove common segments
     // prefix (currentPath.count) segments with ".."
@@ -304,6 +296,16 @@ let joinedFieldNames (fields: NamedField list) =
 let joinedArgs (context: CppRenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCppString context FunctionArguments type_) name]
     |> String.concat ", "
+
+let constExprToString (context: CppRenderContext) =
+    let config =
+        { NullStr = "nullptr"
+          ScopeResStr = "::" }
+    let stringFunc resolvedName =
+        resolvedNameToString context resolvedName TypeMode
+    let castFunc niType content =
+        sprintf "static_cast<%s>(%s)" (typeToCppString context Default niType) content
+    typedConstExprString config stringFunc castFunc
 
 let joinedNamedFuncArgs (context: CppRenderContext) (showDefaultValue: bool) (args: NamedFunctionArg list) =
     [for arg in args ->

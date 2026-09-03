@@ -65,14 +65,6 @@ let upperFirst =
     // eg "__this__thing__" becomes "__This__Thing__"
     upperFirst ProcessIndividually
 
-let constExprToString (context: CsRenderContext) =
-    let config =
-        { NullStr = "null"
-          ScopeResStr = "." }
-    let strFunc resolvedName =
-        resolvedNameToString context resolvedName TypeMode
-    typedConstExprString config strFunc
-
 let typeToCsString (context: CsRenderContext) (outerType: NIType) =
     let rec recInner = function
         | UnitType -> "void"
@@ -185,6 +177,16 @@ let typeWithPrefix (context: CsRenderContext) (outerType: NIType) (prefix: strin
 let joinedArgs (context: CsRenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToCsString context type_) name]
     |> String.concat ", "
+
+let constExprToString (context: CsRenderContext) =
+    let config =
+        { NullStr = "null"
+          ScopeResStr = "." }
+    let strFunc resolvedName =
+        resolvedNameToString context resolvedName TypeMode
+    let castFunc niType content =
+        sprintf "(%s)(%s)" (typeToCsString context niType) content
+    typedConstExprString config strFunc castFunc
 
 let joinedNameFuncArgs (context: CsRenderContext) (args: NamedFunctionArg list) =
     [for arg in args ->

@@ -66,14 +66,6 @@ let resolvedNameToString (context: DlangRenderContext) (resolvedName: ResolvedNa
 let upperFirst =
     upperFirst Ignore
 
-let constExprToString (context: DlangRenderContext) =
-    let config =
-        { NullStr = "null"
-          ScopeResStr = "." }
-    let strFunc resolvedName =
-        resolvedNameToString context resolvedName TypeMode
-    typedConstExprString config strFunc
-
 let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
     let rec recInner = function
         | UnitType -> "void"
@@ -175,17 +167,34 @@ let joinedArgs (context: DlangRenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToDlangString context type_) (safeIdentifier name)]
     |> String.concat ", "
 
+let constExprToString (context: DlangRenderContext) =
+    let config =
+        { NullStr = "null"
+          ScopeResStr = "." }
+    let strFunc resolvedName =
+        resolvedNameToString context resolvedName TypeMode
+    let castFunc niType content =
+        sprintf "cast(%s)(%s)" (typeToDlangString context niType) content
+    typedConstExprString config strFunc castFunc
+
 let joinedNameFuncArgs (context: DlangRenderContext) (args: NamedFunctionArg list) =
     [for arg in args ->
         match arg.DefaultValue with
         | Some value ->
             let typeStr =
                 typeToDlangString context arg.Type
-            match arg.Type with
-            | Primitive _ ->
-                sprintf "%s %s = %s" typeStr (safeIdentifier arg.Name) (constExprToString context value)
-            | _ ->
+            let forceCast =
+                // make sure to cast any constexprs when assigning to enums, UNLESS they have a top-level cast already
+                match arg.Type with
+                | Resolved (_, EnumType) ->
+                    match value with
+                    | Cast _ -> false
+                    | _ -> true
+                | _ -> false
+            if forceCast then
                 sprintf "%s %s = cast(%s) %s" typeStr (safeIdentifier arg.Name) typeStr (constExprToString context value)
+            else
+                sprintf "%s %s = %s" typeStr (safeIdentifier arg.Name) (constExprToString context value)
         | None ->
             sprintf "%s %s" (typeToDlangString context arg.Type) (safeIdentifier arg.Name) ]
     |> String.concat ", "

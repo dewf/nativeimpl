@@ -1066,7 +1066,7 @@ type ConstExprStringConfig = {
     NullStr: string
     ScopeResStr: string
 }
-let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: ResolvedName -> string) (root: TypedConstExpr) =
+let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: ResolvedName -> string) (renderCastFunc: NIType -> string -> string) (root: TypedConstExpr) =
     let rec recInner expr =
         match expr with
         | NullValue ->
@@ -1087,7 +1087,7 @@ let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: 
             match value with
             | HexNumber digits -> digits
             | DecNumber digits -> digits
-            | StringLit str -> sprintf "\"%s\"" str
+            | StringLiteral str -> sprintf "\"%s\"" str
         | Unary(op, value) ->
             let opStr =
                 match op with
@@ -1105,6 +1105,9 @@ let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: 
             sprintf "%s %s %s" (recInner left) opStr (recInner right)
         | Grouping groupContent ->
             sprintf "(%s)" (recInner groupContent)
+        | Cast (target, castContent) ->
+            renderCastFunc target (recInner castContent)
+
     recInner root
 
 let widthTypeForEnum (context: ModuleContext) (info: EnumInfo) =

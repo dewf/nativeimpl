@@ -222,6 +222,7 @@ type TypedConstExpr =
     | Unary of op: ConstUnaryOp * value: TypedConstExpr
     | Binary of op: ConstBinaryOp * left: TypedConstExpr * right: TypedConstExpr
     | Grouping of inner: TypedConstExpr
+    | Cast of target: NIType * content: TypedConstExpr
 
 let untypedToTypedConstExpr (loc: Location) (input: UntypedConstExpr): TypedConstExpr =
     let rec inner (node: UntypedConstExpr) =
@@ -251,6 +252,10 @@ let untypedToTypedConstExpr (loc: Location) (input: UntypedConstExpr): TypedCons
             Binary(op, inner left, inner right)
         | UntypedConstExpr.Grouping groupContent ->
             Grouping (inner groupContent)
+        | UntypedConstExpr.Cast (targetTypeTokens, castContent) ->
+            let target, etc = parseType targetTypeTokens
+            assert(etc = []) // should consume entire thing
+            Cast (target, inner castContent)
     inner input
 
 type NamedFunctionArg = {
@@ -1561,6 +1566,10 @@ let resolveConstExprTypes (context: ModuleContext) (namespacePath: string list) 
             Binary(op, recInner left, recInner right)
         | Grouping groupContent ->
             Grouping (recInner groupContent)
+        | Cast(targetType, content) ->
+            let resolvedTarget =
+                resolveType context namespacePath targetType
+            Cast (resolvedTarget, (recInner content))
     // go
     recInner outerExpr
 

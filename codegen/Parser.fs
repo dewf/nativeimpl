@@ -758,7 +758,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                         failwithf "parsing 'withflags' attribute @ %A - expected companion type name (eg: @withflags(MyThingFlags))" loc
                 | "methodprefix" ->
                     match etc with
-                    | Lookahead 5 ([ LeftParen; StringQuote; Identifier prefix; StringQuote; RightParen ], _, etc) ->
+                    | Lookahead 3 ([ LeftParen; StringLiteralToken prefix; RightParen ], _, etc) ->
                         MethodPrefix prefix, etc
                     | _ ->
                         failwithf "parsing 'methodprefix attribute @ %A - expected quoted string prefix (eg: @methodprefix(\"whatever_\"))" loc

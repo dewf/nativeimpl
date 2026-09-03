@@ -61,10 +61,10 @@ type Token =
     | Caret
     | Minus
     | Plus
-    | StringQuote
     // etc:
     | NullToken
     | BoolValueToken of value: bool
+    | StringLiteralToken of value: string
 
 type Location = {
     Line: int
@@ -199,12 +199,32 @@ let isAlphaNumeric ch =
     ch = '_'
 
 let allowedSymbols =
-    ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "."; "->"; "@"; "|"; "&"; "~"; "^"; "-"; "+"; "\""]
+    ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "."; "->"; "@"; "|"; "&"; "~"; "^"; "-"; "+"]
 
-let (|RegexMatch|_|) (pattern: string) (input: string) =
+let (|RegexStrMatch|_|) (pattern: string) (input: string) =
     let match_ = Regex(pattern).Match(input)
     if match_.Success then
         Some match_
+    else
+        None
+
+let stringLiteralRegex =
+    Regex(@" "" ( (?: \\. | [^ "" \\ ] )* ) "" ", RegexOptions.Compiled ||| RegexOptions.IgnorePatternWhitespace)
+
+let (|StringLiteral|_|) (input: char[]) =
+    let inputStr =
+        // put a sane limit, these aren't going to be used to put any kind of serious content
+        Array.truncate 1024 input
+        |> String
+    let m = stringLiteralRegex.Match(inputStr)
+    if m.Success then
+        let length =
+            m.Length
+        let _, etc =
+            Array.splitAt length input
+        let content =
+            m.Groups[1].Value
+        Some (content, length, etc)
     else
         None
 
@@ -241,7 +261,6 @@ let nextToken (loc: Location) (input: char[]) =
             | "^" -> Caret
             | "-" -> Minus
             | "+" -> Plus
-            | "\"" -> StringQuote
             | _ -> failwithf "unrecognized symbol: %s at line %d, col %d" _match loc.Line loc.Column
         Some token, etc, loc.PlusCol(cols)
     | WhileMatch isAlphaNumeric (_match, cols, etc) ->
@@ -297,16 +316,21 @@ let nextToken (loc: Location) (input: char[]) =
             | "float" | "float32" -> Float32Token
             | "double" | "float64" -> Float64Token
             | "string" -> StringToken
-            | text when Regex(@"^[_a-zA-Z][_a-zA-Z0-9]*$").IsMatch(text) -> Identifier text
-            | RegexMatch @"^([0-9]+)(u|l|ul)?$" m ->
+            | RegexStrMatch(@"^[_a-zA-Z][_a-zA-Z0-9]*$") m ->
+                Identifier m.Value
+            | RegexStrMatch @"^([0-9]+)(u|l|ul)?$" m ->
                 // was going to separate the suffix, hence the fancier active pattern ... maybe eventually
                 Digits m.Value
-            | text when Regex(@"^0x[0-9A-Fa-f]+$").IsMatch(text) -> HexDigits text
+            | RegexStrMatch @"^0x[0-9A-Fa-f]+$" m ->
+                HexDigits m.Value
             | text ->
                 failwithf "failed to parse string '%s' at %s" text (loc.ToString())
         Some token, etc, loc.PlusCol(cols)
     | [||] ->
         None, [||], loc
+    // this is last, because it converts the whole char array to a string (well, max 1024 chars of it at present)
+    | StringLiteral (content, cols, etc) ->
+        Some (StringLiteralToken content), etc, loc.PlusCol(cols)
     | _ ->
         failwithf "unrecognized character '%s'... at location %s" (input[0].ToString()) (loc.ToString())
 

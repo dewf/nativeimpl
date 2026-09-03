@@ -6,6 +6,7 @@ open ParseCommon
 type ConstLiteral =
     | HexNumber of digits: string
     | DecNumber of digits: string
+    | StringLit of str: string
 and ConstUnaryOp =
     | BitwiseNot
     | Negation
@@ -23,14 +24,14 @@ and UntypedConstExpr =
     | Unary of op: ConstUnaryOp * value: UntypedConstExpr
     | Binary of op: ConstBinaryOp * left: UntypedConstExpr * right: UntypedConstExpr
     | Grouping of groupContent: UntypedConstExpr
-    
+
 let private (|MatchName|_|) (input: TokenAndLocation list) =
     match input with
     | NameStuff.NameParts (parts, _, etc) ->
         Some (parts, etc)
     | _ ->
         None
-        
+
 let private (|MatchLiteral|_|) (input: TokenAndLocation list) =
     match input with
     | { Token = token } :: etc ->
@@ -38,10 +39,11 @@ let private (|MatchLiteral|_|) (input: TokenAndLocation list) =
         // | Identifier text -> Some (EnumIdentifier text, etc)
         | Digits digits -> Some (DecNumber digits, etc)
         | HexDigits digits -> Some (HexNumber digits, etc)
+        | StringLiteralToken str -> Some (StringLit str, etc)
         | _ -> None
     | _ ->
         None
-        
+
 let private (|MatchUnaryOp|_|) (input: TokenAndLocation list) =
     match input with
     | { Token = token } :: etc ->
@@ -51,7 +53,7 @@ let private (|MatchUnaryOp|_|) (input: TokenAndLocation list) =
         | _ -> None
     | _ ->
         None
-        
+
 let private (|MatchBinaryOp|_|) (input: TokenAndLocation list) =
     match input with
     | { Token = token } ::  etc ->
@@ -64,7 +66,7 @@ let private (|MatchBinaryOp|_|) (input: TokenAndLocation list) =
         | _ -> None
     | _ ->
         None
-        
+
 let private (|MatchGrouping|_|) (input: TokenAndLocation list) =
     match input with
     | { Token = LeftParen; Location = loc } :: etc ->
@@ -99,7 +101,7 @@ type private StackOp =
     | Unary of op: ConstUnaryOp
     | Binary of op: ConstBinaryOp
     | Sentinel
-    
+
 let private precedence = function
     | StackOp.Unary op ->
         match op with
@@ -192,10 +194,10 @@ let rec private parseConstValue (operands: UntypedConstExpr list) (opStack: Stac
         | [ result ] -> result
         | _ :: _ -> failwith "parse2: too many operands for final result!"
         | [] -> failwith "parse2: no operands available for final result!"
-        
+
 let parseConstExpression (input: TokenAndLocation list) =
     parseConstValue [] [] input
-    
+
 // let rec prettyPrintExpr (level: int) (expr: EnumExpr) =
 //     let indent count =
 //         List.replicate count "  "

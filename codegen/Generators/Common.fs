@@ -886,7 +886,7 @@ let resolvedNameToStringAbstract
                         // to prefix with something provided by the language (eg the library name, in D)
                         let absPrefix =
                             match mode, importQualification with
-                            | TypeMode, Forced prefix -> prefix
+                            | (TypeMode | WrapperMethodMode _), Forced prefix -> prefix
                             | _ -> []
                         // END SKETCHY
 

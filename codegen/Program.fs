@@ -164,6 +164,11 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
     // get dependency order first
     let depsOrder = getDependencyOrder moduleMap
 
+    printfn "====== DEPS ORDER ==========="
+    for m in depsOrder do
+        printfn " - %A" m.Name
+    printfn "============================="
+
     // frontend
     for frontLang in frontLangs do
         match frontLang with

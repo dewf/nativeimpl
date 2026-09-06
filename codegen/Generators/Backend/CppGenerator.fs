@@ -300,6 +300,7 @@ let joinedArgs (context: CppRenderContext) (args: (string * NIType) list) =
 let constExprToString (context: CppRenderContext) =
     let config =
         { NullStr = "nullptr"
+          NoneStr = "{}"
           ScopeResStr = "::" }
     let stringFunc resolvedName =
         resolvedNameToString context resolvedName TypeMode

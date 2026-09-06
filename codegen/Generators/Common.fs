@@ -1064,6 +1064,7 @@ let isFirstDisposableOpaque (context: ModuleContext) (info: OpaqueInfo) =
 
 type ConstExprStringConfig = {
     NullStr: string
+    NoneStr: string
     ScopeResStr: string
 }
 let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: ResolvedName -> string) (renderCastFunc: NIType -> string -> string) (root: TypedConstExpr) =
@@ -1071,6 +1072,8 @@ let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: 
         match expr with
         | NullValue ->
             config.NullStr
+        | NoneValue ->
+            config.NoneStr
         | BoolValue value ->
             if value then "true" else "false"
         | ConstValue(namedValue, _) ->

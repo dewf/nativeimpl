@@ -216,6 +216,7 @@ type NamedConstValue =
 
 type TypedConstExpr =
     | NullValue
+    | NoneValue
     | BoolValue of value: bool
     | ConstValue of namedValue: NamedConstValue * loc: Location // useful to always have location since we don't always have the container type
     | Literal of value: ConstLiteral
@@ -229,6 +230,8 @@ let untypedToTypedConstExpr (loc: Location) (input: UntypedConstExpr): TypedCons
         match node with
         | UntypedConstExpr.NullValue ->
             NullValue
+        | UntypedConstExpr.NoneValue ->
+            NoneValue
         | UntypedConstExpr.BoolValue value ->
             BoolValue value
         | UntypedConstExpr.Name parts ->
@@ -1527,6 +1530,8 @@ let resolveConstExprTypes (context: ModuleContext) (namespacePath: string list) 
         match expr with
         | NullValue ->
             NullValue
+        | NoneValue ->
+            NoneValue
         | BoolValue value ->
             BoolValue value
         | ConstValue (value, loc) ->

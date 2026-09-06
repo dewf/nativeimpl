@@ -18,6 +18,7 @@ and ConstBinaryOp =
     | PlusOp
 and UntypedConstExpr =
     | NullValue
+    | NoneValue
     | BoolValue of value: bool
     | Name of parts: string list
     | Literal of value: ConstLiteral
@@ -177,6 +178,9 @@ let rec private parseConstValue (operands: UntypedConstExpr list) (opStack: Stac
     | { Token = NullToken } :: _ ->
         // null can't be part of any expression, stands alone
         NullValue
+    | { Token = NoneToken } :: _ ->
+        // 'none' can't be part of any expression, stands alone
+        NoneValue
     | { Token = BoolValueToken value } :: _ ->
         // bool can't (currently) be part of any expression, stands alone
         BoolValue value

@@ -167,9 +167,13 @@ let joinedArgs (context: DlangRenderContext) (args: (string * NIType) list) =
     [for name, type_ in args -> sprintf "%s %s" (typeToDlangString context type_) (safeIdentifier name)]
     |> String.concat ", "
 
-let constExprToString (context: DlangRenderContext) =
+let constExprToString (context: DlangRenderContext) (forType: NIType option) =
     let config =
         { NullStr = "null"
+          NoneStr =
+              match forType with
+              | Some (OptionType _ as niType) -> sprintf "%s()" (typeToDlangString context niType)
+              | _ -> "!! default 'none' value but meaningless in this context !!"
           ScopeResStr = "." }
     let strFunc resolvedName =
         resolvedNameToString context resolvedName TypeMode
@@ -192,9 +196,9 @@ let joinedNameFuncArgs (context: DlangRenderContext) (args: NamedFunctionArg lis
                     | _ -> true
                 | _ -> false
             if forceCast then
-                sprintf "%s %s = cast(%s) %s" typeStr (safeIdentifier arg.Name) typeStr (constExprToString context value)
+                sprintf "%s %s = cast(%s) %s" typeStr (safeIdentifier arg.Name) typeStr (constExprToString context (Some arg.Type) value)
             else
-                sprintf "%s %s = %s" typeStr (safeIdentifier arg.Name) (constExprToString context value)
+                sprintf "%s %s = %s" typeStr (safeIdentifier arg.Name) (constExprToString context (Some arg.Type) value)
         | None ->
             sprintf "%s %s" (typeToDlangString context arg.Type) (safeIdentifier arg.Name) ]
     |> String.concat ", "
@@ -999,7 +1003,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             match maybeSpecifiedValue with
             | Some specValue ->
                 let enumValueStr =
-                    constExprToString context specValue
+                    constExprToString context None specValue
                 write 1 "%s = %s%s" (upperFirst value) enumValueStr maybeComma
             | None ->
                 write 1 "%s%s" (upperFirst value) maybeComma

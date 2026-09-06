@@ -181,6 +181,7 @@ let joinedArgs (context: CsRenderContext) (args: (string * NIType) list) =
 let constExprToString (context: CsRenderContext) =
     let config =
         { NullStr = "null"
+          NoneStr = "default"
           ScopeResStr = "." }
     let strFunc resolvedName =
         resolvedNameToString context resolvedName TypeMode

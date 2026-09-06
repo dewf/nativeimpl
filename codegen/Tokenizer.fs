@@ -64,6 +64,7 @@ type Token =
     | Plus
     // etc:
     | NullToken
+    | NoneToken
     | BoolValueToken of value: bool
     | StringLiteralToken of value: string
 
@@ -290,6 +291,7 @@ let nextToken (loc: Location) (input: char[]) =
             | "cast" -> CastToken
             // etc
             | "null" -> NullToken
+            | "none" -> NoneToken
             | "true" -> BoolValueToken true
             | "false" -> BoolValueToken false
             // generic types (need specialization)

@@ -1040,7 +1040,8 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                 sprintf " // extends %s" (typeToDlangString context parent)
             | None ->
                 ""
-        write 0 "enum %s%s {%s" (upperFirst name) widthSuffix maybeExtendsComment
+        write 0 "enum %s%s {%s // namedbits" (upperFirst name) widthSuffix maybeExtendsComment
+        write 1 "__empty = 0," // otherwise D's default initialization will bite us in the ass!
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
             match group.MaybeTitle with
             | Some title ->

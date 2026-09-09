@@ -999,6 +999,8 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             type_, str
         // flags mode handling?
         write 0 "enum %s%s {" name widthSuffix
+        if info.FlagsMode then
+            write 1 "_empty = 0," // otherwise D's default initialization will bite us in the ass!
         for (value, maybeSpecifiedValue), maybeComma in info.Values |> withTrailingCommas do
             match maybeSpecifiedValue with
             | Some specValue ->
@@ -1041,7 +1043,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             | None ->
                 ""
         write 0 "enum %s%s {%s // namedbits" (upperFirst name) widthSuffix maybeExtendsComment
-        write 1 "__empty = 0," // otherwise D's default initialization will bite us in the ass!
+        write 1 "_empty = 0," // otherwise D's default initialization will bite us in the ass!
         for group, groupCommaStr in indexedGroups |> withTrailingCommas do
             match group.MaybeTitle with
             | Some title ->

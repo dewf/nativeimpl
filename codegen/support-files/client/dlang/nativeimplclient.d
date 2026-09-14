@@ -12,6 +12,8 @@ import std.string : toStringz, format;
 import std.algorithm: map;
 import std.range: array;
 
+import stonesoup.disposable;
+
 // PRIVATE ====================================================================================================
 private:
 
@@ -875,87 +877,4 @@ void setExceptionBuilder(ExceptionHandle eh, ExceptionBuildAndThrowFunc builder)
 // void setException(ni_ExceptionRef e);
 void setException(ExceptionHandle eh) {
     nativemethods.setException(eh.handle);
-}
-
-// lifetime management stuff (for opaques) =========================
-
-interface IDisposable {
-    void dispose();
-}
-
-// thanks to Paul Backus:
-struct Disposable(T : IDisposable)
-{
-    T unwrap;
-    alias unwrap this;
-    ~this()
-    {
-        if (unwrap !is null) {
-            unwrap.dispose;
-            unwrap = null; // so that GC.collect() works a bit more deterministically for testing (maybe)
-        }
-    }
-}
-
-Disposable!T using(T : IDisposable)(T payload)
-{
-    return Disposable!T(payload);
-}
-
-// // 1. The custom 'using' struct
-// struct UsingBlock(T : IDisposable) {
-//     T resource;
-//     // opApply defines what happens when this struct is put in a foreach loop
-//     int opApply(int delegate(ref T) dg) {
-//         // Guarantee cleanup when the delegate (the block) finishes
-//         scope(exit) {
-//             resource.dispose();
-//         }
-//         // Execute the block of code, passing the resource to it
-//         return dg(resource);
-//     }
-// }
-// // Helper function so we don't have to explicitly type UsingBlock!(MyClass)
-// auto using(T)(T resource) {
-//     return UsingBlock!T(resource);
-// }
-
-struct Result(T, Err) {
-private:
-    union Payload {
-        T value;
-        Err error;
-    }
-    Payload payload;
-    bool _isSuccess;
-public:
-    bool isSuccess() => _isSuccess;
-
-    T value() {
-        if (isSuccess) {
-            return payload.value;
-        } // else:
-        throw new Error("Result type: tried to access .value() while in error state");
-    }
-
-    Err error() {
-        if (!isSuccess) {
-            return payload.error;
-        } // else:
-        throw new Error("Result type: tried to access .error() while in success state");
-    }
-
-    static Result!(T, Err) ok(T value) {
-        Result!(T, Err) res;
-        res._isSuccess = true;
-        res.payload.value = value;
-        return res;
-    }
-
-    static Result!(T, Err) err(Err e) {
-        Result!(T, Err) res;
-        res._isSuccess = false;
-        res.payload.error = e;
-        return res;
-    }
 }

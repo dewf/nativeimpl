@@ -826,7 +826,7 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                         resolvedNameToString context parentName TypeMode)
                 let maybeDisposableString =
                     if firstDisposable then
-                        Some "ni.IDisposable"
+                        Some "IDisposable"
                     else
                         None
                 [ maybeParentOpaque; maybeDisposableString ]
@@ -1617,7 +1617,9 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (libraryN
     write 0 "import std.sumtype;"
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
     write 0 "import std.typecons: Nullable, nullable;"
-    write 0 "import simpleset: Set;"
+    write 0 "import stonesoup.disposable: IDisposable;"
+    write 0 "import stonesoup.simpleset: Set;"
+    write 0 "import stonesoup.result: Result;"
 
     // render all the generics at the root level only
     for generic in allGenericTypes moduleContext do
@@ -1769,7 +1771,7 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "// hardcoded for the moment, need to locate the server .lib file in an intelligent way"
     write 0 "libs \"$PACKAGE_DIR/../../../server/cpp/_dllproject/cmake-build-debug/%sServer\"" outParams.LibraryName
     blank()
-    write 0 "dependency \"simpleset\" path=\"R:/projects/dlang/simpleset\""
+    write 0 "dependency \"stonesoup\" path=\"R:/projects/dlang/stonesoup\""
 
 let generateProject (outParams: OutParams) =
     let filename =

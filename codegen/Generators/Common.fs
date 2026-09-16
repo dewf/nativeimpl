@@ -1090,6 +1090,7 @@ let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: 
             match value with
             | HexNumber digits -> digits
             | DecNumber digits -> digits
+            | FloatNumber digits -> digits
             | StringLiteral str -> sprintf "\"%s\"" str
         | Unary(op, value) ->
             let opStr =

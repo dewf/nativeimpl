@@ -4,8 +4,9 @@ open Tokenizer
 open ParseCommon
 
 type ConstLiteral =
-    | HexNumber of digits: string
-    | DecNumber of digits: string
+    | HexNumber of digits: string   // includes prefix
+    | DecNumber of digits: string   // potentially includes suffix
+    | FloatNumber of digits: string
     | StringLiteral of str: string
 and ConstUnaryOp =
     | BitwiseNot
@@ -38,10 +39,14 @@ let private (|MatchName|_|) (input: TokenAndLocation list) =
 
 let private (|MatchLiteral|_|) (input: TokenAndLocation list) =
     match input with
+    | { Token = DecDigits whole } :: { Token = Dot } :: { Token = DecDigits frac } :: etc ->
+        let digits =
+            whole + "." + frac
+        Some (FloatNumber digits, etc)
     | { Token = token } :: etc ->
         match token with
         // | Identifier text -> Some (EnumIdentifier text, etc)
-        | Digits digits -> Some (DecNumber digits, etc)
+        | DecDigits digits -> Some (DecNumber digits, etc)
         | HexDigits digits -> Some (HexNumber digits, etc)
         | StringLiteralToken str -> Some (StringLiteral str, etc)
         | _ -> None

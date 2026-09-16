@@ -5,7 +5,7 @@ open System.Text.RegularExpressions
 
 type Token =
     | Identifier of string
-    | Digits of digits: string
+    | DecDigits of string
     | HexDigits of string
     // primitives
     | SizeTToken
@@ -322,7 +322,7 @@ let nextToken (loc: Location) (input: char[]) =
                 Identifier m.Value
             | RegexStrMatch @"^([0-9]+)(u|l|ul)?$" m ->
                 // was going to separate the suffix, hence the fancier active pattern ... maybe eventually
-                Digits m.Value
+                DecDigits m.Value
             | RegexStrMatch @"^0x[0-9A-Fa-f]+$" m ->
                 HexDigits m.Value
             | text ->

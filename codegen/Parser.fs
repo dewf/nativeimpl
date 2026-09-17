@@ -32,6 +32,11 @@ with
         match this with
         | ModuleName parts ->
             parts |> List.rev |> List.head
+    override this.ToString() =
+        match this with
+        | ModuleName parts ->
+            parts
+            |> String.concat "."
 
 type SymbolName =
     | SymbolName of string list
@@ -1825,7 +1830,7 @@ let moduleNameToFilename (rootPath: string) (ModuleName nameParts) =
         String.Join("/", nameParts)
     $"{rootPath}/{pathParts}.ni"
 
-let rec loadModule (rootPath: string) (moduleMap: Map<ModuleName, Module>) (name: ModuleName) (forbidden: Set<ModuleName>) =
+let rec loadModule (rootPath: string) (moduleMap: Map<ModuleName, Module>) (name: ModuleName) (revImportChain: ModuleName list) =
     match moduleMap.TryFind name with
     | Some m ->
         // already loaded!
@@ -1843,16 +1848,20 @@ let rec loadModule (rootPath: string) (moduleMap: Map<ModuleName, Module>) (name
             parseModuleToplevel tokens name lastModificationTime
         // load imports before performing resolution
         let nextMap =
-            let nextForbidden =
-                // add this module to the forbidden list, which will be passed to imports to prevent cycles
-                forbidden.Add name
             (moduleMap, parsed.Imports)
             ||> List.fold (fun acc importName ->
-                // verify not in forbidden (to prevent circular dependencies)
-                if forbidden.Contains importName then
-                    failwithf "module %A cannot import %A - would create a dependency cycle" name importName
+                // verify this wouldn't create a circular dependency ...
+                if List.contains importName revImportChain then
+                    // well shit
+                    let chainStr =
+                        importName :: name :: revImportChain
+                        |> List.rev
+                        |> List.skipWhile (fun name -> name <> importName)
+                        |> List.map _.ToString()
+                        |> String.concat " -> "
+                    failwithf "module %A cannot import %A - would create a dependency cycle:\n%s" name importName chainStr
                 else
-                    loadModule rootPath acc importName nextForbidden
+                    loadModule rootPath acc importName (name :: revImportChain)
                     |> snd)
         // perform resolution against our imports
         let resolved =

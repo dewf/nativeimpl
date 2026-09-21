@@ -2640,7 +2640,6 @@ let writeProject (writer: IFormatWriter) (allModules: Module list) (outParams: O
     write 2 "source/support/CoreStuff.h"
     write 2 "source/support/NativeImplServer.h"
     write 2 "source/support/NativeImplServer.cpp"
-    write 2 "source/support/result.h"
     blank()
     for m in allModules do
         let paths =

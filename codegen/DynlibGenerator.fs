@@ -49,17 +49,8 @@ let private writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "add_library(%sServer SHARED ${SOURCES})" outParams.LibraryName
     blank()
     write 0 "# link to actual library implementation"
-    write 0 "add_library(%sImpl STATIC IMPORTED GLOBAL)" outParams.LibraryName
-    write 0 "set_target_properties(%sImpl PROPERTIES" outParams.LibraryName
-    write 2 "IMPORTED_LOCATION_DEBUG"
-    write 2 "\"${CMAKE_CURRENT_SOURCE_DIR}/../%sImpl/cmake-build-debug/%sImpl.lib\"" outParams.LibraryName outParams.LibraryName
+    write 0 "add_subdirectory(../%sImpl ImplBuild)" outParams.LibraryName
     blank()
-    write 2 "IMPORTED_LOCATION_RELEASE"
-    write 2 "\"${CMAKE_CURRENT_SOURCE_DIR}/../%sImpl/cmake-build-release/%sImpl.lib\"" outParams.LibraryName outParams.LibraryName
-    blank()
-    write 2 "MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release"
-    write 2 "MAP_IMPORTED_CONFIG_MINSIZEREL Release"
-    write 0 ")"
     write 0 "target_link_libraries(%sServer PRIVATE %sImpl)" outParams.LibraryName outParams.LibraryName
 
 let generateProject (outParams: OutParams) =

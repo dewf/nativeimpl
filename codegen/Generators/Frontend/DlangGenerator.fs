@@ -105,7 +105,7 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
         | OptionType elemType ->
             sprintf "Nullable!(%s)" (recInner elemType)
         | ResultType (succType, errType) ->
-            sprintf "ni.Result!(%s, %s)" (recInner succType) (recInner errType)
+            sprintf "Result!(%s, %s)" (recInner succType) (recInner errType)
         | x ->
             sprintf "(typeToDlangString: not yet supported: %A)" x
     // go

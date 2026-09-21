@@ -39,15 +39,12 @@ let private (|MatchName|_|) (input: TokenAndLocation list) =
 
 let private (|MatchLiteral|_|) (input: TokenAndLocation list) =
     match input with
-    | { Token = DecDigits whole } :: { Token = Dot } :: { Token = DecDigits frac } :: etc ->
-        let digits =
-            whole + "." + frac
-        Some (FloatNumber digits, etc)
     | { Token = token } :: etc ->
         match token with
         // | Identifier text -> Some (EnumIdentifier text, etc)
         | DecDigits digits -> Some (DecNumber digits, etc)
         | HexDigits digits -> Some (HexNumber digits, etc)
+        | FloatDigits digits -> Some (FloatNumber digits, etc)
         | StringLiteralToken str -> Some (StringLiteral str, etc)
         | _ -> None
     | _ ->

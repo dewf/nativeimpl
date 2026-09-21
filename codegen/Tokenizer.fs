@@ -7,6 +7,7 @@ type Token =
     | Identifier of string
     | DecDigits of string
     | HexDigits of string
+    | FloatDigits of string
     // primitives
     | SizeTToken
     | BoolToken
@@ -200,15 +201,38 @@ let isAlphaNumeric ch =
     (ch >= '0' && ch <= '9') ||
     ch = '_'
 
+let isNumeric ch =
+    (ch >= '0' && ch <= '9') ||
+    (ch >= 'A' && ch <= 'F') ||
+    (ch >= 'a' && ch <= 'f') || // includes 'f' that can be used as suffix
+    ([| '.'; 'U'; 'u'; 'L'; 'l'; 'x' |] |> Array.contains ch)
+
 let allowedSymbols =
     ["{"; "}"; "("; ")"; "<<"; "<"; ">"; "="; ","; ":"; ";"; "."; "->"; "@"; "|"; "&"; "~"; "^"; "-"; "+"]
 
-let (|RegexStrMatch|_|) (pattern: string) (input: string) =
-    let match_ = Regex(pattern).Match(input)
+let (|RegexStrMatch|_|) (pattern: string) (opts: RegexOptions) (input: string) =
+    let match_ =
+        Regex(pattern, opts).Match(input)
     if match_.Success then
         Some match_
     else
         None
+
+let(|NumberLiteral|_|) (input: char[]) =
+    match input with
+    | WhileMatch isNumeric (chars, cols, etc) ->
+        match String(chars) with
+        | RegexStrMatch @"^0x[0-9A-Fa-f]+$" RegexOptions.None m ->
+            Some (HexDigits m.Value, cols, etc)
+        | RegexStrMatch @"^\d+(u|l|ul|ll|ull)?$" RegexOptions.None m ->
+            Some (DecDigits m.Value, cols, etc)
+        | RegexStrMatch @"^\d+(\.\d+f?|f)$" RegexOptions.IgnorePatternWhitespace m ->
+            Some (FloatDigits m.Value, cols, etc)
+        | _ ->
+            None
+    | _ ->
+        None
+
 
 let stringLiteralRegex =
     Regex(@" "" ( (?: \\. | [^ "" \\ ] )* ) "" ", RegexOptions.Compiled ||| RegexOptions.IgnorePatternWhitespace)
@@ -265,6 +289,8 @@ let nextToken (loc: Location) (input: char[]) =
             | "+" -> Plus
             | _ -> failwithf "unrecognized symbol: %s at line %d, col %d" _match loc.Line loc.Column
         Some token, etc, loc.PlusCol(cols)
+    | NumberLiteral (token, cols, etc) ->
+        Some token, etc, loc.PlusCol(cols)
     | WhileMatch isAlphaNumeric (_match, cols, etc) ->
         // number, identifier, reserved word
         // either a token or a failure!
@@ -318,13 +344,8 @@ let nextToken (loc: Location) (input: char[]) =
             | "float" | "float32" -> Float32Token
             | "double" | "float64" -> Float64Token
             | "string" -> StringToken
-            | RegexStrMatch(@"^[_a-zA-Z][_a-zA-Z0-9]*$") m ->
+            | RegexStrMatch(@"^[_a-zA-Z][_a-zA-Z0-9]*$") RegexOptions.None m ->
                 Identifier m.Value
-            | RegexStrMatch @"^([0-9]+)(u|l|ul)?$" m ->
-                // was going to separate the suffix, hence the fancier active pattern ... maybe eventually
-                DecDigits m.Value
-            | RegexStrMatch @"^0x[0-9A-Fa-f]+$" m ->
-                HexDigits m.Value
             | text ->
                 failwithf "failed to parse string '%s' at %s" text (loc.ToString())
         Some token, etc, loc.PlusCol(cols)

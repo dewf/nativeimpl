@@ -12,6 +12,8 @@ import std.string : toStringz, format;
 import std.algorithm: map;
 import std.range: array;
 
+import core.sync.mutex: Mutex;
+
 import stonesoup.disposable;
 
 // PRIVATE ====================================================================================================
@@ -56,17 +58,20 @@ struct ClientFuncKey {
 }
 
 
-bool remoteIsShutdown;
+__gshared bool remoteIsShutdown;
 
-int nextResourceId = 1;
-ClientResource[int] resourceMap;
-ClientFuncVal[ClientFuncKey] reverseFuncValDict;
+// client resource stuff =======================
+__gshared Mutex clientResourceMutex;
+__gshared int nextResourceId = 1;
+__gshared ClientResource[int] resourceMap;
+__gshared ClientFuncVal[ClientFuncKey] reverseFuncValDict;
+// =============================================
 
 alias ExceptionBuildAndThrowFunc = void function();
 alias MethodWrapperFunc = void delegate(ClientObject obj);
 
-ExceptionBuildAndThrowFunc[ni_ExceptionRef] exceptionBuilders;
-MethodWrapperFunc[ni_InterfaceMethodRef] methodWrappers;
+__gshared ExceptionBuildAndThrowFunc[ni_ExceptionRef] exceptionBuilders;
+__gshared MethodWrapperFunc[ni_InterfaceMethodRef] methodWrappers;
 
 interface IPushable {
     void push(bool isReturn);
@@ -90,10 +95,12 @@ protected:
 public:
     override void push(bool isReturn) {
         if (_id == -1) {
-            // unset as yet
-            _id = nextResourceId++;
-            refCount = 1;
-            resourceMap[_id] = this;
+            synchronized (clientResourceMutex) {
+                // unset as yet
+                _id = nextResourceId++;
+                refCount = 1;
+                resourceMap[_id] = this;
+            }
             writefln("Dlang ClientResource: assigned new ID: %d", _id);
         } else {
             // just increase refcount since it's a known thing
@@ -106,7 +113,9 @@ public:
         refCount -= 1;
         if (refCount == 0) {
             writefln("Dlang release on ClientResource [%d] - refCount 0, removing from resource table", _id);
-            resourceMap.remove(_id);
+            synchronized (clientResourceMutex) {
+                resourceMap.remove(_id);
+            }
             _id = -1; // reset ID, since we're not in the table anymore
             // all this does is remove this object from the 'checked-out' table -
             // things we were keeping alive as long as the remote (server) side had reference to them
@@ -115,11 +124,15 @@ public:
         }
     }
     static ClientResource getById(int id) {
-        return resourceMap[id];
+        synchronized (clientResourceMutex) {
+            return resourceMap[id];
+        }
     }
     static void dumpTables() {
-        foreach (id, resource; resourceMap) {
-            writefln(" - ClientResource [%d]: refcount [%d]", id, resource.refCount);
+        synchronized (clientResourceMutex) {
+            foreach (id, resource; resourceMap) {
+                writefln(" - ClientResource [%d]: refcount [%d]", id, resource.refCount);
+            }
         }
     }
 }
@@ -135,7 +148,9 @@ class ClientFuncVal : ClientResource {
         // unlike the base ClientResource/ClientObject, a ClientFuncVal is only ever created just before being pushed
         // so no harm in filling the table entry immediately (vs. in a 'register' or push method)
         if (key.isValid) {
-            reverseFuncValDict[key] = this;
+            synchronized (clientResourceMutex) {
+                reverseFuncValDict[key] = this;
+            }
         }
     }
     override void nativePush() {
@@ -146,7 +161,9 @@ class ClientFuncVal : ClientResource {
         if (key.isValid) {
             // remove self from reverse dict
             // unlike ClientObjects, there's should be no potential for a ClientFuncVal being reused once it's removed, because they only exist within library wrapper code
-            reverseFuncValDict.remove(key);
+            synchronized (clientResourceMutex) {
+                reverseFuncValDict.remove(key);
+            }
             writefln("ClientFuncVal: removed key [%s] from reverse dict", key);
         }
         // probably unnecessary, but who knows!
@@ -165,16 +182,18 @@ class ClientFuncVal : ClientResource {
         return cast(ClientFuncVal) ClientResource.getById(id);
     }
     static ClientFuncVal getOrCreate(FuncValWrapper wrapper, ClientFuncKey key) {
-        if (key.isValid && (key in reverseFuncValDict)) {
-            // re-use existing
-            writefln("ClientFuncVal.getorCreate() - client func key already exists!");
-            // return existing
-            // used to addRef here, but now that's taken care of by ClientResource.push()
-            return reverseFuncValDict[key];
-        } else {
-            // create new
-            writefln("pushing new ClientFuncVal");
-            return new ClientFuncVal(wrapper, key);
+        synchronized (clientResourceMutex) {
+            if (key.isValid && (key in reverseFuncValDict)) {
+                // re-use existing
+                writefln("ClientFuncVal.getorCreate() - client func key already exists!");
+                // return existing
+                // used to addRef here, but now that's taken care of by ClientResource.push()
+                return reverseFuncValDict[key];
+            } else {
+                // create new
+                writefln("pushing new ClientFuncVal");
+                return new ClientFuncVal(wrapper, key);
+            }
         }
     }
 }
@@ -193,7 +212,7 @@ public:
 // marker interface for client interfaces
 public interface IClientInterface {}
 // map so we can use bare interfaces in the client code (no special inheritance, other than marker interface)
-ClientInterfaceWrapper[IClientInterface] clientInterfaceWrapperMap;
+__gshared ClientInterfaceWrapper[IClientInterface] clientInterfaceWrapperMap;
 
 // needs to be public, because it's used directly in module definitions
 class ClientInterfaceWrapper : ClientObject {
@@ -201,7 +220,9 @@ private:
     IClientInterface _rawInterface;
 protected:
     override void releaseExtra() {
-        clientInterfaceWrapperMap.remove(_rawInterface);
+        synchronized (clientResourceMutex) {
+            clientInterfaceWrapperMap.remove(_rawInterface);
+        }
         super.releaseExtra();
     }
 public:
@@ -213,10 +234,12 @@ public:
 
 // place to stash server objects until the other side has finished popping them from stack
 // (in case they only exist as a return value)
-ServerResource[] safeArea;
+__gshared ServerResource[] safeArea;
 
 void clearSafeArea() {
-    safeArea.length = 0;
+    synchronized (clientResourceMutex) {
+        safeArea.length = 0;
+    }
 }
 
 enum DisposedFrom {
@@ -288,7 +311,9 @@ public:
             // otherwise, if this is the last proxy on this side,
             // could remotely detonate the server's real copy before it's done taking 'ownership'
             // (dependent on probably-unlikely GC collection, but better safe than sorry)
-            safeArea ~= this;
+            synchronized (clientResourceMutex) {
+                safeArea ~= this;
+            }
         }
         // do yo' thing, subclass
         nativePush();
@@ -442,6 +467,8 @@ class ExceptionHandle : WrappedHandle!ni_ExceptionRef {
 }
 
 void init() {
+    clientResourceMutex = new Mutex();
+
     auto result =
         nativeImplInit(
             &clientLogFunc,
@@ -835,13 +862,15 @@ void pushClientInterface(IClientInterface thing, bool isReturn) {
     if (thing is null) {
         nativemethods.pushNull();
     } else {
-        if (auto existing = thing in clientInterfaceWrapperMap) {
-            existing.push(isReturn);
-        } else {
-            // it's fresh, need to create a wrapper to push it (so we don't have to force developers to inherit from ClientObject themselves)
-            auto wrapper = new ClientInterfaceWrapper(thing);
-            clientInterfaceWrapperMap[thing] = wrapper;
-            wrapper.push(isReturn);
+        synchronized (clientResourceMutex) {
+            if (auto existing = thing in clientInterfaceWrapperMap) {
+                existing.push(isReturn);
+            } else {
+                // it's fresh, need to create a wrapper to push it (so we don't have to force developers to inherit from ClientObject themselves)
+                auto wrapper = new ClientInterfaceWrapper(thing);
+                clientInterfaceWrapperMap[thing] = wrapper;
+                wrapper.push(isReturn);
+            }
         }
     }
 }

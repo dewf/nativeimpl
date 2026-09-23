@@ -1375,43 +1375,43 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
     // root module handle, if necessary
     // (would be nicer to do outside, BUT I like having it neatly below a single "private:"
     if isRootGroup then
-        write 0 "ni.ModuleHandle _module;"
+        write 0 "__gshared ni.ModuleHandle _module;"
 
     // declare top level function handles
     for namedFunc in groupContext.ModuleMethods do
-        write 0 "%sni.ModuleMethodHandle _%s;" contentPrefix namedFunc.WrapperName
+        write 0 "%s__gshared ni.ModuleMethodHandle _%s;" contentPrefix namedFunc.WrapperName
 
     // opaques
     for name, info in groupContext.Opaques do
         // instance methods
         for method in info.Methods do
-            write 0 "%sni.ModuleMethodHandle _%s_%s;" contentPrefix (lowerFirst name) method.WrapperName
+            write 0 "%s__gshared ni.ModuleMethodHandle _%s_%s;" contentPrefix (lowerFirst name) method.WrapperName
         // synthesized dispose method
         if info.NoDispose then
             ()
         else
-            write 0 "%sni.ModuleMethodHandle _%s_dispose;" contentPrefix (lowerFirst name)
+            write 0 "%s__gshared ni.ModuleMethodHandle _%s_dispose;" contentPrefix (lowerFirst name)
 
     // opaque extension methods
     for info in groupContext.ExtMethodBlocks do
         for method in info.Methods do
             let varName =
                 extMethodToString context info.Target method MethodHandle
-            write 0 "%sni.ModuleMethodHandle %s;" contentPrefix varName
+            write 0 "%s__gshared ni.ModuleMethodHandle %s;" contentPrefix varName
 
     // interfaces
     for name, info in groupContext.Interfaces do
-        write 0 "%sni.InterfaceHandle _%s;" contentPrefix (lowerFirst name)
+        write 0 "%s__gshared ni.InterfaceHandle _%s;" contentPrefix (lowerFirst name)
         for method in info.Methods do
-            write 0 "%sni.InterfaceMethodHandle _%s_%s;" contentPrefix (lowerFirst name) method.WrapperName
+            write 0 "%s__gshared ni.InterfaceMethodHandle _%s_%s;" contentPrefix (lowerFirst name) method.WrapperName
 
     // exceptions
     for name, _ in groupContext.Exceptions do
-        write 0 "%sni.ExceptionHandle _%s;" contentPrefix (lowerFirst name)
+        write 0 "%s__gshared ni.ExceptionHandle _%s;" contentPrefix (lowerFirst name)
 
     // globals declaration
     for name, type_ in groupContext.Globals do
-        write 0 "%s%s _const_%s;" contentPrefix (typeToDlangString context type_) name
+        write 0 "%s__gshared %s _const_%s;" contentPrefix (typeToDlangString context type_) name
 
     blank()
     if isRootGroup then

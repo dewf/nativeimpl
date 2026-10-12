@@ -526,6 +526,27 @@ void invokeModuleMethodWithExceptions(ModuleMethodHandle method) {
     }
 }
 
+alias ObjectPtr = ni_ObjectPtr;
+
+void pushObject(ObjectPtr obj) {
+    nativemethods.pushObject(obj);
+}
+
+ObjectPtr popObject() {
+    return nativemethods.popObject();
+}
+
+void pushObjectArray(ObjectPtr[] objects) {
+    nativemethods.pushObjectArray(objects.ptr, objects.length);
+}
+
+ObjectPtr[] popObjectArray() {
+    ObjectPtr* values;
+    size_t count;
+    nativemethods.popObjectArray(&values, &count);
+    return values[0..count].dup();
+}
+
 void pushPtr(void* ptr) {
     nativemethods.pushPtr(ptr);
 }

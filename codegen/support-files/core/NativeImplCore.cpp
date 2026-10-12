@@ -7,6 +7,7 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 #include <cassert>
 #include <cstdarg>
@@ -61,6 +62,11 @@ namespace
 // stack types =======================
 class StackItem {
 public:
+	virtual ~StackItem() = default;
+
+	virtual ni_ObjectPtr objectValue() { throw WrongTypeException(); }
+	virtual std::vector<ni_ObjectPtr> objectArray() { throw WrongTypeException(); }
+
 	virtual void* ptrValue() { throw WrongTypeException(); }
 	virtual std::vector<void*> ptrArray() { throw WrongTypeException(); }
 
@@ -114,6 +120,9 @@ class NullItem : public StackItem {
 public:
 	NullItem() = default;
 	// should work for any reference type:
+	ni_ObjectPtr objectValue() override {
+		return { .ptr = nullptr, .type_id = nullptr };
+	}
 	void* ptrValue() override {
 		return nullptr;
 	}
@@ -124,6 +133,29 @@ public:
 		*id = 0;
 		*isClientId = false;
 		descriptor->start = nullptr;
+	}
+};
+
+class ObjectItem : public StackItem
+{
+public:
+	ni_ObjectPtr value;
+	ObjectItem(ni_ObjectPtr value) : value(value) {}
+	ni_ObjectPtr objectValue() override {
+		return value;
+	}
+};
+
+class ObjectArray : public StackItem
+{
+public:
+	std::vector<ni_ObjectPtr> values;
+	ObjectArray(ni_ObjectPtr *ptr, size_t count)
+	{
+		values.assign(ptr, ptr + count);
+	}
+	std::vector<ni_ObjectPtr> objectArray() override {
+		return values;
 	}
 };
 
@@ -499,6 +531,7 @@ static void nullMethodExec(ni_InterfaceMethodRef method, int id) {}
 
 // private global stuff ============================
 static std::map<std::string, ni_ModuleRef> modules;
+static std::map<ni_TypeId, CastFunc> castFuncMap;
 
 static niClientLogFunc internal_clientLogFunc;
 niClientFuncExec ni_clientFuncExec;
@@ -533,6 +566,7 @@ struct ThreadLocal {
 	std::stack<std::unique_ptr<StackItem>> vstack;
 	ni_ExceptionRef currentException = nullptr;
 
+	std::vector<ni_ObjectPtr> lastObjectArray;
 	std::vector<void*> lastPtrArray;
 	std::vector<size_t> lastSizeTArray;
 	std::vector<uint8_t> lastBoolArray;
@@ -633,6 +667,28 @@ ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char *name, Exception
 	return exception;
 }
 
+void ni_registerType(ni_TypeId type_id, CastFunc castFunc)
+{
+	if (castFuncMap.contains(type_id))
+	{
+		ni_clientLogger(LogLevel_Error, "registerType: typeid [%s] already exists in map!", type_id);
+		throw std::exception("ni_registerType error");
+	}
+	castFuncMap[type_id] = castFunc;
+}
+
+void* ni_applyCastFunc(ni_ObjectPtr obj, ni_TypeId target_type)
+{
+	if (!castFuncMap.contains(obj.type_id))
+	{
+		// problemo
+		ni_clientLogger(LogLevel_Critical, "ni_applyCastFunc: cast func map did not contain cast func for type_id: [%s]", obj.type_id);
+		throw std::exception("ni_applyCastFunc error");
+	}
+	// else OK
+	return castFuncMap[obj.type_id](obj.ptr, target_type);
+}
+
 // client methods (some used by server as well) ===============================
 
 int ni_nativeImplInit(
@@ -729,6 +785,32 @@ ni_ExceptionRef ni_invokeModuleMethodWithExceptions(ni_ModuleMethodRef method) {
 	return ret;
 }
 
+// OBJECT ====================================
+
+void ni_pushObject(ni_ObjectPtr value)
+{
+	thlocal.push(new ObjectItem(value));
+}
+
+ni_ObjectPtr ni_popObject()
+{
+	return thlocal.pop()->objectValue();
+}
+
+void ni_pushObjectArray(ni_ObjectPtr *values, size_t count)
+{
+	thlocal.push(new ObjectArray(values, count));
+}
+
+void ni_popObjectArray(ni_ObjectPtr **values, size_t *count)
+{
+	thlocal.lastObjectArray = thlocal.pop()->objectArray();
+	*values = thlocal.lastObjectArray.data();
+	*count = thlocal.lastObjectArray.size();
+}
+
+// PTR ======================================
+
 void ni_pushPtr(void* value)
 {
 	thlocal.push(new PtrItem(value));
@@ -751,6 +833,8 @@ void ni_popPtrArray(void*** values, size_t* count)
 	*count = thlocal.lastPtrArray.size();
 }
 
+// SIZE_T ====================================
+
 void ni_pushSizeT(size_t value) {
 	thlocal.push(new SizeTItem(value));
 }
@@ -768,6 +852,8 @@ void ni_popSizeTArray(size_t** values, size_t* count) {
 	*values = thlocal.lastSizeTArray.data();
 	*count = thlocal.lastSizeTArray.size();
 }
+
+// BOOL ======================================
 
 void ni_pushBool(bool value) {
 	thlocal.push(new BoolItem(value));

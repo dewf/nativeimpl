@@ -842,13 +842,13 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             write 1 "alias %s = %s.%s;" overloadSet.MethodName (typeToDlangString context overloadSet.Source) overloadSet.MethodName
         write 0 "package:"
         if isRoot then
-            write 1 "void *thisPtr;"
+            write 1 "ni.ObjectPtr thisPtr;"
         if firstDisposable then
             write 1 "bool disposed;"
         if isRoot then
             // normal ctor
-            write 1 "this(void *ptr) {"
-            write 2 "this.thisPtr = ptr;"
+            write 1 "this(ni.ObjectPtr obj) {"
+            write 2 "this.thisPtr = obj;"
             write 1 "}"
             // public switch
             blank()
@@ -865,8 +865,8 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             write 1 "}"
         else
             // inherited
-            write 1 "this(void *ptr) {"
-            write 2 "super(ptr);"
+            write 1 "this(ni.ObjectPtr obj) {"
+            write 2 "super(obj);"
             write 1 "}"
             // public switch
             blank()
@@ -940,15 +940,23 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         blank()
         write 0 "pragma(inline)"
         write 0 "package %svoid __%s__push(%s thing) {" staticPrefix (upperFirst name) (upperFirst name)
-        write 1 "ni.pushPtr(thing !is null ? thing.thisPtr : null);"
+        write 1 "if (thing !is null) {"
+        write 2 "ni.pushObject(thing.thisPtr);"
+        write 1 "} else {"
+        write 2 "ni.pushNull();"
+        write 1 "}"
         write 0 "}"
 
         // pop ==============
         blank()
         write 0 "pragma(inline)"
         write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
-        write 1 "auto ptr = ni.popPtr();"
-        write 1 "return ptr !is null ? new %s(ptr) : null;" (upperFirst name)
+        write 1 "auto obj = ni.popObject();"
+        write 1 "if (obj.ptr !is null) {"
+        write 2 "return new %s(obj);" (upperFirst name)
+        write 1 "} else {"
+        write 2 "return null;"
+        write 1 "}"
         write 0 "}"
 
     | StructDef info ->

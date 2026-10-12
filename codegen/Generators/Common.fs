@@ -1156,3 +1156,36 @@ let userTypeToNIType (context: RenderContext) (name: string) (userType: UserType
         | SumTypeDef _ -> SumType
         | OptionsDef _ -> OptionsType
     Resolved (ThisModule symbolName, resolvedType)
+
+let opaqueAncestorNames (context: ModuleContext) (startFrom: NIType) =
+    let rec recInner (thing: NIType) (thisFixup: ModuleName option) =
+        match thing with
+        | Resolved (name, _) ->
+            // traversing the inheritance chain is tricky, because we have to fixup
+            //   resolved names if they are 'ThisModule' after we've already traversed out
+            // ie, 'ThisModule' needs to always be made relative to wherever we originated from
+            let name', nextFixup =
+                match name with
+                | ThisModule symbolName ->
+                    match thisFixup with
+                    | Some moduleName ->
+                        Imported (moduleName, symbolName), thisFixup
+                    | None ->
+                        ThisModule symbolName, None
+                | Imported (moduleName, symbolName) ->
+                    Imported (moduleName, symbolName), Some moduleName
+            match requiredSymbolLookup context name' with
+            | OpaqueDef info ->
+                let etc =
+                    match info.MaybeParent with
+                    | Some parent ->
+                        recInner parent nextFixup
+                    | None ->
+                        []
+                name' :: etc
+            | _ ->
+                failwith "opaqueAncestorNames: uhhh 2"
+        | _ ->
+            failwith "opaqueAncestorNames: uhhh 1"
+    recInner startFrom None
+    |> List.rev

@@ -36,6 +36,7 @@ extern "C" {
 	};
 	void ni_clientLogger(ni_ClientLogLevel level, const char* fmt, ...);
 
+
 	typedef void (*ModuleFunc)();
 	typedef void (*ConstantsFunc)();
 	typedef void (*ExceptionBuilder)(); // more of a 'pop and throw' than building, per se
@@ -46,6 +47,22 @@ extern "C" {
 	extern ni_InterfaceRef ni_registerInterface(ni_ModuleRef m, const char* name);
 	extern ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const char* name);
 	extern ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char* name, ExceptionBuilder builder);
+
+	// type casting stuff
+	typedef const char *ni_TypeId;
+	typedef struct
+	{
+		void *ptr;
+		ni_TypeId type_id;
+	} ni_ObjectPtr;
+	typedef void* (*CastFunc)(void *thing, ni_TypeId targetTypeId);
+	extern void ni_registerType(ni_TypeId type_id, CastFunc castFunc);
+	extern void* ni_applyCastFunc(ni_ObjectPtr obj, ni_TypeId target_type);
+
+	extern void ni_pushObject(ni_ObjectPtr value);
+	extern ni_ObjectPtr ni_popObject();
+	extern void ni_pushObjectArray(ni_ObjectPtr *values, size_t count);
+	extern void ni_popObjectArray(ni_ObjectPtr **values, size_t *count);
 
 	extern void ni_pushPtr(void* value);
 	extern void* ni_popPtr();

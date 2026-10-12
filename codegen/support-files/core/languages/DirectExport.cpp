@@ -62,6 +62,26 @@ ni_ExceptionRef %%DLL_EXPORT_PREFIX%%invokeModuleMethodWithExceptions(ni_ModuleM
     return ni_invokeModuleMethodWithExceptions(method);
 }
 
+void %%DLL_EXPORT_PREFIX%%pushObject(ni_ObjectPtr value)
+{
+    ni_pushObject(value);
+}
+
+ni_ObjectPtr %%DLL_EXPORT_PREFIX%%popObject()
+{
+    return ni_popObject();
+}
+
+void %%DLL_EXPORT_PREFIX%%pushObjectArray(ni_ObjectPtr *values, size_t count)
+{
+    ni_pushObjectArray(values, count);
+}
+
+void %%DLL_EXPORT_PREFIX%%popObjectArray(ni_ObjectPtr **values, size_t *count)
+{
+    ni_popObjectArray(values, count);
+}
+
 void %%DLL_EXPORT_PREFIX%%pushPtr(void* value)
 {
     ni_pushPtr(value);

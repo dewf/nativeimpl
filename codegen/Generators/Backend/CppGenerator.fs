@@ -1222,26 +1222,26 @@ let synthesizeExtensionMethods (context: CppRenderContext) (info: ExtMethodsInfo
             firstArg :: nf.Args
         { nf with Name = nextName; Args = nextArgs })
 
+let nsPrefix (context: CppRenderContext) =
+    // clampedNsPrefix context
+    //
+    // quick hack to get fully-qualified method invocations, to solve a problem:
+    // if this fails to work, or we keep having problems, perhaps a better long-term solution is
+    // to remove all the "using namespace" directives, and fully qualify all imports in generated files, and even in the initial uendited .cpp file
+    // (the developer can optionally write their own "using" in the .cpp file alone to reduce visual noise)
+    let moduleParts =
+        match context.ModuleContext.Module.Name with
+        | ModuleName parts -> parts
+    let otherParts =
+        context.GroupContext.Path
+    let joined =
+        (moduleParts @ otherParts)
+        |> String.concat "::"
+    "::" + joined + "::"
+
 let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) (writerCpp: IFormatWriter) (namedFunction: NamedFunction) =
     let writeCpp, blankCpp = writerCpp.Write, writerCpp.Blank
     let writeH, blankH = writerH.Write, writerH.Blank
-
-    let nsPrefix =
-        // clampedNsPrefix context
-        //
-        // quick hack to get fully-qualified method invocations, to solve a problem:
-        // if this fails to work, or we keep having problems, perhaps a better long-term solution is
-        // to remove all the "using namespace" directives, and fully qualify all imports in generated files, and even in the initial uendited .cpp file
-        // (the developer can optionally write their own "using" in the .cpp file alone to reduce visual noise)
-        let moduleParts =
-            match context.ModuleContext.Module.Name with
-            | ModuleName parts -> parts
-        let otherParts =
-            context.GroupContext.Path
-        let joined =
-            (moduleParts @ otherParts)
-            |> String.concat "::"
-        "::" + joined + "::"
 
     blankH()
     writeH 0 "void %s__wrapper();" namedFunction.WrapperName
@@ -1250,7 +1250,7 @@ let renderWrapperNamedFunc (context: CppRenderContext) (writerH: IFormatWriter) 
     for arg in namedFunction.Args do
         popValue context writerCpp 1 arg.Type (Variable arg.Name)
     let invocation =
-        sprintf "%s%s(%s)" nsPrefix namedFunction.Name (joinedNamedFuncArgNames namedFunction.Args)
+        sprintf "%s%s(%s)" (nsPrefix context) namedFunction.Name (joinedNamedFuncArgNames namedFunction.Args)
     if namedFunction.Throws.IsEmpty then
         pushValue context writerCpp 1 namedFunction.Returns invocation (Direct true)
     else
@@ -1445,14 +1445,21 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
     match userType with
     | OpaqueDef info ->
         blankH()
+        blankCpp()
         writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
         writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
-        writeCpp 1 "ni_pushPtr(value);"
+        writeCpp 1 "ni_pushObject({ .ptr = value, .type_id = %s_TYPEID });" name
         writeCpp 0 "}"
         blankCpp()
         writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
         writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
-        writeCpp 1 "return static_cast<%s>(ni_popPtr());" (typeToCppString context Default niType)
+        writeCpp 1 "auto thing = ni_popObject();"
+        writeCpp 1 "if (thing.type_id != %s_TYPEID)" name
+        writeCpp 1 "{"
+        writeCpp 2 "auto better = ni_applyCastFunc(thing, %s_TYPEID);" name
+        writeCpp 2 "return static_cast<%s>(better);" (typeToCppString context Default niType)
+        writeCpp 1 "} // else:"
+        writeCpp 1 "return static_cast<%s>(thing.ptr);" (typeToCppString context Default niType)
         writeCpp 0 "}"
         // nested static block
         match info.MaybeStaticDefs with
@@ -1472,6 +1479,33 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             writeCpp 0 "}"
         | None ->
             ()
+
+        // static cast wrapper stuff, if it inherits/implements
+        match info.MaybeParent with
+        | Some parent ->
+            blankCpp()
+            writeCpp 0 "static void* %s_staticCast_wrapper(void *thing, ni_TypeId target_type_id) {" name
+            writeCpp 1 "static std::map<ni_TypeId, %s_CastTarget> castMap = {" name
+            let parentNames =
+                opaqueAncestorNames context.ModuleContext parent
+            for parentName in parentNames do
+                let parentTypeIdPrefix =
+                    resolvedNameToString context parentName ResolvedNameStringMode.TypeMode
+                let targetEnumName =
+                    resolvedNameToString context parentName ResolvedNameStringMode.IdentifierMode
+                writeCpp 2 "{ %s_TYPEID, %s_CastTarget::%s }," parentTypeIdPrefix name targetEnumName
+            writeCpp 1 "};"
+            writeCpp 1 "if (castMap.contains(target_type_id)) {"
+            writeCpp 2 "auto obj = static_cast<%s>(thing);" (typeToCppString context TypeParams niType)
+            writeCpp 2 "auto target = castMap[target_type_id];"
+            writeCpp 2 "return %s_staticCast(obj, target);" name
+            writeCpp 1 "} // else:"
+            writeCpp 1 "// uh-oh, not good!"
+            writeCpp 1 "std::unreachable();"
+            writeCpp 0 "}"
+        | None ->
+            ()
+
         // methods
         for nf in synthesizeOpaqueMethods context name info do
             renderWrapperNamedFunc context writerH writerCpp nf
@@ -1645,6 +1679,10 @@ and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (wr
 
     for name, _ in group.Exceptions do
         writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
+
+    for name, _ in group.Opaques do
+        writeH 0 "extern ni_TypeId %s_TYPEID;" name
+        writeCpp 0 "ni_TypeId %s_TYPEID = \"%s%s\";" name (nsPrefix context) name
 
     // go!
     for def in group.Defs do
@@ -1831,6 +1869,15 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
             let renamedParts =
                 groupPathRenamed @ [ namedFunction.WrapperName ]
             writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" renamedParts)
+
+        // register opaque type cast wrappers, IF they inherit/implement something
+        for name, info in group.Opaques do
+            match info.MaybeParent with
+            | Some _ ->
+                writeCpp 2 "ni_registerType(%s_TYPEID, &%s_staticCast_wrapper);" name name
+            | None ->
+                ()
+
         // interfaces + methods
         for name, info in group.Interfaces do
             let lowerIfaceName =
@@ -2007,6 +2054,23 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                 context.NavigateToSub(name)
             renderImplementationHeaderGroup nextContext (writer.WithExtraIndent 1)
             write 0 "}" // end namespace
+        | None ->
+            ()
+        // casting-related stuff, if it inherits from anything
+        match info.MaybeParent with
+        | Some parent ->
+            write 0 "enum class %s_CastTarget {" name
+            write 1 "// inheritance chain:"
+            let parentNames =
+                opaqueAncestorNames context.ModuleContext parent
+            for name in parentNames do
+                write 1 "%s," (resolvedNameToString context name ResolvedNameStringMode.IdentifierMode)
+            write 1 "// interfaces: (TODO)"
+            write 0 "};"
+            let thisType =
+                userTypeToNIType context.RenderContext name userType
+            write 0 "void* %s_staticCast(%s obj, %s_CastTarget target);" name (typeToCppString context FunctionArguments thisType) name
+            blank()
         | None ->
             ()
         // methods
@@ -2391,7 +2455,7 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
             for method in synthesizeExtensionMethods context info do
                 renderFunc method
             write 0 "// =============================="
-        | UserType(name, userType) ->
+        | UserType (name, userType) ->
             match userType with
             | OpaqueDef info ->
                 write 0 "struct %s__%s {" nsPrefix (upperFirst name)
@@ -2413,6 +2477,25 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
                 for namedFunc in synthesizeOpaqueMethods context name info do
                     renderFunc namedFunc
                     blank()
+                // cast method, if required
+                match info.MaybeParent with
+                | Some parent ->
+                    let thisType =
+                        userTypeToNIType context.RenderContext name userType
+                    let parentNames =
+                        opaqueAncestorNames context.ModuleContext parent
+                    write 0 "void* %s_staticCast(%s obj, %s_CastTarget target) {" name (typeToCppString context FunctionArguments thisType) name
+                    write 1 "// TODO: implement casts to all targets!"
+                    // write 1 "switch (target) {"
+                    // for parentName in parentNames do
+                    //     write 1 "case %s_CastTarget::%s:" name (resolvedNameToString context parentName ResolvedNameStringMode.IdentifierMode)
+                    //     write 2 "// TODO: implement the proper cast"
+                    //     write 2 "return nullptr;"
+                    // write 1 "}" // end switch
+                    write 1 "std::unreachable();"
+                    write 0 "}" // end cast method
+                | None ->
+                    ()
                 blank()
             | InterfaceDef info ->
                 match info.MaybeStaticDefs with

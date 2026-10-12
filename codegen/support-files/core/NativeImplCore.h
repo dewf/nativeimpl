@@ -40,6 +40,18 @@ extern "C" {
 	ni_InterfaceRef ni_registerInterface(ni_ModuleRef m, const char *name);
 	ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const char *name);
 	ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char *name, ExceptionBuilder builder);
+
+	// type casting stuff
+	// (opaque casting to/from base/interfaces)
+	typedef const char *ni_TypeId;
+	typedef struct
+	{
+		void *ptr;
+		ni_TypeId type_id;
+	} ni_ObjectPtr;
+	typedef void* (*CastFunc)(void *thing, ni_TypeId targetTypeId);
+	void ni_registerType(ni_TypeId type_id, CastFunc castFunc);
+	void* ni_applyCastFunc(ni_ObjectPtr obj, ni_TypeId target_type);
 }
 
 // imported back from server (during linking process, against static server library)
@@ -85,6 +97,11 @@ extern "C" {
 
 	void ni_invokeModuleMethod(ni_ModuleMethodRef method);
 	ni_ExceptionRef ni_invokeModuleMethodWithExceptions(ni_ModuleMethodRef method);
+
+	void ni_pushObject(ni_ObjectPtr value);
+	ni_ObjectPtr ni_popObject();
+	void ni_pushObjectArray(ni_ObjectPtr *values, size_t count);
+	void ni_popObjectArray(ni_ObjectPtr **values, size_t *count);
 
 	void ni_pushPtr(void* value);
 	void* ni_popPtr();

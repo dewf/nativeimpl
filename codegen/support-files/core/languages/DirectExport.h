@@ -34,6 +34,11 @@ extern "C" {
 	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%invokeModuleMethod(ni_ModuleMethodRef method);
 	DLLPROJECT_API ni_ExceptionRef %%DLL_EXPORT_PREFIX%%invokeModuleMethodWithExceptions(ni_ModuleMethodRef method);
 
+	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%pushObject(ni_ObjectPtr value);
+	DLLPROJECT_API ni_ObjectPtr %%DLL_EXPORT_PREFIX%%popObject();
+	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%pushObjectArray(ni_ObjectPtr *values, size_t count);
+	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%popObjectArray(ni_ObjectPtr **values, size_t *count);
+
 	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%pushPtr(void* value);
 	DLLPROJECT_API void* %%DLL_EXPORT_PREFIX%%popPtr();
 	DLLPROJECT_API void %%DLL_EXPORT_PREFIX%%pushPtrArray(void** values, size_t count);

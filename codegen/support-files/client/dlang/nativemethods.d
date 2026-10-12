@@ -24,6 +24,13 @@ enum ni_ClientLogLevel {
 	None
 }
 
+alias ni_TypeId = const(char)*;
+
+struct ni_ObjectPtr {
+    void *ptr;
+    ni_TypeId type_id;
+}
+
 alias niClientLogFunc = extern (C) void function(ni_ClientLogLevel level, const (char)* message, int length);
 alias niClientFuncExec = extern (C) void function(int id);
 alias niClientMethodExec = extern (C) void function(ni_InterfaceMethodRef method, int objID);
@@ -65,6 +72,15 @@ extern(C)
 
     pragma(mangle, "%%DLL_IMPORT_PREFIX%%invokeModuleMethodWithExceptions")
     ni_ExceptionRef invokeModuleMethodWithExceptions(ni_ModuleMethodRef method);
+
+    pragma(mangle, "%%DLL_IMPORT_PREFIX%%pushObject")
+    void pushObject(ni_ObjectPtr value);
+    pragma(mangle, "%%DLL_IMPORT_PREFIX%%popObject")
+    ni_ObjectPtr popObject();
+    pragma(mangle, "%%DLL_IMPORT_PREFIX%%pushObjectArray")
+    void pushObjectArray(ni_ObjectPtr *values, size_t count);
+    pragma(mangle, "%%DLL_IMPORT_PREFIX%%popObjectArray")
+    void popObjectArray(ni_ObjectPtr **values, size_t *count);
 
     pragma(mangle, "%%DLL_IMPORT_PREFIX%%pushPtr")
     void pushPtr(void* value);

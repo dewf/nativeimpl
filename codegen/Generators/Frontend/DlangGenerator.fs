@@ -733,24 +733,24 @@ let renderGeneric (context: DlangRenderContext) (writer: IFormatWriter) (gType: 
     | ResultType (successType, errorType) ->
         // push
         write 0 "private void __%s__push(%s result%s) {" (typeToName context gType) (typeToDlangString context gType) pushSuffix
-        write 1 "if (result.isSuccess) {"
-        pushValue context writer 2 successType "result.value" (Indirect "isReturn")
+        write 1 "if (auto value = result.isSuccess()) {"
+        pushValue context writer 2 successType "*value" (Indirect "isReturn")
         pushValue context writer 2 (Primitive Bool) "true" NotApplicable
         write 1 "} else {"
-        pushValue context writer 2 errorType "result.error" (Indirect "isReturn")
+        pushValue context writer 2 errorType "result.getError()" (Indirect "isReturn")
         pushValue context writer 2 (Primitive Bool) "false" NotApplicable
         write 1 "}"
         write 0 "}"
         // pop
         blank()
-        let wrapFunc okErr raw =
-            sprintf "%s.%s(%s)" (typeToDlangString context gType) okErr raw
+        let wrapFunc ctor raw =
+            sprintf "%s.%s(%s)" (typeToDlangString context gType) ctor raw
         write 0 "private %s __%s__pop() {" (typeToDlangString context gType) (typeToName context gType)
         popValue context writer 1 (Primitive Bool) (NewVariable "success")
         write 1 "if (success) {"
-        popValue context writer 2 successType (WrapAndReturn (wrapFunc "ok"))
+        popValue context writer 2 successType (WrapAndReturn (wrapFunc "Success"))
         write 1 "} // else:"
-        popValue context writer 1 errorType (WrapAndReturn (wrapFunc "err"))
+        popValue context writer 1 errorType (WrapAndReturn (wrapFunc "Error"))
         write 0 "}"
     | _ ->
         write 0 "// TODO: renderLibraryUserType: generic %s" (typeToDlangString context gType)
@@ -1765,6 +1765,7 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "license \"TODO\""
     blank()
     write 0 "targetType \"library\""
+    write 0 "targetPath \"./lib\""
     blank()
     // we're going to have to query the backend generator somehow to ask it where things are (the .DLL and .LIB specifically)
     // on that note, we also need to fold DynlibGenerator.fs into CppGenerator, since those are no longer separate things

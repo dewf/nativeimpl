@@ -2479,19 +2479,11 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
                     blank()
                 // cast method, if required
                 match info.MaybeParent with
-                | Some parent ->
+                | Some _ ->
                     let thisType =
                         userTypeToNIType context.RenderContext name userType
-                    let parentNames =
-                        opaqueAncestorNames context.ModuleContext parent
                     write 0 "void* %s_staticCast(%s obj, %s_CastTarget target) {" name (typeToCppString context FunctionArguments thisType) name
                     write 1 "// TODO: implement casts to all targets!"
-                    // write 1 "switch (target) {"
-                    // for parentName in parentNames do
-                    //     write 1 "case %s_CastTarget::%s:" name (resolvedNameToString context parentName ResolvedNameStringMode.IdentifierMode)
-                    //     write 2 "// TODO: implement the proper cast"
-                    //     write 2 "return nullptr;"
-                    // write 1 "}" // end switch
                     write 1 "std::unreachable();"
                     write 0 "}" // end cast method
                 | None ->

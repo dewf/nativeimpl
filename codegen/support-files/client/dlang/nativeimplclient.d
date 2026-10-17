@@ -528,6 +528,13 @@ void invokeModuleMethodWithExceptions(ModuleMethodHandle method) {
 
 alias ObjectPtr = ni_ObjectPtr;
 
+interface InterfaceImplementer {
+    // any client class wrapping an opaque implementing server interfaces,
+    //   needs to implement this interface
+    // otherwise they'd be unpushable!
+    ObjectPtr objectPtr();
+}
+
 void pushObject(ObjectPtr obj) {
     nativemethods.pushObject(obj);
 }

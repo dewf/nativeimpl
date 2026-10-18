@@ -22,7 +22,6 @@ let safeIdentifier (raw: string) =
 type DlangRenderContext = {
     LibraryName: string
     RenderContext: RenderContext
-    OpaqueMethodContext: OpaqueInfo option         // rendering an opaque method (pop/invocation/push) at the current group/path, prone to extra collisions on the push/pop statements
 } with
     member this.LibraryPrefix =
         [ this.LibraryName ]
@@ -86,7 +85,7 @@ let typeToDlangString (context: DlangRenderContext) (outerType: NIType) =
             | Float32 -> "float"
             | Float64 -> "double"
             | StringType -> "string"
-        | Resolved (resolvedName, resolvedType) ->
+        | Resolved (resolvedName, _) ->
             resolvedNameToString context resolvedName TypeMode
         | ArrayType elemType ->
             sprintf "%s[]" (recInner elemType)
@@ -131,7 +130,7 @@ let typeToName (context: DlangRenderContext) (outerType: NIType) =
             | Float32 -> "Float"
             | Float64 -> "Double"
             | StringType -> "String"
-        | Resolved (resolvedName, resolvedType) ->
+        | Resolved (resolvedName, _) ->
             resolvedNameToString context resolvedName (if inGeneric then GenericIdentifierMode else IdentifierMode)
         | TupleType tupleTypes ->
             let joined =
@@ -243,7 +242,7 @@ let popValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int) 
             | Float32 -> "ni.popFloat()"
             | Float64 -> "ni.popDouble()"
             | StringType -> "ni.popString()"
-        | Resolved (resolvedName, resolvedType) ->
+        | Resolved (resolvedName, _) ->
             let name =
                 // all other types:
                 resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // annoying way of preserving the necessary prefix to the type, while injecting a `__` just before the name (eg. module.prefix.NamedGroup.__Type)
@@ -328,7 +327,7 @@ let pushValue (context: DlangRenderContext) (writer: IFormatWriter) (level: int)
         | Float32 -> write level "ni.pushFloat(%s);" content
         | Float64 -> write level "ni.pushDouble(%s);" content
         | StringType -> write level "ni.pushString(%s);" content
-    | Resolved (resolvedName, resolvedType) ->
+    | Resolved (resolvedName, _) ->
         let name =
             // all other types:
             resolvedNameToString context resolvedName (WrapperMethodMode "__%s") // see note above in this same branch of popValue
@@ -456,7 +455,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 1 "auto enumRange = intValues.map!(i => cast(%s) i);" (typeToDlangString context elemType)
                 write 1 "return %s(enumRange);" (typeToDlangString context outerType)
                 write 0 "}"
-        member this.StructType (structName: ResolvedName) (namedFields: NamedField list) =
+        member this.StructType (_: ResolvedName) (namedFields: NamedField list) =
             let fieldValuesJoined =
                 namedFields
                 |> List.indexed
@@ -582,9 +581,9 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
             renderDefault()
         member this.SetType () =
             renderDefault()
-        member this.OptionType elemType =
+        member this.OptionType _elemType =
             failwith "ArrayOrSetRenderer: OptionType not yet implemented"
-        member this.ResultType succType errType =
+        member this.ResultType _succType _errType =
             failwith "ArrayOrSetRenderer: ResultType not yet implemented"
         member this.SumType () =
             renderDefault()
@@ -644,7 +643,7 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 1 "auto r = ptrs.map!(p => new %s(p));" (typeToDlangString context elemType)
                 write 1 "return %s(r);" (typeToDlangString context outerType)
                 write 0 "}"
-        member this.Other (t: NIType) =
+        member this.Other (_: NIType) =
             let modeStr =
                 if mode = ArrayMode then "array" else "set"
             write 2 "// TODO: ArrayOrSetRenderer .Other for %s of %s" modeStr (typeToDlangString context outerType)
@@ -776,7 +775,7 @@ let extMethodToString (context: DlangRenderContext) (target: NIType) (method: Na
     | ActualMethod ->
         method.Name
 
-let synthesizeExtensionMethods (context: DlangRenderContext) (info: ExtMethodsInfo) =
+let synthesizeExtensionMethods (_: DlangRenderContext) (info: ExtMethodsInfo) =
     info.Methods
     |> List.map (fun nf ->
         // inject 'this' arg
@@ -808,29 +807,26 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             let namePath =
                 context.GroupContext.Path @ [ name ]
             Resolved (ThisModule (SymbolName namePath), OpaqueType)
-        let maybeInheritsFrom =
-            match info.MaybeParent with
-            | Some (Resolved(resolvedName, OpaqueType)) ->
-                Some resolvedName
-            | _ ->
-                None
 
         // class setup is a bear with all this dispose/nodispose stuff :(
         let firstDisposable = isFirstDisposableOpaque context.ModuleContext info
-        let isRoot = maybeInheritsFrom.IsNone
+        let isRoot = info.Parentage.Forced.MaybeParent.IsNone
         let inheritsOrImplementsSuffix =
             let finalList =
-                let maybeParentOpaque =
-                    maybeInheritsFrom
-                    |> Option.map (fun parentName ->
-                        resolvedNameToString context parentName TypeMode)
-                let maybeDisposableString =
+                let inheritsOrImplementsList =
+                    info.Parentage.ResolvedNameList
+                    |> List.map (fun name -> resolvedNameToString context name TypeMode)
+                let disposableSuffix =
                     if firstDisposable then
-                        Some "IDisposable"
+                        [ "IDisposable" ]
                     else
-                        None
-                [ maybeParentOpaque; maybeDisposableString ]
-                |> List.choose id
+                        []
+                let interfaceSuffix =
+                    if info.Parentage.ImplementsInterfaces then
+                        [ "ni.InterfaceImplementer" ]
+                    else
+                        []
+                inheritsOrImplementsList @ disposableSuffix @ interfaceSuffix
             if finalList.IsEmpty then
                 ""
             else
@@ -903,24 +899,19 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                         "/* shadows */ override "
                     else
                         ""
-                write 1 "%s%s %s(%s)%s" shadowsOverrideStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
-                write 1 "{"
-                // another nested function here, because we're modifying the render context a bit
-                let renderMethodInvocation (context: DlangRenderContext) =
-                    // push args in reverse
-                    for arg in namedFunc.Args |> List.rev do
-                        pushValue context writer 2 arg.Type (safeIdentifier arg.Name) (Direct false)
-                    // push self argument
-                    pushValue context writer 2 fakeThis "this" (Direct false)
-                    // invoke remote
-                    if namedFunc.Throws.IsEmpty then
-                        write 2 "ni.invokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
-                    else
-                        write 2 "ni.invokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
-                    // return pop
-                    popValue context writer 2 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
-                // go
-                renderMethodInvocation {context with OpaqueMethodContext = Some info }
+                write 1 "%s%s %s(%s)%s {" shadowsOverrideStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
+                // push args in reverse
+                for arg in namedFunc.Args |> List.rev do
+                    pushValue context writer 2 arg.Type (safeIdentifier arg.Name) (Direct false)
+                // push self argument
+                pushValue context writer 2 fakeThis "this" (Direct false)
+                // invoke remote
+                if namedFunc.Throws.IsEmpty then
+                    write 2 "ni.invokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+                else
+                    write 2 "ni.invokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+                // return pop
+                popValue context writer 2 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
                 write 1 "}"
 
         // static content
@@ -933,6 +924,18 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
             renderInstanceMethods nextContext
         | None ->
             renderInstanceMethods context
+
+        // interface implementations
+        if info.Parentage.ImplementsInterfaces then
+            write 1 "// === interface implementations ==="
+            write 1 "ni.ObjectPtr objectPtr() => thisPtr;"
+            for iimpl in info.Parentage.Forced.Implements do
+                match iimpl with
+                | Resolved (name, _) ->
+                    write 1 "mixin %sMethods;" (resolvedNameToString context name ResolvedNameStringMode.TypeMode)
+                | _ ->
+                    failwith "renderUserType: unreachable rendering opaque interface implementations block"
+
         // end class definition
         write 0 "}"
 
@@ -954,6 +957,132 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 1 "auto obj = ni.popObject();"
         write 1 "if (obj.ptr !is null) {"
         write 2 "return new %s(obj);" (upperFirst name)
+        write 1 "} else {"
+        write 2 "return null;"
+        write 1 "}"
+        write 0 "}"
+
+    | OpaqueInterfaceDef info ->
+        let fakeThis =
+            let namePath =
+                context.GroupContext.Path @ [ name ]
+            Resolved (ThisModule (SymbolName namePath), OpaqueInterfaceType)
+
+        // actual interface definition
+        write 0 "interface %s {" (upperFirst name)
+        for method in info.Methods do
+            let throwsComment =
+                if method.Throws.IsEmpty then
+                    ""
+                else
+                    let joined =
+                        method.Throws
+                        |> List.map (typeToDlangString context)
+                        |> String.concat ", "
+                    sprintf " // throws %s" joined
+            write 1 "%s %s(%s);%s" (typeToDlangString context method.Returns) (lowerFirst method.Name) (joinedNameFuncArgs context method.Args) throwsComment
+        write 0 "}" // end interface
+        blank()
+
+        // mixin template (method bodies - the same no matter what implements them!)
+        write 0 "mixin template %sMethods() {" (upperFirst name)
+        writer.EatBlank()
+        // would we recursively render any parent interface methods here?
+        for namedFunc in info.Methods do
+            blank()
+            let throwsComment =
+                if namedFunc.Throws.IsEmpty then
+                    ""
+                else
+                    let joined =
+                        namedFunc.Throws
+                        |> List.map (typeToDlangString context)
+                        |> String.concat ", "
+                    sprintf " // throws %s" joined
+            let shadowsOverrideStr =
+                // hmmm
+                if namedFunc.ShadowsExisting then
+                    "/* shadows */ override "
+                else
+                    // always override since these are interface method implementations
+                    // 'shadows' stuff is more complicated for the moment ...
+                    "override "
+            write 1 "%s%s %s(%s)%s {" shadowsOverrideStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
+            // push args in reverse
+            for arg in namedFunc.Args |> List.rev do
+                pushValue context writer 2 arg.Type (safeIdentifier arg.Name) (Direct false)
+            // push self argument
+            pushValue context writer 2 fakeThis "this" (Direct false)
+            // invoke remote
+            if namedFunc.Throws.IsEmpty then
+                write 2 "ni.invokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+            else
+                write 2 "ni.invokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+            // return pop
+            popValue context writer 2 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
+            write 1 "}"
+        write 0 "}" // end mixin template
+        blank()
+
+        // default implementation (for popping raw interfaces)
+        let firstDisposable = true // guaranteed for the moment (no inheritance, no @nodispose)
+        let isRoot = true          // no inheritance yet
+        write 0 "class %sImpl : %s, IDisposable, ni.InterfaceImplementer {" (upperFirst name) (upperFirst name)
+        write 0 "package:"
+        if isRoot then
+            write 1 "ni.ObjectPtr thisPtr;"
+        if firstDisposable then
+            write 1 "bool disposed;"
+        if isRoot then
+            // normal ctor
+            write 1 "this(ni.ObjectPtr obj) {"
+            write 2 "this.thisPtr = obj;"
+            write 1 "}"
+            // public switch
+            blank()
+            write 0 "public:"
+            // equals and hash
+            write 1 "override bool opEquals(Object o) const {"
+            write 2 "if (auto other = cast(ni.InterfaceImplementer)o) {"
+            write 3 "return thisPtr == other.objectPtr();"
+            write 2 "}"
+            write 2 "return false;"
+            write 1 "}"
+            write 1 "override hash_t toHash() const {"
+            write 2 "return typeid(thisPtr).getHash(&thisPtr);"
+            write 1 "}"
+        // dispose method
+        write 1 "override void dispose() {"
+        write 2 "if (!disposed) {"
+        pushValue context writer 3 fakeThis "this" (Direct false)
+        write 3 "ni.invokeModuleMethod(_%s_dispose);" (lowerFirst name)
+        write 3 "disposed = true;"
+        write 2 "}"
+        write 1 "}" // end dispose()
+        // interface implementation(s)
+        write 1 "// === interface implementations ==="
+        write 1 "ni.ObjectPtr objectPtr() => thisPtr;"
+        write 1 "mixin %sMethods;" (upperFirst name)
+        write 0 "}" // end default implementation
+
+        // push =============
+        blank()
+        write 0 "pragma(inline)"
+        write 0 "package %svoid __%s__push(%s thing) {" staticPrefix (upperFirst name) (upperFirst name)
+        write 1 "if (auto iimpl = cast(ni.InterfaceImplementer)thing) {"
+        write 2 "ni.pushObject(iimpl.objectPtr());"
+        write 1 "} else {"
+        write 2 "ni.pushNull();"
+        write 1 "}"
+        write 0 "}"
+
+        // pop ==============
+        blank()
+        write 0 "pragma(inline)"
+        write 0 "package %s%s __%s__pop() {" staticPrefix (upperFirst name) (upperFirst name)
+        write 1 "auto obj = ni.popObject();"
+        write 1 "if (obj.ptr !is null) {"
+        write 2 "return new %sImpl(obj);" (upperFirst name)
         write 1 "} else {"
         write 2 "return null;"
         write 1 "}"
@@ -1400,6 +1529,17 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         else
             write 0 "%s__gshared ni.ModuleMethodHandle _%s_dispose;" contentPrefix (lowerFirst name)
 
+    // opaque interfaces
+    for name, info in groupContext.OpaqueInterfaces do
+        // instance methods
+        for method in info.Methods do
+            write 0 "%s__gshared ni.ModuleMethodHandle _%s_%s;" contentPrefix (lowerFirst name) method.WrapperName
+        // synthesized dispose method
+        // if info.NoDispose then
+        //     ()
+        // else
+            write 0 "%s__gshared ni.ModuleMethodHandle _%s_dispose;" contentPrefix (lowerFirst name)
+
     // opaque extension methods
     for info in groupContext.ExtMethodBlocks do
         for method in info.Methods do
@@ -1523,6 +1663,22 @@ let assignModuleHandles (context: DlangRenderContext) (writer: IFormatWriter) =
                 else
                     write 1 "%s_dispose = ni.getModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
 
+        // opaqueinterface method handles
+        if not group.OpaqueInterfaces.IsEmpty then
+            for name, info in group.OpaqueInterfaces do
+                let sourceBase =
+                    mkSourceHandle name
+                let targetBase =
+                    mkTargetHandle name
+                // instance methods
+                for method in info.Methods do
+                    write 1 "%s_%s = ni.getModuleMethod(_module, \"%s_%s\");" targetBase method.WrapperName sourceBase method.WrapperName
+                // // synthesized dispose method handle
+                // if info.NoDispose then
+                //     ()
+                // else
+                    write 1 "%s_dispose = ni.getModuleMethod(_module, \"%s_dispose\");" targetBase sourceBase
+
         // extension method handles
         if not group.ExtMethodBlocks.IsEmpty then
             for info in group.ExtMethodBlocks do
@@ -1599,8 +1755,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (libraryN
     let renderContext =
         { LibraryName = libraryName
           // BaseNamespace = (baseNamespace.Split "." |> Array.toList)
-          RenderContext = createRenderContext moduleContext
-          OpaqueMethodContext = None }
+          RenderContext = createRenderContext moduleContext }
     let root =
         renderContext.GroupContext
 

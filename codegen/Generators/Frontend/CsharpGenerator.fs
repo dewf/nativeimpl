@@ -261,7 +261,7 @@ let popValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (ty
         | Float32 -> write level "%s NativeImplClient.PopFloat();" contextPrefix
         | Float64 -> write level "%s NativeImplClient.PopDouble();" contextPrefix
         | StringType -> write level "%s NativeImplClient.PopString();" contextPrefix
-    | Resolved (resolvedName, resolvedType) ->
+    | Resolved (resolvedName, _) ->
         let name =
             // all other types:
             resolvedNameToString context resolvedName (WrapperMethodMode "__%s")
@@ -338,7 +338,7 @@ let pushValue (context: CsRenderContext) (writer: IFormatWriter) (level: int) (t
         | Float32 -> write level "NativeImplClient.PushFloat(%s);" content
         | Float64 -> write level "NativeImplClient.PushDouble(%s);" content
         | StringType -> write level "NativeImplClient.PushString(%s);" content
-    | Resolved (resolvedName, resolvedType) ->
+    | Resolved (resolvedName, _) ->
         let name =
             // all other types:
             resolvedNameToString context resolvedName (WrapperMethodMode "__%s")
@@ -477,7 +477,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             else
                 write 3 "return intValues.Select(i => (%s)i).ToHashSet();" (typeToCsString context elemType)
             write 2 "}"
-        member this.StructType (structName: ResolvedName) (namedFields: NamedField list) =
+        member this.StructType (_: ResolvedName) (namedFields: NamedField list) =
             let fieldValuesJoined =
                 namedFields
                 |> List.indexed
@@ -673,7 +673,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             write 2 "}"
         member this.SumType () =
             renderDefault()
-        member this.Primitive (prim: NIPrimitive) =
+        member this.Primitive (_: NIPrimitive) =
             if mode = ArrayMode then
                 write 2 "// built-in array type: %s" (typeToCsString context outerType)
             else
@@ -708,7 +708,7 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             else
                 write 4 ".ToHashSet();"
             write 2 "}"
-        member this.Other (t: NIType) =
+        member this.Other (_: NIType) =
             let str =
                 if mode = ArrayMode then "array" else "set"
             write 2 "// TODO: push/pop for %s of %s" str (typeToCsString context outerType)
@@ -879,7 +879,7 @@ let extMethodToString (context: CsRenderContext) (target: NIType) (method: Named
     | ActualMethod ->
         method.Name
 
-let synthesizeExtensionMethods (context: CsRenderContext) (info: ExtMethodsInfo) =
+let synthesizeExtensionMethods (_: CsRenderContext) (info: ExtMethodsInfo) =
     info.Methods
     |> List.map (fun nf ->
         // inject 'this' arg
@@ -907,7 +907,7 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
                 context.GroupContext.Path @ [ name ]
             Resolved (ThisModule (SymbolName namePath), OpaqueType)
         let maybeInheritsFrom =
-            match info.MaybeParent with
+            match info.Parentage.Forced.MaybeParent with
             | Some (Resolved(resolvedName, OpaqueType)) ->
                 Some resolvedName
             | _ ->
@@ -1057,6 +1057,8 @@ let rec renderUserType (context: CsRenderContext) (writer: IFormatWriter) (name:
         write 3 "var ptr = NativeImplClient.PopPtr();"
         write 3 "return ptr != IntPtr.Zero ? new %s(ptr) : null;" (upperFirst name)
         write 2 "}"
+    | OpaqueInterfaceDef info ->
+        failwith "C# renderUserType: OpaqueInterfaceDef not yet implemented"
     | StructDef info ->
         let renderContent (context: CsRenderContext) =
             for field in info.Fields do

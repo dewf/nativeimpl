@@ -257,6 +257,11 @@ let allGenericTypes (context: ModuleContext) =
                     let methodTypes =
                         namedFuncsHandler info.Methods
                     methodTypes @ nestedTypes
+                | OpaqueInterfaceDef info ->
+                    // very similar to opaque, but has no static defs
+                    let methodTypes =
+                        namedFuncsHandler info.Methods
+                    methodTypes
                 | StructDef info ->
                     let nestedTypes =
                         match info.MaybeStaticDefs with
@@ -391,6 +396,8 @@ let typeContainsRefs (context: ModuleContext) (root: ContainsRefsRoot) =
     and processUserType (userType: UserType) =
         match userType with
         | OpaqueDef _ ->
+            false
+        | OpaqueInterfaceDef _ ->
             false
         | StructDef info ->
             info.Fields
@@ -615,6 +622,7 @@ type GroupContext = {
     ModuleMethods: NamedFunction list
     ExtMethodBlocks: ExtMethodsInfo list
     Opaques: (string * OpaqueInfo) list
+    OpaqueInterfaces: (string * OpaqueInterfaceInfo) list
     SumTypes: (string * SumTypeValue list) list
     Interfaces: (string * InterfaceInfo) list
     Exceptions: (string * NamedField list) list
@@ -643,6 +651,13 @@ let createGroups (rootDefs: ModuleDefinition list) =
             groupDefs
             |> List.choose (function
                 | UserType (name, OpaqueDef info) ->
+                    Some (name, info)
+                | _ ->
+                    None)
+        let opaqueInterfaces =
+            groupDefs
+            |> List.choose (function
+                | UserType (name, OpaqueInterfaceDef info) ->
                     Some (name, info)
                 | _ ->
                     None)
@@ -726,6 +741,7 @@ let createGroups (rootDefs: ModuleDefinition list) =
           ModuleMethods = moduleMethods
           ExtMethodBlocks = extMethodBlocks
           Opaques = opaques
+          OpaqueInterfaces = opaqueInterfaces
           SumTypes = sumTypes
           Interfaces = interfaces
           Exceptions = exceptions
@@ -1021,24 +1037,30 @@ let rec ensureAllNoDispose (context: ModuleContext) (name: ResolvedName) =
     | OpaqueDef info ->
         if info.NoDispose then
             // good, proceed up the chain
-            match info.MaybeParent with
-            | Some (Resolved(parentName, OpaqueType)) ->
-                let context' =
-                    // update context based on CURRENT name, before recursing
-                    // (not the parent name we just found)
-                    match name with
-                    | ThisModule _ ->
-                        context
-                    | Imported (moduleName, _) ->
-                        let nextModule =
-                            context.Loaded[moduleName]
-                        { context with Module = nextModule }
-                ensureAllNoDispose context' parentName
-            | None ->
-                // reached top, all good
-                true
-            | _ ->
-                failwith "ensureAllNodispose: parent was non-opaque type"
+            // we don't account for interface implementations because we're not inheriting from them
+            // (IIRC the 'ensure all nodispose' is about avoiding redundant dispose machinery in our class hierarchy)
+            match info.Parentage with
+            | OpaqueParentage.Resolved parentage ->
+                match parentage.MaybeParent with
+                | Some (Resolved(parentName, OpaqueType)) ->
+                    let context' =
+                        // update context based on CURRENT name, before recursing
+                        // (not the parent name we just found)
+                        match name with
+                        | ThisModule _ ->
+                            context
+                        | Imported (moduleName, _) ->
+                            let nextModule =
+                                context.Loaded[moduleName]
+                            { context with Module = nextModule }
+                    ensureAllNoDispose context' parentName
+                | None ->
+                    // reached top, all good
+                    true
+                | _ ->
+                    failwith "ensureAllNodispose: parent was non-opaque type"
+            | OpaqueParentage.Unresolved _ ->
+                failwith "ensureAllNoDispose: should be unreachable"
         else
             false
     | _ ->
@@ -1051,16 +1073,19 @@ let isFirstDisposableOpaque (context: ModuleContext) (info: OpaqueInfo) =
         false
     else
         // this opaque is disposable, what about the parent (if any)?
-        match info.MaybeParent with
-        | Some (Resolved(parentName, OpaqueType)) ->
-            // verify all parents in the inheritance chain are @nodispose
-            ensureAllNoDispose context parentName
-        | None ->
-            // no parent, so root, so yes we're the first
-            true
-        | _ ->
-            failwith "isFirstDisposableOpaque: shouldn't happen"
-
+        match info.Parentage with
+        | OpaqueParentage.Resolved parentage ->
+            match parentage.MaybeParent with
+            | Some (Resolved(parentName, OpaqueType)) ->
+                // verify all parents in the inheritance chain are @nodispose
+                ensureAllNoDispose context parentName
+            | None ->
+                // no parent, so root, so yes we're the first
+                true
+            | _ ->
+                failwith "isFirstDisposableOpaque: shouldn't happen"
+        | OpaqueParentage.Unresolved _ ->
+            failwith "isFirstDisposableOpaque: unreachable"
 
 type ConstExprStringConfig = {
     NullStr: string
@@ -1114,7 +1139,7 @@ let typedConstExprString (config: ConstExprStringConfig) (resolvedNameToString: 
 
     recInner root
 
-let widthTypeForEnum (context: ModuleContext) (info: EnumInfo) =
+let widthTypeForEnum (_: ModuleContext) (info: EnumInfo) =
     // so this is horribly bad/broken, because we can't be arsed right now to write a full constant
     //   expression evaluator (which will require symbol lookups and evaluation across modules, not to mention
     //   matching the behavior of C/C++ in terms of raw computation)
@@ -1146,6 +1171,7 @@ let userTypeToNIType (context: RenderContext) (name: string) (userType: UserType
     let resolvedType =
         match userType with
         | OpaqueDef _ -> OpaqueType
+        | OpaqueInterfaceDef _ -> OpaqueInterfaceType
         | StructDef _ -> StructType
         | ExceptionDef _ -> ExceptionType
         | InterfaceDef _ -> InterfaceType
@@ -1177,15 +1203,19 @@ let opaqueAncestorNames (context: ModuleContext) (startFrom: NIType) =
             match requiredSymbolLookup context name' with
             | OpaqueDef info ->
                 let etc =
-                    match info.MaybeParent with
-                    | Some parent ->
-                        recInner parent nextFixup
-                    | None ->
-                        []
+                    match info.Parentage with
+                    | OpaqueParentage.Resolved parentage ->
+                        match parentage.MaybeParent with
+                        | Some parent ->
+                            recInner parent nextFixup
+                        | None ->
+                            []
+                    | OpaqueParentage.Unresolved _ ->
+                        failwith "opaqueAncestorNames: unreachable #1"
                 name' :: etc
             | _ ->
-                failwith "opaqueAncestorNames: uhhh 2"
+                failwith "opaqueAncestorNames: unreachable #2"
         | _ ->
-            failwith "opaqueAncestorNames: uhhh 1"
+            failwith "opaqueAncestorNames: unreachable #3"
     recInner startFrom None
     |> List.rev

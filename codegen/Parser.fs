@@ -50,6 +50,7 @@ type UnresolvedIdentifier =
 
 type ResolvedType =
     | OpaqueType
+    | OpaqueInterfaceType
     | StructType
     | InterfaceType
     | ExceptionType
@@ -63,6 +64,8 @@ type ResolvedType =
 type TypeConstraint =
     | DefaultConstraint       // everything but exceptions allowed
     | OpaqueConstraint
+    | OpaqueInterfaceConstraint
+    | OpaqueOrInterfaceConstraint
     | ForeignOpaqueConstraint // Opaque in another module (for extension methods)
     | InterfaceConstraint
     | ExceptionConstraint
@@ -328,13 +331,57 @@ type OpaqueOverloadSet = {
     Source: NIType
     MethodName: string
 }
+
+type ResolvedOpaqueParentage = {
+    MaybeParent: NIType option
+    Implements: NIType list
+}
+
+[<RequireQualifiedAccess>]
+type OpaqueParentage =
+    | Unresolved of types: NIType list  // things which need to satisfy the constraints, but not yet separated into parent + interfaces
+    | Resolved of parentage: ResolvedOpaqueParentage
+with
+    member this.Forced =
+        match this with
+        | Resolved parentage -> parentage
+        | Unresolved _ -> failwith "OpaqueParentage.Forced: was unresolved!"
+    member this.DoesInheritOrImplement =
+        match this with
+        | Resolved parentage ->
+            parentage.MaybeParent.IsSome || (not parentage.Implements.IsEmpty)
+        | Unresolved _ ->
+            failwith "OpaqueParentage.DoesInheritOrImplement: was unresolved"
+    member this.ImplementsInterfaces =
+        match this with
+        | Resolved parentage ->
+            not parentage.Implements.IsEmpty
+        | Unresolved _ ->
+            failwith "OpaqueParentage.ImplementsInterfaces: was unresolved"
+    member this.ResolvedNameList =
+        match this with
+        | Resolved parentage ->
+            (parentage.MaybeParent |> Option.toList) @ parentage.Implements
+            |> List.map (function
+                | NIType.Resolved (name, _) -> name
+                | _ -> failwith "x")
+        | _ ->
+            failwith "OpaqueParentage.ResolvedNameList: was unresolved"
+
 type OpaqueInfo = {
-    MaybeParent: NIType option          // opaque constraint
+    Parentage: OpaqueParentage
     Methods: NamedFunction list
     MaybeStaticDefs: ModuleDefinition list option
     NoDispose: bool
     // a D-specific thing, unfortunately :(
     MergeOverloadSets: OpaqueOverloadSet list
+}
+and OpaqueInterfaceInfo = {
+    // no inheritance/implementation yet
+    Methods: NamedFunction list
+    // T0DO:
+    // NoDispose: bool // not sure if applicable
+    // MergeOverloadSets: OpaqueOverloadSet list
 }
 and InterfaceInfo = {
     MaybeParent: NIType option          // interface constraint
@@ -347,6 +394,7 @@ and StructInfo = {
 }
 and UserType =
     | OpaqueDef of info: OpaqueInfo
+    | OpaqueInterfaceDef of info: OpaqueInterfaceInfo
     | StructDef of info: StructInfo
     | ExceptionDef of fields: NamedField list      // created as an args list, although they are accessible fields
     | InterfaceDef of info: InterfaceInfo
@@ -393,14 +441,18 @@ let applyOpaqueAttrs (attrs: Attribute list) (opaque: OpaqueInfo) =
             { info with NoDispose = true }
         | WithOverloads (source, methodName, loc) ->
             let newSet =
-                match opaque.MaybeParent with
-                | Some parent ->
-                    // TODO: this should actually be an OpaqueAncestorConstraint (or whatever), but creating such a thing looks to be pretty annoying
-                    // (like, we'll need 'requiredSymbolLookup' or something like it in Parser.fs, whereas right now it's in Common)
-                    { Source = Unresolved (UnresolvedIdentifier source, loc, OpaqueConstraint)
-                      MethodName = methodName }
-                | None ->
-                    failwithf "applyOpaqueAttrs: can't use @dlang_withoverloads on an opaque with no parent (nonsensical)"
+                match opaque.Parentage with
+                | OpaqueParentage.Unresolved types ->
+                    match types with
+                    | _ :: _ ->
+                        // TODO: this should actually be an OpaqueAncestorConstraint (or whatever), but creating such a thing looks to be pretty annoying
+                        // (like, we'll need 'requiredSymbolLookup' or something like it in Parser.fs, whereas right now it's in Common)
+                        { Source = Unresolved (UnresolvedIdentifier source, loc, OpaqueConstraint)
+                          MethodName = methodName }
+                    | [] ->
+                        failwithf "applyOpaqueAttrs: can't use @dlang_withoverloads on an opaque with no parent (nonsensical)"
+                | OpaqueParentage.Resolved _ ->
+                    failwithf "applyOpaqueAttrs: opaque parentage in unexpected state, shouldn't be 'resolved' yet"
             { info with MergeOverloadSets = newSet :: info.MergeOverloadSets }
         | _ ->
             info )
@@ -548,8 +600,13 @@ let parseNamedFunction (outer: TokenAndLocation list) =
                 | Lookahead 1 ([Semicolon], _, etc) ->
                     Some ({ Name = funcName; Args = args; Returns = returnType; Throws = List.empty; MaybeOverloadId = None; ShadowsExisting = shadowsExisting }, etc)
                 | Lookahead 1 ([ThrowsToken], loc, etc) ->
+                    // parse comma-delimited list of exception names
                     let names, loc, etc =
-                        NameStuff.parseList Comma Semicolon loc etc
+                        match etc with
+                        | NameStuff.NameList Comma (Some Semicolon) (names, loc, etc) ->
+                            names, loc, etc
+                        | _ ->
+                            failwithf "excepted exception name list @ %A" loc
                     let throwsList =
                         names
                         |> List.map (fun name -> Unresolved (UnresolvedIdentifier name, loc, ExceptionConstraint))
@@ -800,26 +857,38 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             ([Group (groupName, groupDefs)], etc)
             |> Some
         | Lookahead 2 ([OpaqueToken; Identifier opaqueName], loc, etc) ->
-            // inherits anything?
-            let maybeParent, loc, etc =
+            // inherits/implements anything?
+            let parentTypes, loc, etc =
                 match etc with
                 | Lookahead 1 ([ExtendsToken], loc, etc) ->
+                    // match a comma-delimited list of identifiers
                     match etc with
-                    | NameStuff.NameParts (parts, loc, etc) ->
-                        let type_ =
-                            Unresolved (UnresolvedIdentifier parts, loc, OpaqueConstraint)
-                        Some type_, loc, etc
+                    | NameStuff.NameList Comma None (names, loc, etc) ->
+                        let nameToType loc constraint_ parts =
+                            Unresolved (UnresolvedIdentifier parts, loc, constraint_)
+                        // first name is an opaque-or-interface constraint, the rest are serverinterface constraints
+                        match names with
+                        | first :: therest ->
+                            let tail =
+                                therest |> List.map (nameToType loc OpaqueInterfaceConstraint)
+                            nameToType loc OpaqueOrInterfaceConstraint first :: tail, loc, etc
+                        | _ ->
+                            failwithf "parsing opaque parentage (parent opaque / interfaces) - shouldn't be reachable @ %A" loc
                     | _ ->
-                        failwithf "expected parent opaque name @ %A" loc
+                        failwithf "failed to parse comma-delimited list of parent/serverinterface types after 'extends' @ %A" loc
                 | _ ->
-                    None, loc, etc
+                    [], loc, etc
 
             // continue as normal
             match etc with
             // empty opaque
             | Lookahead 1 ([Semicolon], _, etc) ->
                 let info =
-                    { MaybeParent = maybeParent; Methods = []; MaybeStaticDefs = None; NoDispose = false; MergeOverloadSets = [] }
+                    { Parentage = OpaqueParentage.Unresolved parentTypes
+                      Methods = []
+                      MaybeStaticDefs = None
+                      NoDispose = false
+                      MergeOverloadSets = [] }
                     |> applyOpaqueAttrs activeAttributes
                 ([UserType (opaqueName, OpaqueDef info)], etc)
                 |> Some
@@ -854,7 +923,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                     |> setOverloadIndices
 
                 let info =
-                    { MaybeParent = maybeParent
+                    { Parentage = OpaqueParentage.Unresolved parentTypes
                       Methods = methods
                       MaybeStaticDefs = maybeStaticDefs
                       NoDispose = false
@@ -864,6 +933,38 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 |> Some
             | _ ->
                 failwithf "error parsing opaque token at %s" (loc.ToString())
+
+        | Lookahead 2 ([ OpaqueInterfaceToken; Identifier interfaceName], loc, etc) ->
+            // no inherits/implements yet
+
+            match etc with
+            // empty interface
+            | Lookahead 1 ([Semicolon], _, etc) ->
+                let info =
+                    { Methods = [] }
+                    // |> applyOpaqueAttrs activeAttributes
+                ([UserType (interfaceName, OpaqueInterfaceDef info)], etc)
+                |> Some
+
+            // interface with methods
+            | Lookahead 1 ([LeftBrace], loc, etc) ->
+                // first, figure out the limits of the opaque content block as a whole
+                let methodBlock, afterContentBlock =
+                    contentUntilMatching loc LeftBrace etc
+
+                // methods should always be present
+                let methods =
+                    methodBlock
+                    |> List.unfold parseNamedFunction
+                    |> setOverloadIndices
+
+                let info =
+                    { Methods = methods }
+                    // |> applyOpaqueAttrs activeAttributes
+                ([UserType (interfaceName, OpaqueInterfaceDef info)], afterContentBlock)
+                |> Some
+            | _ ->
+                failwithf "error parsing opaque interface at %s" (loc.ToString())
 
         | Lookahead 1 ([ ExtMethodsToken ], loc, etc) ->
             let target, loc, etc =
@@ -1406,52 +1507,83 @@ let rec resolveType (context: ModuleContext) (namespacePath: string list) (type_
     | Unresolved (nameParts, loc, typeConstraint) ->
         match resolveIdentifier context loc namespacePath nameParts with
         | resolvedName, resolvedDef ->
-            match typeConstraint with
-            | DefaultConstraint ->
-                match resolvedDef with
-                | ExceptionDef _ ->
-                    failwithf "type constraint failed @ %A - exception type not allowed here" loc
-                | _ ->
-                    () // OK
-            | OpaqueConstraint ->
-                match resolvedDef with
-                | OpaqueDef _ ->
-                    () // OK
-                | _ ->
-                    failwithf "type constraint failed @ %A - must be 'opaque' type" loc
-            | ForeignOpaqueConstraint ->
-                match resolvedName, resolvedDef with
-                | Imported _, OpaqueDef _ ->
-                    () // OK
-                | _ ->
-                    failwithf "type constraint failed @ %A - must be foreign (imported) 'opaque' type" loc
-            | InterfaceConstraint ->
-                match resolvedDef with
-                | InterfaceDef _ ->
-                    () // OK
-                | _ ->
-                    failwithf "type constraint failed @ %A - must be 'interface' type" loc
-            | NamedBitsConstraint ->
-                match resolvedDef with
-                | NamedBitsDef _ ->
-                    () // OK
-                | _ ->
-                    failwithf "type constraint failed @ %A - must be 'namedbits' type" loc
-            | ExceptionConstraint ->
-                match resolvedDef with
-                | ExceptionDef _ ->
-                    () // OK
-                | _ ->
-                    failwithf "type constraint failed @ %A - must be 'exception' type" loc
-            | ConstConstraint ->
-                match resolvedDef with
-                | NamedBitsDef _ | EnumDef _ ->
-                    () // OK
-                | _ ->
-                    failwithf "type constraint failed @ %A - must be a constant (eg enum / flags / namedbits) type" loc
+            // originally we turned this into a nested function to allow for recursive verification
+            // (to apply multiple constraints, or a logical-or of constraints, etc)
+            // didn't end up using that, but might as well keep it that way for future robustness
+            let verifyConstraint (constraint_: TypeConstraint) : Result<unit, string> =
+                match constraint_ with
+                | DefaultConstraint ->
+                    match resolvedDef with
+                    | ExceptionDef _ ->
+                        sprintf "type constraint failed @ %A - exception type not allowed here" loc
+                        |> Result.Error
+                    | _ ->
+                        Result.Ok ()
+                | OpaqueConstraint ->
+                    match resolvedDef with
+                    | OpaqueDef _ ->
+                        Result.Ok () // OK
+                    | _ ->
+                        sprintf "type constraint failed @ %A - must be 'opaque' type" loc
+                        |> Result.Error
+                | OpaqueInterfaceConstraint ->
+                    match resolvedDef with
+                    | OpaqueInterfaceDef _ ->
+                        Result.Ok ()
+                    | _ ->
+                        sprintf "type constraint failed @ %A - must be 'serverinterface' type" loc
+                        |> Result.Error
+                | OpaqueOrInterfaceConstraint ->
+                    match resolvedDef with
+                    | OpaqueDef _ | OpaqueInterfaceDef _ -> Result.Ok ()
+                    | _ ->
+                        sprintf "type constraint failed @ %A - must be 'opaque' or 'opaqueinterface' type" loc
+                        |> Result.Error
+                | ForeignOpaqueConstraint ->
+                    match resolvedName, resolvedDef with
+                    | Imported _, OpaqueDef _ ->
+                        Result.Ok () // OK
+                    | _ ->
+                        sprintf "type constraint failed @ %A - must be foreign (imported) 'opaque' type" loc
+                        |> Result.Error
+                | InterfaceConstraint ->
+                    match resolvedDef with
+                    | InterfaceDef _ ->
+                        Result.Ok () // OK
+                    | _ ->
+                        sprintf "type constraint failed @ %A - must be 'interface' type" loc
+                        |> Result.Error
+                | NamedBitsConstraint ->
+                    match resolvedDef with
+                    | NamedBitsDef _ ->
+                        Result.Ok () // OK
+                    | _ ->
+                        sprintf "type constraint failed @ %A - must be 'namedbits' type" loc
+                        |> Result.Error
+                | ExceptionConstraint ->
+                    match resolvedDef with
+                    | ExceptionDef _ ->
+                        Result.Ok () // OK
+                    | _ ->
+                        sprintf "type constraint failed @ %A - must be 'exception' type" loc
+                        |> Result.Error
+                | ConstConstraint ->
+                    match resolvedDef with
+                    | NamedBitsDef _ | EnumDef _ ->
+                        Result.Ok () // OK
+                    | _ ->
+                        sprintf "type constraint failed @ %A - must be a constant (eg enum / flags / namedbits) type" loc
+                        |> Result.Error
+            match verifyConstraint typeConstraint with
+            | Ok _ ->
+                // all good
+                ()
+            | Error err ->
+                failwith err
             let resolvedType =
                 match resolvedDef with
                 | OpaqueDef _ -> OpaqueType
+                | OpaqueInterfaceDef _ -> OpaqueInterfaceType
                 | StructDef _ -> StructType
                 | InterfaceDef _ -> InterfaceType
                 | DelegateDef _ -> DelegateType
@@ -1697,9 +1829,31 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                     resolveDelegateTypes context namespacePath delegateInfo
                 DelegateDef nextInfo
             | OpaqueDef info ->
-                let nextMaybeParent =
-                    info.MaybeParent
-                    |> Option.map (resolveType context namespacePath)
+                let nextParentage =
+                    match info.Parentage with
+                    | OpaqueParentage.Unresolved types ->
+                        let resolvedTypes =
+                            types
+                            |> List.map (resolveType context namespacePath)
+                        // at this point the constraints have been verified, so we know more or less what we're dealing with
+                        // (only variable is whether head item of resolved types is an opaque or interface)
+                        let resolvedParentage =
+                            match resolvedTypes with
+                            | [] ->
+                                { MaybeParent = None; Implements = [] }
+                            | Resolved (_, type_) as head :: tail ->
+                                // head will be opaque or opaque interface (it must've been, to pass constraint checks)
+                                // tail must all be interfaces
+                                match type_ with
+                                | OpaqueType ->
+                                    { MaybeParent = Some head; Implements = tail }
+                                | OpaqueInterfaceType ->
+                                    { MaybeParent = None; Implements = tail }
+                                | _ -> failwith "resolveModuleDef: weirdness #1 processing opaque parentage"
+                            | _ -> failwith "resolveModuleDef: weirdness #2 processing opaque parentage"
+                        OpaqueParentage.Resolved resolvedParentage
+                    | _ ->
+                        failwith "resolveModuleDef: weirdness #3 processing opaque parentage"
                 let nextMethods, nextStaticDefs =
                     match info.MaybeStaticDefs with
                     | Some staticDefs ->
@@ -1727,11 +1881,20 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                         { overloadSet with Source = nextSource })
                 let nextInfo =
                     { info with
-                        MaybeParent = nextMaybeParent
+                        Parentage = nextParentage
                         Methods = nextMethods
                         MaybeStaticDefs = nextStaticDefs
                         MergeOverloadSets = nextMergeOverloadSets }
                 OpaqueDef nextInfo
+            | OpaqueInterfaceDef info ->
+                // no parentage yet
+                let nextMethods =
+                    info.Methods
+                    |> List.map (resolveFunctionTypes context namespacePath)
+                let nextInfo =
+                    { info with
+                        Methods = nextMethods }
+                OpaqueInterfaceDef nextInfo
             | TypeAliasDef niType ->
                 TypeAliasDef (resolveType context namespacePath niType)
             | EnumDef info ->

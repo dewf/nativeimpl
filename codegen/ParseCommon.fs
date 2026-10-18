@@ -22,7 +22,7 @@ let (|Lookahead|_|) (n: int) (input: TokenAndLocation list) = // returns ([token
         Some (tokens, front.Head.Location, etc)
     else
         None
-        
+
 let (|TakeWhile|_|) (pred: Token -> bool) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
     let front, etc =
         input
@@ -33,14 +33,14 @@ let (|TakeWhile|_|) (pred: Token -> bool) (input: TokenAndLocation list) = // re
         Some (front, h.Location, etc)
     | _ ->
         None
-        
+
 // let (|TakeWhileAndVerify|_|) (pred: Token -> bool) (verify: Token list -> bool) (input: TokenAndLocation list) = // returns ([tokens], loc, etc)
 //     match input with
 //     | TakeWhile pred (tokens, loc, etc) when verify(tokens) ->
 //         Some (tokens, loc, etc)
 //     | _ ->
 //         None
-        
+
 let splitTokensBefore (matcher: TokenAndLocation list -> bool) (input: TokenAndLocation list) =
     let rec tryMatch (revBefore: TokenAndLocation list) (remaining: TokenAndLocation list) =
         if matcher remaining then
@@ -88,7 +88,7 @@ type ContentUntilMatchingState = {
     NestLevel: int
     Remaining: TokenAndLocation list
 }
-    
+
 let contentUntilMatching (loc: Location) (startToken: Token) (input: TokenAndLocation list) =
     // return content, etc (excluding the end token)
     let endToken =
@@ -137,7 +137,7 @@ module NameStuff =
                 // no item
                 None
         whileDoesParse tryParseOne input
-    let parseList (delimiter: Token) (endToken: Token) (loc: Location) (input: TokenAndLocation list) =
+    let (|NameList|_|) (delimiter: Token) (maybeEndToken: Token option) (input: TokenAndLocation list) =
         // eg ns1.ns2.name, ns1.name, name, ns3.ns4.name;
         let tryParseOne = function
             | NameParts (parts, loc, etc) ->
@@ -150,12 +150,18 @@ module NameStuff =
                 None
         match whileDoesParse tryParseOne input with
         | Some (names, loc, etc) ->
-            // verify endToken in place
-            match etc with
-            | Lookahead 1 ([t], loc, etc) when t = endToken ->
-                names, loc, etc
-            | _ ->
-                failwithf "NameStuff.parseList: missing required terminator @ %A" loc
+            match maybeEndToken with
+            | Some endToken ->
+                // verify endToken in place
+                match etc with
+                | Lookahead 1 ([t], loc, etc) when t = endToken ->
+                    Some (names, loc, etc)
+                | _ ->
+                    None
+                    // failwithf "NameStuff.parseList: missing required terminator @ %A" loc
+            | None ->
+                // all good, we parsed as much as we could already!
+                Some (names, loc, etc)
         | _ ->
-            failwithf "NameStuff.parseList: expected name list @ %A" loc
-
+            None
+            // failwithf "NameStuff.parseList: expected name list @ %A" loc

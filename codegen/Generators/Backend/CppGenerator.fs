@@ -1481,19 +1481,36 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             ()
 
         // static cast wrapper stuff, if it inherits/implements
-        match info.MaybeParent with
-        | Some parent ->
+        if info.Parentage.DoesInheritOrImplement then
             blankCpp()
             writeCpp 0 "static void* %s_staticCast_wrapper(void *thing, ni_TypeId target_type_id) {" name
             writeCpp 1 "static std::map<ni_TypeId, %s_CastTarget> castMap = {" name
-            let parentNames =
-                opaqueAncestorNames context.ModuleContext parent
-            for parentName in parentNames do
+
+            let writeTargetLine targetName =
                 let parentTypeIdPrefix =
-                    resolvedNameToString context parentName ResolvedNameStringMode.TypeMode
+                    resolvedNameToString context targetName ResolvedNameStringMode.TypeMode
                 let targetEnumName =
-                    resolvedNameToString context parentName ResolvedNameStringMode.IdentifierMode
+                    resolvedNameToString context targetName ResolvedNameStringMode.IdentifierMode
                 writeCpp 2 "{ %s_TYPEID, %s_CastTarget::%s }," parentTypeIdPrefix name targetEnumName
+
+            // parent stuff, if any
+            match info.Parentage.Forced.MaybeParent with
+            | Some parent ->
+                let parentNames =
+                    opaqueAncestorNames context.ModuleContext parent
+                for parentName in parentNames do
+                    writeTargetLine parentName
+            | None ->
+                ()
+
+            // interface implementations, if any
+            for iimpl in info.Parentage.Forced.Implements do
+                match iimpl with
+                | Resolved (interfaceName, _) ->
+                    writeTargetLine interfaceName
+                | _ ->
+                    failwith "c++ renderWrapperUserType: static cast wrapper unreachable"
+
             writeCpp 1 "};"
             writeCpp 1 "if (castMap.contains(target_type_id)) {"
             writeCpp 2 "auto obj = static_cast<%s>(thing);" (typeToCppString context TypeParams niType)
@@ -1503,12 +1520,14 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             writeCpp 1 "// uh-oh, not good!"
             writeCpp 1 "std::unreachable();"
             writeCpp 0 "}"
-        | None ->
-            ()
 
         // methods
         for nf in synthesizeOpaqueMethods context name info do
             renderWrapperNamedFunc context writerH writerCpp nf
+
+    | OpaqueInterfaceDef info ->
+        failwith "C++ renderWrapperUserType: OpaqueInterfaceDef not yet implemented"
+
     | StructDef info ->
         blankH()
         writeH 0 "void %s__push(%s value%s);" name (typeToCppString context FunctionArguments niType) pushSuffix
@@ -1681,6 +1700,10 @@ and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (wr
         writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
 
     for name, _ in group.Opaques do
+        writeH 0 "extern ni_TypeId %s_TYPEID;" name
+        writeCpp 0 "ni_TypeId %s_TYPEID = \"%s%s\";" name (nsPrefix context) name
+
+    for name, _ in group.OpaqueInterfaces do
         writeH 0 "extern ni_TypeId %s_TYPEID;" name
         writeCpp 0 "ni_TypeId %s_TYPEID = \"%s%s\";" name (nsPrefix context) name
 
@@ -1872,11 +1895,8 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
 
         // register opaque type cast wrappers, IF they inherit/implement something
         for name, info in group.Opaques do
-            match info.MaybeParent with
-            | Some _ ->
+            if info.Parentage.DoesInheritOrImplement then
                 writeCpp 2 "ni_registerType(%s_TYPEID, &%s_staticCast_wrapper);" name name
-            | None ->
-                ()
 
         // interfaces + methods
         for name, info in group.Interfaces do
@@ -2056,23 +2076,37 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             write 0 "}" // end namespace
         | None ->
             ()
+
         // casting-related stuff, if it inherits from anything
-        match info.MaybeParent with
-        | Some parent ->
+        if info.Parentage.DoesInheritOrImplement then
             write 0 "enum class %s_CastTarget {" name
-            write 1 "// inheritance chain:"
-            let parentNames =
-                opaqueAncestorNames context.ModuleContext parent
-            for name in parentNames do
-                write 1 "%s," (resolvedNameToString context name ResolvedNameStringMode.IdentifierMode)
-            write 1 "// interfaces: (TODO)"
-            write 0 "};"
+
+            // inheritance chain:
+            match info.Parentage.Forced.MaybeParent with
+            | Some parent ->
+                write 1 "// inheritance chain:"
+                let parentNames =
+                    opaqueAncestorNames context.ModuleContext parent
+                for name in parentNames do
+                    write 1 "%s," (resolvedNameToString context name ResolvedNameStringMode.IdentifierMode)
+            | None ->
+                ()
+
+            // interfaces:
+            write 1 "// interfaces:"
+            for iimpl in info.Parentage.Forced.Implements do
+                match iimpl with
+                | Resolved (name, _) ->
+                    write 1 "%s," (resolvedNameToString context name ResolvedNameStringMode.IdentifierMode)
+                | _ ->
+                    failwithf "renderHeaderUserType: unreachable (rendering %s_CastTarget)" name
+
+            write 0 "};" // end enum
             let thisType =
                 userTypeToNIType context.RenderContext name userType
             write 0 "void* %s_staticCast(%s obj, %s_CastTarget target);" name (typeToCppString context FunctionArguments thisType) name
             blank()
-        | None ->
-            ()
+
         // methods
         let staticPrefix =
             if context.InsideInterfaceOrStructStatic then
@@ -2092,6 +2126,8 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
             write 0 "%s%s %s(%s);%s" staticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedNamedFuncArgs context true namedFunc.Args) throwsComment
+    | OpaqueInterfaceDef info ->
+        failwith "renderHeaderUserType: OpaqueInterfaceDef not yet implemented"
     | StructDef info ->
         let renderFields (context: CppRenderContext) =
             for field in info.Fields do
@@ -2236,7 +2272,7 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
         blank()
         for name, info in group.Opaques do
             let extendsComment =
-                match info.MaybeParent with
+                match info.Parentage.Forced.MaybeParent with
                 | Some parentType ->
                     sprintf " // extends %s" (typeToCppString context Default parentType)
                 | None ->
@@ -2478,7 +2514,7 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
                     renderFunc namedFunc
                     blank()
                 // cast method, if required
-                match info.MaybeParent with
+                match info.Parentage.Forced.MaybeParent with
                 | Some _ ->
                     let thisType =
                         userTypeToNIType context.RenderContext name userType

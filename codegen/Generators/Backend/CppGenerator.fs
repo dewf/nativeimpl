@@ -203,6 +203,8 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
             match resolvedType with
             | OpaqueType ->
                 sprintf "%sRef" name
+            | OpaqueInterfaceType ->
+                sprintf "%sRef" name
             | InterfaceType ->
                 match innerContext with
                 | BareType ->
@@ -260,7 +262,7 @@ let typeToCppString (context: CppRenderContext) (outerTypeContext: TypeContext) 
                     // any other context:
                     name
             | _ ->
-                name
+                sprintf "/* typeToCppString: unhandled %s */" name
         | ArrayType niType ->
             sprintf "std::vector<%s>" (recInner TypeParams niType)
             |> constWhenFuncArg innerContext
@@ -1179,7 +1181,20 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
         member this.Other (_: NIType) =
             write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context Default outerType)
 
-let synthesizeOpaqueMethods (context: CppRenderContext) (opaqueName: string) (info: OpaqueInfo) =
+type OpaqueMethodsSource =
+    | ActualOpaque of info: OpaqueInfo
+    | OpaqueInterface of info: OpaqueInterfaceInfo
+with
+    member this.NoDispose =
+        match this with
+        | ActualOpaque info -> info.NoDispose
+        | OpaqueInterface info -> false
+    member this.Methods =
+        match this with
+        | ActualOpaque info -> info.Methods
+        | OpaqueInterface info -> info.Methods
+
+let synthesizeOpaqueMethods (context: CppRenderContext) (opaqueName: string) (info: OpaqueMethodsSource) =
     let fakeThis =
         let symbolName =
             SymbolName (context.GroupContext.Path @ [ opaqueName ])
@@ -1496,6 +1511,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             // parent stuff, if any
             match info.Parentage.Forced.MaybeParent with
             | Some parent ->
+                writeCpp 2 "// ancestors:"
                 let parentNames =
                     opaqueAncestorNames context.ModuleContext parent
                 for parentName in parentNames do
@@ -1504,12 +1520,14 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
                 ()
 
             // interface implementations, if any
-            for iimpl in info.Parentage.Forced.Implements do
-                match iimpl with
-                | Resolved (interfaceName, _) ->
-                    writeTargetLine interfaceName
-                | _ ->
-                    failwith "c++ renderWrapperUserType: static cast wrapper unreachable"
+            if not info.Parentage.Forced.Implements.IsEmpty then
+                writeCpp 2 "// interfaces:"
+                for iimpl in info.Parentage.Forced.Implements do
+                    match iimpl with
+                    | Resolved (interfaceName, _) ->
+                        writeTargetLine interfaceName
+                    | _ ->
+                        failwith "c++ renderWrapperUserType: static cast wrapper unreachable"
 
             writeCpp 1 "};"
             writeCpp 1 "if (castMap.contains(target_type_id)) {"
@@ -1522,11 +1540,33 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
             writeCpp 0 "}"
 
         // methods
-        for nf in synthesizeOpaqueMethods context name info do
+        for nf in synthesizeOpaqueMethods context name (ActualOpaque info) do
             renderWrapperNamedFunc context writerH writerCpp nf
 
     | OpaqueInterfaceDef info ->
-        failwith "C++ renderWrapperUserType: OpaqueInterfaceDef not yet implemented"
+        blankH()
+        blankCpp()
+        writeH 0 "void %s__push(%s value);" name (typeToCppString context FunctionArguments niType)
+        writeCpp 0 "void %s__push(%s value) {" name (typeToCppString context FunctionArguments niType)
+        writeCpp 1 "ni_pushObject({ .ptr = value, .type_id = %s_TYPEID });" name
+        writeCpp 0 "}"
+        blankCpp()
+        writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
+        writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
+        writeCpp 1 "auto thing = ni_popObject();"
+        writeCpp 1 "if (thing.type_id != %s_TYPEID)" name
+        writeCpp 1 "{"
+        writeCpp 2 "auto better = ni_applyCastFunc(thing, %s_TYPEID);" name
+        writeCpp 2 "return static_cast<%s>(better);" (typeToCppString context Default niType)
+        writeCpp 1 "} // else:"
+        writeCpp 1 "return static_cast<%s>(thing.ptr);" (typeToCppString context Default niType)
+        writeCpp 0 "}"
+
+        // no inheritance/implementation (yet)
+
+        // methods
+        for nf in synthesizeOpaqueMethods context name (OpaqueInterface info) do
+            renderWrapperNamedFunc context writerH writerCpp nf
 
     | StructDef info ->
         blankH()
@@ -1880,12 +1920,18 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
         // module methods (+ synthesized opaque methods, + extension methods)
         let opaqueMethods =
             group.Opaques
-            |> List.collect (fun (name, info) -> synthesizeOpaqueMethods context name info)
+            |> List.collect (fun (name, info) -> synthesizeOpaqueMethods context name (ActualOpaque info))
+        let opaqueInterfaceMethods =
+            group.OpaqueInterfaces
+            |> List.collect (fun (name, info) -> synthesizeOpaqueMethods context name (OpaqueInterface info))
         let extMethods =
             group.ExtMethodBlocks
             |> List.collect (synthesizeExtensionMethods context)
         let allMethods =
-            group.ModuleMethods @ opaqueMethods @ extMethods
+            group.ModuleMethods
+            @ opaqueMethods
+              @ opaqueInterfaceMethods
+                @ extMethods
         for namedFunction in allMethods do
             let parts =
                 group.Path @ [ namedFunction.WrapperName ]
@@ -1897,6 +1943,8 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
         for name, info in group.Opaques do
             if info.Parentage.DoesInheritOrImplement then
                 writeCpp 2 "ni_registerType(%s_TYPEID, &%s_staticCast_wrapper);" name name
+
+        // T0DO: same as above, for opaque interfaces, if we ever change them to allow inheritance/implementation
 
         // interfaces + methods
         for name, info in group.Interfaces do
@@ -2093,13 +2141,14 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                 ()
 
             // interfaces:
-            write 1 "// interfaces:"
-            for iimpl in info.Parentage.Forced.Implements do
-                match iimpl with
-                | Resolved (name, _) ->
-                    write 1 "%s," (resolvedNameToString context name ResolvedNameStringMode.IdentifierMode)
-                | _ ->
-                    failwithf "renderHeaderUserType: unreachable (rendering %s_CastTarget)" name
+            if not info.Parentage.Forced.Implements.IsEmpty then
+                write 1 "// interfaces:"
+                for iimpl in info.Parentage.Forced.Implements do
+                    match iimpl with
+                    | Resolved (name, _) ->
+                        write 1 "%s," (resolvedNameToString context name ResolvedNameStringMode.IdentifierMode)
+                    | _ ->
+                        failwithf "renderHeaderUserType: unreachable (rendering %s_CastTarget)" name
 
             write 0 "};" // end enum
             let thisType =
@@ -2114,7 +2163,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             else
                 ""
         let synthesized =
-            synthesizeOpaqueMethods context name info
+            synthesizeOpaqueMethods context name (ActualOpaque info)
         for namedFunc in synthesized do
             let throwsComment =
                 if namedFunc.Throws.IsEmpty then
@@ -2127,7 +2176,25 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                     sprintf " // throws %s" joined
             write 0 "%s%s %s(%s);%s" staticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedNamedFuncArgs context true namedFunc.Args) throwsComment
     | OpaqueInterfaceDef info ->
-        failwith "renderHeaderUserType: OpaqueInterfaceDef not yet implemented"
+        // methods
+        let staticPrefix =
+            if context.InsideInterfaceOrStructStatic then
+                "static "
+            else
+                ""
+        let synthesized =
+            synthesizeOpaqueMethods context name (OpaqueInterface info)
+        for namedFunc in synthesized do
+            let throwsComment =
+                if namedFunc.Throws.IsEmpty then
+                    ""
+                else
+                    let joined =
+                        namedFunc.Throws
+                        |> List.map (typeToCppString context Default)
+                        |> String.concat ", "
+                    sprintf " // throws %s" joined
+            write 0 "%s%s %s(%s);%s" staticPrefix (typeToCppString context Default namedFunc.Returns) namedFunc.Name (joinedNamedFuncArgs context true namedFunc.Args) throwsComment
     | StructDef info ->
         let renderFields (context: CppRenderContext) =
             for field in info.Fields do
@@ -2278,6 +2345,12 @@ and renderImplementationHeaderGroup (context: CppRenderContext) (writer: IFormat
                 | None ->
                     ""
             write 0 "struct __%s; typedef __%s* %sRef;%s" name name name extendsComment
+
+    // above comment also applies to these
+    if not group.OpaqueInterfaces.IsEmpty then
+        blank()
+        for name, info in group.OpaqueInterfaces do
+            write 0 "struct __%s; typedef __%s* %sRef;" name name name
 
     // emit sumtype fwd decls, so they can be mutually dependent
     if not group.SumTypes.IsEmpty then
@@ -2510,21 +2583,22 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
                         renderImplementationCppGroup nextContext writer
                 | None ->
                     ()
-                for namedFunc in synthesizeOpaqueMethods context name info do
+                for namedFunc in synthesizeOpaqueMethods context name (ActualOpaque info) do
                     renderFunc namedFunc
                     blank()
                 // cast method, if required
-                match info.Parentage.Forced.MaybeParent with
-                | Some _ ->
+                if info.Parentage.DoesInheritOrImplement then
                     let thisType =
                         userTypeToNIType context.RenderContext name userType
                     write 0 "void* %s_staticCast(%s obj, %s_CastTarget target) {" name (typeToCppString context FunctionArguments thisType) name
                     write 1 "// TODO: implement casts to all targets!"
                     write 1 "std::unreachable();"
                     write 0 "}" // end cast method
-                | None ->
-                    ()
                 blank()
+            | OpaqueInterfaceDef info ->
+                for namedFunc in synthesizeOpaqueMethods context name (OpaqueInterface info) do
+                    renderFunc namedFunc
+                    blank()
             | InterfaceDef info ->
                 match info.MaybeStaticDefs with
                 | Some _ ->

@@ -2599,6 +2599,7 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
                 for namedFunc in synthesizeOpaqueMethods context name (OpaqueInterface info) do
                     renderFunc namedFunc
                     blank()
+                blank()
             | InterfaceDef info ->
                 match info.MaybeStaticDefs with
                 | Some _ ->

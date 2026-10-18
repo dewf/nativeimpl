@@ -927,12 +927,54 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
 
         // interface implementations
         if info.Parentage.ImplementsInterfaces then
+            blank()
             write 1 "// === interface implementations ==="
             write 1 "ni.ObjectPtr objectPtr() => thisPtr;"
             for iimpl in info.Parentage.Forced.Implements do
                 match iimpl with
                 | Resolved (name, _) ->
-                    write 1 "mixin %sMethods;" (resolvedNameToString context name ResolvedNameStringMode.TypeMode)
+                    // render interface methods
+                    write 1 "// %s:" (resolvedNameToString context name ResolvedNameStringMode.TypeMode)
+                    writer.EatBlank()
+                    match requiredSymbolLookup context.ModuleContext name with
+                    | OpaqueInterfaceDef info ->
+                        for namedFunc in info.Methods do
+                            blank()
+                            let throwsComment =
+                                if namedFunc.Throws.IsEmpty then
+                                    ""
+                                else
+                                    let joined =
+                                        namedFunc.Throws
+                                        |> List.map (typeToDlangString context)
+                                        |> String.concat ", "
+                                    sprintf " // throws %s" joined
+                            let shadowsOverrideStr =
+                                // hmmm
+                                if namedFunc.ShadowsExisting then
+                                    "/* shadows */ override "
+                                else
+                                    // always override since these are interface method implementations
+                                    // 'shadows' stuff is more complicated for the moment ...
+                                    "override "
+                            write 1 "%s%s %s(%s)%s {" shadowsOverrideStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
+                            // delegate to the free-standing top-level function
+                            let funcName =
+                                let methodPrefix =
+                                    resolvedNameToString context name (ResolvedNameStringMode.WrapperMethodMode "_%s")
+                                sprintf "%s_method_%s" methodPrefix (lowerFirst namedFunc.Name)
+                            let allArgs =
+                                { Name = "this"; Type = fakeThis; DefaultValue = None } :: namedFunc.Args
+                            let invocation =
+                                sprintf "%s(%s)" funcName (joinedNamedFuncArgNames allArgs)
+                            match namedFunc.Returns with
+                            | UnitType ->
+                                write 2 "%s;" invocation
+                            | _ ->
+                                write 2 "return %s;" invocation
+                            write 1 "}"
+                    | _ ->
+                        failwith "dlang renderUserType: unreachable rendering interface method"
                 | _ ->
                     failwith "renderUserType: unreachable rendering opaque interface implementations block"
 
@@ -984,12 +1026,13 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 0 "}" // end interface
         blank()
 
-        // mixin template (method bodies - the same no matter what implements them!)
-        write 0 "mixin template %sMethods() {" (upperFirst name)
+        // interface method bodies (sigh)
+        // sadly it wasn't easy to use mixins because of the method handles, which I didn't want to expose
+        // so we just create top-level functions that can be inlined elsewhere
         writer.EatBlank()
-        // would we recursively render any parent interface methods here?
         for namedFunc in info.Methods do
             blank()
+            write 0 "pragma(inline)"
             let throwsComment =
                 if namedFunc.Throws.IsEmpty then
                     ""
@@ -999,31 +1042,26 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
                         |> List.map (typeToDlangString context)
                         |> String.concat ", "
                     sprintf " // throws %s" joined
-            let shadowsOverrideStr =
-                // hmmm
-                if namedFunc.ShadowsExisting then
-                    "/* shadows */ override "
-                else
-                    // always override since these are interface method implementations
-                    // 'shadows' stuff is more complicated for the moment ...
-                    "override "
-            write 1 "%s%s %s(%s)%s {" shadowsOverrideStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
+            let funcName =
+                sprintf "_%s_method_%s" (upperFirst name) (lowerFirst namedFunc.Name)
+            let allArgs =
+                { Name = "this_"; Type = fakeThis; DefaultValue = None } :: namedFunc.Args
+            write 0 "package %s %s(%s) {%s" (typeToDlangString context namedFunc.Returns) funcName (joinedNameFuncArgs context allArgs) throwsComment
             // push args in reverse
             for arg in namedFunc.Args |> List.rev do
-                pushValue context writer 2 arg.Type (safeIdentifier arg.Name) (Direct false)
+                pushValue context writer 1 arg.Type (safeIdentifier arg.Name) (Direct false)
             // push self argument
-            pushValue context writer 2 fakeThis "this" (Direct false)
+            pushValue context writer 1 fakeThis "this_" (Direct false)
             // invoke remote
             if namedFunc.Throws.IsEmpty then
-                write 2 "ni.invokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+                write 1 "ni.invokeModuleMethod(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
             else
-                write 2 "ni.invokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
+                write 1 "ni.invokeModuleMethodWithExceptions(_%s_%s);" (lowerFirst name) namedFunc.WrapperName
             // return pop
-            popValue context writer 2 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
-            write 1 "}"
-        write 0 "}" // end mixin template
-        blank()
+            popValue context writer 1 namedFunc.Returns (if typeContainsRefs context.ModuleContext (NITypeRoot namedFunc.Returns) then SafeReturn else Return)
+            write 0 "}"
 
+        blank()
         // default implementation (for popping raw interfaces)
         let firstDisposable = true // guaranteed for the moment (no inheritance, no @nodispose)
         let isRoot = true          // no inheritance yet
@@ -1060,9 +1098,41 @@ let rec renderUserType (context: DlangRenderContext) (writer: IFormatWriter) (na
         write 2 "}"
         write 1 "}" // end dispose()
         // interface implementation(s)
-        write 1 "// === interface implementations ==="
+        blank()
         write 1 "ni.ObjectPtr objectPtr() => thisPtr;"
-        write 1 "mixin %sMethods;" (upperFirst name)
+        for namedFunc in info.Methods do
+            blank()
+            let throwsComment =
+                if namedFunc.Throws.IsEmpty then
+                    ""
+                else
+                    let joined =
+                        namedFunc.Throws
+                        |> List.map (typeToDlangString context)
+                        |> String.concat ", "
+                    sprintf " // throws %s" joined
+            let shadowsOverrideStr =
+                // hmmm
+                if namedFunc.ShadowsExisting then
+                    "/* shadows */ override "
+                else
+                    // always override since these are interface method implementations
+                    // 'shadows' stuff is more complicated for the moment ...
+                    "override "
+            write 1 "%s%s %s(%s)%s {" shadowsOverrideStr (typeToDlangString context namedFunc.Returns) (lowerFirst namedFunc.Name) (joinedNameFuncArgs context namedFunc.Args) throwsComment
+            // delegate to the free-standing top-level function
+            let funcName =
+                sprintf "_%s_method_%s" (upperFirst name) (lowerFirst namedFunc.Name)
+            let allArgs =
+                { Name = "this"; Type = fakeThis; DefaultValue = None } :: namedFunc.Args
+            let invocation =
+                sprintf "%s(%s)" funcName (joinedNamedFuncArgNames allArgs)
+            match namedFunc.Returns with
+            | UnitType ->
+                write 2 "%s;" invocation
+            | _ ->
+                write 2 "return %s;" invocation
+            write 1 "}"
         write 0 "}" // end default implementation
 
         // push =============

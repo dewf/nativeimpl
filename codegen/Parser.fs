@@ -1848,7 +1848,7 @@ let rec resolveModuleDef (context: ModuleContext) (namespacePath: string list) (
                                 | OpaqueType ->
                                     { MaybeParent = Some head; Implements = tail }
                                 | OpaqueInterfaceType ->
-                                    { MaybeParent = None; Implements = tail }
+                                    { MaybeParent = None; Implements = head :: tail }
                                 | _ -> failwith "resolveModuleDef: weirdness #1 processing opaque parentage"
                             | _ -> failwith "resolveModuleDef: weirdness #2 processing opaque parentage"
                         OpaqueParentage.Resolved resolvedParentage

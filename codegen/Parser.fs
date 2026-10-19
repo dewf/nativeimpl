@@ -856,6 +856,38 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 parseModuleDefs contentBlock
             ([Group (groupName, groupDefs)], etc)
             |> Some
+
+        | Lookahead 3 ([ OpaqueToken; InterfaceToken; Identifier interfaceName], loc, etc) ->
+            // no inherits/implements yet
+            match etc with
+            // empty interface
+            | Lookahead 1 ([Semicolon], _, etc) ->
+                let info =
+                    { Methods = [] }
+                    // |> applyOpaqueAttrs activeAttributes
+                ([UserType (interfaceName, OpaqueInterfaceDef info)], etc)
+                |> Some
+
+            // interface with methods
+            | Lookahead 1 ([LeftBrace], loc, etc) ->
+                // first, figure out the limits of the opaque content block as a whole
+                let methodBlock, afterContentBlock =
+                    contentUntilMatching loc LeftBrace etc
+
+                // methods should always be present
+                let methods =
+                    methodBlock
+                    |> List.unfold parseNamedFunction
+                    |> setOverloadIndices
+
+                let info =
+                    { Methods = methods }
+                    // |> applyOpaqueAttrs activeAttributes
+                ([UserType (interfaceName, OpaqueInterfaceDef info)], afterContentBlock)
+                |> Some
+            | _ ->
+                failwithf "error parsing opaque interface at %s" (loc.ToString())
+
         | Lookahead 2 ([OpaqueToken; Identifier opaqueName], loc, etc) ->
             // inherits/implements anything?
             let parentTypes, loc, etc =
@@ -933,39 +965,6 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                 |> Some
             | _ ->
                 failwithf "error parsing opaque token at %s" (loc.ToString())
-
-        | Lookahead 2 ([ OpaqueInterfaceToken; Identifier interfaceName], loc, etc) ->
-            // no inherits/implements yet
-
-            match etc with
-            // empty interface
-            | Lookahead 1 ([Semicolon], _, etc) ->
-                let info =
-                    { Methods = [] }
-                    // |> applyOpaqueAttrs activeAttributes
-                ([UserType (interfaceName, OpaqueInterfaceDef info)], etc)
-                |> Some
-
-            // interface with methods
-            | Lookahead 1 ([LeftBrace], loc, etc) ->
-                // first, figure out the limits of the opaque content block as a whole
-                let methodBlock, afterContentBlock =
-                    contentUntilMatching loc LeftBrace etc
-
-                // methods should always be present
-                let methods =
-                    methodBlock
-                    |> List.unfold parseNamedFunction
-                    |> setOverloadIndices
-
-                let info =
-                    { Methods = methods }
-                    // |> applyOpaqueAttrs activeAttributes
-                ([UserType (interfaceName, OpaqueInterfaceDef info)], afterContentBlock)
-                |> Some
-            | _ ->
-                failwithf "error parsing opaque interface at %s" (loc.ToString())
-
         | Lookahead 1 ([ ExtMethodsToken ], loc, etc) ->
             let target, loc, etc =
                 match etc with

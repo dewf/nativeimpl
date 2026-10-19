@@ -20,7 +20,6 @@ type Token =
     | ImportToken
     | GroupToken
     | OpaqueToken
-    | OpaqueInterfaceToken
     | StructToken
     | ExceptionToken
     | InterfaceToken
@@ -301,7 +300,6 @@ let nextToken (loc: Location) (input: char[]) =
             | "import" -> ImportToken
             | "group" -> GroupToken
             | "opaque" -> OpaqueToken
-            | "opaqueinterface" -> OpaqueInterfaceToken
             | "struct" -> StructToken
             | "exception" -> ExceptionToken
             | "interface" -> InterfaceToken

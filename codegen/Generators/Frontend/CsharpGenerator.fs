@@ -54,6 +54,8 @@ let resolvedNameToString (context: CsRenderContext) (resolvedName: ResolvedName)
             | GenericIdentifierMode ->
                 // colliding with local symbols not a concern in this context, so we can use any (or probably even no) prefix
                 ["G"]
+            | EnumValueMode ->
+                failwith "C# resolvedNameToString: figure out 'EnumValueMode' case"
         Forced prefix
     let capsPolicy = {
         ModulePolicy = PascalCase

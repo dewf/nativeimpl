@@ -806,10 +806,11 @@ let renameGroupPath (renameFunc: string -> GroupKind list -> string) (joinedPath
         renameFunc name kindPath)
 
 type ResolvedNameStringMode =
-    | TypeMode
-    | IdentifierMode
-    | GenericIdentifierMode
-    | WrapperMethodMode of format: string // simple "___%s_____" format of some kind - accepts one string
+    | TypeMode                            // the actual, usable type
+    | IdentifierMode                      // suitable for variables, function names, etc
+    | GenericIdentifierMode               // IIRC the above but for generics rendering
+    | WrapperMethodMode of format: string // IIRC: legit namespace prefix + formatted name suffix ("___%s_____" - accepts one string)
+    | EnumValueMode                       // like IdentifierMode, but no leading _
 
 type FullQualification =
     | NotForced
@@ -827,7 +828,7 @@ let resolvedNameToStringAbstract
     let separator, partRenameFunc = // rebind partRenameFunc
         match mode with
         | TypeMode | WrapperMethodMode _ -> languageNsDelim, partRenameFunc
-        | IdentifierMode | GenericIdentifierMode -> "_", (fun name _ -> name) // no part renaming in identifier modes
+        | IdentifierMode | GenericIdentifierMode | EnumValueMode -> "_", (fun name _ -> name) // no part renaming in identifier modes
 
     // sigh, this part is a mess
     // but sadly to make things work with C++, we need the ability to rename namespace segments anywhere they might appear
@@ -964,8 +965,12 @@ let resolvedNameToStringAbstract
         init @ [ formatted ]
         |> joinNameParts separator
     | _ ->
-        finalParts
-        |> joinNameParts separator
+        match mode, finalParts with
+        | EnumValueMode, "" :: etc ->
+            // drop first empty segment, we don't want a leading _
+            joinNameParts separator etc
+        | _ ->
+            joinNameParts separator finalParts
 
 let countGroupConstants (top: GroupContext) =
     let rec groupCount (group: GroupContext) =

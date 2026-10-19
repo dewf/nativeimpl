@@ -56,6 +56,8 @@ let resolvedNameToString (context: DlangRenderContext) (resolvedName: ResolvedNa
             | GenericIdentifierMode ->
                 // colliding with local symbols not a concern in this context, so we can use any (or probably even no) prefix
                 ["G"]
+            | EnumValueMode ->
+                failwith "dlang resolvedNameToString: figure out how to handle EnumValueMode"
         Forced prefix
     let capsPolicy = {
         ModulePolicy = LowerOnly

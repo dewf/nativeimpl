@@ -1505,7 +1505,8 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
                 let parentTypeIdPrefix =
                     resolvedNameToString context targetName TypeMode
                 let targetEnumName =
-                    resolvedNameToString context targetName IdentifierMode
+                    resolvedNameToString context targetName EnumValueMode
+
                 writeCpp 2 "{ %s_TYPEID, %s_CastTarget::%s }," parentTypeIdPrefix name targetEnumName
 
             // parent stuff, if any
@@ -2141,10 +2142,10 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                     opaqueAncestorNames context.ModuleContext parent
                 for ancestor in ancestors do
                     write 1 "// - opaque %s" (resolvedNameToString context ancestor.OpaqueName TypeMode)
-                    write 1 "%s," (resolvedNameToString context ancestor.OpaqueName IdentifierMode)
+                    write 1 "%s," (resolvedNameToString context ancestor.OpaqueName EnumValueMode)
                     for iface in ancestor.Implements do
                         write 1 "// -- iface %s" (resolvedNameToString context iface TypeMode)
-                        write 1 "%s," (resolvedNameToString context iface IdentifierMode)
+                        write 1 "%s," (resolvedNameToString context iface EnumValueMode)
             | None ->
                 ()
 
@@ -2154,7 +2155,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                 for iimpl in info.Parentage.Forced.Implements do
                     match iimpl with
                     | Resolved (name, _) ->
-                        write 1 "%s," (resolvedNameToString context name IdentifierMode)
+                        write 1 "%s," (resolvedNameToString context name EnumValueMode)
                     | _ ->
                         failwithf "renderHeaderUserType: unreachable (rendering %s_CastTarget)" name
 

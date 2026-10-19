@@ -1183,25 +1183,39 @@ let userTypeToNIType (context: RenderContext) (name: string) (userType: UserType
         | OptionsDef _ -> OptionsType
     Resolved (ThisModule symbolName, resolvedType)
 
+type OpaqueAncestor = {
+    OpaqueName: ResolvedName
+    Implements: ResolvedName list
+}
+
 let opaqueAncestorNames (context: ModuleContext) (startFrom: NIType) =
+    // traversing the inheritance chain is tricky, because we have to fixup
+    //   resolved names if they are 'ThisModule' after we've already traversed out
+    // ie, 'ThisModule' needs to always be made relative to wherever we originated from
+    let fixupName (fixup: ModuleName option) (name: ResolvedName) =
+        match name with
+        | ThisModule symbolName ->
+            match fixup with
+            | Some moduleName ->
+                Imported (moduleName, symbolName), fixup
+            | None ->
+                ThisModule symbolName, None
+        | Imported (moduleName, symbolName) ->
+            Imported (moduleName, symbolName), Some moduleName
+    let resolvedName = function
+        | Resolved(name, _) ->
+            name
+        | _ -> failwith "opaqueAncestorNames:resolvedName - wasn't 'Resolved'"
     let rec recInner (thing: NIType) (thisFixup: ModuleName option) =
         match thing with
         | Resolved (name, _) ->
-            // traversing the inheritance chain is tricky, because we have to fixup
-            //   resolved names if they are 'ThisModule' after we've already traversed out
-            // ie, 'ThisModule' needs to always be made relative to wherever we originated from
-            let name', nextFixup =
-                match name with
-                | ThisModule symbolName ->
-                    match thisFixup with
-                    | Some moduleName ->
-                        Imported (moduleName, symbolName), thisFixup
-                    | None ->
-                        ThisModule symbolName, None
-                | Imported (moduleName, symbolName) ->
-                    Imported (moduleName, symbolName), Some moduleName
-            match requiredSymbolLookup context name' with
+            let nextName, nextFixup =
+                fixupName thisFixup name
+            match requiredSymbolLookup context nextName with
             | OpaqueDef info ->
+                let nextImplements =
+                    info.Parentage.Forced.Implements
+                    |> List.map (resolvedName >> fixupName nextFixup >> fst)
                 let etc =
                     match info.Parentage with
                     | OpaqueParentage.Resolved parentage ->
@@ -1212,7 +1226,7 @@ let opaqueAncestorNames (context: ModuleContext) (startFrom: NIType) =
                             []
                     | OpaqueParentage.Unresolved _ ->
                         failwith "opaqueAncestorNames: unreachable #1"
-                name' :: etc
+                { OpaqueName = nextName; Implements = nextImplements } :: etc
             | _ ->
                 failwith "opaqueAncestorNames: unreachable #2"
         | _ ->

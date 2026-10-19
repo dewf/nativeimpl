@@ -1503,19 +1503,23 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
 
             let writeTargetLine targetName =
                 let parentTypeIdPrefix =
-                    resolvedNameToString context targetName ResolvedNameStringMode.TypeMode
+                    resolvedNameToString context targetName TypeMode
                 let targetEnumName =
-                    resolvedNameToString context targetName ResolvedNameStringMode.IdentifierMode
+                    resolvedNameToString context targetName IdentifierMode
                 writeCpp 2 "{ %s_TYPEID, %s_CastTarget::%s }," parentTypeIdPrefix name targetEnumName
 
             // parent stuff, if any
             match info.Parentage.Forced.MaybeParent with
             | Some parent ->
                 writeCpp 2 "// ancestors:"
-                let parentNames =
+                let ancestors =
                     opaqueAncestorNames context.ModuleContext parent
-                for parentName in parentNames do
-                    writeTargetLine parentName
+                for ancestor in ancestors do
+                    writeCpp 2 "// - opaque %s" (resolvedNameToString context ancestor.OpaqueName TypeMode)
+                    writeTargetLine ancestor.OpaqueName
+                    for iface in ancestor.Implements do
+                        writeCpp 2 "// -- iface %s" (resolvedNameToString context iface TypeMode)
+                        writeTargetLine iface
             | None ->
                 ()
 
@@ -2132,11 +2136,15 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
             // inheritance chain:
             match info.Parentage.Forced.MaybeParent with
             | Some parent ->
-                write 1 "// inheritance chain:"
-                let parentNames =
+                write 1 "// ancestors:"
+                let ancestors =
                     opaqueAncestorNames context.ModuleContext parent
-                for name in parentNames do
-                    write 1 "%s," (resolvedNameToString context name ResolvedNameStringMode.IdentifierMode)
+                for ancestor in ancestors do
+                    write 1 "// - opaque %s" (resolvedNameToString context ancestor.OpaqueName TypeMode)
+                    write 1 "%s," (resolvedNameToString context ancestor.OpaqueName IdentifierMode)
+                    for iface in ancestor.Implements do
+                        write 1 "// -- iface %s" (resolvedNameToString context iface TypeMode)
+                        write 1 "%s," (resolvedNameToString context iface IdentifierMode)
             | None ->
                 ()
 
@@ -2146,7 +2154,7 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
                 for iimpl in info.Parentage.Forced.Implements do
                     match iimpl with
                     | Resolved (name, _) ->
-                        write 1 "%s," (resolvedNameToString context name ResolvedNameStringMode.IdentifierMode)
+                        write 1 "%s," (resolvedNameToString context name IdentifierMode)
                     | _ ->
                         failwithf "renderHeaderUserType: unreachable (rendering %s_CastTarget)" name
 

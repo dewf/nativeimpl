@@ -617,32 +617,81 @@ type ArrayOrSetRenderer(context: DlangRenderContext, writer: IFormatWriter, oute
                 write 0 "private void __%s__push(%s items) {" (typeToName context outerType) (typeToDlangString context outerType)
                 write 1 "import std.algorithm: map;"
                 write 1 "import std.range: array;"
-                write 1 "auto ptrs = items.map!(i => i.thisPtr).array();"
-                write 1 "ni.pushPtrArray(ptrs);"
+                write 1 "auto ptrs = items.map!(i => i is null ? ni.nullObjectPtr : i.thisPtr).array();"
+                write 1 "ni.pushObjectArray(ptrs);"
                 write 0 "}"
                 // pop
                 blank()
                 write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
                 write 1 "import std.algorithm: map;"
                 write 1 "import std.range: array;"
-                write 1 "auto ptrs = ni.popPtrArray();"
-                write 1 "return ptrs.map!(p => new %s(p)).array();" (typeToDlangString context elemType)
+                write 1 "auto ptrs = ni.popObjectArray();"
+                write 1 "return ptrs.map!(p => p.ptr is null ? null : new %s(p)).array();" (typeToDlangString context elemType)
                 write 0 "}"
             | SetMode ->
                 // push
                 write 0 "private void __%s__push(%s set) {" (typeToName context outerType) (typeToDlangString context outerType)
                 write 1 "import std.algorithm: map;"
                 write 1 "import std.range: array;"
-                write 1 "auto ptrs = set.array().map!(i => i.thisPtr).array();"
-                write 1 "ni.pushPtrArray(ptrs);"
+                write 1 "auto ptrs = set.array().map!(i => i is null ? ni.nullObjectPtr : i.thisPtr).array();"
+                write 1 "ni.pushObjectArray(ptrs);"
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                write 1 "import std.algorithm: map;"
+                write 1 "auto ptrs = ni.popObjectArray();"
+                write 1 "auto r = ptrs.map!(p => p.ptr is null ? null : new %s(p));" (typeToDlangString context elemType)
+                write 1 "return %s(r);" (typeToDlangString context outerType)
+                write 0 "}"
+        member this.OpaqueInterface () =
+            match mode with
+            | ArrayMode ->
+                // push
+                write 0 "private void __%s__push(%s items) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "ni.ObjectPtr[] ptrs;"
+                write 1 "ptrs.reserve(items.length);"
+                write 1 "foreach (item; items) {"
+                write 2 "if (item is null) {"
+                write 3 "ptrs ~= ni.ObjectPtr(null, null);"
+                write 2 "} else if (auto iimpl = cast(ni.InterfaceImplementer)item) {"
+                write 3 "ptrs ~= iimpl.objectPtr();"
+                write 2 "} else {"
+                write 3 "throw new Exception(\"__%s__push(): object didn't implement ni.InterfaceImplementer\");" (typeToName context outerType)
+                write 2 "}" // end if
+                write 1 "}" // end foreach
+                write 1 "ni.pushObjectArray(ptrs);"
                 write 0 "}"
                 // pop
                 blank()
                 write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
                 write 1 "import std.algorithm: map;"
                 write 1 "import std.range: array;"
-                write 1 "auto ptrs = ni.popPtrArray();"
-                write 1 "auto r = ptrs.map!(p => new %s(p));" (typeToDlangString context elemType)
+                write 1 "auto ptrs = ni.popObjectArray();"
+                write 1 "return ptrs.map!(p => p.ptr is null ? null : cast(%s) new %sImpl(p)).array();" (typeToDlangString context elemType) (typeToDlangString context elemType)
+                write 0 "}"
+            | SetMode ->
+                // push
+                write 0 "private void __%s__push(%s set) {" (typeToName context outerType) (typeToDlangString context outerType)
+                write 1 "ni.ObjectPtr[] ptrs;"
+                write 1 "ptrs.reserve(set.length);"
+                write 1 "foreach (item; set.array()) {"
+                write 2 "if (item is null) {"
+                write 3 "ptrs ~= ni.ObjectPtr(null, null);"
+                write 2 "} else if (auto iimpl = cast(ni.InterfaceImplementer)item) {"
+                write 3 "ptrs ~= iimpl.objectPtr();"
+                write 2 "} else {"
+                write 3 "throw new Exception(\"__%s__push(): object didn't implement ni.InterfaceImplementer\");" (typeToName context outerType)
+                write 2 "}" // end if
+                write 1 "}" // end foreach
+                write 1 "ni.pushObjectArray(ptrs);"
+                write 0 "}"
+                // pop
+                blank()
+                write 0 "private %s __%s__pop() {" (typeToDlangString context outerType) (typeToName context outerType)
+                write 1 "import std.algorithm: map;"
+                write 1 "auto ptrs = ni.popObjectArray();"
+                write 1 "auto r = ptrs.map!(p => p.ptr is null ? null : cast(%s) new %sImpl(p));" (typeToDlangString context elemType) (typeToDlangString context elemType)
                 write 1 "return %s(r);" (typeToDlangString context outerType)
                 write 0 "}"
         member this.Other (_: NIType) =

@@ -1148,38 +1148,87 @@ type ArrayOrSetRenderer(context: CppRenderContext, writer: IFormatWriter, outerT
                 write 1 "return %s(itemsArr.begin(), itemsArr.end());" (typeToCppString context Default outerType)
                 write 0 "}"
         member this.Opaque () =
+            let opaqueTypePrefix =
+                match elemType with
+                | Resolved (name, (OpaqueType | OpaqueInterfaceType)) ->
+                    resolvedNameToString context name TypeMode
+                | _ ->
+                    failwith "ArrayOrSetRenderer.Opaque: wasn't opaque type"
             match mode with
             | ArrayMode ->
                 // push
                 write 0 "void __%s__push(%s items) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
-                write 1 "auto data = const_cast<%s*>(items.data());" (typeToCppString context Default elemType)
-                write 1 "ni_pushPtrArray(reinterpret_cast<void**>(data), items.size());"
+                write 1 "std::vector<ni_ObjectPtr> to_push;"
+                write 1 "to_push.reserve(items.size());"
+                write 1 "for (auto ptr : items) {"
+                write 2 "to_push.push_back({ .ptr = ptr, .type_id = %s_TYPEID });" opaqueTypePrefix
+                write 1 "}"
+                write 1 "ni_pushObjectArray(to_push.data(), to_push.size());"
                 write 0 "}"
                 // pop
                 blank()
                 write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
-                write 1 "%s *values;" (typeToCppString context Default elemType)
+                write 1 "ni_ObjectPtr *values;"
                 write 1 "size_t count;"
-                write 1 "ni_popPtrArray(reinterpret_cast<void***>(&values), &count);"
-                write 1 "return { values, values + count };"
+                write 1 "ni_popObjectArray(&values, &count);"
+                blank()
+                write 1 "%s ret;" (typeToCppString context TypeParams outerType)
+                write 1 "ret.reserve(count);"
+                blank()
+                write 1 "for (auto i = 0; i < count; i++) {"
+                write 2 "auto thing = values[i];"
+                write 2 "if (!thing.ptr) {"
+                write 3 "ret.push_back(nullptr);"
+                write 2 "} else {"
+                write 3 "if (thing.type_id != %s_TYPEID) {" opaqueTypePrefix
+                write 4 "auto better = ni_applyCastFunc(thing, %s_TYPEID);" opaqueTypePrefix
+                write 4 "ret.push_back(static_cast<%s>(better));" (typeToCppString context TypeParams elemType)
+                write 3 "} else {"
+                write 4 "ret.push_back(static_cast<%s>(thing.ptr));" (typeToCppString context TypeParams elemType)
+                write 3 "}" // end if#2
+                write 2 "}" // end if
+                write 1 "}" // end for
+                write 1 "return ret;"
                 write 0 "}"
             | SetMode ->
                 write 0 "void __%s__push(%s items) {" (typeToName context outerType) (typeToCppString context FunctionArguments outerType)
-                write 1 "std::vector vec(items.begin(), items.end());"
-                write 1 "ni_pushPtrArray(reinterpret_cast<void**>(vec.data()), vec.size());"
+                write 1 "std::vector<ni_ObjectPtr> to_push;"
+                write 1 "to_push.reserve(items.size());"
+                write 1 "for (auto ptr : items) {"
+                write 2 "to_push.push_back({ .ptr = ptr, .type_id = %s_TYPEID });" opaqueTypePrefix
+                write 1 "}"
+                write 1 "ni_pushObjectArray(to_push.data(), to_push.size());"
                 write 0 "}"
                 // pop
                 blank()
                 write 0 "%s __%s__pop() {" (typeToCppString context Default outerType) (typeToName context outerType)
-                write 1 "%s *values;" (typeToCppString context Default elemType)
+                write 1 "ni_ObjectPtr *values;"
                 write 1 "size_t count;"
-                write 1 "ni_popPtrArray(reinterpret_cast<void***>(&values), &count);"
-                write 1 "return { values, values + count };"
+                write 1 "ni_popObjectArray(&values, &count);"
+                blank()
+                write 1 "%s ret;" (typeToCppString context TypeParams outerType)
+                blank()
+                write 1 "for (auto i = 0; i < count; i++) {"
+                write 2 "auto thing = values[i];"
+                write 2 "if (!thing.ptr) {"
+                write 3 "ret.insert(nullptr);"
+                write 2 "} else {"
+                write 3 "if (thing.type_id != %s_TYPEID) {" opaqueTypePrefix
+                write 4 "auto better = ni_applyCastFunc(thing, %s_TYPEID);" opaqueTypePrefix
+                write 4 "ret.insert(static_cast<%s>(better));" (typeToCppString context TypeParams elemType)
+                write 3 "} else {"
+                write 4 "ret.insert(static_cast<%s>(thing.ptr));" (typeToCppString context TypeParams elemType)
+                write 3 "}" // end if#2
+                write 2 "}" // end if
+                write 1 "}" // end for
+                write 1 "return ret;"
                 write 0 "}"
+        member this.OpaqueInterface () =
+            (this :> IArrayLikeRenderer).Opaque()
         member this.Options () =
             arrayDefault()
         member this.Other (_: NIType) =
-            write 2 "// TODO: push/pop for array-like of %s" (typeToCppString context Default outerType)
+            write 0 "// TODO: push/pop for array-like of %s" (typeToCppString context Default outerType)
 
 type OpaqueMethodsSource =
     | ActualOpaque of info: OpaqueInfo
@@ -1469,6 +1518,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
         writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
         writeCpp 1 "auto thing = ni_popObject();"
+        writeCpp 1 "if (!thing.ptr) return nullptr;"
         writeCpp 1 "if (thing.type_id != %s_TYPEID)" name
         writeCpp 1 "{"
         writeCpp 2 "auto better = ni_applyCastFunc(thing, %s_TYPEID);" name
@@ -1495,10 +1545,10 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         | None ->
             ()
 
-        // static cast wrapper stuff, if it inherits/implements
-        if info.Parentage.DoesInheritOrImplement then
+        // static cast wrapper stuff, if it inherits/implements (and doesn't use @useparenttype attr)
+        if info.Parentage.DoesInheritOrImplement && not info.UseParentType then
             blankCpp()
-            writeCpp 0 "static void* %s_staticCast_wrapper(void *thing, ni_TypeId target_type_id) {" name
+            writeCpp 0 "static void* %s__staticCast_wrapper(void *thing, ni_TypeId target_type_id) {" name
             writeCpp 1 "static std::map<ni_TypeId, %s_CastTarget> castMap = {" name
 
             let writeTargetLine targetName =
@@ -1559,6 +1609,7 @@ let rec renderWrapperUserType (context: CppRenderContext) (writerH: IFormatWrite
         writeH 0 "%s %s__pop();" (typeToCppString context Default niType) name
         writeCpp 0 "%s %s__pop() {" (typeToCppString context Default niType) name
         writeCpp 1 "auto thing = ni_popObject();"
+        writeCpp 1 "if (!thing.ptr) return nullptr;"
         writeCpp 1 "if (thing.type_id != %s_TYPEID)" name
         writeCpp 1 "{"
         writeCpp 2 "auto better = ni_applyCastFunc(thing, %s_TYPEID);" name
@@ -1744,9 +1795,16 @@ and renderWrappersGroup (context: CppRenderContext) (writerH: IFormatWriter) (wr
     for name, _ in group.Exceptions do
         writeCpp 0 "ni_ExceptionRef %s;" (lowerFirst name)
 
-    for name, _ in group.Opaques do
+    for name, info in group.Opaques do
         writeH 0 "extern ni_TypeId %s_TYPEID;" name
-        writeCpp 0 "ni_TypeId %s_TYPEID = \"%s%s\";" name (nsPrefix context) name
+        if info.UseParentType then
+            match info.Parentage.Forced.MaybeParent with
+            | Some (Resolved(parentName, OpaqueType)) ->
+                writeCpp 0 "ni_TypeId %s_TYPEID = %s_TYPEID; // masquerade as parent type (to avoid needless casts)" name (resolvedNameToString context parentName TypeMode)
+            | _ ->
+                failwithf "renderWrappersGroup: rendering opaque %s, had @useparenttype without a parent!" name
+        else
+            writeCpp 0 "ni_TypeId %s_TYPEID = \"%s%s\";" name (nsPrefix context) name
 
     for name, _ in group.OpaqueInterfaces do
         writeH 0 "extern ni_TypeId %s_TYPEID;" name
@@ -1944,10 +2002,14 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
                 groupPathRenamed @ [ namedFunction.WrapperName ]
             writeCpp 2 "ni_registerModuleMethod(m, \"%s\", &%s__wrapper);" (joinNameParts "." parts) (joinNameParts "::" renamedParts)
 
-        // register opaque type cast wrappers, IF they inherit/implement something
+        // register opaque type cast wrappers, IF they inherit/implement something and DON'T have a @useparenttype attr
         for name, info in group.Opaques do
-            if info.Parentage.DoesInheritOrImplement then
-                writeCpp 2 "ni_registerType(%s_TYPEID, &%s_staticCast_wrapper);" name name
+            if info.Parentage.DoesInheritOrImplement && not info.UseParentType then
+                let parts =
+                    group.Path @ [ name ]
+                let renamedParts =
+                    groupPathRenamed @ [ name ]
+                writeCpp 2 "ni_registerType(%s_TYPEID, &%s__staticCast_wrapper);" (joinNameParts "::" parts) (joinNameParts "::" renamedParts)
 
         // T0DO: same as above, for opaque interfaces, if we ever change them to allow inheritance/implementation
 
@@ -2130,8 +2192,8 @@ let rec renderHeaderUserType (context: CppRenderContext) (writer: IFormatWriter)
         | None ->
             ()
 
-        // casting-related stuff, if it inherits from anything
-        if info.Parentage.DoesInheritOrImplement then
+        // casting-related stuff, if it inherits from anything (and '@useparenttype' attribute not present)
+        if info.Parentage.DoesInheritOrImplement && not info.UseParentType then
             write 0 "enum class %s_CastTarget {" name
 
             // inheritance chain:
@@ -2596,7 +2658,7 @@ let rec renderImplementationCppGroup (context: CppRenderContext) (writer: IForma
                     renderFunc namedFunc
                     blank()
                 // cast method, if required
-                if info.Parentage.DoesInheritOrImplement then
+                if info.Parentage.DoesInheritOrImplement && not info.UseParentType then
                     let thisType =
                         userTypeToNIType context.RenderContext name userType
                     write 0 "void* %s_staticCast(%s obj, %s_CastTarget target) {" name (typeToCppString context FunctionArguments thisType) name

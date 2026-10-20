@@ -213,6 +213,7 @@ type Attribute =
     | ShadowsExisting               // C# 'new', shadows existing method
     | WithOverloads of source: string list * methodName: string * loc: Location
     | MethodPrefix of prefix: string
+    | UseParentType // don't register as a new type for casting: simply pretend to be parent type (useful for 'owned' pattern, where casting to parent is unnecessary)
 
 let takeSingleAttribute (pred: Attribute -> bool) (attrs: Attribute list) =
     attrs
@@ -373,6 +374,7 @@ type OpaqueInfo = {
     Methods: NamedFunction list
     MaybeStaticDefs: ModuleDefinition list option
     NoDispose: bool
+    UseParentType: bool
     // a D-specific thing, unfortunately :(
     MergeOverloadSets: OpaqueOverloadSet list
 }
@@ -454,6 +456,8 @@ let applyOpaqueAttrs (attrs: Attribute list) (opaque: OpaqueInfo) =
                 | OpaqueParentage.Resolved _ ->
                     failwithf "applyOpaqueAttrs: opaque parentage in unexpected state, shouldn't be 'resolved' yet"
             { info with MergeOverloadSets = newSet :: info.MergeOverloadSets }
+        | UseParentType ->
+            { info with UseParentType = true }
         | _ ->
             info )
 
@@ -820,6 +824,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
             let attr, etc =
                 match attrName with
                 | "nodispose" -> NoDispose, etc
+                | "useparenttype" -> UseParentType, etc
                 | "withflags" ->
                     match etc with
                     | Lookahead 3 ([LeftParen; Identifier targetName; RightParen], _, etc) ->
@@ -920,6 +925,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                       Methods = []
                       MaybeStaticDefs = None
                       NoDispose = false
+                      UseParentType = false
                       MergeOverloadSets = [] }
                     |> applyOpaqueAttrs activeAttributes
                 ([UserType (opaqueName, OpaqueDef info)], etc)
@@ -959,6 +965,7 @@ let rec parseModuleDefs (input: TokenAndLocation list) =
                       Methods = methods
                       MaybeStaticDefs = maybeStaticDefs
                       NoDispose = false
+                      UseParentType = false
                       MergeOverloadSets = [] }
                     |> applyOpaqueAttrs activeAttributes
                 ([UserType (opaqueName, OpaqueDef info)], afterOpaqueBlock)

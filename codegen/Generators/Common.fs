@@ -498,6 +498,7 @@ type IArrayLikeRenderer =
     abstract SumType: unit -> unit
     abstract Primitive: NIPrimitive -> unit
     abstract Opaque: unit -> unit
+    abstract OpaqueInterface: unit -> unit
     abstract Options: unit -> unit
     abstract Other: NIType -> unit
 
@@ -532,6 +533,8 @@ let renderArrayLike (context: ModuleContext) (elemType: NIType) (renderer: IArra
             renderer.SumType ()
         | OpaqueType ->
             renderer.Opaque ()
+        | OpaqueInterfaceType ->
+            renderer.OpaqueInterface ()
         | OptionsType ->
             renderer.Options ()
         | _ ->

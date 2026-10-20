@@ -527,6 +527,7 @@ void invokeModuleMethodWithExceptions(ModuleMethodHandle method) {
 }
 
 alias ObjectPtr = ni_ObjectPtr;
+auto nullObjectPtr = ObjectPtr(null, null);
 
 interface InterfaceImplementer {
     // any client class wrapping an opaque implementing server interfaces,

@@ -710,6 +710,8 @@ type ArrayOrSetRenderer(context: CsRenderContext, writer: IFormatWriter, outerTy
             else
                 write 4 ".ToHashSet();"
             write 2 "}"
+        member this.OpaqueInterface () =
+            failwith "C# ArrayOrSetRenderer: this.OpaqueInterface() not yet implemented"
         member this.Other (_: NIType) =
             let str =
                 if mode = ArrayMode then "array" else "set"

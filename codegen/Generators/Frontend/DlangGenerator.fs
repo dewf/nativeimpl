@@ -1655,11 +1655,11 @@ and renderGroupCommon (context: DlangRenderContext) (writer: IFormatWriter) =
         // instance methods
         for method in info.Methods do
             write 0 "%s__gshared ni.ModuleMethodHandle _%s_%s;" contentPrefix (lowerFirst name) method.WrapperName
-        // synthesized dispose method
+        // // synthesized dispose method
         // if info.NoDispose then
         //     ()
         // else
-            write 0 "%s__gshared ni.ModuleMethodHandle _%s_dispose;" contentPrefix (lowerFirst name)
+        write 0 "%s__gshared ni.ModuleMethodHandle _%s_dispose;" contentPrefix (lowerFirst name)
 
     // opaque extension methods
     for info in groupContext.ExtMethodBlocks do

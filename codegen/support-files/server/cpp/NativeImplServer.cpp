@@ -4,6 +4,13 @@
 #include <memory>
 #include <vector>
 #include <cassert>
+#include <cstdlib>
+
+static void failwith(const char* message)
+{
+	std::fprintf(stderr, "NativeImplCore fatal: %s\n", message);
+	std::abort();
+}
 
 static int nextServerResourceId = 1;
 static std::map<int, std::shared_ptr<ServerResource>> serverResources;
@@ -387,7 +394,7 @@ void ClientFuncVal::nativePush()
 {
 	// currently this should never be called, only server func values can be pushed from server
 	// (a client function returned would be wrapped as a server func)
-	throw std::exception("ClientFuncVal::nativePush - oops");
+	failwith("ClientFuncVal::nativePush - oops");
 }
 
 void ServerFuncVal::nativePush()

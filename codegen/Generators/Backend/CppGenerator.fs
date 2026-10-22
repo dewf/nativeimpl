@@ -1926,6 +1926,9 @@ let generateWrappers (context: CppRenderContext) (writerH: IFormatWriter) (write
         // | ModuleName nameParts ->
         //     writeCpp 0 "using namespace ::%s;" (joinNameParts "::" nameParts)
 
+    blankCpp()
+    writeCpp 0 "#include <utility> // for std::unreachable()"
+
     // begin root group: ===========================================
     blankH();
     blankCpp()

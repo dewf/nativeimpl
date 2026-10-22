@@ -13,6 +13,13 @@
 #include <cstdarg>
 #include <stdexcept>
 #include <cstring>
+#include <cstdlib>
+
+static void failwith(const char* message)
+{
+	std::fprintf(stderr, "NativeImplCore fatal: %s\n", message);
+	std::abort();
+}
 
 // private opaque definitions
 struct ni_Module {
@@ -672,7 +679,7 @@ void ni_registerType(ni_TypeId type_id, CastFunc castFunc)
 	if (castFuncMap.contains(type_id))
 	{
 		ni_clientLogger(LogLevel_Error, "registerType: typeid [%s] already exists in map!", type_id);
-		throw std::exception("ni_registerType error");
+		failwith("ni_registerType error");
 	}
 	castFuncMap[type_id] = castFunc;
 }
@@ -683,7 +690,7 @@ void* ni_applyCastFunc(ni_ObjectPtr obj, ni_TypeId target_type)
 	{
 		// problemo
 		ni_clientLogger(LogLevel_Critical, "ni_applyCastFunc: cast func map did not contain cast func for type_id: [%s]", obj.type_id);
-		throw std::exception("ni_applyCastFunc error");
+		failwith("ni_applyCastFunc error");
 	}
 	// else OK
 	return castFuncMap[obj.type_id](obj.ptr, target_type);

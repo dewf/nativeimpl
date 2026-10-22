@@ -9,7 +9,7 @@
         <ToolCommandName>nativeimpl</ToolCommandName>
 
         <PackageId>NativeImpl</PackageId>
-        <Version>0.5.0</Version>
+        <!-- <Version>0.5.0</Version> -->
         <Authors>dewf</Authors>
         <Description>Language-agnostic native bindings generator</Description>
 
@@ -17,7 +17,7 @@
         <RepositoryUrl>https://github.com/dewf/nativeimpl</RepositoryUrl>
         <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
-    
+
     <ItemGroup>
         <None Include="../README.md" Pack="true" PackagePath="\" />
         <Compile Include="Extensions.fs" />

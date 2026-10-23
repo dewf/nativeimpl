@@ -217,5 +217,7 @@ let appRunner (inputPath: string) (inputModules: string list) (outParams: OutPar
 let outParams =
     { Path = projectInfo.OutputPath
       MaybeNamespace = Some projectInfo.Namespace // more of a prefix, really - still will inlcude LibraryName at the end
-      LibraryName = projectInfo.LibraryName }
+      LibraryName = projectInfo.LibraryName
+      ClientLibraryName = projectInfo.LibraryName + (projectInfo.ClientLibrarySuffix |> Option.defaultValue "")
+    }
 appRunner projectInfo.InputPath projectInfo.Inputs outParams projectInfo.FrontLangs projectInfo.BackLang

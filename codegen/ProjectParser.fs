@@ -23,6 +23,7 @@ type ProjectInfo = {
     FrontLangs: Language list
     BackLang: Language
     LibraryName: string
+    ClientLibrarySuffix: string option
     Namespace: string
     InputPath: string
     OutputPath: string
@@ -74,6 +75,11 @@ let parseProjectInfo (tomlPath: string) =
         | :? string as s -> s
         | _ -> failwith "TOML project missing 'library_name' value"
 
+    let clientLibrarySuffix =
+        match tomlTryGet projectTable "client_library_suffix" with
+        | Some (:? string as s) -> Some s
+        | _ -> None
+
     let namespace_ =
         match projectTable["namespace"] with
         | :? string as s -> s
@@ -108,6 +114,7 @@ let parseProjectInfo (tomlPath: string) =
       FrontLangs = frontLangs
       BackLang = backLang
       LibraryName = libraryName
+      ClientLibrarySuffix = clientLibrarySuffix
       Namespace = namespace_
       InputPath = inputPath
       OutputPath = outputPath

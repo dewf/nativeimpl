@@ -1966,7 +1966,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (libraryN
     write 0 "}" // end of __shutdown()
 
 let projectDir (outParams: OutParams) =
-    sprintf "%s/client/dlang/%s" outParams.Path (lower outParams.LibraryName)
+    sprintf "%s/client/dlang/%s" outParams.Path (lower outParams.ClientLibraryName)
 
 let generateModule (context: ModuleContext) (outParams: OutParams) =
     let baseNamespace, maybeModulePrefix, simpleName =
@@ -1976,7 +1976,7 @@ let generateModule (context: ModuleContext) (outParams: OutParams) =
             maybeModulePrefix
             |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
             |> Option.defaultValue ""
-        sprintf "%s/source/%s%s" (projectDir outParams) (lower outParams.LibraryName) subPath
+        sprintf "%s/source/%s%s" (projectDir outParams) (lower outParams.ClientLibraryName) subPath
     Directory.CreateDirectory(moduleDir) |> ignore
     let filename =
         sprintf "%s/%s.d" moduleDir (simpleName.ToLower())
@@ -1988,7 +1988,7 @@ let generateModule (context: ModuleContext) (outParams: OutParams) =
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
-    writeModule context output outParams.LibraryName maybeModulePrefix simpleName
+    writeModule context output outParams.ClientLibraryName maybeModulePrefix simpleName
 
 let writeLibrary (allModules: Module list) (writer: IFormatWriter) (libraryName: string) =
     let write, blank = writer.Write, writer.Blank
@@ -2026,7 +2026,7 @@ let generateLibraryFile (allModules: Module list) (outParams: OutParams) =
             maybeModulePrefix
             |> Option.map (fun mp -> "/" + mp.Replace(".", "/"))
             |> Option.defaultValue ""
-        sprintf "%s/source/%s%s" (projectDir outParams) (lower outParams.LibraryName) subPath
+        sprintf "%s/source/%s%s" (projectDir outParams) (lower outParams.ClientLibraryName) subPath
     Directory.CreateDirectory(moduleDir) |> ignore
     let filename =
         sprintf "%s/%s.d" moduleDir (simpleName.ToLower())
@@ -2038,11 +2038,11 @@ let generateLibraryFile (allModules: Module list) (outParams: OutParams) =
     use output =
         let writer = new StreamWriter(filename)
         new SimpleFormatWriter(writer, 0)
-    writeLibrary allModules output (lower outParams.LibraryName)
+    writeLibrary allModules output (lower outParams.ClientLibraryName)
 
 let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     let write, blank = writer.Write, writer.Blank
-    write 0 "name \"%s\"" (lower outParams.LibraryName)
+    write 0 "name \"%s\"" (lower outParams.ClientLibraryName)
     write 0 "description \"(description will go here)\""
     write 0 "authors \"nobody\""
     write 0 "copyright \"Copyright ©2026, Nobody\""
@@ -2069,13 +2069,15 @@ let generateProject (outParams: OutParams) =
 let copySupportFiles (outParams: OutParams) =
     let libraryName =
         lower outParams.LibraryName
+    let clientLibraryName =
+        lower outParams.ClientLibraryName
     let destRoot =
-        sprintf "%s/source/%s/support" (projectDir outParams) libraryName
+        sprintf "%s/source/%s/support" (projectDir outParams) clientLibraryName
     let copyFunc =
         let replaceMap =
             let importPrefix =
                 sprintf "%s_ni_" libraryName
-            [ ("%%LIBRARY_PREFIX%%", libraryName)
+            [ ("%%CLIENT_LIBRARY_PREFIX%%", clientLibraryName)
               ("%%DLL_IMPORT_PREFIX%%", importPrefix) ]
             |> Map.ofList
         SupportCopier.replaceCopyFunc replaceMap

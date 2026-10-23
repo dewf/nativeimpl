@@ -6,6 +6,7 @@ type OutParams = {
     Path: string
     MaybeNamespace: string option
     LibraryName: string
+    ClientLibraryName: string
 }
 
 let safeFilename (suffixIfExists: string) (defaultPath: string)  =

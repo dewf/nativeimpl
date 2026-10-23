@@ -1,4 +1,4 @@
-module %%LIBRARY_PREFIX%%.support.nativemethods;
+module %%CLIENT_LIBRARY_PREFIX%%.support.nativemethods;
 
 struct ni_Module;
 struct ni_ModuleMethod;

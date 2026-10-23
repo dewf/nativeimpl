@@ -1,11 +1,11 @@
-module %%LIBRARY_PREFIX%%.support.nativeimplclient;
+module %%CLIENT_LIBRARY_PREFIX%%.support.nativeimplclient;
 
 // this is nested in the library namespace (instead of at root level),
 // because a project could potentially have multiple NativeImpl-based libraries, using different versions of NI
 // this will keep the NI methods from conflicting
 
-import %%LIBRARY_PREFIX%%.support.nativemethods;
-import nativemethods = %%LIBRARY_PREFIX%%.support.nativemethods; // also alias for convenience
+import %%CLIENT_LIBRARY_PREFIX%%.support.nativemethods;
+import nativemethods = %%CLIENT_LIBRARY_PREFIX%%.support.nativemethods; // also alias for convenience
 
 import std.stdio;
 import std.string : toStringz, format;

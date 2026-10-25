@@ -2056,7 +2056,7 @@ let writeProject (writer: IFormatWriter) (outParams: OutParams) =
     write 0 "// hardcoded for the moment, need to locate the server .lib file in an intelligent way"
     write 0 "libs \"$PACKAGE_DIR/../../../server/cpp/_dllproject/cmake-build-debug/%sServer\"" outParams.LibraryName
     blank()
-    write 0 "dependency \"stonesoup\" path=\"R:/projects/dlang/stonesoup\""
+    write 0 "dependency \"stonesoup\" version=\"~>0.5.0\""
 
 let generateProject (outParams: OutParams) =
     let filename =

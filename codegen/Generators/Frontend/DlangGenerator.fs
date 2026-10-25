@@ -1902,7 +1902,7 @@ let writeModule (moduleContext: ModuleContext) (writer: IFormatWriter) (libraryN
     write 0 "import ni = %s.support.nativeimplclient;" (lower libraryName)
     write 0 "import std.typecons: Nullable, nullable;"
     write 0 "import stonesoup.disposable: IDisposable;"
-    write 0 "import stonesoup.simpleset: Set;"
+    write 0 "import stonesoup.set: Set;"
     write 0 "import stonesoup.result: Result;"
 
     // render all the generics at the root level only

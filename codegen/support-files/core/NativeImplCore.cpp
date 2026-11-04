@@ -548,6 +548,11 @@ niClientClearSafetyArea ni_clientClearSafetyArea;
 
 // from ChatGPT:
 void ni_clientLogger(const ni_ClientLogLevel level, const char* fmt, ...) {
+	if (internal_clientLogFunc == nullptr)
+	{
+		// no provided logger, no crash plz kthx
+		return;
+	}
 	va_list args;
 	va_start(args, fmt);
 

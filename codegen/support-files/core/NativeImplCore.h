@@ -77,6 +77,11 @@ extern "C" {
 	// as a callback for the server to use, to log server messages
 	// but clientServerLogger seems a bit much
 	void ni_clientLogger(ni_ClientLogLevel level, const char* fmt, ...);
+#ifndef NDEBUG
+#define NI_LOG(level, fmt, ...) ni_clientLogger(level, fmt, __VA_ARGS__)
+#else
+#define NI_LOG(level, fmt, ...) ((void)0)
+#endif
 
 	// mostly client stuff, but some used by server as well
 	int ni_nativeImplInit(

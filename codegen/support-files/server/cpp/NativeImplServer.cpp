@@ -290,9 +290,9 @@ std::shared_ptr<ServerResource> ServerResource::getResourceById(int id) {
 
 void ServerResource::dumpTables()
 {
-	ni_clientLogger(LogLevel_Information, "== C++ server resources:");
+	NI_LOG(LogLevel_Information, "== C++ server resources:");
 	for (auto i = serverResources.begin(); i != serverResources.end(); ++i) {
-		ni_clientLogger(LogLevel_Information, " - id %d (%s): refcount %d",  i->first, i->second->kind, i->second->refCount);
+		NI_LOG(LogLevel_Information, " - id %d (%s): refcount %d",  i->first, i->second->kind, i->second->refCount);
 	}
 }
 
@@ -305,11 +305,11 @@ void ServerResource::release()
 {
 	refCount -= 1;
 	if (refCount == 0) {
-		ni_clientLogger(LogLevel_Trace, "C++: releasing server obj %d", id); // only removes from table, still might exist on this side somewhere
+		NI_LOG(LogLevel_Trace, "C++: releasing server obj %d", id); // only removes from table, still might exist on this side somewhere
 		serverResources.erase(id);
 	}
 	else {
-		ni_clientLogger(LogLevel_Trace, "C++: releaseServerInstID(%d) - refCount still %d", id, refCount);
+		NI_LOG(LogLevel_Trace, "C++: releaseServerInstID(%d) - refCount still %d", id, refCount);
 	}
 }
 
@@ -319,12 +319,12 @@ void ServerResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 		id = nextServerResourceId++;
 		refCount = 1;
 		serverResources[id] = std::dynamic_pointer_cast<ServerResource>(outer);
-		//ni_clientLogger(LogLevel_Trance, "ServerObject::soPush()ed into serverObjects[%d]", id);
+		//NI_LOG(LogLevel_Trance, "ServerObject::soPush()ed into serverObjects[%d]", id);
 	}
 	else {
 		// add ref to existing
 		refCount++; // this assumes that it's going across a boundary which will be balanced by an eventual deref. is that always true?
-		ni_clientLogger(LogLevel_Trace, "bumped server ID %d refcount to %d", id, refCount);
+		NI_LOG(LogLevel_Trace, "bumped server ID %d refcount to %d", id, refCount);
 	}
 	nativePush();
 }
@@ -343,15 +343,15 @@ static std::vector<std::shared_ptr<ClientResource>> safeArea;
 
 // clear server resources from safety area (protects values being returned with no other shared_ptrs existing on this side)
 void ni_clearServerSafetyArea() {
-	ni_clientLogger(LogLevel_Trace, "C++ before safety clear =====");
+	NI_LOG(LogLevel_Trace, "C++ before safety clear =====");
 	safeArea.clear();
-	ni_clientLogger(LogLevel_Trace, "C++ after safety clear!! ====");
+	NI_LOG(LogLevel_Trace, "C++ after safety clear!! ====");
 }
 
 void ClientResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 	if (isReturn) {
 		// for return values, to keep them alive until other side has taken them
-		ni_clientLogger(LogLevel_Trace, "C++ ClientObject %d safepush", id);
+		NI_LOG(LogLevel_Trace, "C++ ClientObject %d safepush", id);
 		// preserve for return values etc
 		auto clientOuter = std::dynamic_pointer_cast<ClientResource>(outer);
 		safeArea.push_back(clientOuter);
@@ -360,7 +360,7 @@ void ClientResource::push(std::shared_ptr<Pushable> outer, bool isReturn) {
 }
 
 ClientResource::~ClientResource() {
-	ni_clientLogger(LogLevel_Trace, "C++ ClientResource::dtor (id %d), remote releasing", id);
+	NI_LOG(LogLevel_Trace, "C++ ClientResource::dtor (id %d), remote releasing", id);
 	//fflush(stdout);
 	::ni_clientResourceRelease(id);
 }
@@ -428,6 +428,6 @@ std::shared_ptr<ServerFuncVal> ServerFuncVal::create(std::function<void()> wrapp
 
 void ServerFuncVal::releaseExtra()
 {
-	ni_clientLogger(LogLevel_Trace, "server releaseFuncVal(%d): refcount 0, releasing", id);
+	NI_LOG(LogLevel_Trace, "server releaseFuncVal(%d): refcount 0, releasing", id);
 	reverseServerFuncVals.erase(uniqueKey);
 }

@@ -615,7 +615,7 @@ ni_ModuleRef ni_registerModule(const char *name)
 	// make sure name doesn't already exist
 	auto found = modules.find(name);
 	if (found != modules.end()) {
-		ni_clientLogger(LogLevel_Error, "registerModule: module name [%s] already exists!", name);
+		NI_LOG(LogLevel_Error, "registerModule: module name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto mod = new ni_Module{ name };
@@ -627,7 +627,7 @@ ni_ModuleMethodRef ni_registerModuleMethod(ni_ModuleRef m, const char *name, Mod
 {
 	auto found = m->methods.find(name);
 	if (found != m->methods.end()) {
-		ni_clientLogger(LogLevel_Error, "registerModuleMethod: method name [%s] already exists!", name);
+		NI_LOG(LogLevel_Error, "registerModuleMethod: method name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto method = new ni_ModuleMethod{ m, name, func };
@@ -637,7 +637,7 @@ ni_ModuleMethodRef ni_registerModuleMethod(ni_ModuleRef m, const char *name, Mod
 
 void ni_registerModuleConstants(ni_ModuleRef m, ConstantsFunc func) {
 	if (m->constantsFunc != nullptr) {
-		ni_clientLogger(LogLevel_Error, "Module %s ConstantsFunc already defined", m->name.c_str());
+		NI_LOG(LogLevel_Error, "Module %s ConstantsFunc already defined", m->name.c_str());
 	}
 	else {
 		m->constantsFunc = func;
@@ -648,7 +648,7 @@ ni_InterfaceRef ni_registerInterface(ni_ModuleRef m, const char *name)
 {
 	auto found = m->interfaces.find(name);
 	if (found != m->interfaces.end()) {
-		ni_clientLogger(LogLevel_Error, "registerModuleInterface: interface name [%s] already exists!", name);
+		NI_LOG(LogLevel_Error, "registerModuleInterface: interface name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto iface = new ni_Interface{ m, name };
@@ -660,7 +660,7 @@ ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const ch
 {
 	auto found = iface->methods.find(name);
 	if (found != iface->methods.end()) {
-		ni_clientLogger(LogLevel_Error, "registerInterfaceMethod: iface method name [%s] already exists!", name);
+		NI_LOG(LogLevel_Error, "registerInterfaceMethod: iface method name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto method = new ni_InterfaceMethod { iface, name };
@@ -671,7 +671,7 @@ ni_InterfaceMethodRef ni_registerInterfaceMethod(ni_InterfaceRef iface, const ch
 ni_ExceptionRef ni_registerException(ni_ModuleRef m, const char *name, ExceptionBuilder buildAndThrow) {
 	auto found = m->exceptions.find(name);
 	if (found != m->exceptions.end()) {
-		ni_clientLogger(LogLevel_Error, "registerException: method exception name [%s] already exists!", name);
+		NI_LOG(LogLevel_Error, "registerException: method exception name [%s] already exists!", name);
 		return nullptr;
 	}
 	auto exception = new ni_Exception{ m, name, buildAndThrow };
@@ -683,7 +683,7 @@ void ni_registerType(ni_TypeId type_id, CastFunc castFunc)
 {
 	if (castFuncMap.contains(type_id))
 	{
-		ni_clientLogger(LogLevel_Error, "registerType: typeid [%s] already exists in map!", type_id);
+		NI_LOG(LogLevel_Error, "registerType: typeid [%s] already exists in map!", type_id);
 		failwith("ni_registerType error");
 	}
 	castFuncMap[type_id] = castFunc;
@@ -694,7 +694,7 @@ void* ni_applyCastFunc(ni_ObjectPtr obj, ni_TypeId target_type)
 	if (!castFuncMap.contains(obj.type_id))
 	{
 		// problemo
-		ni_clientLogger(LogLevel_Critical, "ni_applyCastFunc: cast func map did not contain cast func for type_id: [%s]", obj.type_id);
+		NI_LOG(LogLevel_Critical, "ni_applyCastFunc: cast func map did not contain cast func for type_id: [%s]", obj.type_id);
 		failwith("ni_applyCastFunc error");
 	}
 	// else OK
@@ -717,7 +717,7 @@ int ni_nativeImplInit(
 	::ni_clientResourceRelease = clientResourceRelease;
 	::ni_clientClearSafetyArea = clientClearSafetyArea;
 
-	ni_clientLogger(LogLevel_Information, "ni_nativeImplInit");
+	NI_LOG(LogLevel_Information, "ni_nativeImplInit");
 
 	// library-specific registrations etc
 	return nativeLibraryInit();
@@ -725,7 +725,7 @@ int ni_nativeImplInit(
 
 void ni_nativeImplShutdown()
 {
-	ni_clientLogger(LogLevel_Information, "ni_nativeImplShutdown");
+	NI_LOG(LogLevel_Information, "ni_nativeImplShutdown");
 
 	// de-fang the callbacks so they don't wreak havoc
 	internal_clientLogFunc = &nullLogFunc;
@@ -734,7 +734,7 @@ void ni_nativeImplShutdown()
 	ni_clientResourceRelease = &nullIntMethod;
 	ni_clientClearSafetyArea = &nullVoidMethod;
 
-	ni_clientLogger(LogLevel_Information, " - callbacks disabled");
+	NI_LOG(LogLevel_Information, " - callbacks disabled");
 	//fflush(stdout);
 
 	nativeLibraryShutdown();

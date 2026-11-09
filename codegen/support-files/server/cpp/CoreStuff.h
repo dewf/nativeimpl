@@ -35,6 +35,11 @@ extern "C" {
 		LogLevel_None
 	};
 	void ni_clientLogger(ni_ClientLogLevel level, const char* fmt, ...);
+#ifndef NDEBUG
+#define NI_LOG(level, fmt, ...) ni_clientLogger(level, fmt, __VA_ARGS__)
+#else
+#define NI_LOG(level, fmt, ...) ((void)0)
+#endif
 
 
 	typedef void (*ModuleFunc)();

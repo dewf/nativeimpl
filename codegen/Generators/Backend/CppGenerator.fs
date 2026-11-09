@@ -775,7 +775,7 @@ let renderWrapperInterface (context: CppRenderContext) (writerH: IFormatWriter) 
     writeCpp 2 "if (const auto pushable = std::dynamic_pointer_cast<Pushable>(inst); pushable != nullptr) {"
     writeCpp 3 "pushable->push(pushable, isReturn);"
     writeCpp 2 "} else {"
-    writeCpp 3 "ni_clientLogger(LogLevel_Critical, \"%s__push(): could not cast to 'Pushable'\");" name
+    writeCpp 3 "NI_LOG(LogLevel_Critical, \"%s__push(): could not cast to 'Pushable'\");" name
     writeCpp 3 "exit(-100);"
     writeCpp 2 "}"
     writeCpp 1 "} else {"
@@ -872,7 +872,7 @@ let renderWrapperSumType (context: CppRenderContext) (writerH: IFormatWriter) (w
         writeCpp 2 "break;"
         writeCpp 1 "}"
     writeCpp 1 "default:"
-    writeCpp 2 "ni_clientLogger(LogLevel_Error, \"C++ %s__pop() - unknown kind! returning null\");" name
+    writeCpp 2 "NI_LOG(LogLevel_Error, \"C++ %s__pop() - unknown kind! returning null\");" name
     writeCpp 1 "}" // end switch
     writeCpp 1 "return std::shared_ptr<%s::Base>(__ret);" qualifiedName
     writeCpp 0 "}"

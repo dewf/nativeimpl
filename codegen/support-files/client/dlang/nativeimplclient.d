@@ -19,12 +19,24 @@ import stonesoup.disposable;
 // PRIVATE ====================================================================================================
 private:
 
+__gshared bool loggingEnabled = false;
+
+debug {
+    void niLog(Args...)(string fmt, Args args)
+    {
+        if (loggingEnabled) writefln(fmt, args);
+    }
+}
+
 // client callbacks:
 extern (C) {
     void clientLogFunc(ni_ClientLogLevel level, const (char)* msg, int length) {
-        // no allocations, because if this is called back during a GC collection it'll crash!
-        auto message = cast(string) msg[0 .. length];
-        writefln("[native: %s]: %s", level, message);
+        debug {
+            // (not wrapped 'loggingEnabled' check, since this function will never be passed to NI server side unless logging already enabled)
+            // no allocations, because if this is called back during a GC collection it'll crash!
+            auto message = cast(string) msg[0 .. length];
+            writefln("[native: %s]: %s", level, message);
+        }
     }
 
     void clientFuncExec(int id) {
@@ -101,18 +113,18 @@ public:
                 refCount = 1;
                 resourceMap[_id] = this;
             }
-            writefln("Dlang ClientResource: assigned new ID: %d", _id);
+            debug niLog("Dlang ClientResource: assigned new ID: %d", _id);
         } else {
             // just increase refcount since it's a known thing
             refCount += 1;
-            writefln("Dlang ClientResource: increased refcount of ID [%d] to %d", _id, refCount);
+            debug niLog("Dlang ClientResource: increased refcount of ID [%d] to %d", _id, refCount);
         }
         nativePush();
     }
     void release() {
         refCount -= 1;
         if (refCount == 0) {
-            writefln("Dlang release on ClientResource [%d] - refCount 0, removing from resource table", _id);
+            debug niLog("Dlang release on ClientResource [%d] - refCount 0, removing from resource table", _id);
             synchronized (clientResourceMutex) {
                 resourceMap.remove(_id);
             }
@@ -131,7 +143,7 @@ public:
     static void dumpTables() {
         synchronized (clientResourceMutex) {
             foreach (id, resource; resourceMap) {
-                writefln(" - ClientResource [%d]: refcount [%d]", id, resource.refCount);
+                debug niLog(" - ClientResource [%d]: refcount [%d]", id, resource.refCount);
             }
         }
     }
@@ -157,14 +169,14 @@ class ClientFuncVal : ClientResource {
         nativemethods.pushClientFunc(id);
     }
     override void releaseExtra() {
-        writefln("dlang releaseExtra()");
+        debug niLog("dlang releaseExtra()");
         if (key.isValid) {
             // remove self from reverse dict
             // unlike ClientObjects, there's should be no potential for a ClientFuncVal being reused once it's removed, because they only exist within library wrapper code
             synchronized (clientResourceMutex) {
                 reverseFuncValDict.remove(key);
             }
-            writefln("ClientFuncVal: removed key [%s] from reverse dict", key);
+            debug niLog("ClientFuncVal: removed key [%s] from reverse dict", key);
         }
         // probably unnecessary, but who knows!
         super.releaseExtra();
@@ -185,13 +197,13 @@ class ClientFuncVal : ClientResource {
         synchronized (clientResourceMutex) {
             if (key.isValid && (key in reverseFuncValDict)) {
                 // re-use existing
-                writefln("ClientFuncVal.getorCreate() - client func key already exists!");
+                debug niLog("ClientFuncVal.getorCreate() - client func key already exists!");
                 // return existing
                 // used to addRef here, but now that's taken care of by ClientResource.push()
                 return reverseFuncValDict[key];
             } else {
                 // create new
-                writefln("pushing new ClientFuncVal");
+                debug niLog("pushing new ClientFuncVal");
                 return new ClientFuncVal(wrapper, key);
             }
         }
@@ -262,7 +274,7 @@ protected:
 
     void dispose(DisposedFrom from) {
         if (disposed) {
-            writefln("dlang already disposed server obj %d, early return", id);
+            debug niLog("dlang already disposed server obj %d, early return", id);
             return;
         }
 
@@ -277,9 +289,9 @@ protected:
         // native resource disposal below:
         if (!remoteIsShutdown) {
             nativemethods.releaseServerResource(id);
-            writefln("dlang released server obj %d", id);
+            debug niLog("dlang released server obj %d", id);
         } else {
-            writefln("(didn't release server obj %d - remote was already shutdown)", id);
+            debug niLog("(didn't release server obj %d - remote was already shutdown)", id);
         }
         disposed = true;
     }
@@ -298,7 +310,7 @@ public:
     }
     ~this() {
         // backstop in case the derived class not manually disposed
-        writefln("Dlang finalizing ServerResource[%d]", id);
+        debug niLog("Dlang finalizing ServerResource[%d]", id);
         dispose(DisposedFrom.Finalizer);
     }
     final void dispose() {
@@ -466,12 +478,13 @@ class ExceptionHandle : WrappedHandle!ni_ExceptionRef {
     }
 }
 
-void init() {
+void init(bool niLoggingEnabled = false) {
+    loggingEnabled = niLoggingEnabled;
     clientResourceMutex = new Mutex();
 
     auto result =
         nativeImplInit(
-            &clientLogFunc,
+            loggingEnabled ? &clientLogFunc : null,
             &clientFuncExec,
             &clientMethodExec,
             &clientResourceRelease,
